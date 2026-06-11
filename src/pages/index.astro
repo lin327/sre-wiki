@@ -1,0 +1,325 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+interface QuickLink {
+  title: string;
+  description: string;
+  href: string;
+  icon: string;
+}
+
+const quickLinks: QuickLink[] = [
+  {
+    title: "故障排障",
+    description: "常见生产故障的标准化排查流程，从 CrashLoopBackOff 到 OOMKilled，快速定位根因。",
+    href: "/runbooks/crashloopbackoff",
+    icon: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
+  },
+  {
+    title: "技术架构",
+    description: "深入理解 Kubernetes Pod 生命周期、容器编排机制与集群调度原理。",
+    href: "/kubernetes/pod-lifecycle",
+    icon: "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9",
+  },
+  {
+    title: "系统基础",
+    description: "Linux 进程模型、文件系统、内存管理等核心概念，构建运维知识根基。",
+    href: "/linux/process-model",
+    icon: "M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z",
+  },
+];
+---
+
+<BaseLayout title="SRE Atlas" description="AI 驱动的运维知识库，覆盖 Linux、Docker、Kubernetes 全链路">
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="hero-badge">SRE Knowledge Base</div>
+    <h1 class="hero-title">SRE Atlas</h1>
+    <p class="hero-subtitle">
+      AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路
+    </p>
+    <div class="hero-actions">
+      <a href="/runbooks/crashloopbackoff" class="btn btn--primary">开始排障</a>
+      <a href="/linux/process-model" class="btn btn--ghost">浏览知识库</a>
+    </div>
+  </section>
+
+  <!-- Quick Entry Grid -->
+  <section class="quick-links" aria-labelledby="quick-links-heading">
+    <h2 id="quick-links-heading" class="section-label">快速入口</h2>
+    <div class="card-grid">
+      {quickLinks.map((link) => (
+        <a href={link.href} class="card">
+          <div class="card-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24">
+              <path stroke-linecap="round" stroke-linejoin="round" d={link.icon} />
+            </svg>
+          </div>
+          <h3 class="card-title">{link.title}</h3>
+          <p class="card-desc">{link.description}</p>
+          <span class="card-link">
+            查看文档
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+              <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
+            </svg>
+          </span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <!-- Scope Banner -->
+  <section class="scope-banner" aria-labelledby="scope-heading">
+    <h2 id="scope-heading" class="section-label">知识体系</h2>
+    <div class="scope-chain">
+      <div class="scope-node">
+        <span class="scope-node-label">Linux</span>
+        <span class="scope-node-detail">进程 / 文件系统 / 内存</span>
+      </div>
+      <div class="scope-arrow" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
+          <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="scope-node">
+        <span class="scope-node-label">Docker</span>
+        <span class="scope-node-detail">镜像 / 网络 / 存储</span>
+      </div>
+      <div class="scope-arrow" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
+          <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="scope-node">
+        <span class="scope-node-label">Kubernetes</span>
+        <span class="scope-node-detail">Pod / Service / 调度</span>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  /* Hero */
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding-block: var(--space-12);
+    padding-inline: var(--space-4);
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-accent);
+    border: 1px solid var(--color-accent);
+    border-radius: 999px;
+    margin-block-end: var(--space-6);
+    opacity: 0.85;
+  }
+
+  .hero-title {
+    font-size: clamp(3rem, 1.5rem + 6vw, 5.5rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, var(--color-ink) 0%, var(--color-accent) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-block-end: var(--space-4);
+  }
+
+  .hero-subtitle {
+    font-size: clamp(1rem, 0.875rem + 0.625vw, 1.25rem);
+    color: var(--color-muted);
+    max-width: 36ch;
+    line-height: 1.6;
+    margin-block-end: var(--space-8);
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: var(--radius-md);
+    transition: all var(--motion-normal) var(--ease-out-expo);
+  }
+
+  .btn--primary {
+    background: var(--color-primary);
+    color: oklch(0.98 0 0);
+  }
+
+  .btn--primary:hover {
+    background: var(--color-primary-l);
+    text-decoration: none;
+    transform: translateY(-1px);
+  }
+
+  .btn--ghost {
+    color: var(--color-muted);
+    border: 1px solid var(--color-surface-3);
+  }
+
+  .btn--ghost:hover {
+    color: var(--color-ink);
+    border-color: var(--color-muted);
+    text-decoration: none;
+  }
+
+  /* Section Label */
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-muted);
+    margin-block-end: var(--space-6);
+  }
+
+  /* Quick Links */
+  .quick-links {
+    padding-block-start: var(--space-8);
+    padding-block-end: var(--space-12);
+    padding-inline: var(--space-4);
+    max-width: 72rem;
+    margin-inline: auto;
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-5);
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-6);
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-2);
+    border-radius: var(--radius-xl);
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--motion-normal) var(--ease-out-expo);
+  }
+
+  .card:hover {
+    border-color: var(--color-accent);
+    background: var(--color-surface-2);
+    transform: translateY(-2px);
+    text-decoration: none;
+  }
+
+  .card-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    background: var(--color-surface-3);
+    color: var(--color-accent);
+    margin-block-end: var(--space-4);
+  }
+
+  .card-title {
+    font-size: 1.125rem;
+    font-weight: 650;
+    margin-block-end: var(--space-2);
+  }
+
+  .card-desc {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+    line-height: 1.6;
+    flex: 1;
+    margin-block-end: var(--space-4);
+  }
+
+  .card-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-accent);
+  }
+
+  .card:hover .card-link {
+    gap: 0.5rem;
+  }
+
+  /* Scope Banner */
+  .scope-banner {
+    padding-block: var(--space-10);
+    padding-inline: var(--space-4);
+    max-width: 72rem;
+    margin-inline: auto;
+    border-top: 1px solid var(--color-surface-2);
+  }
+
+  .scope-chain {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+  }
+
+  .scope-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: var(--space-4) var(--space-6);
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-2);
+    border-radius: var(--radius-lg);
+  }
+
+  .scope-node-label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-ink);
+  }
+
+  .scope-node-detail {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+  }
+
+  .scope-arrow {
+    color: var(--color-surface-3);
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 640px) {
+    .scope-arrow {
+      transform: rotate(90deg);
+    }
+
+    .scope-chain {
+      flex-direction: column;
+    }
+  }
+</style>

@@ -1,0 +1,126 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Linux 进程模型"
+description: "深入理解 Linux 进程状态、生命周期与调度机制，掌握 SRE 日常排障必备的系统基础。"
+---
+
+# Linux 进程模型
+
+Linux 中一切皆文件，而进程是资源分配与调度的基本单位。作为 SRE，理解进程模型是排查系统故障、分析性能瓶颈的第一步。
+
+## 什么是进程
+
+进程（Process）是程序的一次执行实例。每个进程拥有独立的虚拟地址空间、文件描述符表、信号处理表和调度上下文。内核通过 `task_struct` 结构体管理所有进程，形成双向链表和哈希表以便快速查找。
+
+从用户视角看，进程由 PID 唯一标识。PID 1 是系统的 init 进程（在现代 Linux 上通常是 `systemd`），它是所有用户态进程的祖先。
+
+```bash
+# 查看所有进程的树形结构
+ps auxf
+
+# 使用 pstree 查看父子关系（推荐）
+pstree -p
+
+# 查看当前 shell 的 PID
+echo $$
+
+# 查看 PID 1 的详细信息
+cat /proc/1/status | head -20
+```
+
+## 进程状态
+
+Linux 内核定义了以下核心进程状态。理解这些状态对于排查 `D` 状态卡死、僵尸进程等问题至关重要。
+
+| 状态码 | 名称 | 含义 | 典型场景 |
+|--------|------|------|----------|
+| `R` | Running / Runnable | 正在运行或在运行队列中等待调度 | CPU 密集型任务 |
+| `S` | Sleeping (Interruptible) | 可中断睡眠，等待事件或信号 | 大部分时间正常的服务进程 |
+| `D` | Disk Sleep (Uninterruptible) | 不可中断睡眠，通常等待 I/O 完成 | NFS 挂载超时、磁盘故障 |
+| `Z` | Zombie | 已终止但父进程未回收退出状态 | 父进程未调用 `wait()` |
+| `T` | Stopped / Traced | 被信号停止或被 debugger 跟踪 | `SIGSTOP`、`gdb attach` |
+
+```bash
+# 按状态统计进程数
+ps -eo state | sort | uniq -c | sort -rn
+
+# 查找所有 D 状态（不可中断睡眠）进程
+ps aux | awk '$8 ~ /D/ {print}'
+```
+
+## 父子关系与孤儿进程
+
+每个进程（除 PID 1 外）都有一个父进程。当父进程先于子进程退出时，子进程成为孤儿进程（Orphan），会被 PID 1（init/systemd）收养（reparent）。这个机制确保每个进程都有有效的父进程。
+
+进程退出时，内核会向其父进程发送 `SIGCHLD` 信号。父进程需要调用 `wait()` 或 `waitpid()` 来读取子进程的退出状态，之后子进程的 PCB（Process Control Block）才会被完全释放。
+
+## 僵尸进程
+
+<div class="admonition admonition--warning">
+  <p class="admonition-title">注意</p>
+  <p>少量僵尸进程通常无害，但大量僵尸进程可能表明父进程存在 bug 或已被阻塞。僵尸进程不占用内存或 CPU，但占用 PID 表空间。当 PID 耗尽时，系统无法创建新进程。</p>
+</div>
+
+僵尸进程（Zombie Process）是已执行完毕但父进程未调用 `wait()` 回收其退出状态的进程。在 `ps` 输出中显示为 `Z` 状态。
+
+```bash
+# 查找僵尸进程
+ps aux | awk '$8=="Z" {print}'
+
+# 找到僵尸进程的父进程
+ps -o pid,ppid,state,cmd -p <zombie_pid>
+
+# 向父进程发送 SIGCHLD 提醒回收
+kill -SIGCHLD <parent_pid>
+
+# 如果父进程无响应，终止父进程（僵尸将被 init 收养并清理）
+kill -9 <parent_pid>
+```
+
+排查僵尸进程的关键思路：找到父进程，确认它为什么没有调用 `wait()`。常见原因包括父进程卡在 I/O、父进程代码缺少信号处理逻辑、或父进程本身已处于 `D` 状态。
+
+## 进程创建：fork + exec
+
+Linux 使用 `fork()` + `exec()` 的两步模型创建新进程：
+
+1. **`fork()`** — 复制当前进程，创建一个几乎完全相同的子进程。子进程获得新的 PID，但共享代码段（通过 Copy-on-Write 优化）。
+2. **`exec()` 系列** — 用新的可执行文件替换当前进程的地址空间，保留 PID、文件描述符等属性。
+
+```bash
+# 跟踪进程创建过程
+strace -f -e trace=clone,execve bash -c "ls /tmp"
+
+# 查看某个进程的 fork 子进程
+pstree -p <pid>
+```
+
+这个模型是理解容器 init 进程、信号传递和 PID namespace 的基础。
+
+## 信号机制
+
+信号（Signal）是进程间通信最古老的方式。内核通过信号通知进程发生了特定事件。SRE 最常接触的信号包括：
+
+| 信号 | 编号 | 默认行为 | 常见用途 |
+|------|------|----------|----------|
+| `SIGTERM` | 15 | 终止 | 优雅停止服务 |
+| `SIGKILL` | 9 | 终止（不可捕获） | 强制杀死无响应进程 |
+| `SIGHUP` | 1 | 终止 | 重新加载配置（Nginx、HAProxy） |
+| `SIGCHLD` | 17 | 忽略 | 子进程退出通知 |
+| `SIGSTOP` | 19 | 暂停（不可捕获） | 挂起进程 |
+
+```bash
+# 优雅停止进程（允许清理资源）
+kill -SIGTERM <pid>
+
+# 发送 SIGHUP 让 Nginx 重新加载配置
+kill -HUP $(cat /var/run/nginx.pid)
+```
+
+## SRE 实践要点
+
+在日常运维中，进程模型的知识直接应用于以下场景：
+
+- **服务启动失败** — 检查端口占用（`ss -tlnp`）、进程是否已在运行（`systemctl status`）、cgroup 资源限制
+- **CPU 使用率异常** — 通过 `top` / `htop` 定位高 CPU 进程，结合 `strace` 或 `perf` 分析系统调用
+- **进程假死** — 区分 `S`（正常等待）和 `D`（I/O 阻塞），D 状态进程无法被 `kill -9` 终止
+- **容器内 PID 1** — 容器中 PID 1 需要正确处理信号转发，否则 `docker stop` 会超时后强制 SIGKILL

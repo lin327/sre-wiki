@@ -1,0 +1,137 @@
+---
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+}
+
+const { headings } = Astro.props;
+
+// Only show h2 and h3
+const visible = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+{
+  visible.length > 0 && (
+    <nav class="toc" aria-label="Table of contents">
+      <ul class="toc__list">
+        {visible.map((heading) => (
+          <li
+            class:list={[
+              "toc__item",
+              { "toc__item--h3": heading.depth === 3 },
+            ]}
+          >
+            <a
+              href={`#${heading.slug}`}
+              class="toc__link"
+              data-heading-id={heading.slug}
+            >
+              {heading.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<style>
+  .toc__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .toc__item--h3 {
+    padding-inline-start: var(--space-4);
+  }
+
+  .toc__link {
+    display: block;
+    padding: 0.25rem 0.5rem;
+    border-inline-start: 2px solid transparent;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--color-dim);
+    text-decoration: none;
+    transition:
+      color var(--motion-fast) ease,
+      border-color var(--motion-fast) ease;
+  }
+
+  .toc__link:hover {
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .toc__link--active {
+    color: var(--color-accent);
+    border-inline-start-color: var(--color-accent);
+  }
+</style>
+
+<script>
+  function initTOC() {
+    const links = document.querySelectorAll<HTMLAnchorElement>(
+      ".toc__link[data-heading-id]"
+    );
+
+    if (!links.length) return;
+
+    const headingIds = Array.from(links).map(
+      (l) => l.dataset.headingId as string
+    );
+
+    let activeId: string | null = null;
+
+    function setActive(id: string | null) {
+      if (id === activeId) return;
+      activeId = id;
+      links.forEach((link) => {
+        link.classList.toggle(
+          "toc__link--active",
+          link.dataset.headingId === id
+        );
+      });
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActive(entry.target.id);
+          }
+        }
+      },
+      {
+        rootMargin: "-64px 0px -70% 0px",
+        threshold: 0,
+      }
+    );
+
+    headingIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    // Set the first heading as active on load if none visible yet
+    if (!activeId && headingIds.length > 0) {
+      setActive(headingIds[0]);
+    }
+
+    document.addEventListener("astro:before-swap", () => observer.disconnect(), {
+      once: true,
+    });
+  }
+
+  initTOC();
+  document.addEventListener("astro:after-swap", initTOC);
+</script>

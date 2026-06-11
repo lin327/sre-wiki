@@ -1,0 +1,157 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Pod 生命周期"
+description: "全面了解 Kubernetes Pod 的生命周期阶段、容器状态转换与生命周期钩子，掌握 Pod 调度与终止的完整流程。"
+---
+
+# Pod 生命周期
+
+Pod 是 Kubernetes 中最小的可部署单元。一个 Pod 可以包含一个或多个容器，它们共享网络命名空间和存储卷。理解 Pod 的完整生命周期对于排查调度失败、启动异常和终止超时等问题至关重要。
+
+## Pod 阶段（Phase）
+
+Kubernetes 通过 `status.phase` 描述 Pod 在其生命周期中的宏观状态。这个字段是互斥的——一个 Pod 在任意时刻只能处于一个 Phase。
+
+| Phase | 含义 | 典型场景 |
+|-------|------|----------|
+| **Pending** | Pod 已被 API Server 接受，但尚未运行。可能在等待调度（scheduling）或镜像拉取（image pull）。 | 资源不足、节点亲和性不匹配、PVC 绑定中 |
+| **Running** | Pod 已绑定到节点，至少有一个容器处于运行状态。 | 正常提供服务的 Pod |
+| **Succeeded** | 所有容器均已成功终止，且不会再被重启。 | Job / CronJob 任务完成 |
+| **Failed** | 所有容器已终止，且至少有一个容器以非零退出码退出。 | 应用崩溃、OOMKilled |
+| **Unknown** | 无法获取 Pod 状态，通常是与节点通信失败。 | 节点网络分区、kubelet 宕机 |
+
+```bash
+# 查看 Pod 当前阶段
+kubectl get pod <pod-name> -o jsonpath='{.status.phase}'
+
+# 按阶段统计所有 Pod
+kubectl get pods -A -o json | jq -r '.items[].status.phase' | sort | uniq -c
+```
+
+## 容器状态（Container State）
+
+Pod 内每个容器有独立的状态，由 `containerStatuses` 字段描述。容器状态比 Pod Phase 更精确地反映了单个容器的运行情况。
+
+### Waiting
+
+容器尚未开始运行。最常见的原因是正在拉取镜像或执行初始化（init container）。
+
+```bash
+# 查看 Waiting 状态的原因
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[*].state.waiting}'
+```
+
+常见 Waiting 原因：
+- `ContainerCreating` — 正在拉取镜像、挂载卷
+- `ImagePullBackOff` — 镜像拉取失败，进入退避重试
+- `CrashLoopBackOff` — 容器反复崩溃
+- `PodInitializing` — Init 容器尚未完成
+
+### Running
+
+容器正在执行。如果配置了 `postStart` 生命周期钩子，该钩子已在容器主进程启动前执行完毕。
+
+### Terminated
+
+容器已结束运行。包含退出码（`exitCode`）、终止原因（`reason`）和起止时间。如果配置了 `preStop` 钩子，它在容器收到 SIGTERM 前执行。
+
+```bash
+# 查看终止状态详情
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[*].state.terminated}' | jq .
+```
+
+## Init 容器
+
+<div class="admonition">
+  <p class="admonition-title">提示</p>
+  <p>Init 容器按定义顺序依次执行，前一个必须成功退出后下一个才会启动。如果任何 Init 容器失败，kubelet 会反复重启它（受 restartPolicy 控制）。Pod 会一直停留在 <code>Init:0/2</code> 这样的状态，直到所有 Init 容器成功完成。</p>
+</div>
+
+Init 容器在应用容器之前运行，用于执行前置条件检查和环境准备。典型用途包括：
+
+- 等待依赖服务就绪（数据库、消息队列）
+- 从 ConfigMap 或 Secret 拉取配置文件到共享卷
+- 执行数据库 schema migration
+- 注册服务到服务发现系统
+
+```bash
+# 查看 Init 容器状态
+kubectl get pod <pod-name> -o jsonpath='{.status.initContainerStatuses}' | jq .
+
+# 查看 Init 容器日志
+kubectl logs <pod-name> -c <init-container-name>
+```
+
+## Pod 终止流程
+
+当删除一个 Pod 时（`kubectl delete pod` 或 Deployment 滚动更新），Kubernetes 执行以下有序流程：
+
+1. **标记为 Terminating** — API Server 将 Pod 的 `deletionTimestamp` 设为当前时间，从 Endpoints 中移除该 Pod
+2. **执行 preStop 钩子** — 如果配置了 `preStop` 生命周期钩子，kubelet 在容器内执行它。此阶段不受 `terminationGracePeriodSeconds` 以外的超时限制
+3. **发送 SIGTERM** — 向容器主进程（PID 1）发送 SIGTERM 信号，应用应在此时执行优雅关闭（drain connections、flush buffers、save state）
+4. **等待宽限期** — 默认 30 秒（`terminationGracePeriodSeconds`）。如果应用在宽限期内完成退出，流程结束
+5. **发送 SIGKILL** — 宽限期耗尽后，kubelet 向所有剩余进程发送 SIGKILL，强制终止容器
+6. **清理** — 从 API Server 删除 Pod 对象
+
+```bash
+# 查看 Pod 的优雅终止时间
+kubectl get pod <pod-name> -o jsonpath='{.spec.terminationGracePeriodSeconds}'
+
+# 查看 Pod 删除时间戳
+kubectl get pod <pod-name> -o jsonpath='{.metadata.deletionTimestamp}'
+```
+
+## 实际排障示例
+
+以下是一个典型 `kubectl describe pod` 输出的关键部分，用于理解 Pod 当前状态：
+
+```text
+Name:             my-app-7b8f9d6c4-x2k9z
+Namespace:        production
+Status:           Running
+IP:               10.244.1.15
+Controlled By:    ReplicaSet/my-app-7b8f9d6c4
+Containers:
+  app:
+    State:          Running
+      Started:      Wed, 11 Jun 2025 08:30:15 +0000
+    Ready:          True
+    Restart Count:  0
+    Limits:
+      cpu:     500m
+      memory:  256Mi
+    Requests:
+      cpu:     250m
+      memory:  128Mi
+    Liveness:   http-get :8080/healthz delay=10s timeout=3s period=10s failure=3
+    Readiness:  http-get :8080/ready delay=5s timeout=3s period=5s failure=3
+Conditions:
+  Type              Status
+  Initialized       True
+  Ready             True
+  ContainersReady   True
+  PodScheduled      True
+Events:
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  5m    default-scheduler  Successfully assigned production/my-app-7b8f9d6c4-x2k9z to node-3
+  Normal  Pulling    5m    kubelet            Pulling image "registry.example.com/my-app:v2.1.0"
+  Normal  Pulled     4m    kubelet            Successfully pulled image
+  Normal  Created    4m    kubelet            Created container app
+  Normal  Started    4m    kubelet            Started container app
+```
+
+重点关注的排障字段：
+
+- **Conditions** — `Initialized`、`Ready`、`ContainersReady`、`PodScheduled` 四个条件是否全部为 `True`
+- **Events** — 按时间倒序显示的关键事件，是排障的第一手信息
+- **Restart Count** — 非零表示容器发生过崩溃
+- **State / Last State** — 当前容器状态和上一次终止的退出码
+
+## SRE 实践清单
+
+- 为所有 Deployment 配置 Readiness Probe，避免流量打到未就绪的 Pod
+- 设置合理的 `terminationGracePeriodSeconds`，确保应用有足够时间优雅关闭
+- 使用 `preStop` 钩子执行连接排空（connection draining）和缓存刷新
+- Init 容器应设置超时和重试上限，避免 Pod 永久卡在初始化阶段
+- 监控 `kube_pod_container_status_restarts_total` 指标，及时发现反复重启的 Pod

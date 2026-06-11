@@ -1,0 +1,174 @@
+---
+interface Props {
+  code?: string;
+  class?: string;
+}
+
+const { code, class: className } = Astro.props;
+
+// Extract text content from the slot for the copy button
+// The code prop is passed explicitly when available
+---
+
+<div class:list={["code-block-wrapper", className]}>
+  <button
+    type="button"
+    class="code-copy-btn"
+    aria-label="Copy code to clipboard"
+    data-code={code}
+  >
+    <svg
+      class="code-copy-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+    <svg
+      class="code-check-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      style="display: none;"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+    <span class="code-copy-label">Copy</span>
+  </button>
+  <div class="code-block">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .code-block-wrapper {
+    position: relative;
+    margin-block: var(--space-6);
+  }
+
+  .code-copy-btn {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-surface-3);
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface-2);
+    color: var(--color-muted);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity var(--motion-fast) ease,
+      background-color var(--motion-fast) ease,
+      color var(--motion-fast) ease;
+  }
+
+  .code-block-wrapper:hover .code-copy-btn {
+    opacity: 1;
+  }
+
+  .code-copy-btn:hover {
+    background-color: var(--color-surface-3);
+    color: var(--color-ink);
+  }
+
+  .code-copy-btn:focus-visible {
+    opacity: 1;
+  }
+
+  .code-check-icon {
+    color: var(--color-success);
+  }
+
+  .code-copy-label {
+    pointer-events: none;
+  }
+</style>
+
+<script>
+  function getPlainCode(block: HTMLElement): string {
+    // Get the text content from pre > code
+    const codeEl = block.querySelector("pre code") || block.querySelector("code");
+    if (codeEl) {
+      return (codeEl.textContent || "").replace(/\n$/, "");
+    }
+    const pre = block.querySelector("pre");
+    if (pre) {
+      return (pre.textContent || "").replace(/\n$/, "");
+    }
+    return (block.textContent || "").replace(/\n$/, "");
+  }
+
+  function initCopyButtons() {
+    const buttons = document.querySelectorAll<HTMLButtonElement>(".code-copy-btn");
+
+    buttons.forEach((btn) => {
+      if (btn.dataset.initialized) return;
+      btn.dataset.initialized = "true";
+
+      btn.addEventListener("click", async () => {
+        const wrapper = btn.closest<HTMLElement>(".code-block-wrapper");
+        if (!wrapper) return;
+
+        const codeText = btn.dataset.code || getPlainCode(wrapper);
+
+        try {
+          await navigator.clipboard.writeText(codeText);
+
+          const copyIcon = btn.querySelector<SVGElement>(".code-copy-icon");
+          const checkIcon = btn.querySelector<SVGElement>(".code-check-icon");
+          const label = btn.querySelector<HTMLSpanElement>(".code-copy-label");
+
+          if (copyIcon) copyIcon.style.display = "none";
+          if (checkIcon) checkIcon.style.display = "block";
+          if (label) label.textContent = "Copied!";
+
+          btn.style.opacity = "1";
+          btn.style.color = "var(--color-success)";
+          btn.style.borderColor = "var(--color-success)";
+
+          setTimeout(() => {
+            if (copyIcon) copyIcon.style.display = "block";
+            if (checkIcon) checkIcon.style.display = "none";
+            if (label) label.textContent = "Copy";
+            btn.style.color = "";
+            btn.style.borderColor = "";
+            if (!btn.matches(":hover")) {
+              btn.style.opacity = "";
+            }
+          }, 2000);
+        } catch {
+          const label = btn.querySelector<HTMLSpanElement>(".code-copy-label");
+          if (label) label.textContent = "Failed";
+          setTimeout(() => {
+            if (label) label.textContent = "Copy";
+          }, 2000);
+        }
+      });
+    });
+  }
+
+  // Initialize on page load and after view transitions
+  initCopyButtons();
+  document.addEventListener("astro:page-load", initCopyButtons);
+</script>

@@ -1,0 +1,23 @@
+---
+/**
+ * MDX Components Collection
+ *
+ * This file serves as a reference and convenience wrapper for all MDX components.
+ * The actual MDX integration component map is in ./mdx-components.ts
+ *
+ * Available components:
+ *
+ * 1. Admonition - Styled callout boxes (note, tip, warning, error)
+ *    Usage: import Admonition from '../../components/mdx/Admonition.astro';
+ *
+ * 2. CodeBlock - Code blocks with copy button (auto-applied via mdx-components.ts)
+ *    Usage: Automatic for all fenced code blocks, or explicit import
+ *
+ * 3. Mermaid - Client-side Mermaid diagram rendering
+ *    Usage: import Mermaid from '../../components/react/Mermaid';
+ *
+ * Global config in astro.config.mjs applies CodeBlock to all <pre> elements.
+ */
+---
+
+<slot />

@@ -13,7 +13,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # 允许 Traefik Ingress 访问
+    # Allow Traefik Ingress controller
     - from:
         - namespaceSelector:
             matchLabels:
@@ -22,7 +22,7 @@ spec:
         - protocol: TCP
           port: 80
   egress:
-    # 允许 DNS 查询
+    # Allow DNS queries
     - to:
         - namespaceSelector: {}
       ports:
@@ -30,7 +30,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # 允许 HTTPS 出站（访问外部资源）
+    # Allow HTTPS egress (external resources)
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

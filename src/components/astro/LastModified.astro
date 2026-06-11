@@ -1,0 +1,25 @@
+---
+interface Props {
+  date: string;
+}
+
+const { date } = Astro.props;
+
+const formatted = new Date(date).toLocaleDateString("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+---
+
+<p class="last-modified">最后更新: <time datetime={date}>{formatted}</time></p>
+
+<style>
+  .last-modified {
+    margin-block-start: var(--space-10);
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-surface-2);
+    font-size: 0.8125rem;
+    color: var(--color-dim);
+  }
+</style>

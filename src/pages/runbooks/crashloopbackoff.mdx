@@ -1,0 +1,171 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "CrashLoopBackOff 排障手册"
+description: "Kubernetes Pod 处于 CrashLoopBackOff 状态的标准化排查流程，涵盖症状识别、根因分析与修复步骤。"
+---
+
+# CrashLoopBackOff 排障手册
+
+CrashLoopBackOff 是 Kubernetes 中最常见的 Pod 故障状态之一。当容器反复崩溃并超过 `restartPolicy` 定义的退避上限时，kubelet 会进入指数退避（exponential backoff）重启周期，等待时间从 10 秒逐步增加到 5 分钟。
+
+## 症状识别
+
+当 Pod 处于 CrashLoopBackOff 状态时，你会观察到以下现象：
+
+- `kubectl get pods` 显示 `STATUS` 为 `CrashLoopBackOff`，`RESTARTS` 计数持续增加
+- `kubectl describe pod` 的 Events 中反复出现 `Back-off restarting failed container`
+- Pod 每次启动后在数秒内退出，随后进入越来越长的等待周期
+- 服务不可用，相关 Deployment 的 Ready 副本数低于期望值
+
+```bash
+# 快速查看所有命名空间中 CrashLoopBackOff 的 Pod
+kubectl get pods -A | grep CrashLoopBackOff
+
+# 查看特定 Pod 的重启历史
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[*].lastState}'
+```
+
+## 根因分析
+
+CrashLoopBackOff 的本质是容器进程以非零退出码退出。常见根因按频率排序：
+
+1. **应用程序启动失败** — 缺少配置文件、环境变量未设置、数据库连接超时、依赖服务不可达
+2. **OOMKilled** — 容器内存使用超出 `resources.limits.memory`，被内核 OOM Killer 终止（退出码 137）
+3. **健康检查失败** — Liveness Probe 配置不合理，应用尚未就绪就被判定为不健康并杀死
+4. **权限问题** — SecurityContext 限制导致容器无法访问所需资源，如只读文件系统写入失败
+5. **镜像问题** — 镜像内入口点（ENTRYPOINT）脚本有误、缺少依赖库、架构不匹配
+6. **资源不足** — 节点 CPU/内存不足导致 Pod 无法被调度或被驱逐后反复重启
+
+## 诊断步骤
+
+### 第一步：获取退出码和最近日志
+
+退出码是判断根因的最重要线索。
+
+```bash
+# 查看容器退出码
+kubectl describe pod <pod-name> | grep -A5 "Last State"
+
+# 查看上一次崩溃的日志（关键！）
+kubectl logs <pod-name> --previous
+
+# 如果有多个容器，指定容器名
+kubectl logs <pod-name> -c <container-name> --previous
+
+# 查看最近 N 行
+kubectl logs <pod-name> --previous --tail=100
+```
+
+退出码速查：
+
+| 退出码 | 含义 | 方向 |
+|--------|------|------|
+| 0 | 正常退出（但 restartPolicy 为 Always 时仍会重启） | 检查 restartPolicy 配置 |
+| 1 | 应用错误 | 查看应用日志 |
+| 137 | OOMKilled 或 SIGKILL | 检查内存限制 |
+| 139 | SIGSEGV（段错误） | 检查镜像兼容性 |
+| 143 | SIGTERM（优雅终止） | 检查是否有 PreStop Hook 超时 |
+
+### 第二步：检查资源使用与限制
+
+```bash
+# 查看 Pod 的资源限制
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].resources}'
+
+# 查看实际内存使用（需要 metrics-server）
+kubectl top pod <pod-name>
+
+# 查看节点资源压力
+kubectl describe node <node-name> | grep -A10 "Conditions"
+```
+
+### 第三步：检查 Liveness / Readiness Probe
+
+```bash
+# 查看 Probe 配置
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].livenessProbe}' | jq .
+
+# 查看 Probe 失败事件
+kubectl describe pod <pod-name> | grep -i "unhealthy\|probe\|liveness\|readiness"
+```
+
+### 第四步：临时调试
+
+如果容器启动即崩溃无法进入，使用 debug 模式：
+
+```bash
+# 创建一个相同配置但覆盖入口点的调试 Pod
+kubectl debug <pod-name> -it --copy-to=<pod-name>-debug --container=<container-name> -- /bin/sh
+
+# 如果镜像没有 shell，使用 ephemeral container
+kubectl debug -it <pod-name> --image=busybox --target=<container-name>
+```
+
+## 修复步骤
+
+根据诊断结果选择对应的修复方案：
+
+### 应用配置错误
+
+```bash
+# 检查 ConfigMap / Secret 是否存在且内容正确
+kubectl get configmap <name> -o yaml
+kubectl get secret <name> -o yaml
+
+# 验证环境变量注入
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].env}' | jq .
+```
+
+修复配置后重建 Pod：
+
+```bash
+kubectl delete pod <pod-name>
+# Deployment 会自动创建新 Pod
+```
+
+### OOMKilled
+
+```bash
+# 提高内存限制
+kubectl patch deployment <deployment-name> -p \
+  '{"spec":{"template":{"spec":{"containers":[{"name":"<container-name>","resources":{"limits":{"memory":"512Mi"},"requests":{"memory":"256Mi"}}}]}}}}'
+```
+
+同时排查应用是否存在内存泄漏，而非简单提高限制。
+
+### Probe 配置不合理
+
+```bash
+# 增加 initialDelaySeconds，给应用更多启动时间
+# 增加 failureThreshold，容忍偶发失败
+kubectl patch deployment <deployment-name> --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/initialDelaySeconds","value":30},
+  {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/failureThreshold","value":5}
+]'
+```
+
+### 确认修复
+
+```bash
+# 观察新 Pod 状态
+kubectl get pod -w
+
+# 确认 Pod 进入 Running 且 Ready
+kubectl get pod <pod-name> -o wide
+
+# 验证重启计数不再增加
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[0].restartCount}'
+```
+
+<div class="admonition admonition--error">
+  <p class="admonition-title">警告：数据丢失风险</p>
+  <p>如果崩溃容器使用 emptyDir 卷存储数据，删除 Pod 将导致数据永久丢失。在删除 Pod 之前，确认持久化存储（PV/PVC）是否已正确配置。对于有状态应用（如数据库），务必先执行数据备份，再进行重启或迁移操作。</p>
+</div>
+
+## 预防措施
+
+- 为所有容器设置合理的 `resources.requests` 和 `resources.limits`
+- Liveness Probe 的 `initialDelaySeconds` 应大于应用预期启动时间
+- Readiness Probe 应在应用完全就绪后才返回成功
+- 使用 Pod Disruption Budget（PDB）限制同时崩溃的 Pod 数量
+- 在 CI/CD 流水线中加入镜像启动测试，提前发现 ENTRYPOINT 问题

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-atlas
+  namespace: wiki
+  labels:
+    app: sre-atlas
+    app.kubernetes.io/name: sre-atlas
+    app.kubernetes.io/part-of: sre-atlas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sre-atlas
+  template:
+    metadata:
+      labels:
+        app: sre-atlas
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: sre-atlas
+          image: ghcr.io/lin327/sre-wiki:latest
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101  # nginx user
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - sre-atlas
+                topologyKey: kubernetes.io/hostname

@@ -1,43 +1,59 @@
-# Astro Starter Kit: Minimal
+# SRE Atlas
 
-```sh
-npm create astro@latest -- --template minimal
+AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路。
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 框架 | Astro 6 + React 19 |
+| 样式 | Tailwind v4 + OKLCH 设计系统 |
+| 搜索 | Pagefind（支持中文） |
+| 内容 | MDX + wikilinks remark 插件 |
+| 部署 | Docker + nginx + k3s |
+
+## 快速开始
+
+```bash
+npm install
+npm run dev        # http://localhost:4321
+npm run build      # 构建 + Pagefind 索引
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## 项目结构
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+```
+src/
+├── components/     # React + Astro + MDX 组件
+├── layouts/        # BaseLayout（顶部导航 + TOC）
+├── lib/            # remark-wikilinks 插件
+├── pages/          # 21 个内容页面（7 分类）
+└── styles/         # OKLCH 设计系统
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+## 内容分类
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+| 分类 | 页面 |
+|------|------|
+| Linux | 进程模型、文件系统、网络栈、systemd |
+| Docker | 镜像分层、网络模式、存储驱动、Compose |
+| Kubernetes | Pod 生命周期、容器运行时、Service Mesh |
+| Runbook | CrashLoopBackOff、OOMKilled、ImagePullBackOff |
+| Architecture | 高可用集群、GitOps |
+| Incidents | etcd 数据损坏、DNS 解析失败 |
+| Comparisons | Helm vs Kustomize、Istio vs Linkerd |
 
-Any static assets, like images, can be placed in the `public/` directory.
+## 部署
 
-## 🧞 Commands
+```bash
+# Docker
+docker build -t sre-atlas .
+docker run -p 80:80 sre-atlas
 
-All commands are run from the root of the project, from a terminal:
+# k3s
+kubectl apply -f infra/k8s/
+```
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+## 相关仓库
 
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+- [sre-atlas-agent](https://github.com/lin327/sre-atlas-agent) — 内容采集 Agent

@@ -1,0 +1,79 @@
+site_name: SRE Atlas
+site_description: AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路
+site_url: https://wiki.tentative.me
+repo_url: https://github.com/lin327/sre-wiki
+
+docs_dir: wiki
+site_dir: site
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - scheme: slate
+      primary: blue grey
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: 切换到亮色模式
+    - scheme: default
+      primary: blue grey
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: 切换到暗色模式
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - i18n:
+      languages:
+        - locale: zh
+          default: true
+          name: 中文
+        - locale: en
+          name: English
+          build: false
+  - ezlinks:
+      wikilinks: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+      fallback_to_build_date: true
+  - mermaid2
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.mark
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: zh/index.md
+  - Linux: zh/linux/
+  - Docker: zh/docker/
+  - Kubernetes: zh/kubernetes/
+  - Runbook: zh/runbooks/
+  - Architecture: zh/architectures/
+  - Incidents: zh/incidents/
+  - Comparisons: zh/comparisons/

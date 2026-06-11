@@ -1,0 +1,8 @@
+mkdocs-material>=9.0
+mkdocs-ezlinks-plugin>=0.1
+mkdocs-static-i18n>=1.0.0
+mkdocs-git-revision-date-localized-plugin>=0.3
+mkdocs-mermaid2-plugin>=0.1
+feedparser>=6.0
+pyyaml>=6.0
+psycopg2-binary>=2.9

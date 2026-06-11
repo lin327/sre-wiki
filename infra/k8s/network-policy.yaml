@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sre-atlas-netpol
+  namespace: wiki
+  labels:
+    app: sre-atlas
+spec:
+  podSelector:
+    matchLabels:
+      app: sre-atlas
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 允许 Traefik Ingress 访问
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # 允许 DNS 查询
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 允许 HTTPS 出站（访问外部资源）
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

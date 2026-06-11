@@ -1,0 +1,94 @@
+rss:
+  - name: kubernetes
+    url: https://kubernetes.io/feed.xml
+    frequency: daily
+    enabled: true
+
+  - name: cncf
+    url: https://www.cncf.io/blog/feed/
+    frequency: daily
+    enabled: true
+
+  - name: netflix
+    url: https://netflixtechblog.com/feed
+    frequency: daily
+    enabled: true
+
+  - name: cloudflare
+    url: https://blog.cloudflare.com/rss/
+    frequency: daily
+    enabled: true
+
+  - name: segmentfault
+    url: https://segmentfault.com/blogs/feed
+    frequency: daily
+    enabled: true
+
+  - name: oschina
+    url: https://www.oschina.net/news/rss
+    frequency: daily
+    enabled: true
+
+github:
+  - repo: kubernetes/kubernetes
+    labels: [kind/bug]
+    min_comments: 10
+    limit: 20
+    frequency: weekly
+    enabled: true
+
+  - repo: etcd-io/etcd
+    labels: [type/bug]
+    min_comments: 5
+    limit: 10
+    frequency: weekly
+    enabled: true
+
+  - repo: argoproj/argo-cd
+    labels: [bug]
+    min_comments: 5
+    limit: 10
+    frequency: weekly
+    enabled: true
+
+  - repo: prometheus/prometheus
+    labels: [kind/bug]
+    min_comments: 5
+    limit: 10
+    frequency: weekly
+    enabled: true
+
+  - repo: grafana/grafana
+    labels: [type/bug]
+    min_comments: 10
+    limit: 10
+    frequency: weekly
+    enabled: true
+
+  - repo: helm/helm
+    labels: [bug]
+    min_comments: 5
+    limit: 10
+    frequency: weekly
+    enabled: true
+
+docs:
+  - name: sre-book
+    url: https://sre.google/sre-book/table-of-contents/
+    frequency: monthly
+    enabled: true
+
+  - name: sre-workbook
+    url: https://sre.google/workbook/table-of-contents/
+    frequency: monthly
+    enabled: true
+
+  - name: post-mortems
+    url: https://github.com/danluu/post-mortems
+    frequency: monthly
+    enabled: true
+
+  - name: k8s-troubleshooting
+    url: https://kubernetes.io/docs/tasks/debug/
+    frequency: monthly
+    enabled: true

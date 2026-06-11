@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sre-atlas
+  namespace: wiki
+  labels:
+    app: sre-atlas
+  annotations:
+    # cert-manager 自动签发证书
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Traefik 配置
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - wiki.tentative.me
+      secretName: sre-atlas-tls
+  rules:
+    - host: wiki.tentative.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sre-atlas
+                port:
+                  number: 80

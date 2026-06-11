@@ -1,7 +1,63 @@
+# ============================================
+# SRE Atlas .gitignore
+# ============================================
+
+# --- Build output ---
 site/
+
+# --- Python ---
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 *.egg-info/
-.DS_Store
+*.egg
+dist/
+build/
+eggs/
+*.whl
+
+# --- Environment ---
 .env
+.env.local
+.env.*.local
+
+# --- IDE ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# --- MkDocs ---
+# site/ already above
+
+# --- Project docs (local only) ---
+PLAN.md
+PROJECT.md
+
+# --- Impeccable skill (local config) ---
+.impeccable/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+
+# --- Node (if any JS tooling) ---
+node_modules/
+package-lock.json
+
+# --- Database ---
+db/
+*.sqlite
+*.sqlite3
+
+# --- Temp ---
+tmp/
+temp/
+.tmp/

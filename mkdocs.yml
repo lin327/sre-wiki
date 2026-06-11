@@ -6,19 +6,26 @@ repo_url: https://github.com/lin327/sre-wiki
 docs_dir: wiki/zh
 site_dir: site
 
+extra_css:
+  - stylesheets/extra.css
+
+
 theme:
   name: material
   language: zh
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
     - scheme: slate
-      primary: blue grey
-      accent: blue
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: 切换到亮色模式
     - scheme: default
-      primary: blue grey
-      accent: blue
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: 切换到暗色模式
@@ -41,7 +48,8 @@ plugins:
   - git-revision-date-localized:
       enable_creation_date: true
       fallback_to_build_date: true
-  - mermaid2
+  - mermaid2:
+      javascript: javascripts/mermaid.js
 
 markdown_extensions:
   - admonition

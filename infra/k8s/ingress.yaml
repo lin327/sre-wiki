@@ -6,13 +6,9 @@ metadata:
   labels:
     app: sre-atlas
   annotations:
-    # cert-manager automatic certificate issuance
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    # Traefik configuration
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
-  ingressClassName: traefik
+  ingressClassName: nginx
   tls:
     - hosts:
         - wiki.tentative.me

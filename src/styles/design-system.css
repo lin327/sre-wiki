@@ -373,34 +373,6 @@ a:hover {
   font-size: 0.875em;
 }
 
-.admonition {
-  position: relative;
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-md);
-  border-inline-start: 4px solid var(--color-info);
-  background-color: var(--color-surface);
-}
-
-.admonition--success {
-  border-inline-start-color: var(--color-success);
-}
-
-.admonition--warning {
-  border-inline-start-color: var(--color-warning);
-}
-
-.admonition--error {
-  border-inline-start-color: var(--color-error);
-}
-
-.admonition-title {
-  font-weight: 600;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  margin-block-end: var(--space-2);
-}
-
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -430,4 +402,377 @@ a:hover {
 
 .table code {
   font-size: 0.825em;
+}
+
+/* ============================================
+   Terminal-Inspired Code Blocks
+   ============================================ */
+
+.code-block {
+  position: relative;
+  background-color: oklch(0.090 0.005 60);
+  color: oklch(0.820 0.030 145);
+  border-radius: var(--radius-lg);
+  border: 1px solid oklch(0.180 0.005 230);
+  padding-top: calc(var(--space-5) + 2rem);
+  overflow: hidden;
+}
+
+/* macOS-style window chrome */
+.code-block::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  background-color: oklch(0.130 0.003 230);
+  border-block-end: 1px solid oklch(0.200 0.005 230);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Traffic light dots */
+.code-block::after {
+  content: '';
+  position: absolute;
+  top: 0.7rem;
+  left: 0.9rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background:
+    /* red dot */
+    radial-gradient(circle at 0.325rem 0.325rem, oklch(0.620 0.200 25) 0.25rem, transparent 0.26rem),
+    /* yellow dot */
+    radial-gradient(circle at 1.125rem 0.325rem, oklch(0.800 0.160 75) 0.25rem, transparent 0.26rem),
+    /* green dot */
+    radial-gradient(circle at 1.925rem 0.325rem, oklch(0.720 0.180 145) 0.25rem, transparent 0.26rem);
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 2;
+  width: 2.2rem;
+}
+
+/* CRT scanline overlay */
+.code-block .code-scanlines,
+.code-block.scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 2rem 0 0 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 2px,
+    oklch(0 0 0 / 0.03) 2px,
+    oklch(0 0 0 / 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* Amber terminal text variant */
+.code-block.code-amber,
+.code-amber .code-block {
+  color: oklch(0.800 0.080 75);
+}
+
+/* Green terminal text variant (default) */
+.code-block code {
+  color: inherit;
+  position: relative;
+  z-index: 2;
+}
+
+/* Subtle CRT glow on the block */
+.code-block {
+  box-shadow:
+    inset 0 0 60px oklch(0.550 0.105 230 / 0.03),
+    0 2px 8px oklch(0 0 0 / 0.3);
+}
+
+[data-theme="light"] .code-block {
+  background-color: oklch(0.960 0.003 60);
+  color: oklch(0.220 0.020 145);
+  border-color: oklch(0.880 0.005 230);
+  box-shadow:
+    inset 0 0 40px oklch(0 0 0 / 0.02),
+    0 2px 8px oklch(0 0 0 / 0.08);
+}
+
+[data-theme="light"] .code-block::before {
+  background-color: oklch(0.940 0.003 230);
+  border-block-end-color: oklch(0.900 0.005 230);
+}
+
+[data-theme="light"] .code-block.code-amber {
+  color: oklch(0.350 0.060 75);
+}
+
+/* ============================================
+   Smooth Page Transitions (View Transitions API)
+   ============================================ */
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes page-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+::view-transition-old(root) {
+  animation: page-fade-out 300ms var(--ease-out-expo) both;
+}
+
+::view-transition-new(root) {
+  animation: page-fade-in 300ms var(--ease-out-expo) both;
+}
+
+/* Opt specific elements out of the transition */
+::view-transition-old(hero),
+::view-transition-new(hero) {
+  animation: none;
+}
+
+/* ============================================
+   Scroll-Triggered Reveals
+   ============================================ */
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  animation: reveal-up 600ms var(--ease-out-expo) both;
+  animation-play-state: paused;
+  animation-delay: calc(var(--reveal-delay, 0) * 1ms);
+}
+
+/* Triggered state via IntersectionObserver or JS */
+.reveal.is-visible,
+.reveal[data-revealed] {
+  animation-play-state: running;
+}
+
+/* Stagger support — set --reveal-delay in ms */
+.reveal-stagger {
+  --reveal-delay: 0;
+}
+
+.reveal-stagger:nth-child(2) { --reveal-delay: 80; }
+.reveal-stagger:nth-child(3) { --reveal-delay: 160; }
+.reveal-stagger:nth-child(4) { --reveal-delay: 240; }
+.reveal-stagger:nth-child(5) { --reveal-delay: 320; }
+.reveal-stagger:nth-child(6) { --reveal-delay: 400; }
+.reveal-stagger:nth-child(7) { --reveal-delay: 480; }
+.reveal-stagger:nth-child(8) { --reveal-delay: 560; }
+
+/* Fallback: pure CSS scroll-driven reveal (progressive enhancement) */
+@supports (animation-timeline: view()) {
+  .reveal-auto {
+    opacity: 0;
+    transform: translateY(24px);
+    animation: reveal-up linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 100%;
+  }
+}
+
+/* ============================================
+   Hover Micro-Interactions
+   ============================================ */
+
+/* Links: underline slides in from left */
+a:not([class]),
+.prose a {
+  position: relative;
+  text-decoration: none;
+  background-image: linear-gradient(var(--color-primary-l), var(--color-primary-l));
+  background-size: 0% 1px;
+  background-position: 0% 100%;
+  background-repeat: no-repeat;
+  transition:
+    background-size var(--motion-normal) var(--ease-out-expo),
+    color var(--motion-fast) ease;
+}
+
+a:not([class]):hover,
+.prose a:hover {
+  background-size: 100% 1px;
+  text-decoration: none;
+}
+
+/* Cards / surfaces: gentle lift */
+.card,
+.surface,
+.surface-card {
+  transition:
+    transform var(--motion-normal) var(--ease-out-expo),
+    box-shadow var(--motion-normal) var(--ease-out-expo);
+}
+
+.card:hover,
+.surface:hover,
+.surface-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.15);
+}
+
+[data-theme="light"] .card:hover,
+[data-theme="light"] .surface:hover,
+[data-theme="light"] .surface-card:hover {
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.08);
+}
+
+/* Buttons: scale on hover/active */
+button,
+.btn,
+[role="button"],
+input[type="submit"] {
+  transition:
+    transform var(--motion-fast) var(--ease-out-expo),
+    box-shadow var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+
+button:hover,
+.btn:hover,
+[role="button"]:hover,
+input[type="submit"]:hover {
+  transform: scale(1.02);
+}
+
+button:active,
+.btn:active,
+[role="button"]:active,
+input[type="submit"]:active {
+  transform: scale(0.98);
+}
+
+/* Nav items: background slide */
+nav a,
+.nav-item {
+  position: relative;
+  z-index: 0;
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+
+nav a::before,
+.nav-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--motion-normal) var(--ease-out-expo);
+  z-index: -1;
+}
+
+nav a:hover::before,
+.nav-item:hover::before {
+  transform: scaleX(1);
+}
+
+/* ============================================
+   Glow Effects
+   ============================================ */
+
+.glow-primary {
+  box-shadow: 0 0 20px oklch(0.550 0.105 230.0 / 0.3);
+}
+
+.glow-accent {
+  box-shadow: 0 0 20px oklch(0.650 0.150 175.0 / 0.3);
+}
+
+/* Subtle glow variant for interactive elements */
+.glow-primary-subtle {
+  box-shadow: 0 0 12px oklch(0.550 0.105 230.0 / 0.15);
+  transition: box-shadow var(--motion-normal) var(--ease-out-expo);
+}
+
+.glow-primary-subtle:hover {
+  box-shadow: 0 0 24px oklch(0.550 0.105 230.0 / 0.35);
+}
+
+.glow-accent-subtle {
+  box-shadow: 0 0 12px oklch(0.650 0.150 175.0 / 0.15);
+  transition: box-shadow var(--motion-normal) var(--ease-out-expo);
+}
+
+.glow-accent-subtle:hover {
+  box-shadow: 0 0 24px oklch(0.650 0.150 175.0 / 0.35);
+}
+
+/* ============================================
+   Typing Cursor Effect
+   ============================================ */
+
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.typing-cursor::after {
+  content: '\2588';
+  display: inline;
+  color: var(--color-primary-l);
+  font-weight: 400;
+  margin-inline-start: 0.05em;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* Amber cursor variant */
+.typing-cursor.cursor-amber::after {
+  color: oklch(0.800 0.080 75);
+}
+
+/* ============================================
+   Enhanced Selection Styling
+   ============================================ */
+
+::selection {
+  background-color: oklch(0.550 0.105 230.0 / 0.35);
+  color: var(--color-ink);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+::-moz-selection {
+  background-color: oklch(0.550 0.105 230.0 / 0.35);
+  color: var(--color-ink);
+}
+
+[data-theme="light"] ::selection {
+  background-color: oklch(0.550 0.120 230.0 / 0.25);
 }

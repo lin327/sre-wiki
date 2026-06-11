@@ -1,0 +1,152 @@
+---
+type BadgeType =
+  | "linux"
+  | "docker"
+  | "kubernetes"
+  | "runbook"
+  | "architecture"
+  | "incident"
+  | "comparison";
+
+interface Props {
+  type: BadgeType;
+  label?: string;
+}
+
+const { type, label } = Astro.props;
+
+const typeConfig: Record<BadgeType, { label: string; className: string }> = {
+  linux: { label: "Linux", className: "badge--linux" },
+  docker: { label: "Docker", className: "badge--docker" },
+  kubernetes: { label: "Kubernetes", className: "badge--kubernetes" },
+  runbook: { label: "Runbook", className: "badge--runbook" },
+  architecture: { label: "Architecture", className: "badge--architecture" },
+  incident: { label: "Incident", className: "badge--incident" },
+  comparison: { label: "Comparison", className: "badge--comparison" },
+};
+
+const config = typeConfig[type];
+const displayLabel = label || config.label;
+---
+
+<span class:list={["badge", config.className]}>
+  {displayLabel}
+</span>
+
+<style>
+  /* ============================================
+     Badge — Scoped Styles
+     ============================================ */
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15em 0.65em;
+    border-radius: 999px;
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    user-select: none;
+    border: 1px solid transparent;
+    transition:
+      background-color var(--motion-fast) ease,
+      border-color var(--motion-fast) ease,
+      color var(--motion-fast) ease;
+  }
+
+  /* ============================================
+     Type Colors — Dark Theme
+     ============================================ */
+
+  .badge--linux {
+    background-color: oklch(0.40 0.08 250 / 0.20);
+    color: oklch(0.75 0.10 250);
+    border-color: oklch(0.50 0.10 250 / 0.25);
+  }
+
+  .badge--docker {
+    background-color: oklch(0.40 0.10 230 / 0.20);
+    color: oklch(0.75 0.12 230);
+    border-color: oklch(0.50 0.12 230 / 0.25);
+  }
+
+  .badge--kubernetes {
+    background-color: oklch(0.40 0.10 270 / 0.20);
+    color: oklch(0.72 0.12 270);
+    border-color: oklch(0.50 0.12 270 / 0.25);
+  }
+
+  .badge--runbook {
+    background-color: oklch(0.45 0.08 175 / 0.20);
+    color: oklch(0.78 0.10 175);
+    border-color: oklch(0.55 0.10 175 / 0.25);
+  }
+
+  .badge--architecture {
+    background-color: oklch(0.40 0.12 300 / 0.20);
+    color: oklch(0.72 0.14 300);
+    border-color: oklch(0.50 0.14 300 / 0.25);
+  }
+
+  .badge--incident {
+    background-color: oklch(0.40 0.15 25 / 0.20);
+    color: oklch(0.72 0.18 25);
+    border-color: oklch(0.50 0.18 25 / 0.25);
+  }
+
+  .badge--comparison {
+    background-color: oklch(0.42 0.08 55 / 0.20);
+    color: oklch(0.78 0.10 55);
+    border-color: oklch(0.52 0.10 55 / 0.25);
+  }
+
+  /* ============================================
+     Light Theme Overrides
+     ============================================ */
+
+  [data-theme="light"] .badge--linux {
+    background-color: oklch(0.92 0.04 250 / 0.50);
+    color: oklch(0.35 0.10 250);
+    border-color: oklch(0.70 0.08 250 / 0.40);
+  }
+
+  [data-theme="light"] .badge--docker {
+    background-color: oklch(0.92 0.05 230 / 0.50);
+    color: oklch(0.35 0.12 230);
+    border-color: oklch(0.70 0.10 230 / 0.40);
+  }
+
+  [data-theme="light"] .badge--kubernetes {
+    background-color: oklch(0.92 0.05 270 / 0.50);
+    color: oklch(0.35 0.12 270);
+    border-color: oklch(0.70 0.10 270 / 0.40);
+  }
+
+  [data-theme="light"] .badge--runbook {
+    background-color: oklch(0.93 0.04 175 / 0.50);
+    color: oklch(0.35 0.08 175);
+    border-color: oklch(0.72 0.06 175 / 0.40);
+  }
+
+  [data-theme="light"] .badge--architecture {
+    background-color: oklch(0.92 0.06 300 / 0.50);
+    color: oklch(0.35 0.12 300);
+    border-color: oklch(0.70 0.10 300 / 0.40);
+  }
+
+  [data-theme="light"] .badge--incident {
+    background-color: oklch(0.94 0.06 25 / 0.50);
+    color: oklch(0.40 0.15 25);
+    border-color: oklch(0.72 0.12 25 / 0.40);
+  }
+
+  [data-theme="light"] .badge--comparison {
+    background-color: oklch(0.94 0.04 55 / 0.50);
+    color: oklch(0.38 0.08 55);
+    border-color: oklch(0.72 0.06 55 / 0.40);
+  }
+</style>

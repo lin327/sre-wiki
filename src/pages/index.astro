@@ -8,58 +8,106 @@ interface QuickLink {
   icon: string;
 }
 
+interface LatestPage {
+  title: string;
+  href: string;
+  category: string;
+  categoryColor: string;
+}
+
 const quickLinks: QuickLink[] = [
   {
     title: "故障排障",
     description: "常见生产故障的标准化排查流程，从 CrashLoopBackOff 到 OOMKilled，快速定位根因。",
     href: "/runbooks/crashloopbackoff",
-    icon: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
+    icon: `<rect x="2" y="3" width="20" height="14" rx="2" ry="2" stroke-width="1.5" fill="none" stroke="currentColor"/><line x1="6" y1="8" x2="10" y2="8" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><line x1="6" y1="11" x2="14" y2="11" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><polyline points="17 8 19 10 17 12" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><line x1="6" y1="19" x2="18" y2="19" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/>`,
   },
   {
     title: "技术架构",
     description: "深入理解 Kubernetes Pod 生命周期、容器编排机制与集群调度原理。",
     href: "/kubernetes/pod-lifecycle",
-    icon: "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9",
+    icon: `<path d="M12 2L2 7l10 5 10-5-10-5z" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linejoin="round"/><path d="M2 17l10 5 10-5" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12l10 5 10-5" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
   },
   {
     title: "系统基础",
     description: "Linux 进程模型、文件系统、内存管理等核心概念，构建运维知识根基。",
     href: "/linux/process-model",
-    icon: "M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z",
+    icon: `<rect x="5" y="2" width="14" height="20" rx="2" ry="2" stroke-width="1.5" fill="none" stroke="currentColor"/><line x1="9" y1="18" x2="15" y2="18" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><path d="M9 6h6" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><path d="M9 9h4" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/>`,
   },
+];
+
+const latestPages: LatestPage[] = [
+  { title: "Service Mesh 架构对比", href: "/kubernetes/service-mesh", category: "Kubernetes", categoryColor: "var(--color-info)" },
+  { title: "GitOps Pipeline 实践", href: "/architectures/gitops-pipeline", category: "Architecture", categoryColor: "var(--color-accent)" },
+  { title: "DNS 解析故障排查", href: "/incidents/dns-resolution-failure", category: "Incident", categoryColor: "var(--color-error)" },
+  { title: "Helm vs Kustomize", href: "/comparisons/helm-vs-kustomize", category: "Comparison", categoryColor: "var(--color-warning)" },
+  { title: "Docker 存储驱动", href: "/docker/storage", category: "Docker", categoryColor: "var(--color-primary-l)" },
+  { title: "systemd 服务管理", href: "/linux/systemd", category: "Linux", categoryColor: "var(--color-success)" },
 ];
 ---
 
 <BaseLayout title="SRE Atlas" description="AI 驱动的运维知识库，覆盖 Linux、Docker、Kubernetes 全链路">
   <!-- Hero Section -->
-  <section class="hero">
-    <div class="hero-badge">SRE Knowledge Base</div>
-    <h1 class="hero-title">SRE Atlas</h1>
-    <p class="hero-subtitle">
-      AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路
-    </p>
-    <div class="hero-actions">
-      <a href="/runbooks/crashloopbackoff" class="btn btn--primary">开始排障</a>
-      <a href="/linux/process-model" class="btn btn--ghost">浏览知识库</a>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero__grid-bg" aria-hidden="true"></div>
+    <div class="hero__scanline" aria-hidden="true"></div>
+
+    <div class="hero__content">
+      <div class="hero__badge">
+        <span class="hero__badge-dot"></span>
+        <span>SRE Knowledge Base v2.0</span>
+      </div>
+
+      <h1 id="hero-title" class="hero__title">
+        <span class="hero__title-text" data-typing>SRE Atlas</span>
+        <span class="hero__cursor" aria-hidden="true"></span>
+      </h1>
+
+      <p class="hero__subtitle">
+        <span class="hero__subtitle-inner">AI 驱动的运维知识库</span>
+      </p>
+
+      <div class="hero__chain">
+        <span class="hero__chain-item" style="--i:0">Linux</span>
+        <span class="hero__chain-arrow" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 10h12m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="hero__chain-item" style="--i:1">Docker</span>
+        <span class="hero__chain-arrow" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 10h12m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="hero__chain-item" style="--i:2">Kubernetes</span>
+      </div>
     </div>
   </section>
 
-  <!-- Quick Entry Grid -->
-  <section class="quick-links" aria-labelledby="quick-links-heading">
-    <h2 id="quick-links-heading" class="section-label">快速入口</h2>
-    <div class="card-grid">
-      {quickLinks.map((link) => (
-        <a href={link.href} class="card">
-          <div class="card-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24">
-              <path stroke-linecap="round" stroke-linejoin="round" d={link.icon} />
-            </svg>
+  <!-- Stats Bar -->
+  <section class="stats" aria-label="Site statistics">
+    <div class="stats__inner">
+      <span class="stats__prompt" aria-hidden="true">$</span>
+      <span class="stats__text" data-typing-stats>21 篇文档 · 7 个分类 · 持续更新中</span>
+      <span class="stats__cursor" aria-hidden="true"></span>
+    </div>
+  </section>
+
+  <!-- Quick Entry Cards -->
+  <section class="cards" aria-labelledby="cards-heading">
+    <h2 id="cards-heading" class="cards__label">快速入口</h2>
+    <div class="cards__grid">
+      {quickLinks.map((link, i) => (
+        <a href={link.href} class="cards__item" style={`--delay:${i}`}>
+          <div class="cards__icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" set:html={link.icon} />
           </div>
-          <h3 class="card-title">{link.title}</h3>
-          <p class="card-desc">{link.description}</p>
-          <span class="card-link">
+          <h3 class="cards__title">{link.title}</h3>
+          <p class="cards__desc">{link.description}</p>
+          <span class="cards__link">
             查看文档
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
               <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
             </svg>
           </span>
@@ -68,150 +116,279 @@ const quickLinks: QuickLink[] = [
     </div>
   </section>
 
-  <!-- Scope Banner -->
-  <section class="scope-banner" aria-labelledby="scope-heading">
-    <h2 id="scope-heading" class="section-label">知识体系</h2>
-    <div class="scope-chain">
-      <div class="scope-node">
-        <span class="scope-node-label">Linux</span>
-        <span class="scope-node-detail">进程 / 文件系统 / 内存</span>
-      </div>
-      <div class="scope-arrow" aria-hidden="true">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
-          <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
-        </svg>
-      </div>
-      <div class="scope-node">
-        <span class="scope-node-label">Docker</span>
-        <span class="scope-node-detail">镜像 / 网络 / 存储</span>
-      </div>
-      <div class="scope-arrow" aria-hidden="true">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
-          <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
-        </svg>
-      </div>
-      <div class="scope-node">
-        <span class="scope-node-label">Kubernetes</span>
-        <span class="scope-node-detail">Pod / Service / 调度</span>
-      </div>
-    </div>
+  <!-- Latest Updates -->
+  <section class="updates" aria-labelledby="updates-heading">
+    <h2 id="updates-heading" class="updates__label">最近更新</h2>
+    <ul class="updates__list">
+      {latestPages.map((page, i) => (
+        <li class="updates__item" style={`--delay:${i}`}>
+          <a href={page.href} class="updates__link">
+            <span class="updates__title">{page.title}</span>
+            <span class="updates__badge" style={`--badge-color:${page.categoryColor}`}>{page.category}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
   </section>
+
+  <!-- Footer flourish -->
+  <footer class="home-footer">
+    <div class="home-footer__line" aria-hidden="true"></div>
+    <p class="home-footer__text">
+      <span class="home-footer__bracket">[</span>
+      SRE Atlas — Built for operators, by operators
+      <span class="home-footer__bracket">]</span>
+    </p>
+  </footer>
 </BaseLayout>
 
 <style>
-  /* Hero */
+  /* ============================================
+     Hero Section
+     ============================================ */
   .hero {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: clamp(28rem, 40vh, 40rem);
+    padding: var(--space-12) var(--space-4);
+    overflow: hidden;
+  }
+
+  /* CSS-only animated grid background */
+  .hero__grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--color-surface-2) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-surface-2) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 20%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 20%, transparent 70%);
+    animation: grid-drift 20s linear infinite;
+  }
+
+  @keyframes grid-drift {
+    from { background-position: 0 0, 0 0; }
+    to { background-position: 60px 60px, 60px 60px; }
+  }
+
+  /* Subtle scanline overlay */
+  .hero__scanline {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      oklch(0 0 0 / 0.03) 2px,
+      oklch(0 0 0 / 0.03) 4px
+    );
+    pointer-events: none;
+  }
+
+  .hero__content {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    padding-block: var(--space-12);
-    padding-inline: var(--space-4);
   }
 
-  .hero-badge {
+  /* Badge */
+  .hero__badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.25rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-accent);
-    border: 1px solid var(--color-accent);
+    gap: 0.5rem;
+    padding: 0.3rem 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    color: var(--color-success);
+    border: 1px solid oklch(0.700 0.180 145.0 / 0.25);
     border-radius: 999px;
-    margin-block-end: var(--space-6);
-    opacity: 0.85;
-  }
-
-  .hero-title {
-    font-size: clamp(3rem, 1.5rem + 6vw, 5.5rem);
-    font-weight: 800;
-    line-height: 1.05;
-    letter-spacing: -0.03em;
-    background: linear-gradient(135deg, var(--color-ink) 0%, var(--color-accent) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-block-end: var(--space-4);
-  }
-
-  .hero-subtitle {
-    font-size: clamp(1rem, 0.875rem + 0.625vw, 1.25rem);
-    color: var(--color-muted);
-    max-width: 36ch;
-    line-height: 1.6;
     margin-block-end: var(--space-8);
+    animation: fade-in 0.8s var(--ease-out-expo) both;
   }
 
-  .hero-actions {
+  .hero__badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-success);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Title with typing animation */
+  .hero__title {
+    font-family: var(--font-mono);
+    font-size: clamp(3rem, 1.5rem + 7vw, 6rem);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--color-ink);
+    margin-block-end: var(--space-6);
     display: flex;
+    align-items: baseline;
+    gap: 0;
+  }
+
+  .hero__title-text {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    border-right: none;
+    animation: typing 1.2s steps(10) 0.6s both;
+    width: 0;
+  }
+
+  @keyframes typing {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+
+  /* Blinking cursor */
+  .hero__cursor {
+    display: inline-block;
+    width: 3px;
+    height: 0.9em;
+    background: var(--color-success);
+    margin-left: 4px;
+    vertical-align: baseline;
+    animation: blink 0.8s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Subtitle */
+  .hero__subtitle {
+    font-size: clamp(1rem, 0.875rem + 0.6vw, 1.25rem);
+    color: var(--color-muted);
+    margin-block-end: var(--space-8);
+    opacity: 0;
+    animation: fade-in 0.8s var(--ease-out-expo) 1.8s both;
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Tech chain */
+  .hero__chain {
+    display: flex;
+    align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
     justify-content: center;
   }
 
-  /* Buttons */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    font-size: 0.9rem;
+  .hero__chain-item {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
     font-weight: 600;
-    text-decoration: none;
-    border-radius: var(--radius-md);
-    transition: all var(--motion-normal) var(--ease-out-expo);
-  }
-
-  .btn--primary {
-    background: var(--color-primary);
-    color: oklch(0.98 0 0);
-  }
-
-  .btn--primary:hover {
-    background: var(--color-primary-l);
-    text-decoration: none;
-    transform: translateY(-1px);
-  }
-
-  .btn--ghost {
-    color: var(--color-muted);
+    padding: 0.35rem 0.9rem;
     border: 1px solid var(--color-surface-3);
-  }
-
-  .btn--ghost:hover {
+    border-radius: var(--radius-md);
     color: var(--color-ink);
-    border-color: var(--color-muted);
-    text-decoration: none;
+    background: var(--color-surface);
+    opacity: 0;
+    animation: fade-in 0.6s var(--ease-out-expo) calc(2.4s + var(--i) * 0.35s) both;
   }
 
-  /* Section Label */
-  .section-label {
-    font-size: 0.75rem;
-    font-weight: 600;
+  .hero__chain-arrow {
+    color: var(--color-dim);
+    flex-shrink: 0;
+    opacity: 0;
+    animation: fade-in 0.4s var(--ease-out-expo) calc(2.6s + var(--i, 0) * 0.35s) both;
+  }
+
+  /* ============================================
+     Stats Bar
+     ============================================ */
+  .stats {
+    padding: var(--space-4) var(--space-4);
+    border-top: 1px solid var(--color-surface-2);
+    border-bottom: 1px solid var(--color-surface-2);
+    background: var(--color-surface);
+  }
+
+  .stats__inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--color-success);
+  }
+
+  .stats__prompt {
+    color: var(--color-success);
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+
+  .stats__text {
+    overflow: hidden;
+    white-space: nowrap;
+    width: 0;
+    animation: typing-stats 1.8s steps(22) 3.8s both;
+  }
+
+  @keyframes typing-stats {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+
+  .stats__cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: var(--color-success);
+    animation: blink 0.8s step-end infinite;
+    flex-shrink: 0;
+  }
+
+  /* ============================================
+     Quick Entry Cards
+     ============================================ */
+  .cards {
+    padding: var(--space-12) var(--space-4);
+    max-width: 72rem;
+    margin: 0 auto;
+  }
+
+  .cards__label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--color-muted);
+    letter-spacing: 0.12em;
+    color: var(--color-dim);
     margin-block-end: var(--space-6);
   }
 
-  /* Quick Links */
-  .quick-links {
-    padding-block-start: var(--space-8);
-    padding-block-end: var(--space-12);
-    padding-inline: var(--space-4);
-    max-width: 72rem;
-    margin-inline: auto;
-  }
-
-  .card-grid {
+  .cards__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: var(--space-5);
   }
 
-  .card {
+  .cards__item {
+    position: relative;
     display: flex;
     flex-direction: column;
     padding: var(--space-6);
@@ -220,106 +397,241 @@ const quickLinks: QuickLink[] = [
     border-radius: var(--radius-xl);
     text-decoration: none;
     color: inherit;
-    transition: all var(--motion-normal) var(--ease-out-expo);
+    transition:
+      transform var(--motion-normal) var(--ease-out-expo),
+      border-color var(--motion-normal) ease,
+      box-shadow var(--motion-normal) ease;
+    opacity: 0;
+    animation: card-reveal 0.7s var(--ease-out-expo) calc(4.5s + var(--delay) * 0.15s) both;
   }
 
-  .card:hover {
-    border-color: var(--color-accent);
-    background: var(--color-surface-2);
-    transform: translateY(-2px);
+  @keyframes card-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .cards__item:hover {
+    transform: translateY(-4px);
+    border-color: var(--color-primary);
+    box-shadow:
+      0 0 0 1px var(--color-primary),
+      0 8px 32px oklch(0.550 0.105 230.0 / 0.12),
+      0 2px 8px oklch(0 0 0 / 0.2);
     text-decoration: none;
   }
 
-  .card-icon {
+  .cards__item:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .cards__icon {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 40px;
     height: 40px;
     border-radius: var(--radius-md);
-    background: var(--color-surface-3);
-    color: var(--color-accent);
+    background: var(--color-surface-2);
+    color: var(--color-primary-l);
     margin-block-end: var(--space-4);
+    transition: background var(--motion-normal) ease, color var(--motion-normal) ease;
   }
 
-  .card-title {
-    font-size: 1.125rem;
+  .cards__item:hover .cards__icon {
+    background: oklch(0.550 0.105 230.0 / 0.15);
+    color: var(--color-primary-l);
+  }
+
+  .cards__title {
+    font-size: 1.1rem;
     font-weight: 650;
     margin-block-end: var(--space-2);
+    color: var(--color-ink);
   }
 
-  .card-desc {
-    font-size: 0.875rem;
+  .cards__desc {
+    font-size: 0.85rem;
     color: var(--color-muted);
-    line-height: 1.6;
+    line-height: 1.65;
     flex: 1;
     margin-block-end: var(--space-4);
   }
 
-  .card-link {
+  .cards__link {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    font-size: 0.8125rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
     font-weight: 600;
-    color: var(--color-accent);
+    color: var(--color-primary-l);
+    transition: gap var(--motion-fast) ease;
   }
 
-  .card:hover .card-link {
+  .cards__item:hover .cards__link {
     gap: 0.5rem;
   }
 
-  /* Scope Banner */
-  .scope-banner {
-    padding-block: var(--space-10);
-    padding-inline: var(--space-4);
+  /* ============================================
+     Latest Updates
+     ============================================ */
+  .updates {
+    padding: var(--space-10) var(--space-4) var(--space-12);
     max-width: 72rem;
-    margin-inline: auto;
+    margin: 0 auto;
     border-top: 1px solid var(--color-surface-2);
   }
 
-  .scope-chain {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-4);
-    flex-wrap: wrap;
+  .updates__label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--color-dim);
+    margin-block-end: var(--space-6);
   }
 
-  .scope-node {
+  .updates__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-    padding: var(--space-4) var(--space-6);
-    background: var(--color-surface);
-    border: 1px solid var(--color-surface-2);
+    gap: 1px;
+    background: var(--color-surface-2);
     border-radius: var(--radius-lg);
+    overflow: hidden;
   }
 
-  .scope-node-label {
-    font-size: 1rem;
-    font-weight: 700;
+  .updates__item {
+    opacity: 0;
+    animation: item-reveal 0.5s var(--ease-out-expo) calc(5.2s + var(--delay) * 0.1s) both;
+  }
+
+  @keyframes item-reveal {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .updates__link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    background: var(--color-surface);
+    text-decoration: none;
+    color: inherit;
+    transition: background var(--motion-fast) ease;
+  }
+
+  .updates__link:hover {
+    background: var(--color-surface-2);
+    text-decoration: none;
+  }
+
+  .updates__title {
+    font-size: 0.9rem;
+    font-weight: 500;
     color: var(--color-ink);
+    transition: color var(--motion-fast) ease;
   }
 
-  .scope-node-detail {
-    font-size: 0.75rem;
-    color: var(--color-muted);
+  .updates__link:hover .updates__title {
+    color: var(--color-primary-l);
   }
 
-  .scope-arrow {
-    color: var(--color-surface-3);
+  .updates__badge {
     flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-sm);
+    color: var(--badge-color, var(--color-muted));
+    background: var(--color-surface);
+    border: 1px solid var(--color-surface-3);
   }
 
+  /* ============================================
+     Footer
+     ============================================ */
+  .home-footer {
+    padding: var(--space-8) var(--space-4) var(--space-10);
+    text-align: center;
+  }
+
+  .home-footer__line {
+    width: 40px;
+    height: 1px;
+    background: var(--color-surface-3);
+    margin: 0 auto var(--space-6);
+  }
+
+  .home-footer__text {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-dim);
+    letter-spacing: 0.04em;
+  }
+
+  .home-footer__bracket {
+    color: var(--color-surface-3);
+  }
+
+  /* ============================================
+     Responsive
+     ============================================ */
   @media (max-width: 640px) {
-    .scope-arrow {
-      transform: rotate(90deg);
+    .hero {
+      min-height: clamp(20rem, 35vh, 30rem);
+      padding: var(--space-10) var(--space-4);
     }
 
-    .scope-chain {
+    .hero__title {
+      font-size: clamp(2.2rem, 1.2rem + 5vw, 3.5rem);
+    }
+
+    .hero__chain {
+      gap: var(--space-2);
+    }
+
+    .hero__chain-item {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+    }
+
+    .hero__chain-arrow {
+      display: none;
+    }
+
+    .stats__inner {
+      font-size: 0.7rem;
+    }
+
+    .cards__grid {
+      grid-template-columns: 1fr;
+    }
+
+    .updates__link {
       flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-2);
     }
   }
 </style>

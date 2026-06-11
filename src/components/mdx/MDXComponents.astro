@@ -7,14 +7,35 @@
  *
  * Available components:
  *
- * 1. Admonition - Styled callout boxes (note, tip, warning, error)
- *    Usage: import Admonition from '../../components/mdx/Admonition.astro';
+ * 1. Admonition — Styled callout boxes with type-colored glow and gradient.
+ *    Types: note, tip, warning, error
+ *    Usage:
+ *      import Admonition from '../../components/mdx/Admonition.astro';
+ *      <Admonition type="warning" title="Heads up">
+ *        Something important here.
+ *      </Admonition>
  *
- * 2. CodeBlock - Code blocks with copy button (auto-applied via mdx-components.ts)
+ * 2. Callout — Lightweight inline callout for quick notes within paragraphs.
+ *    Variants: default, success, warning, error
+ *    Usage:
+ *      import Callout from '../../components/mdx/Callout.astro';
+ *      <Callout variant="success">Remember to flush the cache.</Callout>
+ *
+ * 3. Badge — Small pill-shaped category tags for sidebar and page metadata.
+ *    Types: linux, docker, kubernetes, runbook, architecture, incident, comparison
+ *    Usage:
+ *      import Badge from '../../components/mdx/Badge.astro';
+ *      <Badge type="docker" />
+ *      <Badge type="linux" label="Debian" />
+ *
+ * 4. Card — Content card with hover lift and border glow for navigation.
+ *    Props: title, description, href, icon
+ *    Usage:
+ *      import Card from '../../components/mdx/Card.astro';
+ *      <Card title="Getting Started" description="Quick setup guide" href="/docs/start" />
+ *
+ * 5. CodeBlock — Code blocks with copy button (auto-applied via mdx-components.ts)
  *    Usage: Automatic for all fenced code blocks, or explicit import
- *
- * 3. Mermaid - Client-side Mermaid diagram rendering
- *    Usage: import Mermaid from '../../components/react/Mermaid';
  *
  * Global config in astro.config.mjs applies CodeBlock to all <pre> elements.
  */

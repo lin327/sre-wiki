@@ -5,170 +5,607 @@ interface Props {
 }
 
 const { code, class: className } = Astro.props;
-
-// Extract text content from the slot for the copy button
-// The code prop is passed explicitly when available
 ---
 
-<div class:list={["code-block-wrapper", className]}>
-  <button
-    type="button"
-    class="code-copy-btn"
-    aria-label="Copy code to clipboard"
-    data-code={code}
-  >
-    <svg
-      class="code-copy-icon"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-    </svg>
-    <svg
-      class="code-check-icon"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      style="display: none;"
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-    <span class="code-copy-label">Copy</span>
-  </button>
-  <div class="code-block">
+<div class:list={["terminal", className]} data-code={code}>
+  <!-- JS builds the terminal header and line numbers after mount -->
+  <div class="terminal-body">
     <slot />
   </div>
 </div>
 
 <style>
-  .code-block-wrapper {
+  /* =============================================
+     Terminal Window
+     ============================================= */
+
+  .terminal {
     position: relative;
     margin-block: var(--space-6);
+    border: 1px solid oklch(0.200 0.005 260);
+    border-radius: 8px;
+    overflow: hidden;
+    background: oklch(0.060 0.005 260);
+    box-shadow:
+      0 4px 24px oklch(0 0 0 / 0.4),
+      0 1px 3px oklch(0 0 0 / 0.2);
+    transition:
+      transform var(--motion-normal) var(--ease-out-expo),
+      box-shadow var(--motion-normal) var(--ease-out-expo);
   }
 
-  .code-copy-btn {
-    position: absolute;
-    top: var(--space-3);
-    right: var(--space-3);
-    z-index: 2;
+  .terminal:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 8px 32px oklch(0 0 0 / 0.5),
+      0 2px 6px oklch(0 0 0 / 0.3);
+  }
+
+  /* =============================================
+     Terminal Header Bar
+     ============================================= */
+
+  :global(.terminal-header) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 1rem;
+    background: oklch(0.080 0.005 260);
+    border-bottom: 1px solid oklch(0.140 0.005 260);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  :global(.terminal-dots) {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  :global(.terminal-dot) {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  :global(.terminal-dot--red) {
+    background: #ff5f56;
+  }
+
+  :global(.terminal-dot--yellow) {
+    background: #ffbd2e;
+  }
+
+  :global(.terminal-dot--green) {
+    background: #27c93f;
+  }
+
+  :global(.terminal-header-right) {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  :global(.terminal-lang) {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: oklch(0.450 0.010 260);
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+  }
+
+  /* =============================================
+     Copy Button
+     ============================================= */
+
+  :global(.terminal-copy-btn) {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--color-surface-3);
-    border-radius: var(--radius-md);
-    background-color: var(--color-surface-2);
-    color: var(--color-muted);
-    font-family: var(--font-sans);
-    font-size: 0.75rem;
-    font-weight: 500;
-    line-height: 1;
+    gap: 0.35rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid oklch(0.200 0.005 260);
+    border-radius: 4px;
+    background: transparent;
+    color: oklch(0.450 0.010 260);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
     cursor: pointer;
     opacity: 0;
     transition:
       opacity var(--motion-fast) ease,
-      background-color var(--motion-fast) ease,
-      color var(--motion-fast) ease;
+      color var(--motion-fast) ease,
+      border-color var(--motion-fast) ease,
+      background-color var(--motion-fast) ease;
   }
 
-  .code-block-wrapper:hover .code-copy-btn {
+  :global(.terminal-copy-btn:hover) {
+    color: oklch(0.700 0.010 260);
+    border-color: oklch(0.300 0.010 260);
+    background: oklch(0.100 0.005 260);
+  }
+
+  :global(.terminal-copy-btn:focus-visible) {
     opacity: 1;
   }
 
-  .code-copy-btn:hover {
-    background-color: var(--color-surface-3);
-    color: var(--color-ink);
-  }
-
-  .code-copy-btn:focus-visible {
+  :global(.terminal-copy-btn.is-copied) {
+    color: oklch(0.700 0.180 145);
+    border-color: oklch(0.700 0.180 145 / 0.4);
     opacity: 1;
   }
 
-  .code-check-icon {
-    color: var(--color-success);
+  :global(.terminal-copy-btn svg) {
+    flex-shrink: 0;
   }
 
-  .code-copy-label {
-    pointer-events: none;
+  :global(.terminal-copy-btn .copy-check) {
+    display: none;
+  }
+
+  :global(.terminal-copy-btn.is-copied .copy-clipboard) {
+    display: none;
+  }
+
+  :global(.terminal-copy-btn.is-copied .copy-check) {
+    display: block;
+  }
+
+  .terminal:hover :global(.terminal-copy-btn) {
+    opacity: 1;
+  }
+
+  /* =============================================
+     Code Area
+     ============================================= */
+
+  .terminal-body {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.180 0.005 260) transparent;
+  }
+
+  .terminal-body::-webkit-scrollbar {
+    height: 5px;
+  }
+
+  .terminal-body::-webkit-scrollbar-thumb {
+    background: oklch(0.180 0.005 260);
+    border-radius: 3px;
+  }
+
+  .terminal-body::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.250 0.005 260);
+  }
+
+  :global(.terminal-body pre) {
+    margin: 0;
+    padding: 1.25rem 1.25rem 1.25rem 0;
+    background: transparent !important;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.7;
+    tab-size: 2;
+    -moz-tab-size: 2;
+    white-space: pre;
+    min-width: 0;
+  }
+
+  :global(.terminal-body pre code) {
+    display: block;
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    font-size: inherit;
+    line-height: inherit;
+    color: oklch(0.880 0.008 260);
+  }
+
+  /* =============================================
+     Line Numbers
+     ============================================= */
+
+  :global(.terminal-lines) {
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem 0;
+    padding-right: 1rem;
+    margin-right: 0;
+    border-right: 1px solid oklch(0.140 0.005 260);
+    text-align: end;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+  }
+
+  :global(.terminal-line-num) {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.7;
+    color: oklch(0.280 0.010 260);
+    min-width: 2ch;
+    padding-inline: 0.75rem;
+  }
+
+  /* =============================================
+     Shell Prompt
+     ============================================= */
+
+  :global(.terminal-prompt) {
+    color: oklch(0.700 0.180 145);
+    user-select: none;
+    -webkit-user-select: none;
+    margin-right: 0.6em;
+  }
+
+  /* =============================================
+     Syntax Color Overrides (Shiki inline style reset)
+     ============================================= */
+
+  :global(.terminal-body .line span) {
+    color: inherit !important;
+  }
+
+  :global(.terminal-body .line .keyword) {
+    color: oklch(0.700 0.150 300) !important;
+  }
+
+  :global(.terminal-body .line .string) {
+    color: oklch(0.700 0.150 145) !important;
+  }
+
+  :global(.terminal-body .line .comment) {
+    color: oklch(0.450 0.010 260) !important;
+    font-style: italic;
+  }
+
+  :global(.terminal-body .line .number) {
+    color: oklch(0.750 0.120 75) !important;
+  }
+
+  :global(.terminal-body .line .function) {
+    color: oklch(0.700 0.120 250) !important;
+  }
+
+  /* =============================================
+     Accessibility: reduced motion
+     ============================================= */
+
+  @media (prefers-reduced-motion: reduce) {
+    .terminal {
+      transition: none;
+    }
+
+    .terminal:hover {
+      transform: none;
+    }
+
+    :global(.terminal-copy-btn) {
+      transition: none;
+    }
   }
 </style>
 
 <script>
-  function getPlainCode(block: HTMLElement): string {
-    // Get the text content from pre > code
-    const codeEl = block.querySelector("pre code") || block.querySelector("code");
-    if (codeEl) {
+  const LANG_LABELS: Record<string, string> = {
+    bash: "shell",
+    sh: "shell",
+    zsh: "shell",
+    shell: "shell",
+    powershell: "powershell",
+    ps1: "powershell",
+    python: "python",
+    py: "python",
+    javascript: "javascript",
+    js: "javascript",
+    typescript: "typescript",
+    ts: "typescript",
+    jsx: "jsx",
+    tsx: "tsx",
+    html: "html",
+    css: "css",
+    scss: "scss",
+    json: "json",
+    yaml: "yaml",
+    yml: "yaml",
+    toml: "toml",
+    xml: "xml",
+    sql: "sql",
+    rust: "rust",
+    rs: "rust",
+    go: "go",
+    golang: "go",
+    java: "java",
+    c: "c",
+    cpp: "c++",
+    "c++": "c++",
+    csharp: "c#",
+    "c#": "c#",
+    ruby: "ruby",
+    rb: "ruby",
+    php: "php",
+    swift: "swift",
+    kotlin: "kotlin",
+    kt: "kotlin",
+    dart: "dart",
+    lua: "lua",
+    r: "r",
+    dockerfile: "dockerfile",
+    docker: "dockerfile",
+    diff: "diff",
+    md: "markdown",
+    markdown: "markdown",
+    graphql: "graphql",
+    gql: "graphql",
+    terraform: "terraform",
+    tf: "terraform",
+    hcl: "hcl",
+    makefile: "makefile",
+    make: "makefile",
+    nginx: "nginx",
+    apache: "apache",
+    txt: "text",
+    text: "text",
+    plaintext: "text",
+  };
+
+  function resolveLang(pre: HTMLElement, body: HTMLElement): string {
+    // Check data-language on the pre element
+    const attr = pre.getAttribute("data-language");
+    if (attr) return attr.toLowerCase();
+
+    // Check class names like language-xxx
+    const cls = pre.className;
+    const m = cls.match(/language-(\S+)/);
+    if (m) return m[1].toLowerCase();
+
+    // Check code element
+    const code = pre.querySelector("code");
+    if (code) {
+      const cm = code.className.match(/language-(\S+)/);
+      if (cm) return cm[1].toLowerCase();
+    }
+
+    return "";
+  }
+
+  function langLabel(lang: string): string {
+    if (!lang) return "";
+    return LANG_LABELS[lang] ?? lang;
+  }
+
+  function isShell(lang: string): boolean {
+    return /^(bash|sh|zsh|shell)$/.test(lang);
+  }
+
+  function buildHeader(
+    lang: string,
+    onCopy: () => void
+  ): HTMLElement {
+    const header = document.createElement("div");
+    header.className = "terminal-header";
+
+    // Dots
+    const dots = document.createElement("div");
+    dots.className = "terminal-dots";
+    for (const color of ["red", "yellow", "green"]) {
+      const dot = document.createElement("span");
+      dot.className = `terminal-dot terminal-dot--${color}`;
+      dots.appendChild(dot);
+    }
+    header.appendChild(dots);
+
+    // Right side
+    const right = document.createElement("div");
+    right.className = "terminal-header-right";
+
+    if (lang) {
+      const label = document.createElement("span");
+      label.className = "terminal-lang";
+      label.textContent = langLabel(lang);
+      right.appendChild(label);
+    }
+
+    // Copy button
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "terminal-copy-btn";
+    btn.setAttribute("aria-label", "Copy code to clipboard");
+    btn.innerHTML = `<svg class="copy-clipboard" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><svg class="copy-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span class="copy-label">copy</span>`;
+    btn.addEventListener("click", onCopy);
+    right.appendChild(btn);
+
+    header.appendChild(right);
+    return header;
+  }
+
+  function addLineNumbers(pre: HTMLElement): void {
+    const code = pre.querySelector("code");
+    if (!code) return;
+
+    const lines = code.querySelectorAll<HTMLElement>(".line");
+    if (lines.length < 2) return;
+
+    const numWrap = document.createElement("div");
+    numWrap.className = "terminal-lines";
+    numWrap.setAttribute("aria-hidden", "true");
+
+    for (let i = 1; i <= lines.length; i++) {
+      const num = document.createElement("span");
+      num.className = "terminal-line-num";
+      num.textContent = String(i);
+      numWrap.appendChild(num);
+    }
+
+    pre.insertBefore(numWrap, pre.firstChild);
+  }
+
+  function addShellPrompt(pre: HTMLElement): void {
+    const code = pre.querySelector("code");
+    if (!code) return;
+
+    const firstLine = code.querySelector<HTMLElement>(".line");
+    if (!firstLine) return;
+
+    const prompt = document.createElement("span");
+    prompt.className = "terminal-prompt";
+    prompt.setAttribute("aria-hidden", "true");
+    prompt.textContent = "$";
+    firstLine.insertBefore(prompt, firstLine.firstChild);
+  }
+
+  function getPlainText(
+    codeEl: HTMLElement,
+    hasPrompt: boolean
+  ): string {
+    const lines = codeEl.querySelectorAll<HTMLElement>(".line");
+    if (lines.length === 0) {
       return (codeEl.textContent || "").replace(/\n$/, "");
     }
-    const pre = block.querySelector("pre");
-    if (pre) {
-      return (pre.textContent || "").replace(/\n$/, "");
+
+    const parts: string[] = [];
+    for (const line of lines) {
+      let text = "";
+      for (const child of Array.from(line.childNodes)) {
+        if (
+          child instanceof HTMLElement &&
+          (child.classList.contains("terminal-prompt") ||
+            child.classList.contains("terminal-line-num"))
+        ) {
+          continue;
+        }
+        text += child.textContent || "";
+      }
+      parts.push(text);
     }
-    return (block.textContent || "").replace(/\n$/, "");
+    return parts.join("\n");
   }
 
-  function initCopyButtons() {
-    const buttons = document.querySelectorAll<HTMLButtonElement>(".code-copy-btn");
+  function resetShikiColors(pre: HTMLElement): void {
+    // Remove Shiki's inline color from .line spans
+    // so our CSS classes take effect
+    const lineSpans = pre.querySelectorAll<HTMLElement>(".line > span[style]");
+    for (const span of lineSpans) {
+      const style = span.getAttribute("style") || "";
+      if (style.includes("color:")) {
+        // Keep non-color styles, strip color
+        const cleaned = style
+          .replace(/color:\s*[^;]+;?\s*/g, "")
+          .trim();
+        if (cleaned) {
+          span.setAttribute("style", cleaned);
+        } else {
+          span.removeAttribute("style");
+        }
+      }
+    }
 
-    buttons.forEach((btn) => {
-      if (btn.dataset.initialized) return;
-      btn.dataset.initialized = "true";
+    // Also strip color from the code element itself
+    const code = pre.querySelector<HTMLElement>("code");
+    if (code) {
+      const style = code.getAttribute("style") || "";
+      if (style.includes("color:")) {
+        const cleaned = style
+          .replace(/color:\s*[^;]+;?\s*/g, "")
+          .trim();
+        if (cleaned) {
+          code.setAttribute("style", cleaned);
+        } else {
+          code.removeAttribute("style");
+        }
+      }
+    }
 
-      btn.addEventListener("click", async () => {
-        const wrapper = btn.closest<HTMLElement>(".code-block-wrapper");
-        if (!wrapper) return;
+    // Strip background from pre
+    const preStyle = pre.getAttribute("style") || "";
+    if (preStyle.includes("background-color:")) {
+      const cleaned = preStyle
+        .replace(/background-color:\s*[^;]+;?\s*/g, "")
+        .trim();
+      if (cleaned) {
+        pre.setAttribute("style", cleaned);
+      } else {
+        pre.removeAttribute("style");
+      }
+    }
+  }
 
-        const codeText = btn.dataset.code || getPlainCode(wrapper);
+  function initTerminalBlocks(): void {
+    const terminals = document.querySelectorAll<HTMLElement>(
+      ".terminal:not([data-initialized])"
+    );
+
+    for (const terminal of terminals) {
+      terminal.dataset.initialized = "true";
+
+      const body = terminal.querySelector<HTMLElement>(
+        ".terminal-body"
+      );
+      if (!body) continue;
+
+      const pre = body.querySelector<HTMLElement>("pre");
+      if (!pre) continue;
+
+      // Detect language
+      const rawLang = resolveLang(pre, body);
+
+      // Reset Shiki inline colors so our CSS takes effect
+      resetShikiColors(pre);
+
+      // Make pre a flex container for line numbers + code
+      pre.style.display = "flex";
+      pre.style.alignItems = "flex-start";
+
+      // Add line numbers
+      addLineNumbers(pre);
+
+      // Add shell prompt for bash/sh
+      const shell = isShell(rawLang);
+      if (shell) {
+        addShellPrompt(pre);
+      }
+
+      // Build and prepend header
+      const onCopy = async () => {
+        const btn = terminal.querySelector<HTMLButtonElement>(
+          ".terminal-copy-btn"
+        );
+        if (!btn) return;
+
+        const codeEl = pre.querySelector<HTMLElement>("code");
+        const text =
+          terminal.dataset.code ||
+          (codeEl ? getPlainText(codeEl, shell) : "");
 
         try {
-          await navigator.clipboard.writeText(codeText);
+          await navigator.clipboard.writeText(text);
 
-          const copyIcon = btn.querySelector<SVGElement>(".code-copy-icon");
-          const checkIcon = btn.querySelector<SVGElement>(".code-check-icon");
-          const label = btn.querySelector<HTMLSpanElement>(".code-copy-label");
-
-          if (copyIcon) copyIcon.style.display = "none";
-          if (checkIcon) checkIcon.style.display = "block";
-          if (label) label.textContent = "Copied!";
-
-          btn.style.opacity = "1";
-          btn.style.color = "var(--color-success)";
-          btn.style.borderColor = "var(--color-success)";
+          const label =
+            btn.querySelector<HTMLSpanElement>(".copy-label");
+          btn.classList.add("is-copied");
+          if (label) label.textContent = "copied!";
 
           setTimeout(() => {
-            if (copyIcon) copyIcon.style.display = "block";
-            if (checkIcon) checkIcon.style.display = "none";
-            if (label) label.textContent = "Copy";
-            btn.style.color = "";
-            btn.style.borderColor = "";
-            if (!btn.matches(":hover")) {
-              btn.style.opacity = "";
-            }
+            btn.classList.remove("is-copied");
+            if (label) label.textContent = "copy";
           }, 2000);
         } catch {
-          const label = btn.querySelector<HTMLSpanElement>(".code-copy-label");
-          if (label) label.textContent = "Failed";
+          const label =
+            btn.querySelector<HTMLSpanElement>(".copy-label");
+          if (label) label.textContent = "failed";
           setTimeout(() => {
-            if (label) label.textContent = "Copy";
+            if (label) label.textContent = "copy";
           }, 2000);
         }
-      });
-    });
+      };
+
+      const header = buildHeader(rawLang, onCopy);
+      terminal.insertBefore(header, body);
+    }
   }
 
-  // Initialize on page load and after view transitions
-  initCopyButtons();
-  document.addEventListener("astro:page-load", initCopyButtons);
+  // Init
+  initTerminalBlocks();
+  document.addEventListener("astro:page-load", initTerminalBlocks);
 </script>

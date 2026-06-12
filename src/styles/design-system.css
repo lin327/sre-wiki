@@ -289,6 +289,7 @@ a:hover {
 
 .prose {
   max-width: 75ch;
+  margin: 0 auto;
   line-height: var(--line-height);
 }
 

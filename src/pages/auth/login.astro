@@ -1,0 +1,202 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="登录" description="登录 SRE Atlas">
+  <div class="login-container">
+    <div class="login-card">
+      <h1 class="login-title">登录 SRE Atlas</h1>
+      <p class="login-desc">使用邮箱密码登录，或联系管理员开通账号。</p>
+
+      <form id="login-form" class="login-form">
+        <div class="login-field">
+          <label for="email" class="login-label">邮箱</label>
+          <input type="email" id="email" name="email" class="login-input" placeholder="your@email.com" required />
+        </div>
+        <div class="login-field">
+          <label for="password" class="login-label">密码</label>
+          <input type="password" id="password" name="password" class="login-input" placeholder="••••••••" required />
+        </div>
+        <button type="submit" class="login-submit" id="login-btn">登录</button>
+        <div id="login-error" class="login-error" hidden></div>
+      </form>
+
+      <div class="login-divider">
+        <span class="login-divider-text">或</span>
+      </div>
+
+      <div class="login-register">
+        还没有账号？<a href="/auth/register" class="login-link">注册</a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { authClient } from "../../lib/auth-client";
+
+  const form = document.getElementById("login-form") as HTMLFormElement;
+  const errorEl = document.getElementById("login-error") as HTMLDivElement;
+  const btn = document.getElementById("login-btn") as HTMLButtonElement;
+
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.hidden = true;
+    btn.textContent = "登录中...";
+    btn.disabled = true;
+
+    const email = (document.getElementById("email") as HTMLInputElement).value;
+    const password = (document.getElementById("password") as HTMLInputElement).value;
+
+    try {
+      const res = await authClient.signIn.email({
+        email,
+        password,
+      });
+
+      if (res.error) {
+        errorEl.textContent = res.error.message || "登录失败，请检查邮箱和密码";
+        errorEl.hidden = false;
+        btn.textContent = "登录";
+        btn.disabled = false;
+      } else {
+        window.location.href = "/";
+      }
+    } catch (err: any) {
+      errorEl.textContent = err.message || "登录失败";
+      errorEl.hidden = false;
+      btn.textContent = "登录";
+      btn.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .login-container {
+    display: flex;
+    justify-content: center;
+    padding: 64px 16px;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 380px;
+    padding: 32px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+
+  .login-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-ink);
+    margin: 0 0 8px;
+  }
+
+  .login-desc {
+    font-size: 13px;
+    color: var(--color-dim);
+    margin: 0 0 24px;
+  }
+
+  .login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .login-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-ink);
+  }
+
+  .login-input {
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 100ms ease;
+  }
+
+  .login-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px oklch(0.480 0.170 250 / 0.12);
+  }
+
+  .login-submit {
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 100ms ease;
+  }
+
+  .login-submit:hover {
+    opacity: 0.9;
+  }
+
+  .login-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .login-error {
+    padding: 8px 12px;
+    border: 1px solid var(--color-error);
+    border-radius: 6px;
+    background: oklch(0.550 0.200 25 / 0.08);
+    color: var(--color-error);
+    font-size: 12px;
+  }
+
+  .login-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 24px 0;
+  }
+
+  .login-divider::before,
+  .login-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--color-border);
+  }
+
+  .login-divider-text {
+    font-size: 11px;
+    color: var(--color-dim);
+  }
+
+  .login-register {
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-dim);
+  }
+
+  .login-link {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+
+  .login-link:hover {
+    text-decoration: underline;
+  }
+</style>

@@ -35,118 +35,66 @@ const displayLabel = label || config.label;
 
 <style>
   /* ============================================
-     Badge — Scoped Styles
+     Badge — GitHub Label Style
      ============================================ */
 
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15em 0.65em;
+    padding: 0.125em 0.625em;
     border-radius: 999px;
-    font-family: var(--font-sans);
-    font-size: 0.7rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
     white-space: nowrap;
     user-select: none;
     border: 1px solid transparent;
-    transition:
-      background-color var(--motion-fast) ease,
-      border-color var(--motion-fast) ease,
-      color var(--motion-fast) ease;
   }
 
   /* ============================================
-     Type Colors — Dark Theme
+     Type Colors
      ============================================ */
 
   .badge--linux {
-    background-color: oklch(0.40 0.08 250 / 0.20);
-    color: oklch(0.75 0.10 250);
-    border-color: oklch(0.50 0.10 250 / 0.25);
+    background-color: #ddf4ff;
+    color: #0550ae;
+    border-color: #b6e3ff;
   }
 
   .badge--docker {
-    background-color: oklch(0.40 0.10 230 / 0.20);
-    color: oklch(0.75 0.12 230);
-    border-color: oklch(0.50 0.12 230 / 0.25);
+    background-color: #ddf4ff;
+    color: #0969da;
+    border-color: #b6e3ff;
   }
 
   .badge--kubernetes {
-    background-color: oklch(0.40 0.10 270 / 0.20);
-    color: oklch(0.72 0.12 270);
-    border-color: oklch(0.50 0.12 270 / 0.25);
+    background-color: #fbefff;
+    color: #8250df;
+    border-color: #e8d5f5;
   }
 
   .badge--runbook {
-    background-color: oklch(0.45 0.08 175 / 0.20);
-    color: oklch(0.78 0.10 175);
-    border-color: oklch(0.55 0.10 175 / 0.25);
+    background-color: #dafbe1;
+    color: #116329;
+    border-color: #aceebb;
   }
 
   .badge--architecture {
-    background-color: oklch(0.40 0.12 300 / 0.20);
-    color: oklch(0.72 0.14 300);
-    border-color: oklch(0.50 0.14 300 / 0.25);
+    background-color: #fff8c5;
+    color: #6c4400;
+    border-color: #f5e0a0;
   }
 
   .badge--incident {
-    background-color: oklch(0.40 0.15 25 / 0.20);
-    color: oklch(0.72 0.18 25);
-    border-color: oklch(0.50 0.18 25 / 0.25);
+    background-color: #ffebe9;
+    color: #a40e26;
+    border-color: #ffbdb8;
   }
 
   .badge--comparison {
-    background-color: oklch(0.42 0.08 55 / 0.20);
-    color: oklch(0.78 0.10 55);
-    border-color: oklch(0.52 0.10 55 / 0.25);
-  }
-
-  /* ============================================
-     Light Theme Overrides
-     ============================================ */
-
-  [data-theme="light"] .badge--linux {
-    background-color: oklch(0.92 0.04 250 / 0.50);
-    color: oklch(0.35 0.10 250);
-    border-color: oklch(0.70 0.08 250 / 0.40);
-  }
-
-  [data-theme="light"] .badge--docker {
-    background-color: oklch(0.92 0.05 230 / 0.50);
-    color: oklch(0.35 0.12 230);
-    border-color: oklch(0.70 0.10 230 / 0.40);
-  }
-
-  [data-theme="light"] .badge--kubernetes {
-    background-color: oklch(0.92 0.05 270 / 0.50);
-    color: oklch(0.35 0.12 270);
-    border-color: oklch(0.70 0.10 270 / 0.40);
-  }
-
-  [data-theme="light"] .badge--runbook {
-    background-color: oklch(0.93 0.04 175 / 0.50);
-    color: oklch(0.35 0.08 175);
-    border-color: oklch(0.72 0.06 175 / 0.40);
-  }
-
-  [data-theme="light"] .badge--architecture {
-    background-color: oklch(0.92 0.06 300 / 0.50);
-    color: oklch(0.35 0.12 300);
-    border-color: oklch(0.70 0.10 300 / 0.40);
-  }
-
-  [data-theme="light"] .badge--incident {
-    background-color: oklch(0.94 0.06 25 / 0.50);
-    color: oklch(0.40 0.15 25);
-    border-color: oklch(0.72 0.12 25 / 0.40);
-  }
-
-  [data-theme="light"] .badge--comparison {
-    background-color: oklch(0.94 0.04 55 / 0.50);
-    color: oklch(0.38 0.08 55);
-    border-color: oklch(0.72 0.06 55 / 0.40);
+    background-color: #f0f0f0;
+    color: #57606a;
+    border-color: #d0d7de;
   }
 </style>

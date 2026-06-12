@@ -7,151 +7,115 @@ interface Props {
 const { code, class: className } = Astro.props;
 ---
 
-<div class:list={["terminal", className]} data-code={code}>
-  <!-- JS builds the terminal header and line numbers after mount -->
-  <div class="terminal-body">
+<div class:list={["codeblock", className]} data-code={code}>
+  <div class="codeblock-body">
     <slot />
   </div>
 </div>
 
 <style>
   /* =============================================
-     Terminal Window
+     CodeBlock — GitHub Design Language
      ============================================= */
 
-  .terminal {
+  .codeblock {
     position: relative;
     margin-block: var(--space-6);
-    border: 1px solid oklch(0.200 0.005 260);
-    border-radius: 8px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
     overflow: hidden;
-    background: oklch(0.060 0.005 260);
-    box-shadow:
-      0 4px 24px oklch(0 0 0 / 0.4),
-      0 1px 3px oklch(0 0 0 / 0.2);
-    transition:
-      transform var(--motion-normal) var(--ease-out-expo),
-      box-shadow var(--motion-normal) var(--ease-out-expo);
-  }
-
-  .terminal:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      0 8px 32px oklch(0 0 0 / 0.5),
-      0 2px 6px oklch(0 0 0 / 0.3);
+    background: #f6f8fa;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   }
 
   /* =============================================
-     Terminal Header Bar
+     Header Bar (filename + language + copy)
      ============================================= */
 
-  :global(.terminal-header) {
+  :global(.codeblock-header) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.65rem 1rem;
-    background: oklch(0.080 0.005 260);
-    border-bottom: 1px solid oklch(0.140 0.005 260);
+    padding: 0.5rem 1rem;
+    background: #f6f8fa;
+    border-bottom: 1px solid #d0d7de;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 0.75rem;
+    color: #656d76;
     user-select: none;
     -webkit-user-select: none;
   }
 
-  :global(.terminal-dots) {
+  :global(.codeblock-header-left) {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 0.5rem;
   }
 
-  :global(.terminal-dot) {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
+  :global(.codeblock-filename) {
+    font-weight: 600;
+    color: #24292f;
   }
 
-  :global(.terminal-dot--red) {
-    background: #ff5f56;
-  }
-
-  :global(.terminal-dot--yellow) {
-    background: #ffbd2e;
-  }
-
-  :global(.terminal-dot--green) {
-    background: #27c93f;
-  }
-
-  :global(.terminal-header-right) {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  :global(.terminal-lang) {
-    font-family: var(--font-mono);
+  :global(.codeblock-lang) {
     font-size: 0.7rem;
-    color: oklch(0.450 0.010 260);
-    letter-spacing: 0.04em;
+    color: #656d76;
     text-transform: lowercase;
   }
 
   /* =============================================
-     Copy Button
+     Copy Button (visible on hover)
      ============================================= */
 
-  :global(.terminal-copy-btn) {
+  :global(.codeblock-copy-btn) {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.3rem;
     padding: 0.25rem 0.5rem;
-    border: 1px solid oklch(0.200 0.005 260);
-    border-radius: 4px;
-    background: transparent;
-    color: oklch(0.450 0.010 260);
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    background: #f6f8fa;
+    color: #656d76;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 0.7rem;
     cursor: pointer;
     opacity: 0;
-    transition:
-      opacity var(--motion-fast) ease,
-      color var(--motion-fast) ease,
-      border-color var(--motion-fast) ease,
-      background-color var(--motion-fast) ease;
+    transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease;
   }
 
-  :global(.terminal-copy-btn:hover) {
-    color: oklch(0.700 0.010 260);
-    border-color: oklch(0.300 0.010 260);
-    background: oklch(0.100 0.005 260);
+  :global(.codeblock-copy-btn:hover) {
+    background: #eaeef2;
+    color: #24292f;
   }
 
-  :global(.terminal-copy-btn:focus-visible) {
+  :global(.codeblock-copy-btn:focus-visible) {
+    opacity: 1;
+    outline: 2px solid #0969da;
+    outline-offset: -2px;
+  }
+
+  :global(.codeblock-copy-btn.is-copied) {
+    color: #1a7f37;
     opacity: 1;
   }
 
-  :global(.terminal-copy-btn.is-copied) {
-    color: oklch(0.700 0.180 145);
-    border-color: oklch(0.700 0.180 145 / 0.4);
-    opacity: 1;
-  }
-
-  :global(.terminal-copy-btn svg) {
+  :global(.codeblock-copy-btn svg) {
     flex-shrink: 0;
   }
 
-  :global(.terminal-copy-btn .copy-check) {
+  :global(.codeblock-copy-btn .copy-check) {
     display: none;
   }
 
-  :global(.terminal-copy-btn.is-copied .copy-clipboard) {
+  :global(.codeblock-copy-btn.is-copied .copy-clipboard) {
     display: none;
   }
 
-  :global(.terminal-copy-btn.is-copied .copy-check) {
+  :global(.codeblock-copy-btn.is-copied .copy-check) {
     display: block;
   }
 
-  .terminal:hover :global(.terminal-copy-btn) {
+  .codeblock:hover :global(.codeblock-copy-btn) {
     opacity: 1;
   }
 
@@ -159,113 +123,102 @@ const { code, class: className } = Astro.props;
      Code Area
      ============================================= */
 
-  .terminal-body {
+  .codeblock-body {
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.180 0.005 260) transparent;
+    scrollbar-color: #afb8c1 transparent;
   }
 
-  .terminal-body::-webkit-scrollbar {
-    height: 5px;
+  .codeblock-body::-webkit-scrollbar {
+    height: 6px;
   }
 
-  .terminal-body::-webkit-scrollbar-thumb {
-    background: oklch(0.180 0.005 260);
+  .codeblock-body::-webkit-scrollbar-thumb {
+    background: #afb8c1;
     border-radius: 3px;
   }
 
-  .terminal-body::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.250 0.005 260);
+  .codeblock-body::-webkit-scrollbar-thumb:hover {
+    background: #8b949e;
   }
 
-  :global(.terminal-body pre) {
+  :global(.codeblock-body pre) {
     margin: 0;
-    padding: 1.25rem 1.25rem 1.25rem 0;
+    padding: 1rem;
     background: transparent !important;
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
-    line-height: 1.7;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
     tab-size: 2;
     -moz-tab-size: 2;
     white-space: pre;
     min-width: 0;
   }
 
-  :global(.terminal-body pre code) {
+  :global(.codeblock-body pre code) {
     display: block;
     background: none;
     padding: 0;
     border-radius: 0;
     font-size: inherit;
     line-height: inherit;
-    color: oklch(0.880 0.008 260);
+    color: #24292f;
   }
 
   /* =============================================
      Line Numbers
      ============================================= */
 
-  :global(.terminal-lines) {
+  :global(.codeblock-lines) {
     display: flex;
     flex-direction: column;
-    padding: 1.25rem 0;
-    padding-right: 1rem;
+    padding: 1rem 0;
+    padding-right: 0.75rem;
     margin-right: 0;
-    border-right: 1px solid oklch(0.140 0.005 260);
+    border-right: 1px solid #d0d7de;
     text-align: end;
     user-select: none;
     -webkit-user-select: none;
     flex-shrink: 0;
   }
 
-  :global(.terminal-line-num) {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    line-height: 1.7;
-    color: oklch(0.280 0.010 260);
-    min-width: 2ch;
+  :global(.codeblock-line-num) {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: #656d76;
+    min-width: 2.5ch;
     padding-inline: 0.75rem;
-  }
-
-  /* =============================================
-     Shell Prompt
-     ============================================= */
-
-  :global(.terminal-prompt) {
-    color: oklch(0.700 0.180 145);
-    user-select: none;
-    -webkit-user-select: none;
-    margin-right: 0.6em;
   }
 
   /* =============================================
      Syntax Color Overrides (Shiki inline style reset)
      ============================================= */
 
-  :global(.terminal-body .line span) {
+  :global(.codeblock-body .line span) {
     color: inherit !important;
   }
 
-  :global(.terminal-body .line .keyword) {
-    color: oklch(0.700 0.150 300) !important;
+  :global(.codeblock-body .line .keyword) {
+    color: #cf222e !important;
   }
 
-  :global(.terminal-body .line .string) {
-    color: oklch(0.700 0.150 145) !important;
+  :global(.codeblock-body .line .string) {
+    color: #0a3069 !important;
   }
 
-  :global(.terminal-body .line .comment) {
-    color: oklch(0.450 0.010 260) !important;
+  :global(.codeblock-body .line .comment) {
+    color: #6e7781 !important;
     font-style: italic;
   }
 
-  :global(.terminal-body .line .number) {
-    color: oklch(0.750 0.120 75) !important;
+  :global(.codeblock-body .line .number) {
+    color: #0550ae !important;
   }
 
-  :global(.terminal-body .line .function) {
-    color: oklch(0.700 0.120 250) !important;
+  :global(.codeblock-body .line .function) {
+    color: #8250df !important;
   }
 
   /* =============================================
@@ -273,15 +226,7 @@ const { code, class: className } = Astro.props;
      ============================================= */
 
   @media (prefers-reduced-motion: reduce) {
-    .terminal {
-      transition: none;
-    }
-
-    .terminal:hover {
-      transform: none;
-    }
-
-    :global(.terminal-copy-btn) {
+    :global(.codeblock-copy-btn) {
       transition: none;
     }
   }
@@ -351,16 +296,13 @@ const { code, class: className } = Astro.props;
   };
 
   function resolveLang(pre: HTMLElement, body: HTMLElement): string {
-    // Check data-language on the pre element
     const attr = pre.getAttribute("data-language");
     if (attr) return attr.toLowerCase();
 
-    // Check class names like language-xxx
     const cls = pre.className;
     const m = cls.match(/language-(\S+)/);
     if (m) return m[1].toLowerCase();
 
-    // Check code element
     const code = pre.querySelector("code");
     if (code) {
       const cm = code.className.match(/language-(\S+)/);
@@ -375,48 +317,33 @@ const { code, class: className } = Astro.props;
     return LANG_LABELS[lang] ?? lang;
   }
 
-  function isShell(lang: string): boolean {
-    return /^(bash|sh|zsh|shell)$/.test(lang);
-  }
-
   function buildHeader(
     lang: string,
     onCopy: () => void
   ): HTMLElement {
     const header = document.createElement("div");
-    header.className = "terminal-header";
+    header.className = "codeblock-header";
 
-    // Dots
-    const dots = document.createElement("div");
-    dots.className = "terminal-dots";
-    for (const color of ["red", "yellow", "green"]) {
-      const dot = document.createElement("span");
-      dot.className = `terminal-dot terminal-dot--${color}`;
-      dots.appendChild(dot);
-    }
-    header.appendChild(dots);
-
-    // Right side
-    const right = document.createElement("div");
-    right.className = "terminal-header-right";
+    const left = document.createElement("div");
+    left.className = "codeblock-header-left";
 
     if (lang) {
       const label = document.createElement("span");
-      label.className = "terminal-lang";
+      label.className = "codeblock-lang";
       label.textContent = langLabel(lang);
-      right.appendChild(label);
+      left.appendChild(label);
     }
 
-    // Copy button
+    header.appendChild(left);
+
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "terminal-copy-btn";
+    btn.className = "codeblock-copy-btn";
     btn.setAttribute("aria-label", "Copy code to clipboard");
-    btn.innerHTML = `<svg class="copy-clipboard" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><svg class="copy-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span class="copy-label">copy</span>`;
+    btn.innerHTML = `<svg class="copy-clipboard" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><svg class="copy-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
     btn.addEventListener("click", onCopy);
-    right.appendChild(btn);
+    header.appendChild(btn);
 
-    header.appendChild(right);
     return header;
   }
 
@@ -428,12 +355,12 @@ const { code, class: className } = Astro.props;
     if (lines.length < 2) return;
 
     const numWrap = document.createElement("div");
-    numWrap.className = "terminal-lines";
+    numWrap.className = "codeblock-lines";
     numWrap.setAttribute("aria-hidden", "true");
 
     for (let i = 1; i <= lines.length; i++) {
       const num = document.createElement("span");
-      num.className = "terminal-line-num";
+      num.className = "codeblock-line-num";
       num.textContent = String(i);
       numWrap.appendChild(num);
     }
@@ -441,24 +368,7 @@ const { code, class: className } = Astro.props;
     pre.insertBefore(numWrap, pre.firstChild);
   }
 
-  function addShellPrompt(pre: HTMLElement): void {
-    const code = pre.querySelector("code");
-    if (!code) return;
-
-    const firstLine = code.querySelector<HTMLElement>(".line");
-    if (!firstLine) return;
-
-    const prompt = document.createElement("span");
-    prompt.className = "terminal-prompt";
-    prompt.setAttribute("aria-hidden", "true");
-    prompt.textContent = "$";
-    firstLine.insertBefore(prompt, firstLine.firstChild);
-  }
-
-  function getPlainText(
-    codeEl: HTMLElement,
-    hasPrompt: boolean
-  ): string {
+  function getPlainText(codeEl: HTMLElement): string {
     const lines = codeEl.querySelectorAll<HTMLElement>(".line");
     if (lines.length === 0) {
       return (codeEl.textContent || "").replace(/\n$/, "");
@@ -470,8 +380,7 @@ const { code, class: className } = Astro.props;
       for (const child of Array.from(line.childNodes)) {
         if (
           child instanceof HTMLElement &&
-          (child.classList.contains("terminal-prompt") ||
-            child.classList.contains("terminal-line-num"))
+          child.classList.contains("codeblock-line-num")
         ) {
           continue;
         }
@@ -483,13 +392,10 @@ const { code, class: className } = Astro.props;
   }
 
   function resetShikiColors(pre: HTMLElement): void {
-    // Remove Shiki's inline color from .line spans
-    // so our CSS classes take effect
     const lineSpans = pre.querySelectorAll<HTMLElement>(".line > span[style]");
     for (const span of lineSpans) {
       const style = span.getAttribute("style") || "";
       if (style.includes("color:")) {
-        // Keep non-color styles, strip color
         const cleaned = style
           .replace(/color:\s*[^;]+;?\s*/g, "")
           .trim();
@@ -501,7 +407,6 @@ const { code, class: className } = Astro.props;
       }
     }
 
-    // Also strip color from the code element itself
     const code = pre.querySelector<HTMLElement>("code");
     if (code) {
       const style = code.getAttribute("style") || "";
@@ -517,7 +422,6 @@ const { code, class: className } = Astro.props;
       }
     }
 
-    // Strip background from pre
     const preStyle = pre.getAttribute("style") || "";
     if (preStyle.includes("background-color:")) {
       const cleaned = preStyle
@@ -531,81 +435,59 @@ const { code, class: className } = Astro.props;
     }
   }
 
-  function initTerminalBlocks(): void {
-    const terminals = document.querySelectorAll<HTMLElement>(
-      ".terminal:not([data-initialized])"
+  function initCodeBlocks(): void {
+    const blocks = document.querySelectorAll<HTMLElement>(
+      ".codeblock:not([data-initialized])"
     );
 
-    for (const terminal of terminals) {
-      terminal.dataset.initialized = "true";
+    for (const block of blocks) {
+      block.dataset.initialized = "true";
 
-      const body = terminal.querySelector<HTMLElement>(
-        ".terminal-body"
+      const body = block.querySelector<HTMLElement>(
+        ".codeblock-body"
       );
       if (!body) continue;
 
       const pre = body.querySelector<HTMLElement>("pre");
       if (!pre) continue;
 
-      // Detect language
       const rawLang = resolveLang(pre, body);
 
-      // Reset Shiki inline colors so our CSS takes effect
       resetShikiColors(pre);
 
-      // Make pre a flex container for line numbers + code
       pre.style.display = "flex";
       pre.style.alignItems = "flex-start";
 
-      // Add line numbers
       addLineNumbers(pre);
 
-      // Add shell prompt for bash/sh
-      const shell = isShell(rawLang);
-      if (shell) {
-        addShellPrompt(pre);
-      }
-
-      // Build and prepend header
       const onCopy = async () => {
-        const btn = terminal.querySelector<HTMLButtonElement>(
-          ".terminal-copy-btn"
+        const btn = block.querySelector<HTMLButtonElement>(
+          ".codeblock-copy-btn"
         );
         if (!btn) return;
 
         const codeEl = pre.querySelector<HTMLElement>("code");
         const text =
-          terminal.dataset.code ||
-          (codeEl ? getPlainText(codeEl, shell) : "");
+          block.dataset.code ||
+          (codeEl ? getPlainText(codeEl) : "");
 
         try {
           await navigator.clipboard.writeText(text);
-
-          const label =
-            btn.querySelector<HTMLSpanElement>(".copy-label");
           btn.classList.add("is-copied");
-          if (label) label.textContent = "copied!";
 
           setTimeout(() => {
             btn.classList.remove("is-copied");
-            if (label) label.textContent = "copy";
           }, 2000);
         } catch {
-          const label =
-            btn.querySelector<HTMLSpanElement>(".copy-label");
-          if (label) label.textContent = "failed";
-          setTimeout(() => {
-            if (label) label.textContent = "copy";
-          }, 2000);
+          // silent
         }
       };
 
       const header = buildHeader(rawLang, onCopy);
-      terminal.insertBefore(header, body);
+      block.insertBefore(header, body);
     }
   }
 
-  // Init
-  initTerminalBlocks();
-  document.addEventListener("astro:page-load", initTerminalBlocks);
+  initCodeBlocks();
+  document.addEventListener("astro:page-load", initCodeBlocks);
 </script>

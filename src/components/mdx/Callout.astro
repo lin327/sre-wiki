@@ -1,6 +1,6 @@
 ---
 interface Props {
-  /** Border accent color — maps to a design-system token. */
+  /** Border accent color. */
   variant?: "default" | "success" | "warning" | "error";
 }
 
@@ -20,43 +20,19 @@ const variantClass: Record<string, string> = {
 
 <style>
   /* ============================================
-     Callout — Scoped Styles
+     Callout — GitHub Design Language
      ============================================ */
 
   .callout {
     position: relative;
     margin-block: var(--space-4);
     padding: var(--space-3) var(--space-4);
-    border-inline-start: 3px solid var(--color-info);
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    background-color: var(--color-surface);
-    font-size: 0.9rem;
+    border-inline-start: 3px solid #0969da;
+    border-radius: 0 6px 6px 0;
+    background-color: #f6f8fa;
+    font-size: 0.875rem;
     line-height: 1.65;
-    color: var(--color-muted);
-    transition: border-color var(--motion-fast) ease;
-  }
-
-  .callout:hover {
-    border-inline-start-color: var(--color-info);
-    filter: brightness(1.04);
-  }
-
-  /* Inline glow pseudo — lighter than Admonition */
-  .callout::before {
-    content: "";
-    position: absolute;
-    inset-inline-start: -3px;
-    inset-block: 0;
-    width: 3px;
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-    background: var(--color-info);
-    box-shadow: 0 0 6px oklch(from var(--color-info) l c h / 0.35);
-    opacity: 0;
-    transition: opacity var(--motion-fast) ease;
-  }
-
-  .callout:hover::before {
-    opacity: 1;
+    color: #656d76;
   }
 
   /* ============================================
@@ -64,39 +40,19 @@ const variantClass: Record<string, string> = {
      ============================================ */
 
   .callout--default {
-    border-inline-start-color: var(--color-info);
-  }
-
-  .callout--default::before {
-    background: var(--color-info);
-    box-shadow: 0 0 6px oklch(from var(--color-info) l c h / 0.35);
+    border-inline-start-color: #0969da;
   }
 
   .callout--success {
-    border-inline-start-color: var(--color-success);
-  }
-
-  .callout--success::before {
-    background: var(--color-success);
-    box-shadow: 0 0 6px oklch(from var(--color-success) l c h / 0.35);
+    border-inline-start-color: #1a7f37;
   }
 
   .callout--warning {
-    border-inline-start-color: var(--color-warning);
-  }
-
-  .callout--warning::before {
-    background: var(--color-warning);
-    box-shadow: 0 0 6px oklch(from var(--color-warning) l c h / 0.35);
+    border-inline-start-color: #bf8700;
   }
 
   .callout--error {
-    border-inline-start-color: var(--color-error);
-  }
-
-  .callout--error::before {
-    background: var(--color-error);
-    box-shadow: 0 0 6px oklch(from var(--color-error) l c h / 0.35);
+    border-inline-start-color: #d1242f;
   }
 
   /* ============================================
@@ -113,23 +69,9 @@ const variantClass: Record<string, string> = {
 
   .callout :global(code) {
     font-size: 0.85em;
-    background-color: var(--color-code-bg);
-    color: var(--color-code-text);
+    background-color: #eff1f3;
+    color: #24292f;
     padding: 0.12em 0.3em;
-    border-radius: var(--radius-sm);
-  }
-
-  /* ============================================
-     Reduced Motion
-     ============================================ */
-
-  @media (prefers-reduced-motion: reduce) {
-    .callout {
-      transition: none;
-    }
-
-    .callout::before {
-      transition: none;
-    }
+    border-radius: 6px;
   }
 </style>

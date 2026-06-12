@@ -345,6 +345,11 @@ function isPageActive(href: string): boolean {
         border-radius: 50%;
         background: var(--color-primary);
         flex-shrink: 0;
+        animation: dot-breathe 3s ease-in-out infinite;
+      }
+      @keyframes dot-breathe {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(0.75); }
       }
 
       .topnav__links {

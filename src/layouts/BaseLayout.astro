@@ -129,6 +129,15 @@ function isPageActive(href: string): boolean {
 
     <!-- Top Navigation -->
     <nav class="topnav" id="topnav">
+      <!-- Menu button (toggles sidebar) -->
+      <button id="sidebar-toggle" class="topnav__menu" aria-label="Toggle menu" aria-expanded="false" type="button">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" x2="21" y1="6" y2="6"></line>
+          <line x1="3" x2="21" y1="12" y2="12"></line>
+          <line x1="3" x2="21" y1="18" y2="18"></line>
+        </svg>
+      </button>
+
       <!-- Logo -->
       <a href="/" class="topnav__brand">
         <span class="topnav__dot" aria-hidden="true"></span>
@@ -194,6 +203,9 @@ function isPageActive(href: string): boolean {
           </nav>
         </aside>
       )}
+
+      <!-- Sidebar backdrop (mobile) -->
+      <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
       <main class:list={["atlas-main", { "atlas-main--full": isHome }]} id="atlas-main">
         <article class="prose">
@@ -367,6 +379,28 @@ function isPageActive(href: string): boolean {
         font-weight: 600;
       }
 
+      .topnav__menu {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-2);
+        color: var(--color-dim);
+        cursor: pointer;
+        transition: border-color var(--motion-fast) ease,
+                    background var(--motion-fast) ease;
+      }
+      .topnav__menu:hover {
+        border-color: var(--color-primary);
+        background: var(--color-surface);
+      }
+      @media (min-width: 1024px) {
+        .topnav__menu { display: none; }
+      }
+
       .topnav__right {
         display: none;
         align-items: center;
@@ -429,6 +463,34 @@ function isPageActive(href: string): boolean {
       }
       @media (min-width: 1024px) {
         .atlas-sidebar { display: block; }
+      }
+
+      /* Mobile sidebar (overlay) */
+      @media (max-width: 1023px) {
+        .atlas-sidebar.atlas-sidebar--open {
+          display: block;
+          position: fixed;
+          top: 52px;
+          left: 0;
+          bottom: 0;
+          z-index: var(--z-overlay);
+          box-shadow: var(--shadow-lg);
+        }
+      }
+
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        top: 52px;
+        z-index: calc(var(--z-overlay) - 1);
+        background: rgba(0, 0, 0, 0.3);
+      }
+      .sidebar-backdrop--visible {
+        display: block;
+      }
+      @media (min-width: 1024px) {
+        .sidebar-backdrop { display: none !important; }
       }
 
       .sidebar__nav {
@@ -695,6 +757,31 @@ function isPageActive(href: string): boolean {
     </style>
 
     <script>
+      // === Sidebar toggle ===
+      const sidebarToggle = document.getElementById("sidebar-toggle");
+      const sidebar = document.querySelector(".atlas-sidebar");
+      const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+
+      function openSidebar() {
+        sidebar?.classList.add("atlas-sidebar--open");
+        sidebarBackdrop?.classList.add("sidebar-backdrop--visible");
+        sidebarToggle?.setAttribute("aria-expanded", "true");
+      }
+      function closeSidebar() {
+        sidebar?.classList.remove("atlas-sidebar--open");
+        sidebarBackdrop?.classList.remove("sidebar-backdrop--visible");
+        sidebarToggle?.setAttribute("aria-expanded", "false");
+      }
+
+      sidebarToggle?.addEventListener("click", () => {
+        const expanded = sidebarToggle.getAttribute("aria-expanded") === "true";
+        expanded ? closeSidebar() : openSidebar();
+      });
+      sidebarBackdrop?.addEventListener("click", closeSidebar);
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeSidebar();
+      });
+
       // === Search trigger ===
       document.getElementById("search-trigger")?.addEventListener("click", () => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));

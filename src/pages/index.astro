@@ -1,678 +1,370 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 
-interface QuickLink {
+interface CategoryCard {
   title: string;
-  description: string;
   href: string;
   icon: string;
+  count: number;
+  latest: string;
+  latestHref: string;
+  color: string;
 }
 
-interface LatestPage {
+interface RecentPage {
   title: string;
   href: string;
   category: string;
   categoryColor: string;
+  icon: string;
 }
 
-const quickLinks: QuickLink[] = [
+const categoryCards: CategoryCard[] = [
   {
-    title: "故障排障",
-    description: "常见生产故障的标准化排查流程，从 CrashLoopBackOff 到 OOMKilled，快速定位根因。",
-    href: "/runbooks/crashloopbackoff",
-    icon: `<rect x="2" y="3" width="20" height="14" rx="2" ry="2" stroke-width="1.5" fill="none" stroke="currentColor"/><line x1="6" y1="8" x2="10" y2="8" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><line x1="6" y1="11" x2="14" y2="11" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><polyline points="17 8 19 10 17 12" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><line x1="6" y1="19" x2="18" y2="19" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/>`,
-  },
-  {
-    title: "技术架构",
-    description: "深入理解 Kubernetes Pod 生命周期、容器编排机制与集群调度原理。",
-    href: "/kubernetes/pod-lifecycle",
-    icon: `<path d="M12 2L2 7l10 5 10-5-10-5z" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linejoin="round"/><path d="M2 17l10 5 10-5" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12l10 5 10-5" stroke-width="1.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
-  },
-  {
-    title: "系统基础",
-    description: "Linux 进程模型、文件系统、内存管理等核心概念，构建运维知识根基。",
+    title: "Linux",
     href: "/linux/process-model",
-    icon: `<rect x="5" y="2" width="14" height="20" rx="2" ry="2" stroke-width="1.5" fill="none" stroke="currentColor"/><line x1="9" y1="18" x2="15" y2="18" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><path d="M9 6h6" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/><path d="M9 9h4" stroke-width="1.5" stroke="currentColor" stroke-linecap="round"/>`,
+    icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5v-9ZM3.5 3a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-9ZM5 5.5A.5.5 0 0 1 5.5 5h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 5 5.5Zm0 3A.5.5 0 0 1 5.5 8h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 5 8.5Zm0 3a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5Z"/></svg>`,
+    count: 4,
+    latest: "systemd 服务管理",
+    latestHref: "/linux/systemd",
+    color: "var(--color-success)",
+  },
+  {
+    title: "Docker",
+    href: "/docker/image-layers",
+    icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H2a.5.5 0 0 1-.5-.5v-3Zm2-1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-4Zm2-1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-5Zm2 0a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-5Zm2 1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-4Z"/></svg>`,
+    count: 4,
+    latest: "Docker 存储驱动",
+    latestHref: "/docker/storage",
+    color: "var(--color-info)",
+  },
+  {
+    title: "Kubernetes",
+    href: "/kubernetes/pod-lifecycle",
+    icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm6.5-2.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5V8h2.5a.5.5 0 0 1 0 1H8.5v2.5a.5.5 0 0 1-1 0V9H5a.5.5 0 0 1 0-1h2.5V5.5Z"/></svg>`,
+    count: 3,
+    latest: "Service Mesh 架构对比",
+    latestHref: "/kubernetes/service-mesh",
+    color: "var(--color-primary)",
+  },
+  {
+    title: "Runbooks",
+    href: "/runbooks/crashloopbackoff",
+    icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h11A1.5 1.5 0 0 1 15 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11ZM2.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-11ZM5 4.5A.5.5 0 0 1 5.5 4h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 5 4.5Zm0 3A.5.5 0 0 1 5.5 7h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 5 7.5Zm0 3a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5Z"/></svg>`,
+    count: 3,
+    latest: "OOMKilled 排查",
+    latestHref: "/runbooks/oomkilled",
+    color: "var(--color-error)",
   },
 ];
 
-const latestPages: LatestPage[] = [
-  { title: "Service Mesh 架构对比", href: "/kubernetes/service-mesh", category: "Kubernetes", categoryColor: "var(--color-info)" },
-  { title: "GitOps Pipeline 实践", href: "/architectures/gitops-pipeline", category: "Architecture", categoryColor: "var(--color-accent)" },
-  { title: "DNS 解析故障排查", href: "/incidents/dns-resolution-failure", category: "Incident", categoryColor: "var(--color-error)" },
-  { title: "Helm vs Kustomize", href: "/comparisons/helm-vs-kustomize", category: "Comparison", categoryColor: "var(--color-warning)" },
-  { title: "Docker 存储驱动", href: "/docker/storage", category: "Docker", categoryColor: "var(--color-primary-l)" },
-  { title: "systemd 服务管理", href: "/linux/systemd", category: "Linux", categoryColor: "var(--color-success)" },
+const recentPages: RecentPage[] = [
+  { title: "Service Mesh 架构对比", href: "/kubernetes/service-mesh", category: "Kubernetes", categoryColor: "var(--color-primary)", icon: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm6.5-2.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5V8h2.5a.5.5 0 0 1 0 1H8.5v2.5a.5.5 0 0 1-1 0V9H5a.5.5 0 0 1 0-1h2.5V5.5Z"/></svg>` },
+  { title: "GitOps Pipeline 实践", href: "/architectures/gitops-pipeline", category: "Architecture", categoryColor: "var(--color-accent)", icon: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a.5.5 0 0 1 .5.5v4.293l2.146-2.147a.5.5 0 0 1 .708.708L8.707 7.5l2.647 2.646a.5.5 0 0 1-.708.708L8.5 8.707V13a.5.5 0 0 1-1 0V8.707L5.354 10.854a.5.5 0 1 1-.708-.708L7.293 7.5 4.646 4.854a.5.5 0 1 1 .708-.708L7.5 6.293V2a.5.5 0 0 1 .5-.5Z"/></svg>` },
+  { title: "DNS 解析故障排查", href: "/incidents/dns-resolution-failure", category: "Incident", categoryColor: "var(--color-error)", icon: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566ZM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5Zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>` },
+  { title: "Helm vs Kustomize", href: "/comparisons/helm-vs-kustomize", category: "Comparison", categoryColor: "var(--color-warning)", icon: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2Zm6 0a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H6Z"/></svg>` },
+  { title: "Docker 存储驱动", href: "/docker/storage", category: "Docker", categoryColor: "var(--color-info)", icon: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H2a.5.5 0 0 1-.5-.5v-3Zm2-1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-4Zm2-1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-5Z"/></svg>` },
+  { title: "systemd 服务管理", href: "/linux/systemd", category: "Linux", categoryColor: "var(--color-success)", icon: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5v-9ZM3.5 3a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-9ZM5 5.5A.5.5 0 0 1 5.5 5h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 5 5.5Zm0 3A.5.5 0 0 1 5.5 8h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 5 8.5Z"/></svg>` },
 ];
 ---
 
-<BaseLayout title="SRE Atlas" description="AI 驱动的运维知识库，覆盖 Linux、Docker、Kubernetes 全链路">
-  <!-- Hero Section -->
-  <section class="hero" aria-labelledby="hero-title">
-    <div class="hero__grid-bg" aria-hidden="true"></div>
-    <div class="hero__scanline" aria-hidden="true"></div>
-
-    <div class="hero__content">
-      <div class="hero__badge">
-        <span class="hero__badge-dot"></span>
-        <span>SRE Knowledge Base v2.0</span>
-      </div>
-
-      <h1 id="hero-title" class="hero__title">
-        <span class="hero__title-text" data-typing>SRE Atlas</span>
-        <span class="hero__cursor" aria-hidden="true"></span>
-      </h1>
-
-      <p class="hero__subtitle">
-        <span class="hero__subtitle-inner">AI 驱动的运维知识库</span>
-      </p>
-
-      <div class="hero__chain">
-        <span class="hero__chain-item" style="--i:0">Linux</span>
-        <span class="hero__chain-arrow" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M4 10h12m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
-        <span class="hero__chain-item" style="--i:1">Docker</span>
-        <span class="hero__chain-arrow" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M4 10h12m0 0l-4-4m4 4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
-        <span class="hero__chain-item" style="--i:2">Kubernetes</span>
-      </div>
-    </div>
+<BaseLayout title="SRE Atlas" description="SRE 运维知识库，覆盖 Linux、Docker、Kubernetes 全链路">
+  {/* Welcome Banner */}
+  <section class="welcome" aria-labelledby="welcome-title">
+    <h1 id="welcome-title" class="welcome__title">Welcome to SRE Atlas</h1>
+    <p class="welcome__desc">
+      AI 驱动的运维知识库，覆盖 Linux、Docker、Kubernetes 全链路。快速查阅故障排查流程、技术架构对比与最佳实践。
+    </p>
   </section>
 
-  <!-- Stats Bar -->
-  <section class="stats" aria-label="Site statistics">
-    <div class="stats__inner">
-      <span class="stats__prompt" aria-hidden="true">$</span>
-      <span class="stats__text" data-typing-stats>21 篇文档 · 7 个分类 · 持续更新中</span>
-      <span class="stats__cursor" aria-hidden="true"></span>
-    </div>
-  </section>
+  {/* Stats Row — GitHub repo stats style */}
+  <div class="stats-row" aria-label="Site statistics">
+    <span class="stats-row__item">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h11A1.5 1.5 0 0 1 15 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11ZM2.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-11Z"/></svg>
+      21 pages
+    </span>
+    <span class="stats-row__sep" aria-hidden="true">·</span>
+    <span class="stats-row__item">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M0 2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2Zm6 0a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H6Z"/></svg>
+      7 categories
+    </span>
+    <span class="stats-row__sep" aria-hidden="true">·</span>
+    <span class="stats-row__item">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 3.5a.5.5 0 0 0-1 0V8a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 7.71V3.5Z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/></svg>
+      Updated today
+    </span>
+  </div>
 
-  <!-- Quick Entry Cards -->
-  <section class="cards" aria-labelledby="cards-heading">
-    <h2 id="cards-heading" class="cards__label">快速入口</h2>
-    <div class="cards__grid">
-      {quickLinks.map((link, i) => (
-        <a href={link.href} class="cards__item" style={`--delay:${i}`}>
-          <div class="cards__icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" set:html={link.icon} />
+  {/* Quick Access Grid — category cards */}
+  <section class="categories" aria-labelledby="categories-heading">
+    <h2 id="categories-heading" class="section-title">Quick access</h2>
+    <div class="categories__grid">
+      {categoryCards.map((card) => (
+        <a href={card.href} class="card-link category-card">
+          <div class="category-card__header">
+            <span class="category-card__icon" style={`color:${card.color}`}>
+              <Fragment set:html={card.icon} />
+            </span>
+            <h3 class="category-card__title">{card.title}</h3>
+            <span class="category-card__count">{card.count}</span>
           </div>
-          <h3 class="cards__title">{link.title}</h3>
-          <p class="cards__desc">{link.description}</p>
-          <span class="cards__link">
-            查看文档
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
-              <path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" />
-            </svg>
-          </span>
+          <p class="category-card__latest">
+            Latest: <span class="category-card__latest-link">{card.latest}</span>
+          </p>
         </a>
       ))}
     </div>
   </section>
 
-  <!-- Latest Updates -->
-  <section class="updates" aria-labelledby="updates-heading">
-    <h2 id="updates-heading" class="updates__label">最近更新</h2>
-    <ul class="updates__list">
-      {latestPages.map((page, i) => (
-        <li class="updates__item" style={`--delay:${i}`}>
-          <a href={page.href} class="updates__link">
-            <span class="updates__title">{page.title}</span>
-            <span class="updates__badge" style={`--badge-color:${page.categoryColor}`}>{page.category}</span>
+  {/* Recent Activity Feed — GitHub activity style */}
+  <section class="activity" aria-labelledby="activity-heading">
+    <h2 id="activity-heading" class="section-title">Recent activity</h2>
+    <ul class="activity__list">
+      {recentPages.map((page) => (
+        <li class="activity__item">
+          <a href={page.href} class="activity__link">
+            <span class="activity__icon" style={`color:${page.categoryColor}`}>
+              <Fragment set:html={page.icon} />
+            </span>
+            <span class="activity__title">{page.title}</span>
+            <span class="activity__badge" style={`--badge-color:${page.categoryColor}`}>{page.category}</span>
           </a>
         </li>
       ))}
     </ul>
   </section>
-
-  <!-- Footer flourish -->
-  <footer class="home-footer">
-    <div class="home-footer__line" aria-hidden="true"></div>
-    <p class="home-footer__text">
-      <span class="home-footer__bracket">[</span>
-      SRE Atlas — Built for operators, by operators
-      <span class="home-footer__bracket">]</span>
-    </p>
-  </footer>
 </BaseLayout>
 
 <style>
   /* ============================================
-     Hero Section
+     Welcome Banner
      ============================================ */
-  .hero {
-    position: relative;
+  .welcome {
+    padding: 32px 0 24px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 24px;
+  }
+
+  .welcome__title {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--color-ink);
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+  }
+
+  .welcome__desc {
+    font-size: 14px;
+    color: var(--color-muted);
+    margin: 0;
+    max-width: 640px;
+    line-height: 1.6;
+  }
+
+  /* ============================================
+     Stats Row — monospace, muted, GitHub-style
+     ============================================ */
+  .stats-row {
     display: flex;
     align-items: center;
-    justify-content: center;
-    min-height: clamp(28rem, 40vh, 40rem);
-    padding: var(--space-12) var(--space-4);
-    overflow: hidden;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 0 0 24px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-dim);
   }
 
-  /* CSS-only animated grid background */
-  .hero__grid-bg {
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(var(--color-surface-2) 1px, transparent 1px),
-      linear-gradient(90deg, var(--color-surface-2) 1px, transparent 1px);
-    background-size: 60px 60px;
-    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 20%, transparent 70%);
-    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 20%, transparent 70%);
-    animation: grid-drift 20s linear infinite;
-  }
-
-  @keyframes grid-drift {
-    from { background-position: 0 0, 0 0; }
-    to { background-position: 60px 60px, 60px 60px; }
-  }
-
-  /* Subtle scanline overlay */
-  .hero__scanline {
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      oklch(0 0 0 / 0.03) 2px,
-      oklch(0 0 0 / 0.03) 4px
-    );
-    pointer-events: none;
-  }
-
-  .hero__content {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-
-  /* Badge */
-  .hero__badge {
+  .stats-row__item {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0.85rem;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 400;
-    letter-spacing: 0.06em;
-    color: var(--color-success);
-    border: 1px solid oklch(0.700 0.180 145.0 / 0.25);
-    border-radius: 999px;
-    margin-block-end: var(--space-8);
-    animation: fade-in 0.8s var(--ease-out-expo) both;
+    gap: 5px;
   }
 
-  .hero__badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-success);
-    animation: pulse-dot 2s ease-in-out infinite;
+  .stats-row__sep {
+    color: var(--color-border);
   }
 
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  /* Title with typing animation */
-  .hero__title {
-    font-family: var(--font-mono);
-    font-size: clamp(3rem, 1.5rem + 7vw, 6rem);
-    font-weight: 700;
-    line-height: 1.05;
-    letter-spacing: -0.02em;
-    color: var(--color-ink);
-    margin-block-end: var(--space-6);
-    display: flex;
-    align-items: baseline;
-    gap: 0;
-  }
-
-  .hero__title-text {
-    display: inline-block;
-    overflow: hidden;
-    white-space: nowrap;
-    border-right: none;
-    animation: typing 1.2s steps(10) 0.6s both;
-    width: 0;
-  }
-
-  @keyframes typing {
-    from { width: 0; }
-    to { width: 100%; }
-  }
-
-  /* Blinking cursor */
-  .hero__cursor {
-    display: inline-block;
-    width: 3px;
-    height: 0.9em;
-    background: var(--color-success);
-    margin-left: 4px;
-    vertical-align: baseline;
-    animation: blink 0.8s step-end infinite;
-  }
-
-  @keyframes blink {
-    50% { opacity: 0; }
-  }
-
-  /* Subtitle */
-  .hero__subtitle {
-    font-size: clamp(1rem, 0.875rem + 0.6vw, 1.25rem);
-    color: var(--color-muted);
-    margin-block-end: var(--space-8);
-    opacity: 0;
-    animation: fade-in 0.8s var(--ease-out-expo) 1.8s both;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  /* Tech chain */
-  .hero__chain {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .hero__chain-item {
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
+  /* ============================================
+     Section Title
+     ============================================ */
+  .section-title {
+    font-size: 14px;
     font-weight: 600;
-    padding: 0.35rem 0.9rem;
-    border: 1px solid var(--color-surface-3);
-    border-radius: var(--radius-md);
     color: var(--color-ink);
-    background: var(--color-surface);
-    opacity: 0;
-    animation: fade-in 0.6s var(--ease-out-expo) calc(2.4s + var(--i) * 0.35s) both;
-  }
-
-  .hero__chain-arrow {
-    color: var(--color-dim);
-    flex-shrink: 0;
-    opacity: 0;
-    animation: fade-in 0.4s var(--ease-out-expo) calc(2.6s + var(--i, 0) * 0.35s) both;
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
   }
 
   /* ============================================
-     Stats Bar
+     Category Cards Grid
      ============================================ */
-  .stats {
-    padding: var(--space-4) var(--space-4);
-    border-top: 1px solid var(--color-surface-2);
-    border-bottom: 1px solid var(--color-surface-2);
-    background: var(--color-surface);
+  .categories {
+    margin-bottom: 32px;
   }
 
-  .stats__inner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    max-width: 72rem;
-    margin: 0 auto;
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--color-success);
-  }
-
-  .stats__prompt {
-    color: var(--color-success);
-    opacity: 0.6;
-    flex-shrink: 0;
-  }
-
-  .stats__text {
-    overflow: hidden;
-    white-space: nowrap;
-    width: 0;
-    animation: typing-stats 1.8s steps(22) 3.8s both;
-  }
-
-  @keyframes typing-stats {
-    from { width: 0; }
-    to { width: 100%; }
-  }
-
-  .stats__cursor {
-    display: inline-block;
-    width: 2px;
-    height: 1em;
-    background: var(--color-success);
-    animation: blink 0.8s step-end infinite;
-    flex-shrink: 0;
-  }
-
-  /* ============================================
-     Quick Entry Cards
-     ============================================ */
-  .cards {
-    padding: var(--space-12) var(--space-4);
-    max-width: 72rem;
-    margin: 0 auto;
-  }
-
-  .cards__label {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 400;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-dim);
-    margin-block-end: var(--space-6);
-  }
-
-  .cards__grid {
+  .categories__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: var(--space-5);
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
-  .cards__item {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    padding: var(--space-6);
+  @media (min-width: 640px) {
+    .categories__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .categories__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  .category-card {
+    display: block;
+    padding: 16px;
     background: var(--color-surface);
-    border: 1px solid var(--color-surface-2);
-    border-radius: var(--radius-xl);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
     text-decoration: none;
     color: inherit;
     transition:
-      transform var(--motion-normal) var(--ease-out-expo),
-      border-color var(--motion-normal) ease,
-      box-shadow var(--motion-normal) ease;
-    opacity: 0;
-    animation: card-reveal 0.7s var(--ease-out-expo) calc(4.5s + var(--delay) * 0.15s) both;
+      box-shadow var(--motion-normal) ease,
+      border-color var(--motion-normal) ease;
   }
 
-  @keyframes card-reveal {
-    from {
-      opacity: 0;
-      transform: translateY(16px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .cards__item:hover {
-    transform: translateY(-4px);
+  .category-card:hover {
+    box-shadow: var(--shadow-md);
     border-color: var(--color-primary);
-    box-shadow:
-      0 0 0 1px var(--color-primary),
-      0 8px 32px oklch(0.550 0.105 230.0 / 0.12),
-      0 2px 8px oklch(0 0 0 / 0.2);
     text-decoration: none;
   }
 
-  .cards__item:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-  }
-
-  .cards__icon {
+  .category-card__header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: var(--radius-md);
-    background: var(--color-surface-2);
-    color: var(--color-primary-l);
-    margin-block-end: var(--space-4);
-    transition: background var(--motion-normal) ease, color var(--motion-normal) ease;
+    gap: 8px;
+    margin-bottom: 8px;
   }
 
-  .cards__item:hover .cards__icon {
-    background: oklch(0.550 0.105 230.0 / 0.15);
-    color: var(--color-primary-l);
-  }
-
-  .cards__title {
-    font-size: 1.1rem;
-    font-weight: 650;
-    margin-block-end: var(--space-2);
-    color: var(--color-ink);
-  }
-
-  .cards__desc {
-    font-size: 0.85rem;
-    color: var(--color-muted);
-    line-height: 1.65;
-    flex: 1;
-    margin-block-end: var(--space-4);
-  }
-
-  .cards__link {
-    display: inline-flex;
+  .category-card__icon {
+    display: flex;
     align-items: center;
-    gap: 0.25rem;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--color-primary-l);
-    transition: gap var(--motion-fast) ease;
+    flex-shrink: 0;
   }
 
-  .cards__item:hover .cards__link {
-    gap: 0.5rem;
+  .category-card__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-ink);
+    margin: 0;
+    flex: 1;
+  }
+
+  .category-card__count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-dim);
+    background: var(--color-surface-2);
+    padding: 1px 6px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .category-card__latest {
+    font-size: 12px;
+    color: var(--color-dim);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .category-card__latest-link {
+    color: var(--color-primary-l);
   }
 
   /* ============================================
-     Latest Updates
+     Activity Feed
      ============================================ */
-  .updates {
-    padding: var(--space-10) var(--space-4) var(--space-12);
-    max-width: 72rem;
-    margin: 0 auto;
-    border-top: 1px solid var(--color-surface-2);
+  .activity {
+    margin-bottom: 32px;
   }
 
-  .updates__label {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 400;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-dim);
-    margin-block-end: var(--space-6);
-  }
-
-  .updates__list {
+  .activity__list {
     list-style: none;
-    padding: 0;
     margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    background: var(--color-surface-2);
-    border-radius: var(--radius-lg);
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
 
-  .updates__item {
-    opacity: 0;
-    animation: item-reveal 0.5s var(--ease-out-expo) calc(5.2s + var(--delay) * 0.1s) both;
+  .activity__item {
+    border-bottom: 1px solid var(--color-border);
   }
 
-  @keyframes item-reveal {
-    from {
-      opacity: 0;
-      transform: translateX(-8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+  .activity__item:last-child {
+    border-bottom: none;
   }
 
-  .updates__link {
+  .activity__link {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    background: transparent;
-    border-radius: var(--radius-md);
+    gap: 10px;
+    padding: 10px 16px;
     text-decoration: none;
     color: inherit;
     transition: background var(--motion-fast) ease;
   }
 
-  .updates__link:hover {
-    background: var(--color-surface);
+  .activity__link:hover {
+    background: var(--color-surface-2);
     text-decoration: none;
   }
 
-  .updates__title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--color-ink);
-    transition: color var(--motion-fast) ease;
+  .activity__icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
   }
 
-  .updates__link:hover .updates__title {
+  .activity__title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-ink);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .activity__link:hover .activity__title {
     color: var(--color-primary-l);
   }
 
-  .updates__badge {
+  .activity__badge {
     flex-shrink: 0;
     font-family: var(--font-mono);
-    font-size: 0.65rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    padding: 0.15rem 0.55rem;
-    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 8px;
+    border-radius: 10px;
     color: var(--badge-color, var(--color-muted));
-    background: var(--color-surface);
-    border: 1px solid var(--color-surface-3);
-  }
-
-  /* ============================================
-     Footer
-     ============================================ */
-  .home-footer {
-    padding: var(--space-8) var(--space-4) var(--space-10);
-    text-align: center;
-  }
-
-  .home-footer__line {
-    width: 40px;
-    height: 1px;
-    background: var(--color-surface-3);
-    margin: 0 auto var(--space-6);
-  }
-
-  .home-footer__text {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--color-dim);
-    letter-spacing: 0.04em;
-  }
-
-  .home-footer__bracket {
-    color: var(--color-surface-3);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
   }
 
   /* ============================================
      Reduced Motion
      ============================================ */
   @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-delay: 0ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
-
-    .hero__title::after,
-    .hero__subtitle,
-    .hero__chain-item,
-    .stats,
-    .cards__card,
-    .updates__item {
-      opacity: 1 !important;
-      transform: none !important;
-    }
-  }
-
-  /* ============================================
-     Responsive
-     ============================================ */
-  @media (min-width: 768px) {
-    .cards__grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .hero {
-      min-height: clamp(24rem, 40vh, 36rem);
-    }
-
-    .hero__title {
-      font-size: clamp(2.8rem, 1.5rem + 4vw, 4.5rem);
-    }
-  }
-
-  @media (max-width: 640px) {
-    .hero {
-      min-height: clamp(20rem, 35vh, 30rem);
-      padding: var(--space-10) var(--space-4);
-    }
-
-    .hero__title {
-      font-size: clamp(2.2rem, 1.2rem + 5vw, 3.5rem);
-    }
-
-    .hero__chain {
-      gap: var(--space-2);
-    }
-
-    .hero__chain-item {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.6rem;
-    }
-
-    .hero__chain-arrow {
-      display: none;
-    }
-
-    .stats__inner {
-      font-size: 0.7rem;
-    }
-
-    .cards__grid {
-      grid-template-columns: 1fr;
-    }
-
-    .updates__link {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: var(--space-2);
+    .category-card,
+    .activity__link {
+      transition: none;
     }
   }
 </style>

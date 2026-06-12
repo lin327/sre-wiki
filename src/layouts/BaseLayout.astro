@@ -191,7 +191,7 @@ function isActive(href: string): boolean {
         position: fixed;
         top: 0;
         left: 0;
-        z-index: 200;
+        z-index: var(--z-sticky);
         width: 0%;
         height: 2px;
         background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
@@ -203,7 +203,7 @@ function isActive(href: string): boolean {
       .topnav {
         position: sticky;
         top: 0;
-        z-index: 100;
+        z-index: var(--z-sticky);
         height: 52px;
         display: flex;
         align-items: center;
@@ -462,7 +462,7 @@ function isActive(href: string): boolean {
         position: fixed;
         bottom: 20px;
         right: 20px;
-        z-index: 90;
+        z-index: var(--z-dropdown);
         width: 32px;
         height: 32px;
         border-radius: 50%;
@@ -495,7 +495,7 @@ function isActive(href: string): boolean {
       .shortcuts-overlay {
         position: fixed;
         inset: 0;
-        z-index: 150;
+        z-index: var(--z-overlay);
         background: oklch(0 0 0 / 0.5);
         backdrop-filter: blur(4px);
         display: flex;

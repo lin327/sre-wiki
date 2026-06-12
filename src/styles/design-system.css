@@ -98,6 +98,14 @@
   --radius-lg: 8px;
   --radius-xl: 12px;
 
+  /* Z-Index Scale */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
   /* Motion */
   --motion-fast: 100ms;
   --motion-normal: 200ms;
@@ -223,6 +231,7 @@ h6 {
   font-family: var(--font-display);
   letter-spacing: var(--heading-tracking);
   text-wrap: balance;
+  overflow-wrap: break-word;
   margin: 0;
 }
 
@@ -291,6 +300,7 @@ a:hover {
   max-width: 75ch;
   margin: 0 auto;
   line-height: var(--line-height);
+  text-wrap: pretty;
 }
 
 .prose > * + * {

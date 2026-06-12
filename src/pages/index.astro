@@ -376,7 +376,7 @@ const latestPages: LatestPage[] = [
     font-size: 0.7rem;
     font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.04em;
     color: var(--color-dim);
     margin-block-end: var(--space-6);
   }
@@ -494,7 +494,7 @@ const latestPages: LatestPage[] = [
     font-size: 0.7rem;
     font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.04em;
     color: var(--color-dim);
     margin-block-end: var(--space-6);
   }
@@ -595,8 +595,48 @@ const latestPages: LatestPage[] = [
   }
 
   /* ============================================
+     Reduced Motion
+     ============================================ */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .hero__title::after,
+    .hero__subtitle,
+    .hero__chain-item,
+    .stats,
+    .cards__card,
+    .updates__item {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+  }
+
+  /* ============================================
      Responsive
      ============================================ */
+  @media (min-width: 768px) {
+    .cards__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .hero {
+      min-height: clamp(24rem, 40vh, 36rem);
+    }
+
+    .hero__title {
+      font-size: clamp(2.8rem, 1.5rem + 4vw, 4.5rem);
+    }
+  }
+
   @media (max-width: 640px) {
     .hero {
       min-height: clamp(20rem, 35vh, 30rem);

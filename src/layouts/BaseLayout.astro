@@ -90,27 +90,7 @@ function isActive(href: string): boolean {
         </button>
       </div>
 
-      <!-- Mobile hamburger -->
-      <button id="mobile-menu-toggle" class="topnav__hamburger" aria-label="Menu" aria-expanded="false" type="button">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="4" x2="20" y1="12" y2="12"></line>
-          <line x1="4" x2="20" y1="6" y2="6"></line>
-          <line x1="4" x2="20" y1="18" y2="18"></line>
-        </svg>
-      </button>
     </nav>
-
-    <!-- Mobile dropdown -->
-    <div id="mobile-menu" class="mobile-menu" hidden>
-      {topNavLinks.map((link) => (
-        <a
-          href={link.href}
-          class:list={["mobile-menu__link", { "mobile-menu__link--active": isActive(link.href) }]}
-        >
-          {link.label}
-        </a>
-      ))}
-    </div>
 
     <!-- Pagefind Search -->
     <PagefindSearch client:idle />
@@ -364,55 +344,6 @@ function isActive(href: string): boolean {
         line-height: 1.4;
       }
 
-      /* Mobile hamburger */
-      .topnav__hamburger {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 36px;
-        height: 36px;
-        margin-left: auto;
-        border-radius: var(--radius-sm);
-        color: var(--color-muted);
-        transition: color var(--motion-fast) ease;
-      }
-      .topnav__hamburger:hover { color: var(--color-ink); }
-      @media (min-width: 768px) { .topnav__hamburger { display: none; } }
-
-      /* Mobile dropdown */
-      .mobile-menu {
-        position: fixed;
-        top: 52px;
-        left: 0;
-        right: 0;
-        z-index: 99;
-        background: var(--color-surface);
-        border-bottom: 1px solid var(--color-surface-2);
-        padding: 8px 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        box-shadow: 0 4px 12px oklch(0 0 0 / 0.15);
-      }
-
-      .mobile-menu__link {
-        padding: 8px 12px;
-        border-radius: var(--radius-sm);
-        font-size: 13px;
-        color: var(--color-muted);
-        text-decoration: none;
-        transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
-      }
-      .mobile-menu__link:hover {
-        background: var(--color-surface-2);
-        color: var(--color-ink);
-      }
-      .mobile-menu__link--active {
-        background: oklch(0.550 0.105 230.0 / 0.12);
-        color: var(--color-accent);
-        font-weight: 600;
-      }
-
       /* Layout */
       .atlas-layout {
         display: flex;
@@ -433,7 +364,7 @@ function isActive(href: string): boolean {
       @media (min-width: 768px) { .atlas-main { padding: 2.5rem 3rem; } }
       @media (min-width: 1280px) { .atlas-main { padding: 2.5rem 4rem; } }
       /* Content links: underline slides from left */
-      .prose :global(a:not(.topnav__link):not(.topnav__brand):not(.toc__link):not(.mobile-menu__link):not(.site-footer__link):not(.topnav__search)) {
+      .prose :global(a:not(.topnav__link):not(.topnav__brand):not(.toc__link):not(.site-footer__link):not(.topnav__search)) {
         position: relative;
         text-decoration: none;
         background-image: linear-gradient(var(--color-primary-l), var(--color-primary-l));
@@ -442,7 +373,7 @@ function isActive(href: string): boolean {
         background-repeat: no-repeat;
         transition: background-size var(--motion-normal) var(--ease-out-expo);
       }
-      .prose :global(a:not(.topnav__link):not(.topnav__brand):not(.toc__link):not(.mobile-menu__link):not(.site-footer__link):not(.topnav__search):hover) {
+      .prose :global(a:not(.topnav__link):not(.topnav__brand):not(.toc__link):not(.site-footer__link):not(.topnav__search):hover) {
         background-size: 100% 1px;
       }
 
@@ -669,29 +600,6 @@ function isActive(href: string): boolean {
     </style>
 
     <script>
-      // === Mobile menu ===
-      const menuToggle = document.getElementById("mobile-menu-toggle");
-      const mobileMenu = document.getElementById("mobile-menu");
-      menuToggle?.addEventListener("click", () => {
-        const expanded = menuToggle.getAttribute("aria-expanded") === "true";
-        menuToggle.setAttribute("aria-expanded", String(!expanded));
-        if (mobileMenu) mobileMenu.hidden = expanded;
-      });
-      // Close on navigation
-      mobileMenu?.querySelectorAll("a").forEach((link) => {
-        link.addEventListener("click", () => {
-          if (mobileMenu) mobileMenu.hidden = true;
-          menuToggle?.setAttribute("aria-expanded", "false");
-        });
-      });
-      // Close on Escape
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && mobileMenu && !mobileMenu.hidden) {
-          mobileMenu.hidden = true;
-          menuToggle?.setAttribute("aria-expanded", "false");
-        }
-      });
-
       // === Search trigger ===
       document.getElementById("search-trigger")?.addEventListener("click", () => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));

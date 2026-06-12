@@ -233,19 +233,19 @@ function isPageActive(href: string): boolean {
     <!-- Footer -->
     <footer class="site-footer">
       <div class="site-footer__inner">
-        <span class="site-footer__text">
-          SRE Atlas
+        <!-- 友情链接 -->
+        <div class="site-footer__links">
+          <span class="site-footer__text">友情链接：</span>
+          <a href="https://github.com/lin327/sre-wiki" class="site-footer__link" target="_blank" rel="noopener noreferrer">GitHub</a>
           <span class="site-footer__sep" aria-hidden="true">·</span>
-          <a
-            href="https://github.com"
-            class="site-footer__link"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="GitHub repository"
-          >
-            GitHub
+          <a href="https://github.com/lin327/sre-atlas-agent" class="site-footer__link" target="_blank" rel="noopener noreferrer">Agent</a>
+        </div>
+        <!-- 备案号 -->
+        <div class="site-footer__icp">
+          <a href="https://beian.miit.gov.cn" class="site-footer__link" target="_blank" rel="noopener noreferrer">
+            闽ICP备2025088055号
           </a>
-        </span>
+        </div>
       </div>
     </footer>
 
@@ -693,14 +693,25 @@ function isPageActive(href: string): boolean {
       /* Footer — minimal, GitHub-style */
       .site-footer {
         border-top: 1px solid var(--color-border);
-        padding: 24px 32px;
+        padding: 20px 32px;
       }
       .site-footer__inner {
         max-width: 1280px;
         margin: 0 auto;
         display: flex;
+        flex-direction: column;
         align-items: center;
+        gap: 8px;
+      }
+      .site-footer__links {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-wrap: wrap;
         justify-content: center;
+      }
+      .site-footer__icp {
+        font-size: 12px;
       }
       .site-footer__text {
         font-size: 12px;

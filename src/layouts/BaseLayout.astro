@@ -188,14 +188,14 @@ function isPageActive(href: string): boolean {
         <nav class="sidebar__nav">
           {sidebarGroups.map((group) => (
             <div class="sidebar__group">
-              <button type="button" class="sidebar__group-header" aria-expanded="true">
+              <button type="button" class="sidebar__group-header" aria-expanded="false">
                 <span class="sidebar__group-icon" set:html={group.icon} />
                 <span class="sidebar__group-label">{group.label}</span>
                 <span class="sidebar__chevron" aria-hidden="true">
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M12.78 6.22a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L3.22 7.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L8 9.94l3.72-3.72a.75.75 0 0 1 1.06 0Z"/></svg>
                 </span>
               </button>
-              <ul class="sidebar__list">
+              <ul class="sidebar__list sidebar__list--collapsed">
                 {group.pages.map((page) => (
                   <li>
                     <a
@@ -846,12 +846,13 @@ function isPageActive(href: string): boolean {
         const btn = group.querySelector(".sidebar__group-header");
         const list = group.querySelector(".sidebar__list");
         const chevron = group.querySelector(".sidebar__chevron");
-
-        // Check if current page is in this group — keep it open
         const hasActive = group.querySelector(".sidebar__link--active");
-        if (!hasActive) {
-          // Collapse groups without active page on load
-          // (optional: comment out this line to start all expanded)
+
+        // Default: all collapsed except the group with active page
+        if (hasActive) {
+          list?.classList.remove("sidebar__list--collapsed");
+          chevron?.classList.remove("sidebar__chevron--collapsed");
+          btn?.setAttribute("aria-expanded", "true");
         }
 
         btn?.addEventListener("click", () => {

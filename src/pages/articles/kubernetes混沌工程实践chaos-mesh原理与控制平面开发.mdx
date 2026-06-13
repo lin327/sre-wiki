@@ -7,7 +7,7 @@ lastUpdated: 2024-05-28
 confidence: high
 sources:
   - url: https://chaos-mesh.org/blog/implement-chaos-engineering-in-k8s/
-    title: Implementing Chaos Engineering in K8s: Chaos Mesh Principle Analysis and Control Plane Development
+    title: "Implementing Chaos Engineering in K8s: Chaos Mesh Principle Analysis and Control Plane Development"
 tags: [chaos-engineering, kubernetes, chaos-mesh, sre, reliability, resilience-testing]
 ---
 
@@ -23,7 +23,7 @@ Chaos Mesh的设计围绕Kubernetes的声明式API模型展开，其核心架构
 2.  **Chaos Daemon**：以 `DaemonSet` 形式运行在每个集群节点上，是一个拥有特殊权限的特权容器。它接收来自Controller Manager的gRPC指令，并在本地节点上执行实际的故障注入操作，如杀Pod、配置网络规则、执行压力测试等。其特权模式使其能够访问宿主机的网络命名空间、执行系统调用等。
 3.  **Dashboard（可选）**：提供Web UI，方便用户创建、查看和管理混沌实验。
 
-Chaos Mesh的工作流程遵循典型的Kubernetes Operator模式：用户提交CRD -> Controller Manager 处理 -> 通知/调用 Daemon -> Daemon 执行故障 -> 状态上报。
+Chaos Mesh的工作流程遵循典型的Kubernetes Operator模式：用户提交CRD -&gt; Controller Manager 处理 -&gt; 通知/调用 Daemon -&gt; Daemon 执行故障 -&gt; 状态上报。
 
 ## 实践
 

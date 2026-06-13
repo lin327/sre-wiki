@@ -7,7 +7,7 @@ lastUpdated: 2026-05-14
 confidence: high
 sources:
   - url: https://aws.amazon.com/blogs/architecture/building-hybrid-multi-tenant-architecture-for-stateful-services-on-aws/
-    title: AWS Architecture Blog: Building hybrid multi-tenant architecture for stateful services on AWS
+    title: "AWS Architecture Blog: Building hybrid multi-tenant architecture for stateful services on AWS"
 tags: [multi-tenant, architecture, isolation, scalability, aws, ecs, alb, route53, privatelink]
 ---
 
@@ -73,7 +73,7 @@ tags: [multi-tenant, architecture, isolation, scalability, aws, ecs, alb, route5
 
 - **SLI（服务级别指标）**：
     - 每个租户的**服务延迟**（例如 P99 延迟 < 200ms）。
-    - 每个租户的**服务可用性**（例如，非5xx错误响应比例 > 99.9%）。
+    - 每个租户的**服务可用性**（例如，非5xx错误响应比例 &gt; 99.9%）。
     - 每个租户的**内存使用率**（作为容量和性能的前瞻性指标）。
 - **SLO（服务级别目标）**：基于上述SLI为不同Tier的租户制定具体的性能目标。例如，为“高TPS”Tier的租户设定更严格的延迟SLO。
 - **关联**：这些SLI/SLO直接关联到架构的多个层面：ALB路由准确性、ECS集群性能、PrivateLink连接稳定性以及底层EC2实例的健康状况。监控数据用于验证架构是否满足业务承诺。

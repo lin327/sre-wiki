@@ -7,7 +7,7 @@ lastUpdated: 2023-10-27
 confidence: medium
 sources:
   - url: https://chaos-mesh.org/blog/develop-a-daily-reporting-system/
-    title: How to Develop a Daily Reporting System to Track Chaos Testing Results
+    title: "How to Develop a Daily Reporting System to Track Chaos Testing Results"
 tags: [Chaos Mesh, 混沌工程, 可观测性, 自动化报告, SLO, Kubernetes]
 ---
 
@@ -40,7 +40,7 @@ tags: [Chaos Mesh, 混沌工程, 可观测性, 自动化报告, SLO, Kubernetes]
 
 这是报告系统的核心，通常由一个定时任务（如 `cron`）驱动，每日清晨自动执行。
 
-- **收集日志**：使用 `kubectl logs` 命令采集指定命名空间和 Pod 在过去 24 小时内的日志。例如：`kubectl logs <pod-name> -n tidb-test --since=24h >> tidb.log`。所有相关组件（如 TiDB Server, TiKV, PD）的日志都应被收集。
+- **收集日志**：使用 `kubectl logs` 命令采集指定命名空间和 Pod 在过去 24 小时内的日志。例如：`kubectl logs <pod-name> -n tidb-test --since=24h &gt;&gt; tidb.log`。所有相关组件（如 TiDB Server, TiKV, PD）的日志都应被收集。
 - **过滤与分析**：从海量日志中筛选出错误（Error）和警告（Warning）信息。可以使用 `awk`、`grep` 等 Linux 文本处理工具，也可以编写自定义脚本进行更复杂的分析。
 - **数据可视化**：将关键指标（如每秒查询数 QPS）的变化绘制成图表。例如，使用 `gnuplot` 等工具，可以直观地展示在 Pod 故障注入期间，QPS 的骤降与恢复过程。这种可视化对于量化故障影响至关重要。
 - **生成报告**：将分析后的文本摘要、可视化图表等整合成一份易于阅读的文档，例如 PDF 格式。可以使用 `gopdf` 等库来程序化地生成 PDF 文件，便于在不同设备和浏览器上查看。报告文件名可以包含状态信息（如 `report-2021-07-09-bad.pdf`），以快速标识哪些日期的测试暴露了问题。

@@ -1,5 +1,5 @@
 ---
-title: "Cluster API v1.12: 原地更新与链式升级"
+title: "\"Cluster API v1.12: 原地更新与链式升级\""
 description: "介绍 Cluster API v1.12 如何通过引入原地更新和链式升级来简化 Kubernetes 集群的生命周期管理，减少运维摩擦。"
 category: "容器编排"
 order: 0
@@ -29,7 +29,7 @@ v1.12.0 引入的**原地更新**功能，扩展了这一模型。它允许用�
 
 ### 链式升级 (Chained Upgrades)
 
-在 Kubernetes 的发布周期中，用户通常需要逐个次要版本（例如 1.32 -> 1.33 -> 1.34）进行升级。`ClusterClass` 和托管拓扑功能为 Kubernetes-as-a-Service 平台提供了强大的抽象。
+在 Kubernetes 的发布周期中，用户通常需要逐个次要版本（例如 1.32 -&gt; 1.33 -&gt; 1.34）进行升级。`ClusterClass` 和托管拓扑功能为 Kubernetes-as-a-Service 平台提供了强大的抽象。
 
 v1.12.0 引入的**链式升级**功能，允许用户在一次操作中声明一个跨多个次要版本的目标版本（例如，从 1.32 直接升级到 1.35）。Cluster API 会负责安全地编排所需的**中间升级步骤**，自动计算升级计划并按正确的顺序（先控制面，后工作节点）执行。它还会根据 Kubernetes 版本偏差策略，尽可能优化工作节点的升级路径，可能跳过某些中间版本。
 

@@ -7,7 +7,7 @@ lastUpdated: 2024-07-16
 confidence: medium
 sources:
   - url: https://kubernetes.io/blog/2026/01/21/introducing-checkpoint-restore-wg/
-    title: Announcing the Checkpoint/Restore Working Group
+    title: "Announcing the Checkpoint/Restore Working Group"
 tags: [Kubernetes, CRIU, Checkpoint, Restore, SRE, Reliability, Resource-Optimization]
 ---
 
@@ -54,6 +54,6 @@ tags: [Kubernetes, CRIU, Checkpoint, Restore, SRE, Reliability, Resource-Optimiz
     -   忽略检查点文件的安全性，其包含了应用的内存快照，可能包含敏感信息。
 -   **相关指标（SLI/SLO）**：
     -   **SLI**：检查点操作成功率、检查点创建平均耗时、从检查点恢复的 Pod 启动时间、检查点存储空间占用。
-    -   **SLO**：对于关键任务，可以设置类似“每周自动检查点成功率 > 99.9%”或“从检查点恢复的 Pod 启动时间 P99 < 30秒”的目标。
+    -   **SLO**：对于关键任务，可以设置类似“每周自动检查点成功率 &gt; 99.9%”或“从检查点恢复的 Pod 启动时间 P99 < 30秒”的目标。
 
 相关主题：[[容器编排]]、[[站点可靠性工程]]、[[容错设计]]、[[资源优化]]

@@ -7,7 +7,7 @@ lastUpdated: 2025-10-16
 confidence: high
 sources:
   - url: https://kubernetes.io/blog/2026/03/17/image-promoter-rewrite/
-    title: The Invisible Rewrite: Modernizing the Kubernetes Image Promoter
+    title: "The Invisible Rewrite: Modernizing the Kubernetes Image Promoter"
 tags: [Kubernetes, kpromo, 可靠性, 重写, GitOps, 安全供应链]
 ---
 
@@ -68,7 +68,7 @@ Kubernetes 官方容器镜像（从 `registry.k8s.io` 拉取的镜像）的发�
 ### 与可靠性、可观测性的关联
 - **可靠性**：此次重写本身就是一次提升可靠性的大型工程。通过解决性能瓶颈（速率限制、慢速 I/O）和增加健壮性（超时、重试），显著降低了发布作业的失败率，保障了 Kubernetes 核心发布流程的连续性。
 - **可观测性**：虽然文中未详述，但管道的阶段化使得对推广过程每一步的监控和故障定位变得更加清晰。独立的签名复制作业（Prow Job）也使该流程的可观测性得到提升。
-- **事件响应**：分阶段发布和默认配置的切换（`v4.2.0` -> `v4.3.0`）为团队提供了清晰的回滚路径。在发布 `v4.2.0` 后迅速发现并修复了两个生产环境回归问题，体现了在关键基础设施中实施“金丝雀发布”或“渐进式交付”的重要性。
+- **事件响应**：分阶段发布和默认配置的切换（`v4.2.0` -&gt; `v4.3.0`）为团队提供了清晰的回滚路径。在发布 `v4.2.0` 后迅速发现并修复了两个生产环境回归问题，体现了在关键基础设施中实施“金丝雀发布”或“渐进式交付”的重要性。
 
 ### 最佳实践与常见反模式
 **最佳实践：**

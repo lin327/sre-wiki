@@ -7,7 +7,7 @@ lastUpdated: 2024-07-08
 confidence: high
 sources:
   - url: https://aws.amazon.com/blogs/architecture/building-a-scalable-user-search-layer-on-top-of-amazon-cognito/
-    title: Building a scalable user search layer on top of Amazon Cognito
+    title: "Building a scalable user search layer on top of Amazon Cognito"
 tags: [cognito, opensearch, dynamodb, lambda, serverless, architecture, search]
 ---
 
@@ -51,7 +51,7 @@ DynamoDB 作为用户数据的权威记录存储和变更事件源（通过 Dyna
 
 ## SRE 要点
 *   **与可靠性、可观测性的关联**：
-    *   **延迟与可用性**：该架构的搜索性能（SLO：如99%的查询延迟<200ms）直接依赖于 OpenSearch Serverless 的性能和搜索 Lambda 的冷启动状态。应对 Lambda 启用 **Provisioned Concurrency** 来保障搜索端的低延迟。数据摄入路径的延迟（从Cognito事件到OpenSearch索引可见）是另一个关键的SLO。
+    *   **延迟与可用性**：该架构的搜索性能（SLO：如99%的查询延迟&lt;200ms）直接依赖于 OpenSearch Serverless 的性能和搜索 Lambda 的冷启动状态。应对 Lambda 启用 **Provisioned Concurrency** 来保障搜索端的低延迟。数据摄入路径的延迟（从Cognito事件到OpenSearch索引可见）是另一个关键的SLO。
     *   **数据一致性**：摄入管道的事件驱动特性意味着数据最终一致。SRE 需要监控 DynamoDB Streams 的延迟和失败事件，以及 Lambda 执行失败率，以确保搜索索引与 Cognito 源数据保持同步。
 *   **最佳实践与常见反模式**：
     *   **最佳实践**：为 Cognito 触发器 Lambda 和搜索 Lambda 分别创建最小权限的 IAM 角色。使用指数退避重试来处理 OpenSearch 的 `429` 错误。为 DynamoDB 表和 OpenSearch 索引启用自动备份。

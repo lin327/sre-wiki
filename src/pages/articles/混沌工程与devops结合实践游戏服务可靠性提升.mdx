@@ -7,7 +7,7 @@ lastUpdated: 2023-10-27
 confidence: medium
 sources:
   - url: https://chaos-mesh.org/blog/Securing-Online-Gaming-Combine-Chaos-Engineering-with-DevOps-Practices/
-    title: Securing Online Gaming: Combine Chaos Engineering with DevOps Practices
+    title: "Securing Online Gaming: Combine Chaos Engineering with DevOps Practices"
 tags: [混沌工程, DevOps, 故障注入, 微服务, Chaos Mesh, Kubernetes, SRE, 可靠性]
 ---
 
@@ -63,4 +63,4 @@ IEG将Chaos Mesh集成到其持续集成与持续交付（CI/CD）流水线中�
 *   **实验无目标**：进行无明确监控指标和预期结果的随机故障注入，无法衡量实验效果。
 *   **脱离生产实际**：在与生产环境差异过大的隔离环境中实验，导致发现的问题无法真实反映生产风险。
 
-**相关指标（SLI/SLO/SLA）**：混沌实验通过模拟故障来检验服务在极端条件下能否满足其服务等级目标（[[SLO]]）。例如，一个服务的SLO可能定义“P99延迟 < 500ms，可用性 > 99.9%”。通过在高CPU负载或网络延迟下进行混沌实验，可以验证在该故障场景下，服务是否仍然能够维持其SLO，这直接影响到最终向客户承诺的服务等级协议（[[SLA]]）的达成。
+**相关指标（SLI/SLO/SLA）**：混沌实验通过模拟故障来检验服务在极端条件下能否满足其服务等级目标（[[SLO]]）。例如，一个服务的SLO可能定义“P99延迟 < 500ms，可用性 &gt; 99.9%”。通过在高CPU负载或网络延迟下进行混沌实验，可以验证在该故障场景下，服务是否仍然能够维持其SLO，这直接影响到最终向客户承诺的服务等级协议（[[SLA]]）的达成。

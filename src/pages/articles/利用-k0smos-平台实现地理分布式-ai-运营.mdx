@@ -7,7 +7,7 @@ lastUpdated: 2025-07-08
 confidence: medium
 sources:
   - url: https://www.cncf.io/blog/2026/06/08/breaking-free-of-a-single-datacenter-practical-geo-distributed-ai-operations-with-the-k0smos-platforms/
-    title: Breaking free of a single datacenter: Practical geo-distributed AI operations with the k0smos platforms
+    title: "Breaking free of a single datacenter: Practical geo-distributed AI operations with the k0smos platforms"
 tags: [geo-distributed, ai-infra, multi-cluster, kubernetes, gpu, edge, site-reliability]
 ---
 
@@ -61,7 +61,7 @@ k0smos 平台由三个核心开源组件构成，它们共同提供了管理地�
     *   **常见反模式**：手动管理庞大的地理分布式集群舰队（极易出错）；在单一集群中硬编码对特定云厂商或硬件的依赖；忽略跨站点网络延迟和带宽对分布式训练算法设计的影响。
 *   **相关指标（SLI/SLO/SLA）**：
     *   **SLI**：跨站点节点连接建立成功率与延迟；GPU 可用性与健康度；通过平台 API 部署或扩缩集群所需时间；分布式训练作业的平均启动时间与完成时间。
-    *   **SLO**：例如，地理分布式节点连接成功率 >= 99.9%；从声明到集群就绪的供应时间 < 10 分钟（在特定区域）；基于能源信号的动态资源调配成功率 >= 99%。
+    *   **SLO**：例如，地理分布式节点连接成功率 &gt;= 99.9%；从声明到集群就绪的供应时间 < 10 分钟（在特定区域）；基于能源信号的动态资源调配成功率 &gt;= 99%。
     *   **SLA**：基于 SLO 向内部 AI 研发团队或外部客户承诺的平台可用性，确保他们在约定的响应时间窗口内获得可用的计算资源。
 
-> **延伸阅读**：本文讨论的 GitOps 工作流和声明式基础设施管理是现代 [[site-reliability-engineering]] 实践的核心。对于 Kubernetes 多集群管理的进一步探讨，可参阅 [[kubernetes-operator-patterns]] 和 [[gitops-for-infrastructure]] 相关知识。
+&gt; **延伸阅读**：本文讨论的 GitOps 工作流和声明式基础设施管理是现代 [[site-reliability-engineering]] 实践的核心。对于 Kubernetes 多集群管理的进一步探讨，可参阅 [[kubernetes-operator-patterns]] 和 [[gitops-for-infrastructure]] 相关知识。

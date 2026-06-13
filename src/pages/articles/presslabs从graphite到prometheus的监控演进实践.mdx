@@ -7,7 +7,7 @@ lastUpdated: 2024-08-02
 confidence: medium
 sources:
   - url: https://prometheus.io/blog/2018/08/23/interview-with-presslabs/
-    title: Prometheus Blog - Interview with Presslabs
+    title: "Prometheus Blog - Interview with Presslabs"
 tags: [prometheus, monitoring, kubernetes, migration, observability]
 ---
 
@@ -29,7 +29,7 @@ Presslabs 的监控演进历程体现了几个核心概念的转变：
 Presslabs 的监控体系演进与迁移实践可以总结为以下几个关键阶段和行动：
 
 **第一阶段：早期监控栈 (2009年起)**
-- **工具链**：Munin -> Graphite + collectd。
+- **工具链**：Munin -&gt; Graphite + collectd。
 - **挑战**：Munin 的采集（1分钟）和聚合（5分钟）频率对于分析平台事件而言过于缓慢，无法满足实时性需求。Graphite 解决了时间粒度问题。
 - **自建组件**：开发了名为 Viz 的 JavaScript/Python 工具用于可视化和告警，后因维护成本过高而被 Grafana 取代。
 

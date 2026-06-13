@@ -7,7 +7,7 @@ lastUpdated: 2024-05-17
 confidence: high
 sources:
   - url: https://chaos-mesh.org/blog/deploy-chaos-mesh-on-kubesphere/
-    title: Deploy Chaos Mesh on KubeSphere - Chaos Mesh Blog
+    title: "Deploy Chaos Mesh on KubeSphere - Chaos Mesh Blog"
 tags: [chaos-engineering, kubesphere, kubernetes, resilience-testing]
 ---
 
@@ -44,7 +44,7 @@ KubeSphere 是一个面向云原生应用管理的分布式操作系统，以 Ku
 ### 步骤 2：访问 Chaos Dashboard
 1.  部署完成后，进入 Chaos Mesh 所部署的项目，在 **资源状态** 页面找到 `chaos-dashboard` 服务。
 2.  复制 `chaos-dashboard` 的 **NodePort** 号。
-3.  在浏览器中通过 `https://<任意节点IP>:<NodePort>` 访问 Chaos Dashboard。
+3.  在浏览器中通过 `https://&lt;任意节点IP>:<NodePort>` 访问 Chaos Dashboard。
 4.  根据 [管理用户权限](https://chaos-mesh.org/docs/manage-user-permissions/) 的文档指引生成一个 Token，并使用该 Token 登录 Dashboard。
 
 ### 步骤 3：创建并运行一个混沌实验
@@ -53,7 +53,7 @@ KubeSphere 是一个面向云原生应用管理的分布式操作系统，以 Ku
     ```bash
     curl -sSL https://mirrors.chaos-mesh.org/latest/web-show/deploy.sh | bash
     ```
-2.  通过浏览器访问 `http://<任意节点IP>:8081`，查看 `web-show` 应用的界面，此时应能正常看到数据。
+2.  通过浏览器访问 `http://&lt;任意节点IP>:8081`，查看 `web-show` 应用的界面，此时应能正常看到数据。
 3.  登录 Chaos Dashboard，创建一个新的混沌实验。
     *   **目标（Target）**：选择 **网络攻击（Network Attack）**，例如 `NetworkDelay`（网络延迟）。
     *   **作用范围（Scope）**：通过标签选择器将实验范围限定为我们的目标应用，设置为 `app: web-show`。

@@ -7,7 +7,7 @@ lastUpdated: 2024-05-21
 confidence: medium
 sources:
   - url: https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/
-    title: Introducing the Prometheus Conformance Program
+    title: "Introducing the Prometheus Conformance Program"
 tags: [prometheus, monitoring, interoperability, cloud-native, compliance]
 ---
 
@@ -42,6 +42,6 @@ Prometheus 是云原生乃至更广泛领域的指标监控标准。为了确保
 -   **最佳实践与反模式**：
     -   **最佳实践**：在选择新的监控组件（如长期存储、仪表板工具或告警管理器）时，优先考虑那些拥有 `Prometheus x.y compatible` 认证的产品。这为与现有 Prometheus 栈的集成提供了可预测性保证。
     -   **反模式**：仅仅因为一个工具“支持 Prometheus 格式”就假定它完全兼容。未经认证的“兼容”可能存在细微但关键的实现差异，可能在特定查询或高负载下暴露问题，增加事件响应时调查问题的复杂度。
--   **相关指标（SLI/SLO）**：该计划本身关注的是互操作性，是构建可靠监控系统的**前提条件**。一个可靠的监控系统，其 SLO 可能包括诸如“Prometheus 查询延迟 P99 < 1s”或“指标采集可用性 > 99.9%”等。使用认证组件有助于更稳定地达成这些 SLO。
+-   **相关指标（SLI/SLO）**：该计划本身关注的是互操作性，是构建可靠监控系统的**前提条件**。一个可靠的监控系统，其 SLO 可能包括诸如“Prometheus 查询延迟 P99 < 1s”或“指标采集可用性 &gt; 99.9%”等。使用认证组件有助于更稳定地达成这些 SLO。
 
 [[observability-principles]]

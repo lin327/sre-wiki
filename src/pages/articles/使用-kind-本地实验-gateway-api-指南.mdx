@@ -7,7 +7,7 @@ lastUpdated: 2025-07-08
 confidence: medium
 sources:
   - url: https://kubernetes.io/blog/2026/01/28/experimenting-gateway-api-with-kind/
-    title: Experimenting with Gateway API using kind - Kubernetes Blog
+    title: "Experimenting with Gateway API using kind - Kubernetes Blog"
 tags: [gateway-api, kind, 本地开发, 流量管理, 网络]
 ---
 
@@ -53,7 +53,7 @@ kind create cluster
 VERSION="$(basename $(curl -s -L -o /dev/null -w '%{url_effective}' https://github.com/kubernetes-sigs/cloud-provider-kind/releases/latest))"
 docker run -d --name cloud-provider-kind --rm --network host -v /var/run/docker.sock:/var/run/docker.sock registry.k8s.io/cloud-provider-kind/cloud-controller-manager:${VERSION}
 ```
-> **注意**：在某些操作系统上，你可能需要管理员权限才能访问 Docker socket。
+&gt; **注意**：在某些操作系统上，你可能需要管理员权限才能访问 Docker socket。
 
 验证容器是否正在运行：
 ```shell

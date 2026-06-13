@@ -7,7 +7,7 @@ lastUpdated: 2026-01-29
 confidence: high
 sources:
   - url: https://kubernetes.io/blog/2026/01/29/ingress-nginx-statement/
-    title: Kubernetes Blog - Ingress NGINX: Statement from the Kubernetes Steering and Security Response Committees
+    title: "Kubernetes Blog - Ingress NGINX: Statement from the Kubernetes Steering and Security Response Committees"
 tags: [ingress-nginx, kubernetes, gateway-api, security, migration, networking]
 ---
 
@@ -67,5 +67,5 @@ kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-ngin
 
 ### 相关指标 (SLI/SLO/SLA)
 - **SLI (服务水平指标)**：迁移后，需要为新 Ingress 控制器建立 SLI，例如：`控制平面组件可用性`、`成功代理请求的比例`、`请求延迟 (P99)`。
-- **SLO (服务水平目标)**：为新控制器的 SLI 设定 SLO，例如：`控制平面可用性 > 99.95%`，`P99 延迟 < 200ms`。确保新方案的 SLO 不低于原有 Ingress NGINX 达到的水平。
+- **SLO (服务水平目标)**：为新控制器的 SLI 设定 SLO，例如：`控制平面可用性 &gt; 99.95%`，`P99 延迟 < 200ms`。确保新方案的 SLO 不低于原有 Ingress NGINX 达到的水平。
 - **注意**：Ingress NGINX 的退役本身不影响已有的 SLA，但持续使用退役版本可能因安全漏洞导致违反您与用户之间的 SLA。

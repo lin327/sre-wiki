@@ -7,7 +7,7 @@ lastUpdated: 2024-08-01
 confidence: medium
 sources:
   - url: https://grafana.com/blog/get-observability-in-the-terminal-for-you-and-your-agents-with-the-gcx-cli-tool/
-    title: Get observability in the terminal, for you and your agents, with the gcx CLI tool
+    title: "Get observability in the terminal, for you and your agents, with the gcx CLI tool"
 tags: [CLI, AIOps, Grafana-Cloud, OpenTelemetry, SLO, Error-Budget, Observability-as-Code, Agent]
 ---
 
@@ -38,9 +38,9 @@ tags: [CLI, AIOps, Grafana-Cloud, OpenTelemetry, SLO, Error-Budget, Observabilit
 
 **2. 与代理协作进行故障排查**
 当代理访问 `gcx` 后，你与它的交互方式将发生质的变化。你可以提出基于生产现实的问题，而非抽象的代码问题：
-*   “为什么这个端点本周变慢了？” -> 代理会拉取相关的 traces 和延迟直方图进行分析，而不仅仅是代码差异。
-*   “我们达到结账流程的 SLO 了吗？” -> 代理会读取 SLO 定义和当前消耗速率（Error Burn Rate），给出明确答案。
-*   “这个告警太吵了，修复它。” -> 代理会检查告警规则、触发历史以及相关仪表板，然后提出一个经过调优的阈值建议。
+*   “为什么这个端点本周变慢了？” -&gt; 代理会拉取相关的 traces 和延迟直方图进行分析，而不仅仅是代码差异。
+*   “我们达到结账流程的 SLO 了吗？” -&gt; 代理会读取 SLO 定义和当前消耗速率（Error Burn Rate），给出明确答案。
+*   “这个告警太吵了，修复它。” -&gt; 代理会检查告警规则、触发历史以及相关仪表板，然后提出一个经过调优的阈值建议。
 
 **3. 日常工作流集成**
 `gcx` 无缝集成到现有的终端工作流中。它支持类似 `kubectl` 的命名上下文（contexts），允许代理在单个会话中管理多个环境而不影响全局状态。所有破坏性操作都需要显式确认，以减少代理操作的风险。人类开发者可以在需要时，一键从终端生成一个指向 Grafana Cloud 仪表板的深层链接（Deep Link），实现从 CLI 到图形界面的平滑切换。

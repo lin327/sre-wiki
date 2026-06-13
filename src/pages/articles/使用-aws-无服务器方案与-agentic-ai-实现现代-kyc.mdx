@@ -7,7 +7,7 @@ lastUpdated: 2026-04-23
 confidence: high
 sources:
   - url: https://aws.amazon.com/blogs/architecture/modernizing-kyc-with-aws-serverless-solutions-and-agentic-ai-for-financial-services/
-    title: Modernizing KYC with AWS serverless solutions and agentic AI for financial services
+    title: "Modernizing KYC with AWS serverless solutions and agentic AI for financial services"
 tags: [KYC, 无服务器, 事件驱动, Agentic AI, AWS Lambda, Amazon MSK, Amazon Bedrock, 金融服务, 合规, 可靠性]
 ---
 
@@ -35,7 +35,7 @@ tags: [KYC, 无服务器, 事件驱动, Agentic AI, AWS Lambda, Amazon MSK, Amaz
 
 ### Agentic AI 编排层
 这是系统的大脑，运行在 **Amazon Bedrock AgentCore** 运行时环境中。
-*   **KYC 编排监督代理**: 根据案件特征（文档类型、客户地理位置、风险指标）动态规划执行策略，决定是并行还是顺序调用子代理，并依据子代理的置信度分数（>95% 自动批准，75-95% 附加验证，<75% 人工审核）做出最终决策。
+*   **KYC 编排监督代理**: 根据案件特征（文档类型、客户地理位置、风险指标）动态规划执行策略，决定是并行还是顺序调用子代理，并依据子代理的置信度分数（&gt;95% 自动批准，75-95% 附加验证，&lt;75% 人工审核）做出最终决策。
 *   **五个专业化子代理**：每个代理都作为自主决策者，专注于特定领域：
     1.  **身份验证代理**：比对制裁名单和数据库。
     2.  **文档分析代理**：使用 OCR 提取信息并检测伪造。
@@ -55,7 +55,7 @@ tags: [KYC, 无服务器, 事件驱动, Agentic AI, AWS Lambda, Amazon MSK, Amaz
 从 SRE 视角审视，该架构在实现业务价值的同时，深刻体现了可靠性和运维最佳实践：
 
 *   **可靠性与可观测性**：无服务器架构通过自动扩展和容错管理，消除了对单个服务器或集群可用性的手动干预。事件驱动模型本身提供了天然的缓冲和重试能力。SRE 可利用 **CloudWatch** 和 **CloudTrail** 对代理性能（如处理延迟、错误率、置信度分布）、系统吞吐量和安全事件进行全方位监控，快速定位故障。
-*   **错误预算与 SLI/SLO**：可以定义关键的 **SLI**，例如“KYC 请求处理端到端延迟”（目标：<5分钟）、“决策自动批准率”（目标：>70% 的标准案例）或“系统可用性”。对应的 **SLO** 可作为团队平衡发布速度与可靠性的依据。例如，若处理延迟 SLO 未达成，团队需优先优化或增加容量，而非部署新功能。
+*   **错误预算与 SLI/SLO**：可以定义关键的 **SLI**，例如“KYC 请求处理端到端延迟”（目标：&lt;5分钟）、“决策自动批准率”（目标：&gt;70% 的标准案例）或“系统可用性”。对应的 **SLO** 可作为团队平衡发布速度与可靠性的依据。例如，若处理延迟 SLO 未达成，团队需优先优化或增加容量，而非部署新功能。
 *   **变更管理与事件响应**：Agentic AI 模型需要定期更新以应对新的欺诈模式或法规变化。可以借鉴 **渐进式交付** 思路，通过金丝雀发布或特性开关逐步推出新的代理行为，并密切监控其对 SLI 的影响。清晰的审计轨迹和代理可解释性极大简化了事后分析和根本原因查找。
 *   **反模式与最佳实践**：
     *   **反模式**：将 Agentic AI 视为“黑盒”而忽略其可观测性；在知识库中使用未经验证的数据源导致决策偏离法规；过度依赖自动决策而缺少有效的人工兜底流程。

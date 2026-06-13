@@ -57,10 +57,7 @@ const sidebarGroups = [
       { href: "/linux/filesystem", label: "文件系统" },
       { href: "/linux/network-stack", label: "网络栈" },
       { href: "/linux/systemd", label: "systemd" },
-      { href: "/linux/bpf循环验证与标量演化", label: "BPF循环验证与标量演化" },
-      { href: "/linux/canonical-基于-prometheus-的监控栈迁移实践", label: "Canonical 基于 Prometheus 的监控栈迁移实践" },
-      { href: "/linux/chaos-mesh-实践问答", label: "Chaos Mesh 实践问答" },
-      { href: "/linux", label: "查看全部 (51)" },
+      { href: "/linux", label: "查看全部 (88)" },
     ],
   },
   {
@@ -68,14 +65,11 @@ const sidebarGroups = [
     href: "/docker",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.02 7.222c-.012-.06-.028-.118-.046-.176l.003.012c-.088-.44-.39-.81-.81-1.047a1.7 1.7 0 0 0-.846-.21H9.13c-.16-.6-.45-1.13-.84-1.55C7.46 3.43 6.34 3 5.14 3c-.8 0-1.58.2-2.12.55A2.16 2.16 0 0 0 2 5.5c0 .4.1.78.32 1.12.2.3.48.54.8.7-.04.06-.07.14-.1.2C2.35 7.87 2 8.48 2 9.22c0 1.26.75 2.28 2.12 2.85.97.4 2.17.58 3.38.58.4 0 .8-.02 1.18-.07.48-.06.93-.18 1.34-.36.65-.29 1.18-.74 1.55-1.3.17-.25.3-.52.38-.8.14-.02.28-.06.4-.1.35-.13.64-.32.86-.57.2-.22.35-.5.44-.8.06-.2.1-.4.1-.62 0-.28-.06-.54-.16-.78a1.7 1.7 0 0 0-.4-.58c.08-.16.14-.34.18-.52.06-.2.08-.58.04-.88ZM3 6.5c0-.46.2-.86.52-1.14.3-.26.68-.36 1.02-.36.46 0 .92.16 1.3.44.3.24.52.56.62.92H3Zm3.38 5.44c-.78 0-1.58-.1-2.3-.34-1.06-.34-1.5-.86-1.5-1.58 0-.44.16-.82.44-1.12.28-.3.64-.48 1.08-.56.2-.04.42-.06.64-.08h5.88c-.12.44-.34.84-.66 1.16-.4.4-.9.66-1.46.78-.34.08-.7.12-1.06.12l-1.6.02ZM14 5.5h-1.5V4h-1v1.5H10v1h1.5V8h1V6.5H14v-1Z"/></svg>`,
     pages: [
-      { href: "/docker/image-layers", label: "镜像层" },
+      { href: "/docker/image-layers", label: "镜像分层" },
+      { href: "/docker/networking", label: "网络模式" },
+      { href: "/docker/storage", label: "存储驱动" },
       { href: "/docker/compose", label: "Compose" },
-      { href: "/docker/networking", label: "网络" },
-      { href: "/docker/storage", label: "存储" },
-      { href: "/docker/aws上的网络弹性恢复针对勒索软件和破坏性事件的参考方案", label: "AWS上的网络弹性恢复：针对勒索软件和破坏性事件的参考方案" },
-      { href: "/docker/buildroot-202605-版本发布更新", label: "Buildroot 2026.05 版本发布更新" },
-      { href: "/docker/cilium-ci-cd-依赖安全实践", label: "Cilium CI/CD 依赖安全实践" },
-      { href: "/docker", label: "查看全部 (11)" },
+      { href: "/docker", label: "查看全部 (15)" },
     ],
   },
   {
@@ -84,12 +78,9 @@ const sidebarGroups = [
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.67 11.36-4.67 2.7a.5.5 0 0 1-.5 0l-4.67-2.7a.5.5 0 0 1-.25-.43V5.07a.5.5 0 0 1 .25-.43l4.67-2.7a.5.5 0 0 1 .5 0l4.67 2.7a.5.5 0 0 1 .25.43v5.86a.5.5 0 0 1-.25.43ZM8 1.4 3.8 3.8v6.4L8 12.6l4.2-2.4V3.8L8 1.4Z"/><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/></svg>`,
     pages: [
       { href: "/kubernetes/pod-lifecycle", label: "Pod 生命周期" },
-      { href: "/kubernetes/service-mesh", label: "Service Mesh" },
       { href: "/kubernetes/container-runtime", label: "容器运行时" },
-      { href: "/kubernetes/ai编码代理灾难案例rm-rf-事件", label: "AI编码代理灾难案例：rm -rf ~/事件" },
-      { href: "/kubernetes/docker-gordon容器工作流的-ai-代理", label: "Docker Gordon：容器工作流的 AI 代理" },
-      { href: "/kubernetes/gateway-api-v15将实验性功能升级为稳定版", label: "Gateway API v1.5：将实验性功能升级为稳定版" },
-      { href: "/kubernetes", label: "查看全部 (35)" },
+      { href: "/kubernetes/service-mesh", label: "Service Mesh" },
+      { href: "/kubernetes", label: "查看全部 (38)" },
     ],
   },
   {
@@ -98,12 +89,9 @@ const sidebarGroups = [
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 7.793V2a.5.5 0 0 1 .5-.5Z"/><path d="M2 12.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5Z"/></svg>`,
     pages: [
       { href: "/runbooks/crashloopbackoff", label: "CrashLoopBackOff" },
-      { href: "/runbooks/imagepullbackoff", label: "ImagePullBackOff" },
       { href: "/runbooks/oomkilled", label: "OOMKilled" },
-      { href: "/linux/chaos-mesh-20迈向混沌工程生态", label: "Chaos Mesh 2.0：迈向混沌工程生态" },
-      { href: "/linux/chaos-mesh-与-skywalking-结合提升混沌工程可观测性", label: "Chaos Mesh 与 SkyWalking 结合：提升混沌工程可观测性" },
-      { href: "/linux/chaos-mesh-与混沌即服务caas演进", label: "Chaos Mesh 与混沌即服务（CaaS）演进" },
-      { href: "/runbooks", label: "查看全部 (29)" },
+      { href: "/runbooks/imagepullbackoff", label: "ImagePullBackOff" },
+      { href: "/runbooks", label: "查看全部 (14)" },
     ],
   },
   {
@@ -113,10 +101,7 @@ const sidebarGroups = [
     pages: [
       { href: "/architectures/ha-cluster", label: "高可用集群" },
       { href: "/architectures/gitops-pipeline", label: "GitOps Pipeline" },
-      { href: "/architectures/ai-代理安全面向开发与运维团队的实践指南", label: "AI 代理安全：面向开发与运维团队的实践指南" },
-      { href: "/architectures/ai治理框架原则与sre最佳实践", label: "AI治理：框架、原则与SRE最佳实践" },
-      { href: "/architectures/prometheus-中的非缓存-i-o-uncached-i-o", label: "Prometheus 中的非缓存 I/O (Uncached I/O)" },
-      { href: "/architectures", label: "查看全部 (11)" },
+      { href: "/architectures", label: "查看全部 (13)" },
     ],
   },
   {
@@ -126,10 +111,7 @@ const sidebarGroups = [
     pages: [
       { href: "/incidents/etcd-data-corruption", label: "etcd 数据损坏" },
       { href: "/incidents/dns-resolution-failure", label: "DNS 解析故障" },
-      { href: "/incidents/ai-代码补全工具的安全漏洞分类难题", label: "AI 代码补全工具的安全漏洞分类难题" },
-      { href: "/incidents/arch用户仓库aur供应链攻击事件分析与响应", label: "Arch用户仓库(AUR)供应链攻击事件分析与响应" },
-      { href: "/incidents/hostinger-的-prometheus-监控实践案例研究", label: "Hostinger 的 Prometheus 监控实践案例研究" },
-      { href: "/incidents", label: "查看全部 (20)" },
+      { href: "/incidents", label: "查看全部 (22)" },
     ],
   },
   {
@@ -139,6 +121,7 @@ const sidebarGroups = [
     pages: [
       { href: "/comparisons/helm-vs-kustomize", label: "Helm vs Kustomize" },
       { href: "/comparisons/istio-vs-linkerd", label: "Istio vs Linkerd" },
+      { href: "/comparisons", label: "查看全部 (2)" },
     ],
   },
 ];

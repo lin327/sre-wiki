@@ -446,6 +446,26 @@ function isPageActive(href: string): boolean {
         flex-shrink: 0;
       }
 
+      @media (max-width: 767px) {
+        .topnav__right {
+          gap: 4px;
+        }
+        .topnav__auth {
+          display: none;
+        }
+        .topnav__search-text {
+          display: none;
+        }
+        .topnav__kbd {
+          display: none;
+        }
+        .topnav__search {
+          padding: 0 8px;
+          min-width: 32px;
+          justify-content: center;
+        }
+      }
+
       .topnav__icon-btn {
         display: flex;
         align-items: center;

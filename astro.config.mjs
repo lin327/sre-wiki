@@ -4,11 +4,14 @@ import { defineConfig } from 'astro/config';
 import react from '@astrojs/react';
 import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
+import sitemap from '@astrojs/sitemap';
 import { unified } from '@astrojs/markdown-remark';
 import wikilinks from './src/lib/remark-wikilinks.mjs';
 
 // https://astro.build/config
 export default defineConfig({
+  site: 'https://wiki.tentative.me',
+
   i18n: {
     defaultLocale: "zh",
     locales: ["zh", "en"],
@@ -25,6 +28,7 @@ export default defineConfig({
         pre: './src/components/mdx/CodeBlock.astro',
       },
     }),
+    sitemap(),
   ],
 
   markdown: {

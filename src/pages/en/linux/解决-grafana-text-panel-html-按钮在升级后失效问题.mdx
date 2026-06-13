@@ -1,0 +1,59 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Text Panel HTML Code not working after upgrade to 13.0.1"
+category: "仪表盘与可视化"
+confidence: medium
+---
+
+## Overview
+
+In Grafana's operation and visualization practice, Text Panel is a highly flexible component that allows users to directly inject HTML, Markdown or plain text to create customized dashboard information blocks. However, during software version iterations, its functionality may change or be tightened. This document aims to analyze and solve a typical problem: after upgrading Grafana from an older version such as 10.4.11 to a new version such as 13.0.1, the HTML code injected in the Text Panel containing interactive elements (such as buttons) becomes invalid. This issue directly affects the usability of the dashboard and the user's monitoring workflow, so it needs to be identified and dealt with by the SRE team in a timely manner.
+
+## Core concepts
+
+Solving this problem requires understanding the following core concepts:
+
+1. **Sandbox and Security Policy**: Modern web applications tend to execute user-provided code (such as HTML/JS) in a sandbox environment to prevent XSS (cross-site scripting) attacks. It is likely that Grafana has enhanced this security mechanism in new versions. HTML content in a Text Panel may no longer be allowed to execute JavaScript event handlers (such as `onclick`).
+2. **Content Security Policy (CSP)**: CSP is a browser security layer used to detect and mitigate certain types of attacks, including data injection attacks. Grafana may have updated its CSP configuration to disable the execution of inline scripts, causing buttons that rely on inline events to fail.
+3. **Panel function evolution**: As the version is upgraded, Grafana may make functional adjustments or restrictions to the Text Panel mode (Mode). Features that are loosely supported in older versions may be disabled by default or require additional configuration in new versions.
+
+## Practice
+
+When encountering similar problems, you should follow the following steps to troubleshoot and solve them:
+
+### 1. Problem identification and isolation
+First confirm whether the problem is prevalent in the upgraded environment. Follow the reporter's steps to reproduce the issue:
+* Make sure Grafana version is 13.0.1 or higher.
+* Create a Text Panel in the dashboard.
+* Set "Mode" to "HTML" in the panel settings.
+* Paste the HTML code containing interactive elements (e.g. `<button onclick="someFunction()"&gt;click</button>`).
+* Observe whether the button remains unresponsive.
+
+### 2. Check official documentation and community
+* **View Release Notes**: Carefully read all Release Notes from the current version to the target upgrade version, focusing on items related to Breaking Changes, Text Panel updates, or security policies.
+* **Search Grafana Community**: Search in [Grafana Community Forums](https://community.grafana.com/) and [GitHub Issues](https://github.com/grafana/grafana/issues) using keywords such as `Text Panel HTML`, `sandbox`, `CSP`, `onclick not working` to see if there are any official replies or solutions.
+
+### 3. Explore alternatives and configurations
+Based on the understanding of the security sandbox, possible solution paths include:
+* **Switch rendering mode**: Try switching the Text Panel's mode from "HTML" to "Markdown" and embedding allowed HTML in Markdown. Note that the sandbox policy may differ between modes.
+* **Use data links or variables**: If the goal of a button is to jump to another URL or perform a simple query, consider using Grafana's native [data links](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/add-data-links/) or variable redirects instead of relying on custom HTML.
+* **Apply for official support**: If this is a regression issue that affects key workflows, you can collect detailed recurrence information, submit a clearly structured Issue to Grafana officials, and explain its impact on the business.
+
+### 4. Upgrade strategy and testing
+For SREs, this is a reminder of the importance of adequate testing before upgrading critical monitoring platforms:
+* All key dashboards must be fully validated in a staging or test environment before upgrading to production, especially those containing custom HTML or complex interactions.
+* Incorporate panel functional regression testing into standard change management processes.
+
+## SRE Key Points
+
+* **Link to Reliability**: Monitoring dashboards are the gateway to system observability. When core panels (such as buttons for quickly creating alarm rules or jumping to details pages) fail, it will directly hinder the efficiency of incident response and problem investigation, and reduce the reliability of the monitoring system.
+* **Change Management and Observability**: This case highlights that the upgrade of the platform components themselves, as part of the change, must be included in a strict change management process. At the same time, observability is not only for business systems, but also covers the health status and functional effectiveness of the monitoring tool chain itself.
+* **Best Practices and Anti-Patterns**:
+    * **Best Practice**: Prioritize the use of panel types and interactive functions (such as links, variables) natively supported by Grafana. If you must use custom HTML, keep it simple and avoid relying on JavaScript features that may be disabled by the sandbox.
+    * **Common anti-pattern**: Over-reliance on brittle custom HTML/JS for core interactive functionality in monitoring panels, treating it as a "single point of failure". Failure to adequately test changes resulting from upgrades.
+* **Related Indicators (SLI/SLO)**:
+    * **SLI**: Availability of key interactive elements of the dashboard (e.g., "Successful Click Rate for Custom Buttons").
+    * **SLO**: Within 72 hours of the upgrade, all critical monitoring dashboard interactive functions should maintain 100% availability through automated testing or manual verification.
+
+---
+Related pages: [[observability]], [[change-management]]

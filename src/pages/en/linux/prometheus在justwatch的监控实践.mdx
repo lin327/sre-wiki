@@ -1,0 +1,48 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with JustWatch"
+category: "可观测性"
+confidence: medium
+---
+
+## Overview
+
+This article is based on an interview with JustWatch company and explores how they migrated from traditional host-based monitoring solutions (such as Nagios, Icinga) to Prometheus and applied it to a fully containerized microservice architecture. JustWatch is a team with about 50 microservices and about 10 engineers. Their experience clearly demonstrates how Prometheus solves monitoring challenges in cloud native and microservice environments, providing a valuable practical reference for SRE teams. This migration marks their move from host-centric black-box monitoring to metric-centric, service-oriented white-box monitoring, gaining unprecedented insight into distributed systems.
+
+## Core concepts
+
+**Black box monitoring and white box monitoring**: JustWatch's early monitoring mainly relied on external black box monitoring such as CloudWatch and Pingdom, which focused on the external behavior of the service (such as availability, response time). Prometheus represents powerful white-box monitoring. By implanting a client library inside a service (such as a Go application), it directly exposes detailed internal operating indicators (such as the number of goroutines and HTTP request delay distribution), thereby gaining an in-depth understanding of the internal status of the system.
+
+**Label-based approach**: Unlike traditional monitoring based on host names or service names, Prometheus uses highly flexible labels (Label) to identify and distinguish indicators. This approach can naturally adapt to dynamic, short-lived containers and microservice instances, allowing developers and operators to perform sophisticated queries and aggregations through multi-dimensional data models.
+
+**Service Discovery**: In a dynamic environment such as Kubernetes, the IP and life cycle of the monitoring target (Pod) are constantly changing. Prometheus's service discovery mechanism (such as Kubernetes service discovery, Consul service discovery) can automatically discover and update monitoring targets, greatly reducing the management burden caused by static configuration, and realizing "declarative" management of monitoring.
+
+## Practice
+
+JustWatch's migration process was clear and efficient, centered around integrating Prometheus into its Go-based microservices architecture.
+
+1. **Client Integration**: The first step is to introduce the Prometheus client library into its Go service. By wrapping HTTP Handlers, they easily expose key metrics (such as request rate, latency, error rate) for each endpoint of the service. Prometheus' out-of-the-box support for Go runtime metrics (e.g. `go_goroutines`, `go_gc_duration_seconds`) allowed them to achieve initial returns quickly.
+
+2. **Exporter deployment**: In addition to application metrics, they also deployed multiple exporters to collect infrastructure and cloud platform metrics, such as `node_exporter` for host metrics, and custom exporters for AWS or other cloud service APIs.
+
+3. **Service discovery configuration**: For services running on Kubernetes, they use Prometheus's native Kubernetes service discovery and only need to add a simple annotation on the Pod to include it in monitoring. For some systems that have not been migrated to Kubernetes, Consul-based service discovery is used. This low-coupling approach eliminates collaboration friction between development and operations.
+
+4. **Visualization and Alerting**: They made full use of Grafana, which is naturally compatible with Prometheus, to build dashboards for visualizing key information such as database performance and service traffic. In terms of alarms, they used Prometheus' powerful PromQL to perform complex multi-dimensional aggregation and calculations to implement accurate and efficient alarm rules.
+
+## SRE Key Points
+
+JustWatch's experience deeply reflects how Prometheus empowers SRE practices and improves the **reliability** and **observability** of the system.
+
+* **Improved reliability and fault detection speed**: JustWatch explicitly states that the goroutine metric alone has "saved the day multiple times." This directly illustrates the value of white-box monitoring in quickly locating performance bottlenecks such as memory leaks and concurrency issues, and is an important means to implement **SLI**. Accurate percentile calculations are also a feature they appreciate, which is critical for defining and evaluating SLOs for user experience.
+
+* **Best Practices**: Their practices demonstrate several key best practices:
+    * **Built-in monitoring from the start**: Consider metric exposure when designing new services, making monitoring part of the architecture.
+    * **Leveraging declarative configuration**: Automated management of monitoring targets through Kubernetes annotations or Consul.
+    * **Embrace multi-dimensional data**: Make full use of tags for flexible query, aggregation and alerting, adapting to the dynamics of microservice architecture.
+    * **Monitoring as an ongoing project**: They acknowledge that “monitoring and alerting is a project that never ends”, which is in line with SRE’s culture of continuous improvement.
+
+* **Common anti-patterns**: JustWatch's experience also highlights some traditional monitoring anti-patterns, such as still sticking to rigid host-based monitoring configurations in dynamic container environments, which will cause monitoring to lag behind actual deployment, forming a blind spot.
+
+* **Related Metrics**: The core value of Prometheus is to help teams build and track meaningful **SLI**. JustWatch starts with HTTP Handler indicators (success rate, latency) and Go runtime indicators (memory, Goroutine) to lay a quantitative foundation for service reliability. The long-term storage capabilities they look forward to will help with longer-term trend analysis and capacity planning.
+
+* **Future Outlook**: JustWatch feedback also points to the direction of the Prometheus ecosystem, such as improving the user experience of Alertmanager, enhancing storage scalability and long-term retention capabilities. They even plan to apply Prometheus' alerting engine to non-technical business KPI monitoring, demonstrating its great potential as a general-purpose observability platform.

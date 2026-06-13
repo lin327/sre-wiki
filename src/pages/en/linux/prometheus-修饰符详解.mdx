@@ -1,0 +1,62 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Introducing the '@' Modifier - Prometheus Blog"
+category: "监控与可观测性"
+confidence: high
+---
+
+## Overview
+
+In Prometheus' monitoring query language, PromQL, the `@` modifier is a powerful new feature (introduced since v2.25.0) that allows queries to be evaluated at a specific, fixed point in time, rather than the default query evaluation time. This is crucial to solve the problem of an uncertain number of results returned by certain aggregate functions (such as `topk()`) in Range Query. In SRE practice, stable and predictable monitoring queries are the basis for analyzing performance trends, locating problems, and establishing reliable SLIs (Service Level Indicators). The `@` modifier makes fixed-point analysis and comparison of historical data more direct and reliable.
+
+## Core concepts
+
+The core function of the `@` modifier is to fix the evaluation time of PromQL selectors (`vector selector`, `range vector selector` and `subquery`) to a specified Unix timestamp (float literal). This is different from the `offset` modifier, which offsets the evaluation time relative to the current time.
+
+Its basic syntax is as follows:
+```promql
+<vector-selector> @ <timestamp>
+<range-vector-selector> @ <timestamp>
+<subquery>@<timestamp>
+```
+
+For example, query the value of `http_requests_total` at a specific point in time `2021-01-04T07:40:00+00:00` (Unix timestamp 1609746000):
+```promql
+http_requests_total@1609746000
+```
+
+In addition, the `@` modifier supports two special values: `start()` and `end()`.
+- In **range queries**, `start()` resolves to the start time of the query range, and `end()` resolves to the end time, and remains unchanged throughout all steps of the query.
+- In Instant Query, both `start()` and `end()` resolve to the current query evaluation time.
+
+This set of features makes it possible to reference consistent points in time in complex range queries, thereby solving the long-standing pain point of functions such as `topk()` being unstable in range queries (the number of results may exceed `k`).
+
+## Practice
+
+The most typical application scenario of the `@` modifier is the sorting logic in fixed range queries. A common requirement is to continuously plot the current rates of the top five services over a period of time over a period of time.
+
+If you do not use the `@` modifier and directly run `topk(5, rate(http_requests_total[1h]))` as a range query, since `topk` is calculated independently for each query step, the final chart may contain dozens or even hundreds of timelines, losing the meaning of "Top 5".
+
+Using the `@` modifier, we can fix the ranking logic to the end time point of the range query (`end()`):
+```promql
+rate(http_requests_total[1m])
+  and
+topk(5, rate(http_requests_total[1h] @ end()))
+```
+**Query analysis:**
+1. `topk(5, rate(http_requests_total[1h] @ end()))`: Calculate the query time range **end**, the request rate in the past hour, and return the Top 5 time series tag set. Due to the use of `@end()`, this "Top 5 list" is fixed throughout the range query.
+2. `rate(http_requests_total[1m])`: Calculate the request rate in the past minute at each point in time.
+3. `and` operator: Returns entries matching the tag sets in the above two result sets. The effect is: at each time point, only the 1-minute rate curves of those services that belong to the Top 5 at the query end time are drawn.
+
+This pattern can be generalized to other functions, such as using `histogram_quantile()` to fix the time points for quantile calculations, or replacing `rate()` with `sum_over_time()`.
+
+**Note:** The `@` modifier is an experimental feature in Prometheus v2.25.0 and needs to be manually enabled via the startup flag `--enable-feature=promql-at-modifier`.
+
+## SRE Key Points
+
+- **Association with Reliability**: The `@` modifier greatly improves the certainty and interpretability of monitoring queries. When troubleshooting incidents or performing capacity planning, SRE can accurately anchor the analysis at a specific failure time point (such as `@ 1609746000`), and conduct horizontal comparisons of the traffic, latency, and error rates of each service at that time, avoiding confusion caused by sliding time windows. This directly supports fast and accurate **incident response**.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: Combine the `@` modifier with logical operators such as `and` and `or` to build a "filter based on a certain baseline time" or a "leaderboard". This is useful for creating stable, repeatable Grafana dashboard panels.
+    - **Common anti-pattern**: Abusing the `@` modifier in on-the-fly queries that need to dynamically reflect the "current Top N". In this case, it is more appropriate to directly use the query without `@`. Misusing `start()` or `end()` may cause query results to be inconsistent with expectations.
+- **Related Metrics (SLI/SLO/SLA)**: The `@` modifier helps create clearer composite metrics when defining and monitoring complex SLIs. For example, you could define an SLI that specifically monitors the current error rate for "the 3 API endpoints with the highest average latency over the past 24 hours." This provides a precise data basis for setting SLOs for specific high-risk services.
+- **Observability**: The `@` modifier enhances exploration of time series data. It makes fixed-point snapshot analysis and cross-time point comparison of historical data (such as comparing the performance of this Monday and last Monday at the same moment) more intuitive, and enriches the analysis dimension of **observability**.

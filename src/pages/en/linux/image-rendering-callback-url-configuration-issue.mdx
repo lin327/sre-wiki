@@ -1,0 +1,56 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issue"
+category: "配置管理"
+confidence: medium
+---
+
+## Overview
+
+In Grafana's operation and maintenance practice, exporting dashboards as images is a key function for generating regular reports or snapshots. This operation relies on the Grafana Image Renderer service. According to the official documentation, administrators need to configure the `GF_RENDERING_CALLBACK_URL` environment variable to ensure that the rendering callback can correctly point to the Grafana server. However, an identified bug indicates that this configuration may be ignored when the frontend performs an export operation, causing the export to fail or use the wrong URL. This issue directly affects the reliability of automated monitoring reporting processes that utilize this feature.
+
+## Core concepts
+
+Before understanding this problem, you need to clarify the role of the following two Grafana configuration environment variables:
+
+- **GF_RENDERING_CALLBACK_URL**: This variable specifies the URL to which the Image Renderer should send a callback request (containing the generated image data) after completing image generation. In a distributed deployment or reverse proxy scenario, it is critical to set this variable correctly as it ensures that the renderer is able to send results back to the Grafana server.
+- **GF_SERVER_ROOT_URL**: This variable defines the base URL of the Grafana server's external service (for example, `https://grafana.example.com`). Front-end code should theoretically refer to this variable when constructing URLs that require callbacks.
+
+The core contradiction revealed in this issue is that the document guides the configuration of `GF_RENDERING_CALLBACK_URL`, but the actual front-end export code path uses `GF_SERVER_ROOT_URL` to build the callback address. This inconsistency may cause the function to still not work properly even after the user configures it according to the documentation.
+
+## Practice
+
+### Problem manifestation and scope of impact
+
+1. **Trigger scenario**: This problem may occur when the user uses the "Share" or "Export" function of the Grafana front-end interface to render the dashboard or panel as an image.
+2. **Affected versions**: The report mentions that this problem exists in Grafana version 3.6.11, but the specific impact scope needs to be referred to the official update log. Easier to reproduce in containerized deployment environments such as Docker.
+3. **Typical symptoms**: Exporting images will fail when `GF_RENDERING_CALLBACK_URL` is set but `GF_SERVER_ROOT_URL` is not set. Inspecting the network panel of the browser developer tools, you will find that the request does not use the expected callback address.
+
+### Solutions and temporary workarounds
+
+Faced with this problem, administrators can adopt the following two strategies:
+
+1. **Adopt the officially recommended configuration (temporary solution)**: While waiting for the official fix, configure according to the actual behavior of the current code. That is, make sure you also set the GF_SERVER_ROOT_URL environment variable correctly so that its value is Grafana's publicly accessible address. This is an effective temporary measure to make the front-end export functionality work properly.
+2. **Promote official repair (fundamental solution)**: As proposed in the issue, the fundamental solution is to choose one of the two:
+    - **Documentation Correction**: Updated Image Renderer configuration documentation to clearly state that for front-end export functionality, `GF_SERVER_ROOT_URL` is a required or actually valid variable.
+    - **Code Correction**: Modify the Grafana front-end code to also take into account the `GF_RENDERING_CALLBACK_URL` environment variable first or both when building the export URL, to be consistent with the documentation.
+
+### Configuration Checklist
+
+When deploying or upgrading Grafana Image Renderer, the SRE should verify the following:
+- Check the environment variables of the Grafana server process or the `grafana.ini` configuration file.
+- Verify that `GF_SERVER_ROOT_URL` is set to the full URL that the Grafana instance can access from the Image Renderer service.
+- If you follow the old documentation and configure `GF_RENDERING_CALLBACK_URL`, please be aware that it may not take effect in the current version of the front-end export scenario.
+- Use Grafana's test panel export function to verify whether the image is generated and downloaded successfully.
+
+## SRE Key Points
+
+- **Relationship with reliability**: This bug directly affects the reliability of the "dashboard export as image" function. For SRE processes that rely on automated screenshots to generate weekly and monthly reports, this problem will cause the report generation pipeline to be interrupted and needs to be avoided and monitored in time.
+- **Best Practices and Common Anti-Patterns**:
+    - **Configuration as Code Verification**: For critical environment variable configurations (such as `GF_SERVER_ROOT_URL`), they should be included in the Infrastructure as Code (IaC) template and verified through health checks or synthetic tests after deployment.
+    - **Document and code consistency review**: When the configuration guided by the official documentation does not match the actual performance, the SRE should proactively investigate (such as reading relevant source code or checking issues) and cannot blindly trust the documentation. This is an important ability to avoid configuration errors in the production environment.
+- **Related Indicators (SLI/SLO)**:
+    - **SLI Recommendation**: You can monitor the "dashboard image export success rate", for example, through automated scripts to regularly try to export test dashboard images and record the number of success/failures.
+    - **Error Budget**: If this export function is a dependency of an internal critical service (such as a monitoring reporting system), its failure should be included in the error budget consumption of that service to drive attention and repairs to the stability of such basic functions.
+
+Related pages: [[grafana-image-rendering]], [[configuration-management]], [[incident-response]].

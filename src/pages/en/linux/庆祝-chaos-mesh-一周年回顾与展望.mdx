@@ -1,0 +1,53 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Celebrating One Year of Chaos Mesh: Looking Back and Ahead'"
+category: "混沌工程"
+confidence: medium
+---
+
+## Overview
+
+Chaos Mesh is an open source chaos engineering platform designed to help users systematically introduce faults in the Kubernetes environment to verify the resilience and reliability of the system. As a key tool in SRE practices for proactively discovering system vulnerabilities, it allows teams to safely conduct controlled experiments in production or pre-production environments. This article reviews the remarkable growth of Chaos Mesh since it was open sourced for a year, evolving from an initial fault injection tool to a core project for building the chaos engineering ecosystem, and looks forward to its future development direction.
+
+## Core concepts
+
+Chaos engineering is a discipline that conducts experiments on distributed systems with the goal of building confidence in the system's ability to withstand turbulent conditions in a large-scale production environment. As a representative implementation in this field, Chaos Mesh is centered around the following key concepts:
+
+1. **Fault Injection**: Chaos Mesh supports a full range of fault type injection. The initial version only supports `PodChaos`, `NetworkChaos` and `IOChaos`, while the current version has been expanded to cover multiple levels such as network, system clock, JVM application, file system, operating system, etc., allowing the simulation of complex and diverse failure scenarios.
+2. **Observability Integration**: To correlate chaos experiments with system state, Chaos Mesh provides deep integration with monitoring tools such as Grafana. Through the Grafana plug-in, users can directly view real-time chaos experiment information on the application monitoring panel, achieving a seamless connection between "experiment" and "observation".
+3. **Cloud native and scalability**: The project is deeply integrated into the cloud native ecosystem and was accepted as a CNCF Sandbox project. It is designed to be scalable, such as by developing `Chaosd` to support physical node-level fault injection, and is compatible with mainstream cloud platforms (AWS, GKE, Alibaba Cloud, Tencent Cloud).
+4. **Safety and Control**: The control of the "explosion radius" of chaos experiments is crucial. Chaos Mesh provides a complete set of selectors and a namespace isolation mechanism based on Kubernetes' native permissions to ensure that experiments are executed within a controllable range and prevent unexpected impacts on non-target applications.
+
+## Practice
+
+Chaos Mesh-based chaos engineering practice can follow a closed-loop process from deployment to experimental design to result analysis.
+
+### Deployment and basic usage
+Deploying Chaos Mesh is very simple and usually requires just executing a single command using the Helm Chart to complete the installation. The **Chaos Dashboard** introduced in the V1.0 version is a graphical one-stop work interface, which greatly lowers the threshold for use. Users can complete the following operations through this interface:
+* Define experiment scope: Precisely specify affected Pods or namespaces via label selectors.
+* Select fault type: Select the specific fault to be injected from the graphical menu (such as network delay, IO injection, etc.).
+* Configure scheduling rules: Set the duration, period or Cron expression of the experiment to achieve automated or scheduled execution.
+* Observe experiment results: View the experiment execution status and preliminary results directly on the interface.
+
+### Design and orchestrate experiments
+Effective chaos experiments are more than random destruction and require careful design. Chaos Mesh provides a flexible scheduling mechanism to support complex experiment orchestration. For example, network failure and Pod termination can be combined to simulate complex scenarios in which network partitions and node failures occur simultaneously. For more advanced automated testing processes, you can refer to platforms such as **TiPocket**, which integrates Chaos Mesh and Argo workflow engines to implement a fully automated chaos engineering test cycle from application deployment, load running, fault injection to business inspection.
+
+### Integration and Observation
+To integrate chaos experiments into existing SRE workflows, the following integrations are available:
+* **Monitoring integration**: Configure the Grafana data source, display the `chaos-mesh` indicators directly in the dashboard, and correlate application performance indicators and experimental events in real time.
+* **CI/CD Integration**: Use `chaos-mesh-action` to run chaos experiments in the GitHub Actions pipeline, moving reliability testing left to the development stage.
+* **Safety Practice**: Always specify `namespace` explicitly in the experiment definition and use tag selectors to avoid impacting core services in production. Use Kubernetes' RBAC to control the operating permissions of different users or teams on Chaos Mesh.
+
+## SRE Key Points
+
+The development of Chaos Mesh deeply embodies the core principles of SRE.
+
+* **Relationship with Reliability**: Chaos engineering is a proactive means to verify and improve system reliability. By regularly performing Chaos Mesh experiments, the team can continuously discover and fix potential failure points, thereby improving the mean time between failures (MTBF) of the service. The experimental reports it generates also provide valuable real-world data for formulating and calibrating **SLO** (Service Level Objectives).
+* **Observability enhancements**: Chaos Mesh itself provides rich experimental status indicators and actively integrates with tools of the observability pillar (metrics, logs, tracing). This "experiment-driven observation" model allows the team to gain a deeper understanding of how the system behaves under stress.
+* **Incident response correlation**: The fault scenarios practiced in Chaos Mesh actually provide a plan for incident response. The team will become more familiar with the system response and recovery process for specific failures, thereby shortening the mean time to resolution (MTTR) of actual production incidents.
+* **Best Practices and Anti-Patterns**:
+    * **Best Practices**: Start with simple failures in a controlled environment (e.g. pre-release); always monitor key business metrics (as **SLI**) to assess experiment impact; automate and incorporate experiments into operations processes; establish clear experiment reporting and review mechanisms.
+    * **Anti-Pattern**: Conduct "destructive" experiments in the production environment without monitoring or rollback plan; focus only on technical failures and ignore business impact assessment; the scope of the experiment is too large, resulting in an uncontrollable "explosion radius".
+* **Community and Ecology**: An active community is the key to the success of the project. By joining CNCF, improving documentation, and publishing tutorials and cases, Chaos Mesh has built a transparent and friendly community of developers and users, which has laid the foundation for the long-term healthy development of the project.
+
+[[chaos-engineering]] [[fault-injection]] [[observability]] [[sre-practices]]

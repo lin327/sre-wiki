@@ -1,0 +1,56 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'The great AI divide: Why early leaders embrace an AI operating model'"
+category: "AI与SRE"
+confidence: medium
+---
+
+## Overview
+
+AI technology is rapidly moving from the partial experimental stage to full enterprise-level operation. The core challenge of this transformation is no longer just to obtain or use AI models, but how to integrate AI capabilities (including models, agents, and automated workflows) reliably, consistently, and securely into complex hybrid IT environments and achieve large-scale operations. This has given rise to an urgent need for an "AI operating model", which defines the infrastructure, workflow, governance and execution framework required to support the large-scale implementation of AI. For the SRE team, this means that the reliability, observability, and operation and maintenance considerations of the AI ​​system must be deeply embedded in the existing operation and maintenance system.
+
+## Core concepts
+
+The AI operating model proposed in the article is based on four core capability pillars, which together form the cornerstone of enterprise-level AI implementation:
+
+1. **Intelligence**
+    This refers to establishing a unified, contextual view across data, infrastructure, applications and hybrid environments. The goal is to achieve real-time situational awareness rather than relying on periodic analysis. For SRE, this means that the scope of observability (Observability) expands from traditional application performance indicators to include a panoramic view of AI data pipelines, model performance and cross-environment dependencies.
+
+2. **Action**
+    When intelligence can be generated in real time, the bottleneck shifts from “insight” to “coordinated execution.” Action capabilities refer to **real-time orchestration** capabilities that can transform AI insights (such as expansion recommendations, security alerts, policy adjustments) into coordinated operations across distributed environments. This requires operation and maintenance automation to be highly dynamic and coordinated, such as automatic expansion and contraction of infrastructure, real-time adjustment of security policies, and workflow coordination between agents.
+
+3. **Operations**
+    This emphasizes **large-scale, policy-driven consistent execution**. In complex hybrid environments, the deployment, configuration, and lifecycle management of AI workloads must be completed through standardized workflows to ensure consistency, flexibility, and control in cloud, local, edge, and other environments. This places higher demands on practices such as Infrastructure as Code (IaC) and GitOps.
+
+4. **Trust**
+    As AI systems become more autonomous, trust becomes a basic requirement, not just a compliance consideration. It covers built-in governance, security and digital sovereignty. Organizations need to maintain continuous visibility and control over the AI ​​decision-making process, execution of operational strategies, and governance across environments. This requires embedding security and compliance policies directly into the operational foundation, realizing policy as code.
+
+## Practice
+
+To integrate the above AI operating model concepts into SRE practice, you can start from the following aspects:
+
+**1. Extend observability to cover AI operations**
+- In the existing monitoring system (such as Prometheus, Grafana), add monitoring of AI-specific components, such as model inference latency, data pipeline throughput, feature storage freshness, and agent task success rate.
+- Establish a unified dashboard across environments, associate the performance indicators (**SLI**) of the AI ​​system with the underlying infrastructure and business KPIs, and achieve the "unified situational view" emphasized in the article.
+
+**2. Build AI-oriented automation and orchestration**
+- Use tools (such as HashiCorp Terraform) to codify the infrastructure required for AI (GPU clusters, data storage, network configuration), and implement GitOps workflows to ensure the consistency and auditability of the environment.
+- Explore orchestration platforms that implement the "action" pillar, which can receive the output of AI systems or monitoring alerts and automatically trigger predefined operation and maintenance operations (such as capacity expansion, failover, policy updates).
+
+**3. Shift governance and strategy left**
+- Encode security and compliance policies (such as data access control, model deployment standards) into Policy as Code and enforce them in the CI/CD pipeline to ensure that the deployment of AI applications meets trust requirements from the beginning.
+- Establish clear **SLO** and Error Budget for the AI ​​system, convert reliability goals into measurable indicators, and use them as the basis for operation and maintenance decisions (such as release rhythm, change window).
+
+## SRE Key Points
+
+The rise of AI operating models has brought new dimensions and challenges to SRE’s core practices:
+
+- **Link to Reliability**: The AI system itself, and the data flows and orchestration actions it relies on, must become part of the overall SLO framework. Failures of AI (such as model deviations and data drift leading to incorrect decisions) may directly translate into business or operation and maintenance failures. SREs need to define clear error budget consumption strategies for AI components.
+- **Relationship to Observability**: The traditional three pillars of observability (metrics, logs, traces) need to be expanded to understand the complex behavior of AI systems. This includes tracking data lineage, model versions, and decision paths to enable root cause analysis of AI failures.
+- **Association with incident response**: AI-related incident response will be more complex and may involve model rollback, data pipeline repair, and suspension of automated workflows. The incident response manual (runbook) needs to include a section for handling AI-specific failures.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practices**: Treat AI operations as a natural extension of distributed system operations; automate everything that can be automated (from infrastructure to policy execution); build monitoring and governance in from the beginning.
+    - **Common anti-patterns**: Treating AI as a "black box", focusing only on model performance and ignoring operation and maintenance overhead; using isolated, manual operation and maintenance processes in complex hybrid environments; governance lags behind deployment.
+- **Related indicators (SLI/SLO/SLA)**: In addition to traditional availability, latency and error rates, new SLIs need to be defined for AI systems, such as: model prediction accuracy (within a specific threshold), data input freshness, automated workflow successful completion rate, number of policy violation alarm triggers, etc.
+
+Understanding and practicing the AI ​​operating model is the key to ensuring that AI investments are transformed into sustained and reliable business value. This requires the SRE team to work closely with the data science and application development teams to jointly build a highly adaptable operational foundation that can cope with technological evolution in the next ten years.

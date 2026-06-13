@@ -1,0 +1,91 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Update to 13.0.x failed (from 12.4.x) - No last resource version found, starting"
+category: "Grafana 故障处理"
+confidence: medium
+---
+
+## Overview
+
+This document describes a critical failure you may encounter when upgrading Grafana from one major version (such as 12.4.x) to another major version (such as 13.0.x): the upgrade process itself appears to be successful, but the Grafana service does not start properly and users cannot access the dashboard interface. This issue is usually caused by incompatible schema versions of Grafana's internal database or missing resource version information. For SREs, such issues directly impact system availability and require rapid diagnosis and recovery to avoid disruptions to the monitoring and visualization platform.
+
+## Core concepts
+
+At the heart of this issue lies Grafana's internal database version management mechanism. Grafana uses a database (usually SQLite, MySQL, or PostgreSQL) to store configurations such as dashboards, data sources, users, etc. Each major version of Grafana will have specific migrations and updates to its database schema.
+
+- **Resource Version**: Metadata used internally by Grafana to track the current version of the database schema. When Grafana starts, it checks this version to determine which database migration scripts need to be run.
+- **"Starting from scratch"**: This is a fragment of the error message that appears in the Grafana log. The full context is usually `No last resource version found, starting from scratch`. This means that Grafana cannot find the expected version tag in the database and mistakenly believes that the database needs to be initialized from scratch, which can lead to data loss or interruption of the startup process because existing data conflicts with the "fresh" initialization state.
+
+This error usually indicates that the database migration path was not recognized or executed correctly when upgrading directly from an older version to a newer version.
+
+## Practice
+
+When encountering this upgrade failure, the following diagnostic and recovery steps should be followed.
+
+### 1. Immediately roll back to the previous stable version
+
+This is the fastest way to restore service availability. If you use Docker, Kubernetes, or a package manager, roll back the Grafana container or service image to the stable version before the upgrade (for example, 12.4.x).
+
+```bash
+# Example: Rollback using Docker
+docker stop grafana-container
+docker run -d --name grafana-previous -p 3000:3000 grafana/grafana:12.4.0
+```
+
+After the service is restored, conduct in-depth analysis.
+
+### 2. Diagnose database status
+
+Check the Grafana logs for more detailed error information. Focus on entries related to database migrations, connections, and versions. If possible, check directly the database used by Grafana.
+
+```sql
+-- If using SQLite, you can view the sqlite_master table or use specific tools to check version information.
+-- Usually version information is stored in a specific table, such as `dashboard_version` or other internal table.
+SELECT * FROM dashboard_version; -- This query is only an example. Please refer to the Grafana source code for specific table names.
+```
+
+### 3. Try to restore the database from backup
+
+Before performing any repair operations, be sure to back up the current (potentially corrupt) database files.
+
+- **For SQLite**: Back up the entire `.db` file.
+- **For MySQL/PostgreSQL**: Use `mysqldump` or `pg_dump` for logical backup.
+
+### 4. Use upgrade tools or manual repair (high risk, need to be cautious)
+
+Grafana provides the `grafana-cli` tool, which can sometimes be used for database repair or migration. Try using this to force an upgrade:
+
+```bash
+# Check the current database version
+grafana-cli --raw admin reset-admin-password newpassword # Example command, not necessarily directly related
+grafana-cli plugins ls-remote # This command mainly manages plugins, but is used to verify tool availability
+
+# Try to force a database upgrade (the command name and parameters may change with the version)
+grafana-cli admin data-migration run
+```
+
+**IMPORTANT**: Manually repairing the database is extremely risky and may result in permanent data loss. Only after full verification in the test environment can it be considered for operation in the production environment. Prioritize restoring from backup, or use the compatible version officially provided by Grafana for intermediate upgrade.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+- **Reliability**: Grafana is the visualization layer of the core observability platform. Its unavailability will seriously affect the team's perception of system health and troubleshooting efficiency, and is a reliability event for critical infrastructure.
+- **Observability**: This event itself is a challenge to the reliability of the monitoring system. You need to ensure that there is monitoring independent of Grafana (such as system indicators, logs themselves) to detect Grafana outages.
+- **Incident Response**: A standard fault response process for Grafana upgrade failure should be defined, including steps such as rollback, notification, and subsequent review.
+
+### Best practices and common anti-patterns
+- **Best Practice**:
+  1. **Pre-upgrade backup**: For any major version upgrade, a complete backup of Grafana's database must be performed.
+  2. **Phaseded upgrade**: If it spans multiple major versions, you should consider upgrading to the intermediate version first, and then upgrade to the target version after completing all migrations.
+  3. **Non-production environment testing**: Completely simulate the upgrade process of the production environment in the staging or test environment.
+  4. **Use container image tags**: Use specific version tags (such as `grafana/grafana:12.4.0`) and avoid using `latest` tags to ensure controllable upgrades.
+- **Common anti-patterns**:
+  1. **Direct upgrade without backup**: This is the most dangerous operation that causes data to be unrecoverable.
+  2. **Ignore preflight and log**: Do not check the official upgrade guide before upgrading, and do not carefully analyze the complete log after failure.
+  3. **Making major configuration changes immediately after upgrade**: Rushing to modify the configuration after a failed upgrade may hide the underlying problem.
+
+### Related indicators (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: `Grafana Availability` - Measures whether users can successfully load the Grafana login page and dashboard.
+- **SLO (Service Level Objective)**: For example, monthly availability &gt;= 99.9%.
+- **SLA (Service Level Agreement)**: Availability commitment to internal teams or external customers.
+This upgrade failure event will directly cause the SLI to drop to 0 during the failure, potentially threatening the achievement of the SLO.

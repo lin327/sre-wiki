@@ -1,0 +1,116 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana API Issue"
+category: "API 与集成"
+confidence: high
+---
+
+## Overview
+
+In SRE practice, Dashboard-as-Code and automated operation and maintenance scripts rely heavily on stable API interfaces. Grafana's dashboard version history API (`GET /api/dashboards/uid/{uid}/versions`) allows the system to query and audit a dashboard's change history. After upgrading from Grafana v11.4 to v11.6, the API's response format has undergone unexpected backward-incompatible changes, which may cause parsing failures for automated tools (such as CI/CD pipelines, change audit scripts) that rely on fixed JSON structures, thereby affecting the delivery and verification process of observability configurations.
+
+## Core concepts
+
+### Dashboard UID API
+This API endpoint is used to retrieve all version history for a specified dashboard (via unique identifier `uid`). It is the basis for dashboard rollback, change auditing, and version comparison.
+
+### Paging mechanism and `continueToken`
+To handle dashboards that may have a large number of versions, the API supports paginated queries. The original v11.4 format usually returns a simple array of versions. In the new format of v11.6, the `continueToken` field is introduced. This is a cursor used to obtain the next page of results. When the query results are truncated by the `limit` parameter, the client can use this token to continue requesting the remaining data, thereby achieving more efficient paging traversal.
+
+### Format change analysis
+According to the Issue description, the API response of v11.6 no longer directly returns a version array, but encapsulates it in an object, which contains two properties:
+- `continueToken`: String type, used for paging. If the query result is the last page or no paging is required, it may be an empty string `""`.
+- `versions`: Array type, containing the requested version object, its internal field structure is consistent with v11.4.
+
+**Comparison of old and new formats:**
+```json
+// v11.4 old format (simplified)
+[
+  { /* version 1 */ },
+  { /* version 2 */ }
+]
+
+// v11.6 new format
+{
+  "continueToken": "",
+  "versions": [
+    { /* version 1 */ },
+    { /* version 2 */ }
+  ]
+}
+```
+
+## Practice
+
+### Impact detection and compatibility checking
+For automation scripts that rely on this API, the first priority is to check and update their response parsing logic.
+1. **Locate code**: Find all parts of the script that call `/api/dashboards/uid/*/versions` or similar endpoints that handle HTTP requests.
+2. **Verify parsing logic**: Check whether the code directly parses the HTTP response body into a version array. If so, the script will fail in Grafana v11.6 environment.
+3. **Update parsing logic**: The script should first parse the response into a JSON object and then extract the `versions` field from it as the actual versions array.
+
+### Adaptation example (pseudocode)
+Assuming that the Python `requests` library is used, the code before and after adaptation may be as follows:
+
+```python
+import requests
+
+# --- Old logic (v11.4 and earlier) ---
+def get_versions_old(uid):
+    url = "https://grafana.example.com/api/dashboards/uid/{uid}/versions"
+    headers = {"Authorization": "Bearer <token>"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    versions = response.json() # Directly parsed into a list
+    return versions
+
+# --- New logic (adapted to v11.6) ---
+def get_versions_new(uid, limit=2):
+    url = "https://grafana.example.com/api/dashboards/uid/{uid}/versions"
+    headers = {"Authorization": "Bearer <token>"}
+    params = {"limit": limit}
+    all_versions = []
+    continue_token = None
+
+    while True:
+        if continue_token:
+            params["start"] = continue_token # Adjust according to actual API parameters
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json() # Parse into dictionary
+        all_versions.extend(data["versions"])
+        continue_token = data.get("continueToken")
+        if not continue_token:
+            break
+    return all_versions
+```
+
+### Version Compatibility Policy
+Before upgrading a Grafana cluster, all automation toolchains should be verified through a test environment. Long term solutions can be:
+- **Use official client library**: Use the SDK officially maintained by Grafana, which can usually handle such internal changes.
+- **Add response format check**: Check whether the `versions` key exists in the response when parsing for backward compatibility.
+
+## SRE Key Points
+
+### Association with reliability
+This change is a typical backward-incompatible API change. Under the SRE framework, it directly affects the reliability of changes. Untested upgrades can cause automated processes to fail silently, potentially preventing critical dashboard configurations from being deployed or audited as expected, affecting the credibility and operational efficiency of the entire monitoring system.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**:
+    - **Document-driven development and testing**: When implementing changes that rely on external APIs, first refer to official documentation (such as [Grafana HTTP API](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard_versions/)) and write integration tests. When the documentation is inconsistent with the actual behavior (such as an Issue), it should be reported as a critical issue.
+    - **Change Management**: Treat upgrades of core dependencies (such as Grafana) as major changes and fully verify them in the pre-release environment.
+    - **Defensive Programming**: Write robust API consumption code that explicitly validates response structures and has the ability to handle small changes in format.
+- **Anti-Pattern**:
+    - **Hardcoded API response structure**: Directly assuming that the API returns an array of fixed structures, lacking fault tolerance and verification.
+    - **Ignore test environment**: All toolchains are not verified in a staging environment consistent with the production environment configuration before upgrading to production.
+    - **Lagging behind documentation updates**: Blindly trusting the documentation while ignoring the actual API behavior, or conversely, ignoring the conventions in the documentation.
+
+### Related Indicators (SLI/SLO/SLA)
+This change itself does not directly define SLI, but affects the following:
+- **API Availability SLI**: For internal systems consuming this API, the SLI can be set up to monitor their request success rate (responses successfully parsed) and latency. Format changes may result in a decrease in success rate, which should trigger an alert.
+- **Deployment Success Rate SLO**: If dashboard deployment relies on this API to obtain version information, format parsing failure will reduce the overall deployment success rate SLO achievement.
+
+Related to observability and incident response:
+- **Observability**: Dashboard version history is a key data source for tracking changes to the observability configuration itself. The reliability of this API directly affects **configuration audit** capabilities.
+- **Incident Response**: In the event of a monitoring incident due to misconfiguration, it is critical to quickly roll back to a known good dashboard version. A version history API that works reliably is key to rapid response and recovery. It is recommended that such API compatibility issues be included as a check in a **disaster recovery drill**.
+
+**Related page reference**: [[grafana-monitoring]], [[api-design-principles]], [[configuration-management]].

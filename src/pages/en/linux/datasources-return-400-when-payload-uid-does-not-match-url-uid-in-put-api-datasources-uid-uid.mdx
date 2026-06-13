@@ -1,0 +1,48 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid'"
+category: "api-design-and-error-handling"
+confidence: medium
+---
+
+## Overview
+
+In Grafana's RESTful API design, the `PUT /api/datasources/uid/:uid` endpoint is used to update the data source configuration through a unique identifier (UID). This fix targets an API input validation flaw: when the UID in the request URL path is inconsistent with the UID in the request JSON payload, the API would silently ignore the difference and continue to try to perform the update operation. This inconsistency may eventually cause the backend service layer to return `500 Internal Server Error` due to logical contradictions. By introducing explicit input validation, the API will now return `400 Bad Request` immediately when a problem is found, thus following the "Fail Fast" principle and improving the robustness and debuggability of the system.
+
+## Core concepts
+
+### Conformance verification of API path parameters and request body
+In RESTful API designs, it is common practice to specify resource identities via path parameters such as `/uid/:uid`. At the same time, the payload of a `PUT` request usually also contains a complete resource representation, which naturally includes identification fields (such as `uid`). **Consistency verification** means that when processing a request, the API server needs to verify whether the identifiers from the two sources point to the same logical resource. This verification is the first line of defense to ensure the semantic correctness of operations, preventing data inconsistencies or unexpected errors caused by clients sending errors or misunderstanding API contracts.
+
+### Error handling levels and status codes
+A healthy API should provide clear and accurate error feedback. Classifying errors caused by client input conflicts (such as UID mismatch) as client errors (`4xx`, specifically `400 Bad Request`) rather than server-side internal errors (`5xx`, such as `500 Internal Server Error`) is crucial for the SRE team to conduct fault attribution, monitor alarms and client troubleshooting. `4xx` errors indicate that the problem is with the request itself, while `5xx` errors mean that the server was unable to complete a valid request.
+
+## Practice
+
+This fix is achieved by adding an explicit verification step in the business logic layer (`pkg/api/datasources.go`). The specific change logic is as follows:
+
+1. **Verification Timing**: Verify before looking up the data source entity based on `:uid` in the URL.
+2. **Verification logic**: Extract `uid` from the URL path parameter, and extract the `uid` field from the `datasource` object deserialized in the request JSON payload. Compares the two values ​​for equality.
+3. **Processing results**:
+    * If the two are equal, the verification passes and the subsequent data source query and update logic continue to be executed.
+    * If the two are not equal, request processing is terminated immediately, HTTP status code `400 Bad Request` is returned, and clear error information is included in the response body, indicating that the UID does not match.
+4. **Test coverage**: By adding a new unit test `TestUpdateDataSourceByUID_UIDMismatch` to ensure that this verification logic is executed correctly, covering both normal and mismatch scenarios.
+
+This is a typical **defensive programming** practice, that is, when processing external input, do not make any assumptions about its correctness, but actively verify it.
+
+## SRE Key Points
+
+### Relevance to Reliability Engineering
+- **Error Budget and SLO**: Although a `500` error may not directly exhaust the Error Budget of the service, its frequent occurrence indicates that the system is not robust enough and there is room for improvement. Moving this up to a `400` error helps calculate client error rates more accurately, making the SLO (e.g. SLI on "successfully processed API request" measurement) more purely a reflection of the server's own reliability issues rather than client misuse.
+- **Troubleshooting and Observability**: For SREs, differentiating between `4xx` and `5xx` is a critical step in initial troubleshooting. `500` errors require immediate attention to the internal status of the service (such as database connections, dependent service health), while `400` errors may lead to troubleshooting to the client logic or the accuracy of the API documentation. Clear error classification greatly improves the efficiency of incident response.
+- **API as Reliability Contract**: The API's specification of behavior (including error responses) is the contract between the client and the service. Explicit and consistent error handling is an important part of API reliability and helps establish client-side and server-side robustness boundaries.
+
+### Best practices and common anti-patterns
+- **Best Practice**: Follow the principle of "verify first, process later", especially in operations such as resource update and creation, ensure that the resource identifier provided by the client is consistent with the operation target. Return HTTP status codes and error messages with clear semantics.
+- **Common anti-pattern**: Trusting client input exposes inconsistencies deep in the business logic, resulting in hard-to-diagnose `5xx` errors or silent data inconsistencies. Ignore potential conflicts between path parameters and load parameters.
+
+### Related indicators (SLI/SLO/SLA)
+- **SLI may consider**: `API request success rate`, which clearly distinguishes `4xx` from `5xx` errors. For example, `1 - (count of HTTP 5xx responses) / (total requests)` is used to measure server-side reliability, and `1 - (count of HTTP 4xx responses) / (total requests)` can be used as a secondary metric to measure API design clarity and client-side consistency.
+- **Monitoring recommendations**: Monitor the `400` and `500` error rates of the `PUT /api/datasources/uid/:uid` endpoint respectively. A sudden increase in the `400` error rate may indicate a compatibility issue with a client or the discovery of a new usage vulnerability, which is worth communicating with the client team.
+
+[[api-design-principles]] [[error-handling-best-practices]] [[input-validation]]

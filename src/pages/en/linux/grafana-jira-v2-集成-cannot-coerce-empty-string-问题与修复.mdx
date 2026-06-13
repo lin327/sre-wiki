@@ -1,0 +1,53 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "grafana/grafana Issue"
+category: "Alerting module"
+confidence: medium
+---
+
+## Overview
+This document describes a critical flaw in Grafana 12.x series releases that causes the Jira v2 point of contact integration to completely break. Specifically, when Grafana's alerting module performs an issue search (e.g. for alert deduplication) via the Jira REST API, it is rejected by the API for serializing a non-conforming empty string field, returning a **"Cannot coerce empty String"** error. This issue directly affects any SRE or operations team that relies on Grafana 12.x version to manage alerts and seeks deep integration with the Jira incident ticketing system, disrupting core automated incident response and deduplication workflows.
+
+## Core concepts
+To understand this issue and its impact, you need to understand the following key components:
+- **Grafana Alerting Module**: Grafana’s core module of the unified alerting system, responsible for evaluating rules, generating alert instances, and routing to configured contact points.
+- **Jira v2 Contact Point**: A contact point type in Grafana used to integrate with Jira Cloud/Server, supporting creating new issues, updating existing issues, and searching for issues.
+- **Issue Search & Deduplication**: Alert deduplication is a key reliability pattern designed to correlate multiple alert notifications arising from the same root cause to a single Jira ticket, preventing "alert storms" from overwhelming responders. Achieving deduplication often involves searching through the Jira API for existing issues with the same identifier (such as an alert fingerprint).
+- **JSON Serialization & API Compliance**: Grafana serializes the internal data structure into a JSON request body and sends it to the Jira API. The Jira API has strict regulations on the field formats it accepts. For example, empty string values ​​such as `"expand": ""` are not allowed.
+
+## Practice
+### Scope of problem impact
+- **Affected Versions**: All Grafana **12.x** versions (as of 12.4.4). This flaw occurs after upgrading from Grafana 11.x to 12.x.
+- **Affected Features**: Any workflow configured in Grafana 12.x with a Jira v2 contact point using the "Search Existing Issues" feature. Typical triggering scenarios are deduplication or grouping of alerts.
+
+### Root cause of the problem
+The Alerting module, when building API requests for searching Jira issues, incorrectly serialized an optional `expand` field into an empty string (`"expand": ""`) instead of omitting it from the JSON object entirely. The Jira REST API does not accept this format, so it returns an error and refuses to process the request, causing the entire integration link to break.
+
+### Solutions and temporary workarounds
+1. **Official fix**: The fix has been merged into the Grafana mainline (`main` branch), and the corresponding milestone version is **13.1.x**.
+    - Fix PR: [grafana/alerting#454](https://github.com/grafana/alerting/pull/454)
+    - Module update PR: [grafana/grafana#121578](https://github.com/grafana/grafana/pull/121578)
+2. **Version upgrade path**:
+    - **Recommended Solution**: Upgrade Grafana to **13.1.x or higher**. This is the fundamental solution.
+    - **If you cannot upgrade immediately**:
+        - **Downgrade**: Downgrade Grafana back to the **11.x** version, which runs normally.
+        - **Circumvention**: In the Jira contact point configuration, **disable or avoid using any functionality** that relies on Issue Search (such as "Attach Alert to Existing Issue"). Only use the ability to create new questions. Note that this will completely give up deduplication capabilities and may lead to notification flooding.
+
+## SRE Key Points
+### Association with reliability, observability, incident response
+This bug directly destroys a key automation link in SRE practice - event correlation and deduplication. Effective deduplication is key to maintaining notification signal-to-noise ratio and ensuring responders focus on the core issue. This issue causes each alert instance to attempt to create a separate ticket, causing notification storms, consuming cognitive load on the team, and possibly masking the root cause. It's a classic case of a broken observability tool chain: while the alert may be triggered correctly, its delivery to subsequent systems (event management) fails.
+
+### Best practices and common anti-patterns
+- **Integration Testing**: When upgrading a monitoring stack (such as Grafana), end-to-end smoke testing of key contact point integrations is a must, especially those processes involving complex operations such as searches, updates, etc.
+- **Version Management and Rollback Planning**: The SRE team should maintain a clear list of component versions and develop a quick rollback plan for critical components (such as Grafana). In this case, having a backup installation or configuration of 11.x can quickly restore service.
+- **Notification Strategy Review**: When the key deduplication function fails, there should be a plan to temporarily adjust the notification strategy (such as adding silent rules or routing to a higher-level aggregation channel) to mitigate the impact.
+
+### Related indicators (SLI/SLO/SLA)
+- **Related SLI**: `Alert handling success rate` (ALERTMANAGER_SENT_ALERTS_TOTAL minus alerts that failed due to integration errors).
+- **Impact of the fault**: For teams that use the number of Jira work orders as an SLO for internal operation and maintenance efficiency, this bug will cause serious distortion of indicators, an abnormal surge in the number of work orders created, and the loss of real event-related information.
+- **Incident Response**: This issue itself may be identified as a **P1/P2 level production incident** (for teams that rely heavily on Grafana-Jira integration), as it directly affects the visibility and efficiency of incident response.
+
+### Related pages
+- [[alerting-contact-points]]: Learn about all contact point types available in Grafana and their configuration.
+- [[incident-response]]: How SREs leverage automated tools for incident response.
+- [[release-management]]: Manage version release and rollback strategies for components such as Grafana.

@@ -1,0 +1,110 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Introducing the Experimental info() Function"
+category: "可观测性"
+confidence: high
+---
+
+
+## 概述
+
+在Prometheus中，为指标数据附加丰富的元数据（如Kubernetes标签、OpenTelemetry资源属性）是实现深度可观测性的关键，但传统方法往往需要编写复杂的PromQL连接查询。`info()`函数是Prometheus 3.0引入的一个强大的实验性功能，旨在**彻底简化元数据标签富集流程**。对于SRE而言，这意味着更清晰、更可靠、更易于维护的监控查询，特别是在处理OpenTelemetry集成和动态基础设施时，能显著降低人为错误和查询故障的风险。
+
+## 核心概念
+
+`info()`函数解决的核心问题是如何高效、可靠地将“信息指标”（Info Metrics，如 `target_info`, `build_info`）中的元数据标签关联到实际的“数据指标”（如请求速率、错误计数）上。
+
+- **元数据标签富集**：指通过连接（join）操作，将描述指标生产者的上下文信息（如 `k8s_cluster_name`, `app_version`）添加到时间序列数据中，以便进行更精细的聚合和分析。
+- **传统连接查询的痛点**：过去需要使用类似 `* on (job, instance) group_left (k8s_cluster_name)` 的复杂语法。这要求使用者精确指定：
+    - **识别标签（Identifying Labels）**：用于连接的共同标签（如 `job`, `instance`），相当于关系数据库中的外键。
+    - **信息指标名称**：要从中获取标签的特定指标。
+    - **数据标签**：希望被附加的元数据标签列表。
+- **“数据变动”问题（The Churn Problem）**：这是一个关键的技术挑战。当OpenTelemetry资源属性或Kubernetes标签等“非识别信息标签”发生变化时（例如Pod重建导致版本标签更新），Prometheus中会同时存在新旧两个 `target_info` 时间序列。由于OTLP摄取不进行陈旧性标记，传统连接查询会因匹配到两个系列而报错（“many-to-many matching”），导致仪表板中断和告警失效。`info()`函数通过自动选择最新样本的系列，从根本上解决了此问题。
+
+## 实践
+
+### 基本语法与用法
+
+`info()`函数的基本语法如下：
+`info(v instant-vector, [data-label-selector instant-vector])`
+
+- **`v`**：需要被富集的基础指标（瞬时向量）。
+- **`data-label-selector`**（可选）：一个标签选择器，用于过滤和选择要从信息指标中添加哪些数据标签。
+
+**基础富集**：默认情况下，使用 `target_info` 指标并添加所有数据标签。
+```promql
+info(rate(http_server_request_duration_seconds_count[2m]))
+```
+
+**筛选特定标签**：使用第二个参数精确控制要添加的标签。
+```promql
+// 仅添加 k8s_cluster_name 标签
+info(
+  rate(http_server_request_duration_seconds_count[2m]),
+  {k8s_cluster_name=~".+"}
+)
+
+// 仅添加来自美国集群的指标数据
+info(
+  rate(http_server_request_duration_seconds_count[2m]),
+  {k8s_cluster_name=~"us-.*"}
+)
+```
+
+**选择不同的信息指标**：通过 `__name__` 选择器切换或组合多个信息指标。
+```promql
+// 使用 build_info 而非 target_info
+info(up, {__name__="build_info"})
+
+// 同时结合 target_info 和 build_info 的标签（注意：当前实现限制）
+info(up, {__name__=~"(target|build)_info"})
+```
+
+### 典型用例
+
+1.  **OpenTelemetry 资源属性集成**：这是主要应用场景。OTel资源属性会自动映射到 `target_info` 的数据标签上。
+    ```promql
+    // 为请求速率添加所有OTel资源属性
+    sum by (http_status_code, k8s_cluster_name, k8s_namespace_name) (
+      info(rate(http_server_request_duration_seconds_sum[5m]))
+    )
+    ```
+
+2.  **基于构建信息过滤**：用于A/B测试或金丝雀发布监控。
+    ```promql
+    // 仅查看2.x版本的指标数据
+    sum by (job, version) (
+      info(
+        rate(http_server_request_duration_seconds_count[2m]),
+        {__name__="build_info", version=~"2\\..+"}
+      )
+    )
+    ```
+
+## SRE 要点
+
+### 与可靠性工程的关联
+
+- **减少查询复杂性**：简化的语法降低了编写和维护监控查询的认知负荷与错误概率，使SRE团队能更专注于分析而非语法调试，直接提升了监控系统的可靠性。
+- **解决基础设施变动导致的故障**：“数据变动”问题是生产环境中的一个隐蔽风险。`info()`函数的自动处理机制确保了即使在频繁的滚动更新或属性变更期间，监控查询和告警依然稳定运行，避免了监控“盲区”。
+- **增强可观测性上下文**：轻松附加的元数据（如集群、命名空间、服务版本）使得问题定位和根因分析速度大幅提升。在事件响应时，能快速从聚合指标下钻到受影响的具体环境或版本。
+
+### 最佳实践与反模式
+
+- **最佳实践**：
+    - 对于新写的OTel集成查询，优先使用 `info()` 替代复杂连接。
+    - 明确使用 `data-label-selector` 来仅添加必要的标签，避免查询结果中出现大量无关标签。
+    - 在仪表板和告警规则中记录所使用的 `info()` 用法，方便团队协作。
+- **常见反模式**：
+    - **过度依赖默认设置**：当前默认仅识别 `target_info` 和固定的 `job`/`instance` 标签。对于自定义信息指标（如 `kube_pod_labels`，其识别标签为 `namespace`/`pod`），此功能目前不适用，需使用传统连接。
+    - **忽略实验状态**：由于是实验功能，需注意在升级Prometheus版本时检查其行为或API是否变更。建议在生产环境启用前，进行充分测试。
+
+### 相关指标
+
+- **SLI（服务等级指标）**：`info()` 常用于富集与SLI计算相关的指标（如请求错误率、延迟），使其具备更丰富的维度（如版本、区域），从而可以计算更细粒度的SLO。
+- **SLO（服务等级目标）**：通过 `info()` 按版本或集群分解指标，有助于为不同服务实例或环境定义和跟踪独立的SLO。
+- **Error Budget（错误预算）**：结合 `info()` 的版本过滤功能，可以分别计算不同版本的错误预算消耗情况，为发布决策提供数据支持。
+
+### 实施注意
+
+当前实现为**最小可行产品（MVP）**，存在明确限制：默认仅使用 `target_info`，且固定使用 `job` 和 `instance` 作为识别标签。未来版本计划自动识别所有信息指标及其正确的识别标签。启用此功能需要添加特性标志：`prometheus --enable-feature=promql-experimental-functions`。

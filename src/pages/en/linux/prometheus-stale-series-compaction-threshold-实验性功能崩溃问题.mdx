@@ -1,0 +1,56 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Prometheus GitHub Issue #18379: stale_series_compaction_threshold experimental"
+category: "Prometheus"
+confidence: medium
+---
+
+## Overview
+
+This document details serious issues that may be encountered when enabling the experimental feature `stale_series_compaction_threshold` in Prometheus. This feature is designed to clean up "stale" time series (i.e. series whose data is no longer updated) to optimize storage, but there is an unknown flaw in certain versions (such as v3.10.0) that may be triggered after a long run. This problem will cause abnormal memory behavior of the Prometheus process and enter an unrecoverable WAL (Write-Ahead Log) replay and continuous restart cycle, seriously affecting the continuity and reliability of monitoring data. For SREs, understanding this issue is critical to managing experimental configurations, troubleshooting, and maintaining monitoring system stability.
+
+## Core concepts
+
+**Stale Series Compaction**: This is an **experimental** feature of Prometheus. In environments such as Kubernetes, frequent Pod rebuilds will produce a large number of "expired" time series that have data for a short period of time and then stop reporting. The goal of this feature is to identify and ultimately remove these no longer active sequences from memory and disk to free up memory and storage space. The configuration item `stale_series_compaction_threshold` is used to set the threshold that triggers deletion.
+
+**Problem phenomenon - flat memory curve**: According to the chart in the Issue, when the bug is triggered, the memory usage of Prometheus will show a **flat line** (Memory stays flat). This is usually not a normal operating mode, and the exception indicates that the process is constantly trying to replay the WAL log to recover data, but cannot successfully complete it, so the memory cannot be effectively released or used, and it is trapped in an infinite loop.
+
+**Crash Loop**: Prometheus crashes due to the above memory exception and WAL replay failure, and is subsequently automatically restarted by the process manager (such as Kubernetes kubelet). However, after restarting, the same problem will reappear, resulting in the service continuing to be Not Ready and gaps in monitoring data.
+
+## Practice
+
+When you suspect that Prometheus has a crash related to stale series compaction, you can follow the following steps to troubleshoot and mitigate:
+
+1. **Check configuration**: First confirm whether `stale_series_compaction_threshold` is explicitly enabled in the Prometheus configuration file. This option is usually found in the global configuration section.
+    ```yaml
+    global:
+      # ...other configuration
+      stale_series_compaction_threshold: <value> # If this line exists, the feature is enabled
+    ```
+
+2. **Monitor memory and restart indicators**:
+    * Observe the memory usage curve of the target Prometheus instance for unexpected, long-term flat lines.
+    * In Kubernetes, check the number of restarts of a Pod: `kubectl get pod <prometheus-pod> -o jsonpath='{.status.containerStatuses[0].restartCount}'`. An unusual spike in the restart count is a direct sign.
+    * Check the system log or `kubectl logs` to find the error log before the Prometheus process crashes, which may contain WAL-related error information.
+
+3. **Avoidance measures**:
+    * **ACT IMMEDIATELY**: If your production Prometheus environment is therefore unstable, the **most direct workaround is to disable this experimental feature**. Remove the `stale_series_compaction_threshold` entry in the configuration file and restart Prometheus. Note that the restart itself may briefly affect data collection.
+    * **Upgrade or wait for fix**: Pay close attention to the progress of Prometheus official GitHub Issue #18379, wait for the release of a new version containing fix patches, and plan to upgrade.
+
+4. **Log and Data Collection**: If the problem can be reproduced stably, follow the guidelines in the Issue to collect detailed Prometheus logs, configuration files (after desensitization) and memory/restart timing data. This is crucial for reporting to the Prometheus community and assisting in diagnosing the root cause.
+
+## SRE Key Points
+
+### Association with reliability
+* **Availability Impact**: This issue directly damages the **availability** of the Prometheus service. Once triggered, the monitoring system itself will lose its data collection and query capabilities, resulting in "blindness" to the status of the monitored system.
+* **Incident response**: Such problems are failures caused by software defects in the infrastructure components themselves. SREs need to quickly identify their signatures (memory flat lines, crash loops) during incident response and distinguish them from day-to-day capacity issues or performance issues in the monitored system. The first priority is to restore service (disable functionality or rollback a version), followed by following upstream fixes.
+
+### Best practices and common anti-patterns
+* **Principle of caution for experimental functions**: **Absolutely avoid directly enabling experimental or preview functions that have not been fully verified in the core monitoring system of critical production environments. ** Should be fully evaluated in a development or test environment.
+* **Change Management**: Any modification to the core Prometheus configuration, even to a parameter, should be included in the change management process and evaluated for potential risks.
+* **Common anti-pattern**: When seeing an abnormality in the monitoring system (such as restart), just regard it as "insufficient resources" and blindly expand the capacity, while ignoring the root cause that may be caused by configuration or software defects, which will prolong the failure time and waste resources.
+
+### Related indicators and failure modes
+While this issue itself does not directly correspond to an SLI/SLO, it severely threatens the reliability of the monitoring system itself and, in turn, all service level objectives that rely on its data.
+* **Failure Mode**: `Prometheus-ExperimentConfig-CrashLoop`. Can be used as an internal fault classification label.
+* **Monitoring Prometheus itself**: SRE must establish strict monitoring and alarming of Prometheus core components (such as the number of Pod restarts, memory usage patterns, and process survival time) in order to detect such self-faults as soon as possible. This in itself is a key practice in monitoring system reliability.

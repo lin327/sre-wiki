@@ -1,0 +1,72 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issues"
+category: "databases"
+confidence: medium
+---
+
+## Overview
+
+When the Grafana backend database (which uses SQLite by default) encounters write conflicts in high concurrency scenarios, the system may throw a "database is locked" error. This error will cause some Grafana functions to be temporarily unavailable, such as user session management failure, thus affecting user experience and system reliability. In an SRE practice, identifying and resolving such database-level issues is critical to maintaining the stability of Grafana dashboards and the health of the observability platform.
+
+## Core concepts
+
+### SQLite lock mechanism
+Grafana uses a lightweight embedded database, SQLite, by default to store metadata such as dashboards, users, and organization configurations. SQLite is a file-based database that uses file locks to control concurrent access. SQLite locks the entire database file when multiple processes or threads try to write to the database at the same time. If the lock takes too long or there are too many concurrent requests, subsequent write operations will return a "database is locked" error because the lock cannot be obtained.
+
+### WAL mode
+SQLite has two main logging modes: the default rollback logging and Write-Ahead Logging (WAL). WAL mode allows read and write operations to be performed more concurrently, often significantly reducing the occurrence of "database is locked" errors. However, even in WAL mode, high concurrent writes can still cause locks.
+
+## Practice
+
+### Diagnostic steps
+1. **Confirm the source of the error**: Check the Grafana log to confirm whether the error message is `"database is locked"`. The error message `logger=context error="database is locked"` is a typical example.
+2. **Assess load**: Check the number of concurrent users of Grafana, the frequency of API requests, and the frequency of automatic dashboard refresh when an error occurs to confirm whether there are write-intensive operations.
+3. **Check database file**: Locate Grafana’s SQLite database file (default path such as `/var/lib/grafana/grafana.db`) and check its size and permissions. Overly large files or improper permissions can exacerbate the problem.
+
+### Solution
+To address this issue, you can take one or more of the following actions:
+
+**1. Optimize SQLite configuration**
+Enable WAL mode in the Grafana configuration file (`grafana.ini` or environment variables):
+```ini
+[database]
+type=sqlite3
+# Enable WAL mode to improve concurrency performance
+wal = true
+```
+This configuration allows read and write operations to occur more concurrently and is the preferred solution to mitigate this problem.
+
+**2. Optimize the use of Grafana**
+- **Reduce automatic refresh frequency**: For dashboards that display a large amount of data, appropriately reduce the automatic refresh interval of the page.
+- **Audit Plugins and API Usage**: Check if there are any plugins or external scripts that are frequently updating dashboards or data source configurations through the API.
+
+**3. Architectural considerations**
+- **Assess database suitability**: For large-scale deployments or high-availability scenarios, SQLite may not be the best choice. Consideration should be given to migrating the Grafana backend database to a more robust database system such as **PostgreSQL** or **MySQL**. This requires explicitly specifying the database type in the Grafana configuration.
+- **Configure External Database**: If you have migrated to an external database, you need to ensure that the database itself is configured appropriately and performs well. For example, for PostgreSQL, `max_connections` and lock-related parameters need to be adjusted.
+
+**4. Monitoring and Alarm**
+To prevent service outages due to this issue, monitoring of the health of your Grafana backend should be established. You can monitor the frequency of errors in Grafana logs, or build dashboards of your own performance metrics in Grafana (if available).
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+- **Service Availability**: "database is locked" errors will directly cause Grafana API request failure, affecting core functions such as user login and dashboard saving, thereby reducing the availability of the entire observability platform (**SLO** impact).
+- **Observability**: The error itself is a critical signal of the reliability of the Grafana service. This should be incorporated into Grafana's own health monitoring metrics.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    - **Prevention is better than fix**: In the initial deployment or planning stage, choose the appropriate database backend based on the expected load (SQLite for small scale, PostgreSQL/MySQL for production environments).
+    - **Configuration Monitoring**: Analyze alarms on Grafana logs and monitor the "database is locked" error rate.
+    - **Scheduled Maintenance**: For deployments that insist on using SQLite, perform regular database backups and integrity checks.
+- **Common anti-patterns**:
+    - **Ignore Warnings**: Ignore early lock warnings in the log until completely unavailable.
+    - **Over-Reliance on Default Configuration**: Using an untuned default SQLite configuration without WAL enabled in a production environment.
+    - **Single point of failure**: In a high-availability architecture where multiple Grafana instances share the same SQLite file (which is not supported), an external shared database must be used.
+
+### Related indicators (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: The success rate of Grafana API requests (especially the `/api/` endpoint), how often "database is locked" appears in the error log.
+- **SLO (Service Level Objective)**: For example, to ensure that the availability of Grafana core APIs (such as dashboard queries) reaches 99.9%, the error rate due to database locks should be lower than the Error Budget tolerated by the SLO.
+- **SLA (Service Level Agreement)**: Commitments to internal users should include terms based on the above SLO.
+
+[[grafana]] [[sqlite]] [[database-reliability]] [[troubleshooting]]

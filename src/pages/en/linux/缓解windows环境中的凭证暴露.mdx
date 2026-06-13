@@ -1,0 +1,69 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Mitigate credential exposure in Windows environments with Boundary and Vault"
+category: "远程访问与零信任"
+confidence: high
+---
+
+## Overview
+
+In many organizations, remote access and security of Windows environments continue to face serious challenges, centered on the reliance on static credentials and traditional network-based broad access controls. This “castle-moat” model allows users to move laterally within the network once they gain access to the VPN, significantly increasing security risks. This article describes how to leverage HashiCorp Boundary and Vault to build a zero-trust access model that fundamentally alleviates credential exposure and secure access issues in Windows environments through identity-driven access control and short-lived dynamic credentials.
+
+## Core concepts
+
+### Static credentials and broad network access
+
+Access to traditional Windows environments typically relies on shared local administrator accounts, long-lived domain accounts, local service accounts with fixed passwords, or manually assigned privileged credentials. Once these credentials are compromised, they can be misused over time. At the same time, traditional VPNs provide access to the network, but are difficult to implement fine-grained access control based on user identity. As a result, once the internal network is compromised, attackers can easily move laterally.
+
+### Boundary: Zero Trust Access Plane
+
+Boundary revolutionizes access models by consolidating authentication and authorization into a single platform. Instead of granting users broad network access, it provides users with direct, controlled connections to target resources based on their identity. Its core advantages are:
+- **Identity-Driven Access**: Authorization based on user identity rather than IP address.
+- **Credential Injection**: Boundary can proxy the connection session and inject credentials without the user's awareness, achieving "passwordless" connections and eliminating the risk of credentials being exposed at the endpoint.
+- **Session Proxy**: All connections go through the Boundary proxy, providing a clear path for session auditing.
+
+### Vault: Dynamic Credential Engine
+
+As a secrets management tool, Vault, after integrating with Boundary, can dynamically create short-term credentials with a limited life cycle (TTL) based on requests. For Windows AD environments, Vault can use the LDAP secrets engine to temporarily create an AD user account when the user initiates a connection request, and automatically delete it after the session ends. This ensures that even if a credential is compromised, its validity window is extremely short.
+
+## Practice
+
+According to the guide provided by the blog, implementing Boundary and Vault to protect Windows RDP access mainly includes the following stages:
+
+1. **Infrastructure Deployment**: Use Terraform to deploy a Windows server with Active Directory Domain Services (AD DS) as a test target and identity source in a cloud environment such as AWS.
+2. **AD permission configuration**: Create a service account (`vault-svc`) and specific groups (`vault-users`, `vault-svc-admin`) in AD, and delegate the permission to create/delete users to the service account. This lays the foundation for Vault's subsequent automated operations.
+3. **Vault Configuration**: Enable and configure Vault's LDAP secrets engine so that it can connect to the AD DS server using the `vault-svc` account. Next, create a Dynamic Role that defines how to use an LDIF template to create and delete temporary AD user accounts.
+4. **Boundary configuration**: Create a Credential Library pointing to Vault in Boundary, and configure the target to use the credential library. The destination type is RDP and the address points to the Windows AD server.
+5. **Connection Test**: The end user connects to the target using the Boundary client (desktop or CLI). Boundary automatically requests dynamic credentials from Vault, Vault temporarily creates the AD user, and Boundary injects it into the RDP session. The entire process is transparent to the user and eliminates the need to manually enter passwords.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+
+- **Reliability**: By eliminating reliance on long-term static credentials, access disruptions and service unavailability events due to credential expiration, rotation errors, or leaks are reduced. Automatic management of dynamic credentials improves the reliability of access channels.
+- **Observability**: Boundary provides a centralized audit log for all remote access sessions, recording **who** accessed **which** resource at **when**. This greatly enhances the observability of the environment, facilitating security monitoring and behavioral analysis.
+- **Incident Response**: When a security incident occurs, granular identity- and session-based logs can quickly locate affected sessions and users. Because the credentials are short-lived, their window of potential impact is strictly limited, buying time for response and remediation.
+
+### Best practices and common anti-patterns
+
+- **Best Practices**:
+    - **Principle of Least Privileges**: Grant the Vault service account only the minimum AD permissions required to create and delete temporary users.
+    - **Short-lived Credentials**: Set the TTL of dynamic credentials and Boundary sessions to the minimum value that meets business needs.
+    - **Centralized Management**: Use Boundary and Vault to centrally manage all remote access policies and credentials to avoid "shadow IT."
+    - **Environment Isolation**: Fully test this configuration in a non-production environment before promoting it to the production environment.
+
+- **Common anti-patterns**:
+    - **Continuing to use static credentials**: Failure to change mindset and continue to rely on administrator or service accounts with passwords that remain unchanged over time.
+    - **Reliance on VPN as the only security control**: Thinking that access to the VPN is safe and ignoring internal access controls.
+    - **Manual rotation of credentials**: For long-term credentials that must be used, manual rotation is still relied on, which is inefficient and error-prone.
+
+### Related indicators (SLI/SLO/SLA)
+
+- **SLI (Service Level Indicator)**: Key indicators that can be used to measure this access model include:
+    - **Credential injection success rate**: The percentage of Boundary successfully requesting and injecting dynamic credentials to Vault to establish an RDP session.
+    - **Dynamic Credential Generation Delay**: The time from when a user initiates a connection request to when a valid credential is obtained.
+    - **Session Audit Coverage**: The percentage of all RDP sessions established through this model that are fully logged and audited by Boundary.
+- **SLO (Service Level Objective)**: You can set goals for the above SLI, such as "credential injection success rate &gt; 99.9%", "credential generation delay P99 < 5 seconds".
+- **SLA (Service Level Agreement)**: Internal or external commitment to the availability and performance level of remote connection services provided based on this access model, which is directly related to the work efficiency of the development and operation and maintenance teams.
+
+[[zero-trust-access]] [[vault-dynamic-secrets]] [[identity-governance]]

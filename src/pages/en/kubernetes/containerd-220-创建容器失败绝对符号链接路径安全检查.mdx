@@ -1,0 +1,70 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[Go 1.24] v2.2.0 fails to create containers from images having /etc/{passwd,group}"
+category: "容器运行时"
+confidence: high
+---
+
+## Overview
+
+This document describes a regression introduced in containerd v2.2.0 that causes container creation from certain images to fail. The core reason is that containerd 2.2.0 is compiled with Go 1.24, which introduced stricter path security checks in file system operations. When the `/etc/passwd` or `/etc/group` file within the container image is set as a symbolic link pointing to an absolute path, containerd will trigger this check and report a `path escapes from parent` error when trying to parse user and group information, thus preventing container creation. This issue affects containerized workloads that rely on these files for user rights management and is a version compatibility issue of concern.
+
+## Core concepts
+
+**Absolute symbolic link path**: A symbolic link (symlink) can point to an absolute path (such as `/nix/store/...`) or a relative path (such as `../store/...`). In container images, symbolic links using absolute paths may inadvertently point to paths on the host file system, posing potential security risks.
+
+**Container runtime file system security**: When a container runtime (such as containerd) mounts and prepares the container root file system, it must ensure that its operations do not accidentally escape to the host's file system. This includes verifying that the file path is within the expected container root.
+
+**Go 1.24 path security check**: Go 1.24 version has security enhancements for functions involving file paths such as `os.Open`. It checks whether the file path (including the resolved symbolic link target) "escapes" out of the parent directory specified by the caller. If the check fails, an error is returned. containerd v2.2.0 was compiled using Go 1.24 and therefore inherits this behavior.
+
+## Practice
+
+### Problem location and reproduction
+
+This issue primarily affects images that were built with `/etc/passwd` or `/etc/group` set to absolute symbolic links. A typical example is the `docker.io/nixos/nix:2.32.2` image, whose `/etc/passwd` is an absolute link pointing to a file in `/nix/store/`.
+
+Steps to reproduce:
+1. Use containerd v2.2.0 environment.
+2. Pull the problematic image: `ctr image pull docker.io/nixos/nix:2.32.2`.
+3. Try to create a container: `ctr containers create docker.io/nixos/nix:2.32.2 nixos-2-32-2`.
+4. Observe the error output: `ctr: mount callback failed on /tmp/containerd-mount...: openat etc/passwd: path escapes from parent`.
+
+### Solution
+
+There are several ways to solve or circumvent this problem:
+
+**1. Upgrade to the repaired version (recommended)**
+Pay attention to the patch version officially released by containerd. This problem has been fixed in subsequent versions. Before upgrading, be sure to verify in a test environment.
+
+**2. Modify or rebuild the image**
+Modify the image build process to replace the absolute symbolic links of `/etc/passwd` and `/etc/group` with relative links. This eliminates the conditions that trigger security checks at their source.
+```dockerfile
+# Dockerfile example
+FROM nixos/nix:2.32.2
+# Replace absolute symbolic links with relative links
+RUN ln --symbolic --force "$(realpath --relative-to=/etc /etc/passwd)" /etc/passwd
+RUN ln --symbolic --force "$(realpath --relative-to=/etc /etc/group)" /etc/group
+```
+
+**3. Temporarily roll back the containerd version**
+If you cannot upgrade or modify the image immediately, you can consider temporarily rolling back containerd to a known good version (such as v2.1.5 or v1.7.28). This is a temporary mitigation measure but introduces other potential risks that should be carefully evaluated.
+
+## SRE viewpoint
+
+- **Relationship with Reliability**: This problem is a typical **version upgrade regression** case. As a core component of the infrastructure, changes in the behavior of the container runtime (even for security purposes) may break the compatibility of existing workloads, lead to deployment failures, and directly affect service delivery capabilities. It is crucial to establish a sound **pre-upgrade testing process** (including testing with typical images from the production image library).
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: When building a container image, give priority to using **relative path symbolic links** for files that need to be linked. This not only avoids such problems, but also conforms to the portability principle of container images.
+    - **Anti-Pattern**: Hardcoding absolute path symbolic links in the image, especially when pointing to paths outside the container root directory, introduces security risks and compatibility concerns.
+    - **Observability**: Monitoring the container creation failure rate is an effective means to detect such problems. Combined with `containerd`'s log analysis, the root cause can be quickly located.
+
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: You can define the "container first creation success rate", which is the ratio from when a creation request is received to when the container successfully enters the running state.
+    - **Impact**: This issue will directly cause the SLI value to decrease, especially in deployment scenarios using specific version images.
+    - **Incident Response**: When a sudden increase in container creation failure rate is monitored, you should check whether the containerd or Go tool chain version has been upgraded, and quickly check the list of known compatibility issues.
+
+### Related pages
+
+- [[container-runtime]]
+- [[image-building]]
+- [[upgrade-management]]

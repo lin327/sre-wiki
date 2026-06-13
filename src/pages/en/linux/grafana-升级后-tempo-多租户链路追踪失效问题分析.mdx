@@ -1,0 +1,59 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana 升级后 Tempo 多租户链路追踪失效问题分析"
+category: "可观察性"
+confidence: medium
+---
+
+## Overview
+
+In SRE practice, ensuring the stability and compatibility of your observability pipeline is critical. This document analyzes a typical case where the integration with Tempo link tracking fails after a major version upgrade of Grafana (from v12.4.2 to v13.0.1). This issue causes the Traces function in "Explore" and "Drill Down" to be unusable, and the core error is `rpc error: code = Unknown desc = no org id`. This is a severe availability disruption for teams that rely on distributed tracing for troubleshooting and performance monitoring, directly damaging the **SLI** (service level indicator) of the link tracing service. This case highlights the importance of version upgrades and configuration compatibility management in the observability stack.
+
+## Core concepts
+
+1. **Multi-Tenancy**: In the context of Grafana and Tempo, refers to isolating data from different teams or projects through **Org ID** or tenant identifiers. In Tempo, this identifier is usually passed through the HTTP header `X-Scope-OrgId` to ensure that query requests only access data within the authorized scope.
+2. **gRPC header delivery**: Many queries (such as searches, metric queries) between Grafana and Tempo are conducted through the gRPC protocol. `X-Scope-OrgId` is a gRPC metadata header that needs to be appended correctly in every request Grafana sends to Tempo. Any absence or error of this header will cause Tempo to reject the request.
+3. **Front-end plugin/ChunkLoadError**: The `ChunkLoadError` mentioned in the problem description is usually related to the failure to load Grafana front-end resources (such as JavaScript modules). This may be a side effect caused by the cache not being cleared or the resource path changing during the upgrade process, but it is not direct evidence of the root cause of `no org id`.
+
+## Practice
+
+According to the problem report and log analysis, the problem phenomenon and troubleshooting process are as follows:
+
+1. **Problem Recurrence Conditions**:
+    - Grafana version upgraded from v12.x to v13.0.1.
+    - The Tempo data source is configured with multi-tenancy (i.e. the `X-Scope-OrgId` header is configured).
+    - Use the "Explore -&gt; Traces" or "Drill Down -&gt; Traces" functionality.
+
+2. **Core Symptoms**:
+    - The Grafana front-end interface failed to request link tracking data, displaying the error `rpc error: code = Unknown desc = no org id`.
+    - A large number of `level=warn` and `msg=gRPC err="no org id"` entries in Tempo's `query-frontend` component logs, indicating that gRPC requests received lack the necessary tenant ID.
+    - Rolling back the Grafana version to v12.4.2 immediately restored functionality, indicating that the issue was a regression introduced in that release.
+
+3. **Possible root cause analysis**:
+    - **Grafana data source query proxy mechanism changes**: Grafana v13.0.1 may have modified its internal logic for constructing Tempo query requests, resulting in the failure to correctly read and inject the `X-Scope-OrgId` header from the data source configuration when constructing a gRPC request.
+    - **Front-end routing or request processing changes**: New plug-ins or front-end routing such as "drill down" may use a different request initiation path, which has not been adapted to the delivery of multi-tenant headers.
+    - **Compatibility issue**: Changes in the gRPC client library or transport layer processing methods of the new version of Grafana affect the portability of metadata.
+
+4. **Temporary solution**:
+    - **Version Rollback**: This is currently the most direct and effective solution. Using a Helm chart to roll back Grafana to a known available version (such as v12.4.2) can immediately restore the availability of Traces functionality.
+
+## SRE Key Points
+
+### Association with reliability
+This issue directly undermines the availability of the link tracking system, which is a critical SLO (Service Level Objective). For services that rely on tracking data for fault diagnosis and optimization, their troubleshooting efficiency and accuracy will be significantly reduced. In incident response, if the tracking system fails at this time, it will greatly increase the difficulty of problem location and mean time to recovery (MTTR).
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    - **Full testing before upgrading**: In a pre-release or canary environment, use production environment traffic mirroring or key queries to test the upgrade compatibility of observability components, especially advanced features such as multi-tenancy.
+    - **Monitor critical path**: Immediately after upgrade, monitor core query success rate (SLI) and error rate (such as gRPC `no org id` error count) between Grafana and Tempo.
+    - **Implement progressive release**: For core infrastructure components, adopt a phased, small-scale release strategy to reduce the risk of global failures.
+- **Common anti-patterns**:
+    - **Upgrade core components directly in the production environment**: Skipping verification in non-production environments puts the availability of the entire system at risk.
+    - **Ignore upgrade testing of the observability pipeline**: Only focus on the upgrade of the monitored application, while ignoring the compatibility testing of the monitoring stack itself (such as Grafana, Prometheus, Tempo).
+
+### Related Indicators (SLI/SLO)
+- **SLI**: Tempo data source query request success rate (number of successful requests / total number of requests). This issue directly causes this SLI to degrade.
+- **SLO**: The availability of the link tracking query service should be maintained at 99.9% or higher. Such version defects directly threaten this SLO.
+- **Alert**: Set alert rules for error logs such as `gRPC err="no org id"` to respond quickly when similar problems occur.
+
+**Related topics**: [[grafana]], [[tempo]], [[multitenancy]], [[grpc-header-passthrough]], [[slo-management]]

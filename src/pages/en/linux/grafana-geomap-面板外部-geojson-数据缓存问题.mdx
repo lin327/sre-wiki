@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issue"
+category: "可观测性"
+confidence: medium
+---
+
+## Overview
+
+In Grafana monitoring dashboards, Geomap panels are often used to visualize geospatial data, such as site distribution, asset locations, or monitoring areas. When a Geomap panel is configured to load a GeoJSON file from an external URL (such as a SAS URL from Azure Blob storage), the panel caches the data, causing the old data to appear after reloading the dashboard even though the source file has been updated. This issue is directly related to the **data freshness** of the monitoring data and is a key factor affecting SRE's use of visual dashboards for real-time decision-making.
+
+## Core concepts
+
+### Cache behavior and data freshness
+The Grafana Geomap panel may have a caching policy implemented in its internal components or on the browser side when loading external GeoJSON URLs. Although this caching mechanism improves the loading speed, it sacrifices the real-time nature of the data. In SRE practices, the timeliness of monitoring data is critical, and stale geographic data can lead to misjudgments about site status, capacity, or incident response locations.
+
+### Limitations of manual refresh
+A typical manifestation of this problem is that even if the SRE engineer clears the cache or uses incognito mode through the browser developer tools, the data still cannot be updated. This indicates that caching may occur at the Grafana application level rather than purely browser caching. It exposes that the current Grafana Geomap panel lacks a flexible and reliable refresh mechanism to ensure data synchronization when processing external data sources.
+
+## Practice
+
+### Problem reproduction and confirmation
+1. **Upload initial data**: Upload a `site.geojson` file to Azure Blob Storage and generate a SAS URL for it.
+2. **Configure the Geomap panel**: Add a Geomap panel in the Grafana dashboard and configure the data source `src` of its GeoJSON layer to the SAS URL in the previous step.
+3. **Validate initial data**: Confirm that the map correctly renders geographic features in GeoJSON.
+4. **Update Source File**: Modify the contents of the `site.geojson` file in Azure Blob Storage (for example, change the name of a tag or move a region).
+5. **Try Refresh**: Reload the dashboard in Grafana (even if you clear the browser cache or use a new SAS URL).
+6. **Observation**: It is found that the map still displays the old data before the update, and the problem is confirmed.
+
+### Possible avoidance and troubleshooting ideas
+Although the official repair solution has not yet been provided, in actual SRE work, the following temporary circumvention ideas can be considered:
+- **Query parameter cache invalidation**: Try to dynamically add a time-varying query parameter (such as `?t=<timestamp>`) at the end of the GeoJSON URL to force the cache to be bypassed. This needs to be coordinated with the data generation process to ensure that the timestamp is updated every time the file is updated.
+- **Dashboard Variables and Overloading**: Create a dashboard variable, use its value as part of the GeoJSON URL, and trigger variable updates through the "Refresh Dashboard" button to indirectly achieve the purpose of reloading data.
+- **Follow official updates**: Continue to pay attention to Grafana's official follow-up on this issue, and look forward to adding configuration options in future versions, such as providing a "reload strategy" in the panel options (such as reloading every time the dashboard is loaded, reloading based on query variables, etc.).
+
+## SRE Key Points
+
+### Impact on reliability and observability
+- **Monitoring Blind Spot Risk**: SRE teams that rely on this GeoJSON layer for monitoring may develop "monitoring blind spots" due to stale data. For example, newly added monitoring sites or removed fault points cannot be reflected on the map in a timely manner, affecting situational awareness.
+- **Incident response efficiency**: During the incident response process, outdated site layout or asset location information may mislead engineers and delay fault location and recovery.
+
+### Best Practices and Anti-Patterns
+- **Anti-Pattern**: Serve frequently changing real-time data (such as dynamic asset locations) to Geomap panels only through static GeoJSON file URLs because their update mechanism is unreliable.
+- **Best Practices**:
+    - **Data source selection**: For geographical data that needs to be updated in real time, give priority to using Grafana data source plug-ins (such as MQTT, HTTP API) that support polling or push, and dynamically render the data as points (Markers) instead of relying on static GeoJSON files.
+    - **Data Freshness SLO**: If you really must use static files, you should clarify the **SLO (Service Level Objective)** for its data freshness and accept this restriction. At the same time, indicate the update delay and refresh method of the map data in the document.
+    - **Active Refresh Mechanism**: Compensate for current limitations by designing dashboards that include a "Manual Refresh" button and explicitly informing users of the need for manual action when data sources may change.
+
+### Related indicators
+This issue itself does not directly generate SLIs (Service Level Indicators), but it affects the credibility of other monitoring metrics that rely on this panel. The SRE team can build a **meta-metric** to monitor the "freshness" of such visualization data, for example, measuring data latency by comparing the source file modification time to the last successful load time of the Grafana panel.
+
+Related pages: [[grafana-dashboard-data-refresh]], [[data-freshness-in-observability]]

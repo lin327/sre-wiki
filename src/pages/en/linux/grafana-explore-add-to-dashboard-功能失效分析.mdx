@@ -1,0 +1,66 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "“Explore &gt; Add to Dashboard feature does NOT add a panel to a new or existing"
+category: "问题分析"
+confidence: medium
+---
+
+## Overview
+
+In the practice of Site Reliability Engineering (SRE), Grafana is one of the core tools for achieving system observability. Its **Explore** interface is used to quickly query, debug and explore data. It is the key entry point for SRE to perform root cause analysis (Root Cause Analysis) and hypothesis verification. The **"Add to Dashboard"** function allows SRE to solidify the query logic and visualization results of temporary exploration into a persistent monitoring panel (Panel), thereby building and maintaining key operation and maintenance dashboards (Dashboard). This document analyzes a flaw in this functionality that directly breaks the critical workflow from exploration to persistence.
+
+## Core concepts
+
+- **Grafana Explore**: An interactive query and exploration interface in Grafana that supports ad-hoc execution of data source queries (such as PromQL, SQL) and instant visualization of results. It is the starting point for SREs for troubleshooting, metric analysis, and log searching.
+- **Dashboard**: A visual layout composed of multiple panels (Panel), used to display system status, performance indicators and business data in a centralized manner. It is the core carrier for SRE daily monitoring and alarm settings.
+- **Panel**: A single visual component in a dashboard that contains one or more queries, visualization configurations, and data transformation rules.
+- **Add to Dashboard Workflow**: This is a functional connection point designed to export validated queries and chart configurations in Explore as a panel in a new dashboard or append to an existing dashboard with one click. The reliability of this function directly affects the efficiency of SRE from "temporary analysis" to "permanent monitoring".
+
+## Practice
+
+### Fault symptoms and reproduction steps
+
+According to the bug report provided, the issue is reproducible reliably in certain versions of Grafana. Mainly manifested in two scenarios:
+
+1. **Add to new dashboard**:
+    - The user executes a query in Explore and confirms that the chart displays the correct data.
+    - Select "Add to Dashboard" through the "Add" drop-down menu on the interface, and select "New Dashboard" in the pop-up window.
+    - After clicking "Open Dashboard", the system navigates to a new dashboard, but the dashboard is **empty** and does not contain any panels brought from Explore.
+
+2. **Add to existing dashboard**:
+    - The user first creates and saves a dashboard containing at least one panel.
+    - Then execute the new query in Explore.
+    - Perform the "Add to Dashboard" operation and select the existing dashboard above.
+    - After navigating to the dashboard, **only the original panels are shown**, new panels I try to add from Explore do not appear.
+
+### Impact Analysis
+
+This flaw caused a break in the critical path from exploration to persistence. SRE engineers are unable to quickly convert valid debugging queries into team-shared monitoring views. Specific impacts include:
+- **Workflow Interruption**: It is necessary to manually create dashboards, copy queries and configure panels, which increases operational steps and time costs.
+- **Knowledge Loss Risk**: Useful queries for temporary exploration may be abandoned due to the cumbersome saving process, resulting in monitoring coverage blind spots.
+- **Reduced collaboration efficiency**: Analysis results cannot be quickly shared with team members to a unified dashboard.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+- **Reliability Engineering**: The reliability of the tool chain itself is the basis for supporting the reliability of the business system. The failure of such basic functions will reduce the SRE team's own operation and maintenance efficiency and indirectly affect the reliability of the target system it maintains.
+- **Observability Construction**: Building a complete observability system relies on continuous iteration and rich dashboards. This flaw prevents the rapid precipitation of valuable monitoring panels from temporary exploration and delays the improvement of the observability system.
+- **Incident Response**: In Incident Response, the SRE may need to quickly verify an alarm indicator in Explore. If one wishes to anchor this query as a core monitoring panel during an incident, the loss of functionality will force a slower alternative, impacting response times.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    1. **Functional Verification**: After upgrading your Grafana version, the core workflow, including this "Add to Dashboard" feature, should be included in a basic smoke testing checklist.
+    2. **Feedback Closed Loop**: Encourage SREs and users to promptly report such issues through official channels (such as GitHub Issues) and track the progress of repairs, because the reliability of platform tools directly affects operation and maintenance performance.
+    3. **Downgrade Scenario**: When this feature is not available, you should be aware of alternatives such as manually copying the query JSON in Explore and pasting it in dashboard edit mode.
+- **Common anti-patterns**:
+    - **Ignore Toolchain Failures**: Ignoring such UI flaws as "not serious" results in long-term damage to team efficiency.
+    - **Detour rather than cure**: Relying entirely on manual operations and not promoting upstream fixes, allowing the problem to persist.
+
+### Related indicators (SLI/SLO/SLA)
+While this flaw itself does not directly correspond to traditional SLI, it is related to the functionality of the internal tools. Consider defining the following internal metrics:
+- **SLI (Service Level Indicator)**: `Success rate of exploring the dashboard function` = `Number of times a panel is successfully added through this function` / `Total number of attempts to use this function`.
+- **SLO (Service Level Objective)**: The goal is to achieve 99.5% availability of this feature (allowing for brief outages or unfixed versions per month).
+- **Monitoring Suggestions**: You can analyze the clicks and final page jump results of this function through user behavior logs, and monitor the declining trend of its success rate.
+
+---
+**Related pages**: [[grafana-troubleshooting]], [[observability-best-practices]]

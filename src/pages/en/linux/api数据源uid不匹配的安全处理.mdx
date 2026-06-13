@@ -1,0 +1,42 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[release-12.4.4] Datasources: return 400 when payload UID does not match"
+category: "grafana/grafana"
+confidence: high
+---
+
+## Overview
+
+In API design and implementation, ensuring request clarity and consistency is the cornerstone of building a reliable system. This fix targets a specific flaw in the Grafana data source management API: the `PUT /api/datasources/uid/:uid` endpoint would previously silently ignore the inconsistency between the `uid` field in the request payload (JSON payload) and the `:uid` in the URL path parameter. Although this inconsistency is not rejected immediately, it will eventually trigger a more serious `500 Internal Server Error` at the service layer, increasing the complexity of troubleshooting and the instability of the system. This change introduces explicit request verification and blocks invalid requests in advance by returning `400 Bad Request`. It is an important practice for API defensive programming and improving observability.
+
+## Core concepts
+
+1. **UID mismatch problem**: `/api/datasources/uid/:uid` is a RESTful API whose intention is to pinpoint the data source to be updated through the unique identifier (UID) in the URL. However, prior to this fix, even if another UID was included in the request body, the field would be ignored and only the UID in the URL would be used. This violates the consistency principle of the API contract and may cause clients (such as front-ends or automation scripts) to misunderstand that the request went as they expected.
+
+2. **Risks of silent ignoring**: "Silent ignoring" of invalid input is an anti-pattern. It makes the source of the error hidden and delays the exposure of the fault. In this case, inconsistent UIDs may cause the internal service layer to generate logic errors when looking up and updating the data source, and ultimately throw a `500` error. `500` errors are obscure to operations and development teams and require deep dives into logs and stack traces to locate the original request inconsistency, severely impacting mean time to repair (MTTR).
+
+3. **Explicit failure and early verification**: The best practice is "fail fast". When an API receives a well-formed but semantically inconsistent request, it should immediately return an explicit client error (such as `4xx`) rather than letting it flow to the core backend business logic. This is achieved by performing validation early in the request processing (for example, before a database query or complex business logic is executed). This not only provides clear error messages, but also protects backend services from invalid loads and is the first line of defense for system reliability.
+
+## Practice
+
+This fix is achieved by adding validation logic in the `pkg/api/datasources.go` file. The specific change steps are as follows:
+
+1. **Request entry verification**: In the processing function of `PUT /api/datasources/uid/:uid`, extract the `:uid` parameter from the URL path and parse the `uid` field from the request body JSON.
+2. **Consistency comparison**: Compare these two values ​​directly before performing a data source lookup (such as querying the database by UID). If they are inconsistent, an error response is immediately constructed and returned with an HTTP 400 status code, which clearly states "The UID in the payload does not match the UID in the URL."
+3. **Test coverage**: Added `TestUpdateDataSourceByUID_UIDMismatch` test case in `pkg/api/datasources_test.go`. This test specifically verifies that the API correctly returns a 400 error when the payload UID is inconsistent with the URL UID. This ensures the correctness of the security fix and future code stability, preventing regressions.
+
+This implementation method is simple and efficient, puts the verification logic in front, and conforms to the "contract first" API design philosophy. Subsequent service layer and database operations therefore do not need to handle this apparently invalid request, reducing potential erroneous branches and resource consumption.
+
+## SRE Key Points
+
+* **Reliability association**: This change directly improves the reliability of API endpoints. By eliminating a class of requests that result in `500` errors, the error rate of the service is reduced, helping to maintain [[sli]] (such as "API error rate") and guarantee [[slo]]. Extrapolating internal errors into explicit client errors is a more responsible and reliable service performance.
+
+* **Observability improvements**: `400 Bad Request` is usually recorded as a client error by monitoring systems (such as Prometheus), and can be clearly distinguished from `5xx` server errors in alerts and analysis. This allows the operation and maintenance team to more quickly identify whether it is a client misuse or a server-side problem, optimizing the fault classification and response process.
+
+* **Incident response correlation**: When a large number of `500` errors occur, SRE needs to quickly locate the root cause. Before this fix, one possible cause was this UID mismatch. After repair, such problems will be exposed in advance in the form of `400` and may be recorded in the client log, greatly shortening the time from incident discovery to root cause analysis.
+
+* **Best Practices and Anti-Patterns**:
+    * **Practice**: Implement **frontloading of input validation**, **API contract strictness**, and **test-driven defect fixing**.
+    * **Anti-Patterns**: Avoid "**Silent Failure**" and "**Loose Input**", which can introduce obscure failure modes into the system.
+
+* **Related Metrics**: [[sli]] primarily affected by this change may include `api_requests_total{code=~"4.."}` (4xx error count) and `api_requests_total{code=~"5.."}` (5xx error count). After the fix, it is expected that the `5xx` error rate for the relevant endpoints may decrease, while the `4xx` (especially `400`) error rate may briefly increase due to stricter validation, but will eventually stabilize at a reasonable level, which is a sign that the system has become more robust.

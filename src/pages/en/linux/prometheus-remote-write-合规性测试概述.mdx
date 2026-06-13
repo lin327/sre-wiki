@@ -1,0 +1,37 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Remote Write 合规性测试概述"
+category: "协议与标准"
+confidence: high
+--- PASS: TestRemoteWrite/grafana (0.01s)
+    --- PASS: TestRemoteWrite/grafana/Counter (10.02s)
+    --- PASS: TestRemoteWrite/grafana/EmptyLabels (10.02s)
+    ... (all use cases pass)
+```
+In contrast, FAIL use cases clearly point out specific problem areas. For example, a tool that fails on `Ordering` and `Staleness` may not comply with protocol requirements in handling out-of-order data points or flagging stale metrics.
+
+## SRE Key Points
+
+### Association with reliability
+
+Using a sender that is fully compliant with the Remote Write protocol is fundamental to building a reliable monitoring data pipeline. Compliance is directly related to data integrity and consistency. For example, failure of the `Ordering` (sorting) test may cause the storage end to receive out-of-order data, causing data coverage or query errors; improper handling of `Staleness` (staleness) may cause the monitoring system to continue to display invalid indicators, misleading troubleshooting.
+
+### Best practices and common anti-patterns
+
+- **Best Practices**:
+    1. **Prioritize tools with high compliance**: When selecting architecture, give priority to tools that pass all or most compliance tests (such as Grafana Agent, Prometheus itself).
+    2. **Periodic verification**: For self-developed or customized Remote Write senders, this compliance test suite should be integrated into the CI/CD process to ensure continuous compliance with standards.
+    3. **Pay attention to test details**: Not only should you look at the total score, but you should also analyze specific failed use cases and evaluate their impact on your own business scenarios. For example, if the business scenario requires extremely high accuracy of `Histogram` data, you need to pay special attention to the relevant test items.
+- **Common anti-patterns**:
+    1. **Ignore compliance**: Select tools based only on functional requirements or performance indicators, while ignoring the quality of their implementation of core protocols, resulting in data problems that are difficult to troubleshoot in the production environment.
+    2. **Use outdated version**: The test results are closely related to the version (as shown in the table above). There may be known problems when using older versions, and you should promptly upgrade to a tested version.
+
+### Related indicators
+
+Although compliance testing itself is not an SLI, it directly guarantees the implementation of the key SLO of **data quality** in the monitoring data pipeline. High-quality, protocol-compliant data is a prerequisite for calculating meaningful SLI (e.g., latency, error rate, throughput). Poorly compliant tools can result in incorrect SLI calculations or missing data, affecting Error Budget estimates and reliability decisions.
+
+### Further reading
+
+- [Prometheus Remote Write configuration document](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write)
+- [Introducing Prometheus Compliance Program](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/)
+- Remote Write protocol detailed specification document (available through the original blog link)

@@ -1,0 +1,38 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "PromCon 2017 Recap - Prometheus Blog"
+category: "社区与生态"
+confidence: medium
+---
+
+## Overview
+
+PromCon 2017 is the second community conference held around the Prometheus monitoring system. Such meetings are not only a platform for technical exchanges, but also an important carrier for the dissemination of SRE culture and practice. In SRE practice, knowledge sharing, case studies, and community collaboration are crucial to improving system reliability and promoting best practices. PromCon promotes in-depth conversations about large-scale monitoring, observability construction, and reliability engineering by gathering users and developers around the world. Its core value is to transform scattered practical experience into reusable community wisdom.
+
+## Core concepts
+
+Although this section does not directly define terms, the conference content itself reflects the application and evolution of multiple SRE core concepts in practice.
+
+- **Knowledge Sharing and Community Driven**: The primary goal of the conference is "Exchange of knowledge and best practices". This reflects SRE’s emphasis on continuous learning and an open culture. The community-driven model ensures that discussion content is derived from frontline practice and has more reference value.
+- **Large-Scale System Monitoring**: Sharing from Cloudflare and DigitalOcean, directly related to how to build an effective monitoring system for massive networks and data centers, which is the cornerstone of ensuring the reliability of large-scale services.
+- **Toolchain Integration and Evolution**: Grafana and InfluxData's speeches focused on feature updates and integration, which is related to how SREs can build a unified and efficient observability tool stack.
+- **Sustainable community operation**: The "sustainability" challenge faced by the conference organization itself is a common issue for all open source community projects, and its solutions are also applicable to the maintenance of the internal knowledge system of the operation and maintenance community.
+
+## Practice
+
+The PromCon 2017 conference agenda itself is a collection of SRE practice guides, specifically reflected in the following aspects:
+
+**Industry case sharing**:
+1. **Large-scale monitoring architecture**: Cloudflare and DigitalOcean respectively elaborated on their specific architectures for using Prometheus to monitor large-scale networks and data centers. These cases provide practical reference for dealing with challenges such as high cardinality indicators and cross-data center monitoring.
+2. **Ecosystem Tool Integration**: Grafana and InfluxData introduce the latest features and how they integrate with Prometheus. This helps the SRE team understand how to build a more powerful visualization, alerting and data analysis pipeline around the core monitoring system.
+3. **Core functions and best practices**: The speech by the core developer of Prometheus goes into the evolution direction and recommended usage of the tool itself, guiding users how to deploy and configure Prometheus more correctly and efficiently.
+
+**Knowledge dissemination and community building**:
+Recordings of all sessions have been made available via YouTube playlists, which greatly expands the reach of knowledge. For SRE practitioners who are unable to attend the event in person, these videos serve as valuable first-hand learning material. The positive feedback from the conference also proved the effectiveness of the community-based, practice-driven content organization model.
+
+## SRE Key Points
+
+- **Link to Reliability**: The monitoring practices discussed at PromCon directly serve the core goal of SRE - ensuring system reliability through complete observability. The case shared at the conference was about building a powerful monitoring system and defining specific implementation paths for effective SLO/SLI.
+- **Best Practices and Anti-Patterns**: The conference itself is a "best practices" sharing platform. By absorbing the monitoring experience of companies of different sizes and industries, SRE can avoid common monitoring configuration anti-patterns, such as unreasonable indicator design, alarm storms, etc.
+- **Relevant Metrics and Culture**: Although terms such as SLI/SLO are not directly mentioned in the article, all discussions about monitoring revolve around how to collect and utilize data to measure service status, which is essentially a manifestation of SLO-driven operations culture. Community feedback loops (such as gathering attendee input) are also similar to the postmortem process in SRE, aiming for continuous improvement.
+- **Community as an extension of reliability**: A healthy community ecology is an important guarantee for technical reliability. By strengthening the connection between users, developers and manufacturers, PromCon promotes rapid problem solving and widespread dissemination of experience, thereby indirectly improving the overall reliability level of the entire Prometheus ecosystem and the services that rely on it. Further reference can be made to [[community-driven-development]] and [[observability-culture]].

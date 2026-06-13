@@ -1,0 +1,58 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with Weaveworks"
+category: "Prometheus"
+confidence: medium
+---
+
+## Overview
+
+Weaveworks is a company that provides **Weave Cloud** services, aiming to "operate and maintain" its microservices through a combination of open source projects and software as a service (SaaS). The company's monitoring system is entirely built on **Prometheus**, and based on this, it developed **Weave Cortex** - an open source, distributed Prometheus-as-a-Service solution. This technical knowledge page based on interviews summarizes Weaveworks’ reasons for transitioning from traditional monitoring tools to Prometheus, practical experience, and thoughts on the future of cloud native monitoring.
+
+## Core concepts
+
+### From traditional monitoring to Prometheus
+
+When the Weaveworks team built its new, multi-tenant managed service, Weave Cloud, it did not rely on traditional monitoring tools like Munin and Nagios from its previous experience. Its core decision-making driving force lies in two factors:
+
+1. **Team background and experience**: The company has former Google SRE employees who are familiar with the Borgmon monitoring system, as well as engineers with a background in SoundCloud (an early adopter of Prometheus). This gives them a deep understanding of Prometheus’ design philosophy and advantages.
+2. **Natural fit with Kubernetes**: Weave Cloud is built on **Kubernetes**. Prometheus's native Service Discovery mechanism can perfectly adapt to Kubernetes' dynamic scheduling and frequent instance changes, making it the "best choice" for monitoring such environments. This fit was the deciding factor in choosing Prometheus.
+
+### Prometheus-as-a-Service: Weave Cortex
+
+Challenges with traditional deployments of Prometheus (such as data persistence, history loss during upgrades) prompted Weaveworks to develop **Weave Cortex**. This is a cloud-native, distributed Prometheus implementation designed to solve the pain points of native Prometheus operation and maintenance in production environments. It allows the monitoring service to elastically scale and failover between nodes, and ensures the persistence of time series data, thereby realizing true "monitoring as a service".
+
+## Practice
+
+Weaveworks shared its evolution process of running Prometheus on Kubernetes, which reflects the typical SRE iterative optimization thinking:
+
+1. **Initial stage**: Use a custom container image with a configuration file embedded in it. Run Prometheus, Grafana and Alertmanager in the same Pod, and use temporary storage in the Pod as the time series data backend. This method is simple but fragile. Any configuration changes require restarting the Pod, resulting in the loss of historical data.
+2. **Decoupling phase**: Split the monitoring components into different Pods to avoid data loss caused by restarting Prometheus due to modifying the dashboard configuration.
+3. **Standardization and configuration management**: Switch to using upstream official images and store configurations in Kubernetes’ **ConfigMap**. Update the ConfigMap via the CI/CD system and deploy a small **Sidecar** container to monitor configuration file changes. When the configuration changes, Sidecar will send a signal (Ping) to Prometheus for hot reloading, thus minimizing the need for restarts and avoiding data loss.
+4. **Distribution and Persistence**: In order to solve the shortcomings of solutions such as Kubernetes volumes or regular S3 backups, **Weave Cortex** was ultimately created. It enables Prometheus to scale horizontally and run statelessly, while persisting data to a reliable storage backend to ensure that monitoring data is not lost during service upgrades, migrations or host failures.
+
+## SRE Key Points
+
+### Links to reliability, observability, and incident response
+
+* **Reliability**: The dynamic service discovery feature of Prometheus is highly coordinated with the self-healing and scheduling model of Kubernetes, improving the reliability of the monitoring system itself in dynamic environments. Weave Cortex further eliminates single points of failure in the monitoring system through a distributed architecture, ensuring high availability of monitoring.
+* **Observability**: Prometheus provides powerful indicator (Metrics) collection and query capabilities, and is the core pillar of Weaveworks to achieve observability. They use Prometheus to monitor their own infrastructure (Kubernetes) and application services (Scope), forming a complete closed loop of indicator monitoring.
+* **Incident response**: The introduction of **HA Alertmanager** (high availability alarm manager) mentioned in the article is crucial to ensuring the reliability of alarm notifications. Alarms are a key link in triggering incident response, and their availability directly affects the response capabilities of the SRE team.
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    * Use **Sidecar container** with ConfigMap to implement hot reloading of configurations to avoid service restarts.
+    * Explore and use the **Remote Write** function, use Prometheus as a data collection agent, and connect the backend to more powerful distributed storage (such as Cortex). This is the key technical path to build a cloud-native monitoring platform.
+    * Use Kubernetes for service discovery and dynamic adaptation for monitoring targets.
+* **Common anti-patterns**:
+    * **Tightly coupled single deployment**: Prometheus, visualization, alarm and other components are packaged in the same Pod, resulting in inflexible management and configuration changes affecting the global situation.
+    * **Depends on temporary storage**: In a dynamic orchestration environment, use Pod local storage to save key monitoring data. Once the Pod is evicted or deleted, the data will be permanently lost.
+
+### Related indicators (SLI/SLO/SLA)
+
+Although the interviews did not specifically mention numerical SLOs, their practice is directly related to the following reliability goals:
+
+* **SLI (Service Level Indicator)**: The target availability of the Prometheus service itself, the coverage of monitoring data collection, and the delay and success rate of alarm notifications.
+* **SLO (Service Level Objective)**: As a monitoring service, Weave Cortex aims to provide "cloud native, distributed, persistent" monitoring capabilities, which means it needs to achieve SLO of high availability and data durability.
+* **Related pages**: The reliability goals of the monitoring system can be understood by combining concepts such as [[prometheus-architecture]], [[kubernetes-monitoring]], [[sli-slo-sla]], etc.

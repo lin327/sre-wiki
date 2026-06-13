@@ -1,0 +1,83 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "“containsVariable() reports false positives for names matching a format specifier"
+category: "issue"
+confidence: high
+---
+
+
+## 概述
+
+在 Grafana 仪表板中，变量之间通过依赖关系图（dependency graph）实现联动。当一个变量的值发生变化时，所有直接或间接依赖它的其他变量都会被重新评估和查询。本条目描述了一个长期存在的逻辑缺陷：用于构建此依赖关系图的核心工具函数 `containsVariable()` 在检测变量引用时会产生假阳性（False Positive），导致变量被错误地认为依赖于另一个实际上并未引用它的变量。这会导致不必要的变量重新评估，影响仪表板性能，并可能引发令人困惑的行为。
+
+## 核心概念
+
+### 格式说明符（Format Specifier）与字段路径（Field Path）
+Grafana 的变量引用语法支持两种扩展形式：
+1.  **格式说明符**：例如 `${variable:csv}` 或 `[[variable:json]]`。其中 `csv`、`json`、`regex`、`text`、`raw` 等是用于格式化变量输出的指令。
+2.  **字段路径**：例如 `${data.host}` 或 `$var.name.value`。用于从变量对象或数据源结果中提取特定字段。
+
+这两种语法中的后缀（如 `csv`、`host`）与变量名可能恰好相同。
+
+### 变量依赖图与 `containsVariable`
+- **变量依赖图**：Grafana 内部维护的一个数据结构，记录变量间的依赖关系。查询（Query）、自定义（Custom）、数据源（Datasource）和切换（Switch）变量适配器都使用 `dependsOn` 方法来声明其依赖项，而 `containsVariable` 正是实现此方法的核心工具。
+- **`containsVariable` 函数**：位于 `public/app/features/variables/utils.ts`，其作用是判断一个字符串（如变量的查询定义）是否引用了某个特定的变量名。它使用一个正则表达式 `variableRegex` 进行匹配。
+
+### 问题根源：正则匹配逻辑错误
+`variableRegex` 正则表达式包含多个捕获组（Capture Group），分别用于匹配不同的语法部分：
+- 捕获组 1, 2, 4：匹配实际的变量名（如 `varName`）。
+- 捕获组 3, 5, 6：匹配格式说明符或字段路径（如 `csv`、`host`）。
+
+当前的 `containsVariable` 实现仅检查正则匹配是否成功（`varMatch !== null`），然后在整个匹配结果数组中使用 `indexOf` 搜索变量名（`varMatch.indexOf(variableName) &gt; -1`）。由于 `indexOf` 会扫描所有捕获组的内容，如果一个变量名与格式说明符或字段路径同名（例如存在变量 `csv`，并引用了 `${other:csv}`），函数就会错误地返回 `true`。
+
+## 实践
+
+### 问题复现
+该问题可以通过以下方式直接复现：
+```typescript
+import { containsVariable } from 'public/app/features/variables/utils';
+
+// 期望：false（'csv' 是格式说明符）
+containsVariable('[[other:csv]]', 'csv'); // 实际返回: true
+
+// 期望：false（'json' 是格式说明符）
+containsVariable('${other:json}', 'json'); // 实际返回: true
+
+// 期望：false（'host' 是字段路径）
+containsVariable('${data.host}', 'host'); // 实际返回: true
+
+// 期望：true
+containsVariable('$realvar', 'realvar'); // 实际返回: true
+```
+
+### 端到端复现场景
+1.  在 Grafana 仪表板中创建一个名为 `host` 的变量。
+2.  创建第二个查询变量，其查询字符串中包含一个字段路径引用，例如 `${somevar.host}`。
+3.  进入仪表板设置 &gt; 变量页面。系统会错误地将第二个变量标记为依赖于 `host` 变量。
+4.  当变量 `host` 的值发生任何改变时，第二个变量都会不必要地重新运行其查询，即使其查询从未实际引用 `host` 变量。
+
+### 修复方案
+修复方案的核心是精确化正则匹配的检查逻辑，确保只检查代表变量名的捕获组（索引 1、2、4），而忽略代表格式说明符或字段路径的捕获组（索引 3、5、6）。不应再简单地对整个匹配结果数组使用 `indexOf`。
+
+## SRE 要点
+
+### 可靠性、可观测性与事件响应关联
+- **损害可观测性**：错误的依赖关系会使变量依赖图（一种重要的系统状态视图）变得不准确，让 SRE 或开发者难以理解仪表板的真实行为。
+- **影响事件响应效率**：在故障排查时，依赖仪表板进行根因分析。如果变量联动行为异常（如因假阳性导致的意外重新评估），可能会掩盖真实信号或引入噪音，干扰故障定位流程。
+- **性能与成本**：不必要的变量重新评估会触发后端数据源的重复查询，增加系统负载和网络流量，可能导致延迟或产生不必要的云服务费用。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    1.  **严格验证**：在实现任何依赖检测或代码分析逻辑时，必须精确匹配目标语法结构，避免宽泛匹配带来的假阳性。
+    2.  **充分测试**：针对变量引用的边界情况进行单元测试，特别是变量名、格式说明符、字段路径存在重叠的场景。
+    3.  **清晰文档**：在仪表板或代码中明确注释变量依赖关系，减少对自动化解析的过度依赖。
+- **常见反模式**：
+    1.  **正则表达式使用不当**：使用过于宽泛的正则表达式进行匹配，而没有利用其分组捕获能力来区分不同语法部分。
+    2.  **忽略已知缺陷**：对已知的、长期存在的缺陷（如本例）持放任态度，可能导致系统行为持续不可预测。
+
+### 相关指标（SLI/SLO/SLA）
+- **SLI（服务级别指标）**：可监控 `dashboard_variable_re evaluation_count`（仪表板变量重新评估次数）。此 Bug 修复前，该指标可能因假阳性而虚高。修复后，该指标应更能反映真实的用户交互导致的评估需求。
+- **SLO（服务级别目标）**：对于 Grafana 托管服务，可以设置 SLO，例如“99% 的仪表板变量联动应在 500ms 内完成”。不必要的重新评估会对此 SLO 造成压力。
+- **SLA（服务级别协议）**：此 Bug 主要影响的是内部操作效率和用户体验，通常不直接对应对外 SLA 的违背，但可能间接影响依赖 Grafana 的业务 SLA（如数据新鲜度）。
+
+**相关页面**：[[variable-dependency-graph]]， [[false-positive-detection]]

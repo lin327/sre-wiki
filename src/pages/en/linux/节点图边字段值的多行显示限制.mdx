@@ -1,0 +1,49 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'nodegraph: Edges support indefinite length values.'"
+category: "可观测性"
+confidence: medium
+---
+
+## Overview
+
+Grafana's `nodegraph` panel is a powerful visualization tool when building a service dependency graph (Service Map) or performing distributed link tracing analysis. It visually displays the calling relationship between services through nodes (Nodes) and edges (Edges). In actual operations, engineers often need to attach rich context to edge information, such as the list of API endpoints supported by the connection, main operation types, or key performance indicators. However, when this information is presented in the form of a long list, how to clearly display multiple lines of text within limited interface space becomes a common user interface challenge. This document is based on a known issue with Grafana and explores this limitation and how to deal with it in SRE practice.
+
+## Core concepts
+
+1. **NodeGraph panel**: A visual panel in Grafana, used to display relationship graphs based on nodes and edges. It is often used in scenarios such as service topology and infrastructure dependency graphs.
+2. **Detail field of edge**: In the NodeGraph data model, an edge can carry multiple data fields. Among them, the name or label field is usually used for brief display, while `detail` or similar fields are used to store more detailed descriptive information, which will be displayed when the user hovers the mouse over the edge.
+3. **Multi-line display requirements**: When describing API routes (such as `Post /routerA1`, `Get /routerA2`) or complex configurations, using line breaks (`\n` or `<br/>`) to display list items in separate lines can greatly improve the readability and aesthetics of the information. The current limitation causes all content to be squeezed onto the same line, seriously affecting the efficiency of information parsing.
+
+## Practice
+
+Regarding the problem that the `detail` field of the Grafana NodeGraph panel does not support rendering line breaks, SRE and platform engineers can adopt the following workarounds to optimize the readability of the service topology diagram:
+
+**Option 1: Use HTML line break tag `<br/>` (recommended to try first)**
+Although the issue report states that `\n` is not supported, the `<br/>` tag is sometimes parsed correctly in many HTML rendering contexts. In data queries (such as PromQL, SQL) or data source configurations, try replacing newlines with `<br/>`.
+```javascript
+// Example: Formatting field values during data processing phase
+const detailValue = `Post /routerA1<br/>Get /routerA2<br/>Delete /routerA*`;
+```
+This method needs to be tested against the specific Grafana version and panel configuration.
+
+**Option 2: Simplify the display and utilize hover tooltips**
+Put the main, most critical small amount of information (such as the first two API endpoints) into the `detail` field of the edge for direct display. At the same time, store the complete and longer list in another custom field on the side, and configure the panel to display the complete information in the form of a tooltip when the mouse is hovered. This requires finer control over the data model and panel configuration.
+
+**Option 3: Optimize information architecture**
+Rethink the information you need to present. Do you really need to list all your API endpoints on the side? Consider:
+* **Aggregate Display**: Displays summary information like "5 API endpoints".
+* **Category display**: Only display the main operation types, such as "Supports GET, POST, DELETE".
+* **Use other panel linkage**: Use the node graph as an overview, and when you click on a specific edge, all the detailed information of the connection will be displayed in another panel (such as text, table panel).
+
+**Option 4: Follow Grafana community dynamics**
+This issue has been reported and discussed in the official Grafana GitHub repository (issue #97711). As an SRE, you should pay attention to the progress of this issue so that when multi-line display is natively supported in future versions, you can promptly upgrade and remove the workaround and adopt a more elegant implementation.
+
+## SRE Key Points
+
+* **Relationship with Observability**: A clear service topology map is the basis for system understanding and troubleshooting. The detailed information of edges directly affects the efficiency of SRE's judgment on call relationships, potential bottlenecks, and error propagation paths. This limitation is small, but it reduces the quality of "understandability", a key pillar of observability.
+* **Best Practices and Common Anti-Patterns**:
+    * **Best Practice**: In visual design, always consider the "Scannability" of information. For list-type information, make sure it is formatted to support quick browsing. When building a platform, you should proactively test the ability of common components (such as NodeGraph) to render complex data formats.
+    * **Anti-Pattern**: Avoid piling up unorganized raw data in a single field. This can lead to information overload, which can obscure key insights.
+* **Related Metrics (SLI/SLO)**: Although not directly corresponding to service SLI in the traditional sense, the availability and effectiveness of visualization tools can be used as a qualitative indicator of **Platform Engineering** or **Internal Developer Experience**. If the SRE team frequently requires additional time to consolidate or clarify information due to tool display issues, this in itself is an indication that the tool experience needs improvement.
+* **Application in Incident Response**: In emergency troubleshooting meetings, a clear and informative service dependency graph can accelerate team consensus on the scope of impact. Addressing the multi-line display issue for edges helps to quickly deliver complex context in a "**Situation Room**" environment and reduce MTTR (Mean Time to Repair).

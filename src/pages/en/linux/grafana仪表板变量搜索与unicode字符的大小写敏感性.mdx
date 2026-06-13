@@ -1,0 +1,49 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issue"
+category: "可观测性"
+confidence: medium
+---
+
+## Overview
+
+When building and using [[dashboard]], [[variable]] is the core functionality that enables data filtering and dynamic panel interaction. Users expect searches in variable selection boxes to be case-insensitive so that target values ​​can be quickly located. However, a known flaw causes Grafana to incorrectly enable case sensitivity when searching for variable values ​​that contain certain Unicode characters (such as umlauts ä, ö, å). This can cause confusion and reduce operational efficiency for SRE teams that rely on multilingual (e.g., German, Swedish, etc.) environments for monitoring and alerting.
+
+## Core concepts
+
+1. **Dashboard Variable**: Allows users to define dynamic parameters at the dashboard level. The values of these parameters can be obtained from data source queries or static lists, and can be used to modify the query statements or settings of the panel.
+2. **Search and case sensitivity**: The ideal variable search function should be case-insensitive, that is, entering "Test" should be able to match "test" and "TEST". This is in line with the intuition and operating habits of most users.
+3. **Unicode and special characters**: This flaw specifically refers to the abnormal processing of strings containing international characters (such as ä, ö, å). These characters have upper and lower case in the Unicode encoding (uppercase: Ä, Ö, Å; lowercase: ä, ö, å), but in a specific implementation of the string comparison algorithm, the case folding (Case Folding) rules may not be applied correctly, causing the comparison result to rely on endianness rather than logical case.
+
+## Practice
+
+### Problem reproduction and verification
+
+According to the Issue report, this issue can be reproduced by following these steps:
+1. Create a custom dashboard variable and configure it with a Unicode character value that contains case variations (for example, `Value: “München”, “MÜNCHEN”, “münchen”`).
+2. Enter a search term (for example, "m") in the variable selection box of the dashboard.
+3. **Observation**: For ASCII characters such as "m", the search matches all values ​​containing "M" and "m" (case insensitive). However, for Unicode characters (such as "ö"), typing a lowercase "ö" may not match an uppercase "Ö" and vice versa, which is not expected behavior.
+
+### Workaround
+
+Until an official fix is released, SRE teams can consider the following workarounds to reduce the impact:
+* **Standardize variable values**: In the variable configuration of the data source or Grafana, standardize the case of variable values as much as possible (e.g., use all lowercase).
+* **Use tags or aliases**: If possible, use pure ASCII tags (Tag) when querying or displaying variables or create a "display name" field that maps to the original value.
+* **Educate Users**: Explain this known limitation in team documentation or internal wikis, and prompt users to pay attention to case when searching for values ​​that contain special characters.
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+* **Reliability Impact**: Such seemingly "minor" UI defects will directly affect engineers' daily operating experience and efficiency. When it is necessary to quickly locate a specific service or environment for troubleshooting, search inconsistency will introduce friction and indirectly affect the timeliness of fault response.
+* **Observability coherence**: [[dashboard]] is the key view carrying observability data (Metrics, Logs, Traces). Defects in the variable search function will destroy the smooth interaction between users and monitoring data, making it difficult to switch between different views based on the same data (such as filtering by different environments and regions), affecting comprehensive insights into the system status.
+
+### Best practices and common anti-patterns
+* **Best Practice**: When designing monitoring tags or naming conventions for multiple languages, anticipate the potential limitations of tools such as Grafana. Use an ASCII-compatible naming convention when possible, or explicitly state known search limitations in the documentation.
+* **Common anti-pattern**: Assume that all monitoring tools handle string manipulation of Unicode characters perfectly. When building a global observability platform, you should test the behavior of core interaction processes (such as variable search, panel title query) in different language environments.
+
+### Related Indicators (SLI/SLO/SLA)
+While this question does not directly correspond to traditional SLI (e.g. latency, error rate), it can be linked to the Internal Developer Platform's User Experience or Operational Efficiency metrics.
+* **SLI Example**: `Dashboard Variable Search Success Rate` - Measures, through UI testing or log analysis, the proportion of users who search for variable values ​​and successfully select the desired value (can be broken down for specific language character sets).
+* **SLO Goal**: Ensure that the critical path for variable searches is functional for the supported language set, e.g. "Variable searches containing Unicode characters should have 100% correct case-insensitive matching".
+
+&gt; **NOTE**: This issue is tracked in [Grafana Issue #109506](https://github.com/grafana/grafana/issues/109506). According to reports, the issue may not be fully fixed in Grafana 12.1.0 version. It is recommended to pay attention to the official update log for fix version information.

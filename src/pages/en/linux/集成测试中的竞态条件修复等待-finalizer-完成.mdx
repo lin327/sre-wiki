@@ -1,0 +1,47 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana PR #125935: Alerting: Fix flaky RuleSequence delete race in integration"
+category: "测试与CI"
+confidence: high
+---
+
+## Overview
+
+In distributed systems and application development based on the Kubernetes model, ensuring the stability and reliability of integration testing is a key part of SRE practice. This document is based on a specific repair case in the Grafana project and explains the race conditions caused by the concurrent execution of asynchronous operations (such as Finalizer patch) and synchronous operations (such as deletion) in object life cycle management. This race condition will lead to unstable test results (Flaky Test), which will affect the overall reliability of the CI/CD pipeline and the team's delivery confidence. This fix ensures the timing correctness of test operations by introducing the necessary synchronization wait mechanism.
+
+## Core concepts
+
+To understand this problem, you need to master the following core concepts:
+
+1. **Finalizer**: This is a mechanism in the Kubernetes ecosystem to ensure that necessary cleanup logic is performed before resources are deleted. After an object is marked for deletion (setting `deletionTimestamp`), the controller must execute the logic in the Finalizer and remove the Finalizer before the object is actually deleted from storage by the API Server. In Grafana's `app-sdk`, `OpinionatedWatcher` will automatically add Finalizer to newly created resources through background patch operations.
+
+2. **ResourceVersion (RV)**: This is a key field used by Kubernetes to implement optimistic concurrency control. Every time a resource is modified (including adding a Finalizer), its `ResourceVersion` is incremented. When performing a write or delete operation, the API Server checks whether the `ResourceVersion` provided by the client matches the version currently in the store. If there is a mismatch, a conflict error (such as "requested RV does not match current RV") is returned to prevent updates from being lost.
+
+3. **Race Condition**: In this case, the race condition occurs between the asynchronous "Add Finalizer" patch operation and the synchronous "Delete Object" operation of the test code. The test code attempts to delete the object immediately after creating it, but the background Finalizer patch may not have finished yet. When the delete operation reads the `ResourceVersion` (e.g. version 1) via `Get` and prepares to perform the delete, the background patch executes successfully, updating the `ResourceVersion` to 2. At this time, the write layer (`WriteEvent`) of the deletion operation found that the version (2) in the storage was inconsistent with the version (1) it held, causing the deletion operation to fail and the test to report an error.
+
+## Practice
+
+The core idea of the fix is to ensure that all asynchronous initialization operations that may affect `ResourceVersion` have been completed before deleting. The specific practical steps are as follows:
+
+1. **Identify the source of the race condition**: It is clear that the problem is caused by the Finalizer automatic patching function of `OpinionatedWatcher`. This function is executed asynchronously and in the background, and there is timing uncertainty in the synchronization operation with the main thread of the test.
+
+2. **Introduction of waiting mechanism**: In the integration test, insert a waiting logic between creating the `RuleSequence` object and deleting the object. This wait should detect that the Finalizer has been successfully added to the object (i.e. the object's `metadata.finalizers` list contains the expected Finalizer, such as `app-sdk/OpinionatedWatcher`).
+
+3. **Implement waiting method**: It can be implemented using polling or event-based waiting mechanism. For example, periodically re-fetch the object until its Finalizer field exists, or use the `Watch` function provided by Kubernetes to listen for update events on the object.
+
+4. **Adjust the test process**: The original simple "Create -&gt; Delete now" process is adjusted to "Create -&gt; **Wait for Finalizer to be added** -&gt; Delete". This ensures that the `ResourceVersion` read by the delete operation will not be immediately invalidated by subsequent Finalizer patches.
+
+## SRE Key Points
+
+* **Relationship with reliability and observability**:
+    * **Improve CI reliability**: Fixing race conditions in tests is a direct means to improve the stability of the continuous integration system. Stable CI is the cornerstone of building a reliable release process, reducing the burden on SRE teams to troubleshoot "random failures."
+    * **Enhanced Observability**: A stable test suite more accurately reflects the state of the system itself, rather than being obscured by the noise of the test infrastructure. This makes monitoring and alarming based on test results more credible.
+    * **Prevention of Incidents**: Capturing logic errors caused by concurrency issues during the CI phase can prevent these defects from flowing into the production environment, thereby preventing potential production incidents.
+
+* **Best Practices and Common Anti-Patterns**:
+    * **Best Practice**: When testing object lifecycles involving asynchronous systems or background tasks, it is dangerous to always assume that these background operations will complete within the "flash" created in the main thread. Explicit synchronization points or wait conditions should be added before performing operations that depend on the final state of the object (such as delete, update).
+    * **Anti-Pattern**: In integration testing, directly "create and delete" and ignore the asynchronous initialization process of the system. This is a common anti-pattern that assumes every component of the system responds synchronously, which is rarely true in modern distributed systems.
+    * **Anti-Pattern**: Use a fixed, long `Sleep` instead of an exact conditional wait. `Sleep` is brittle and inefficient, and can cause tests to wait in vain after a condition is met, or to exit early if a condition is not met. You should use polling or event-driven waiting.
+
+* **Related indicators (SLI/SLO/SLA)**:
+    * While this fix does not directly impact user-facing SLI, it is directly tied to a key internal metric: **CI Test Success Rate**. A frequently Flaky test suite will reduce the team's confidence in the deployment process, extend the deployment cycle in disguise, and affect **delivery reliability**. Fixing such issues is necessary to maintain a high-quality CI pipeline and meet internal service level goals (such as "CI pipeline success rate &gt; 99.5%").

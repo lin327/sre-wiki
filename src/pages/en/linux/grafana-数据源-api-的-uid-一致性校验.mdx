@@ -1,0 +1,54 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[release-11.6.15] Datasources: return 400 when payload UID does not match"
+category: "API与数据管理"
+confidence: medium
+---
+
+## Overview
+
+In modern observability platforms such as Grafana, the design and implementation of APIs are critical to ensuring the reliability and maintainability of the platform. A seemingly minor change in API behavior, such as consistency verification of request parameters, can often significantly improve the robustness of the system and prevent potential data inconsistencies or security issues caused by client misoperation. This document describes a key improvement made to the data source update API in Grafana version 11.6.15: when updating the data source through the `PUT /api/datasources/uid/:uid` endpoint, the system will now strictly verify whether the `uid` field in the request payload is consistent with the `:uid` in the URL path parameter. If there is a discrepancy, the API will return an HTTP 400 Bad Request error instead of silently handling or ignoring the difference.
+
+## Core concepts
+
+### The unique identification of UID
+In Grafana's resource model, each data source has a globally unique string identifier, or UID. It is the cornerstone of resource addressing and referencing. When referencing a data source, whether through the web UI, configuration files, or API, a UID is the most reliable way to ensure you are pointing to the correct target.
+
+### RESTful API semantics
+`PUT /api/datasources/uid/:uid` is a standard RESTful update operation endpoint. The semantics are: replace (or update) the data source specified by UID in the URL path with the complete definition provided in the request body. From a contract perspective, the UID in the URL is the target address of the operation, and the UID in the payload is the data content to be written. In theory, both should point to the same resource, otherwise the operation will become ambiguous.
+
+### Idempotence and Consistency
+`PUT` operations are generally expected to be idempotent, i.e. executing the same request multiple times should produce the same effect. In the case of UID mismatch, the payload may attempt to update another resource (via the UID in the payload), or may attempt to create a new resource (if the payload UID does not exist), which violates the semantics of the `PUT` operation to update a specific target resource. Enforcing consistency between the two is a key step to strengthen the semantic clarity of the API and ensure the atomicity and predictability of operations.
+
+## Practice
+
+This update is implemented through a backward-compatible backport. The core code change is to add an explicit verification step in the logic of processing `PUT /api/datasources/uid/:uid` requests:
+
+1. **Request arrives**: The API gateway receives a request to update the data source from the client.
+2. **Parameter extraction**: Parse the UID of the target data source (`urlUID`) from the URL path, and parse the UID of the data source defined by the payload (`payloadUID`) from the request body.
+3. **Consistency Check**: Compare `urlUID` with `payloadUID` before executing any database updates or business logic.
+    * **If the `payloadUID` field is missing or equal to `urlUID`**: the request passes the verification and continues to execute subsequent update logic.
+    * **If `payloadUID` exists and is different from `urlUID`**: Terminate request processing immediately and return an HTTP 400 response to the client containing an explicit error message, for example: "Data source payload UID [payloadUID] does not match request path UID [urlUID]".
+4. **Response Return**: The client receives the 400 status code and error message, and knows that the request itself is constructed incorrectly, not an internal failure of the server.
+
+For Grafana users and integration developers, this means that when calling this API for an update operation, you must ensure that the `uid` field in the request body JSON object (if present) exactly matches the UID at the end of the URL. Any inconsistent construction will cause the request to be explicitly rejected, thus avoiding data overwrite or "ghost" data source issues due to UID obfuscation.
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+- **Improve API contract reliability**: Explicit input validation is the embodiment of "defensive programming". It can intercept errors at the earliest stage (API entry), prevent invalid or dangerous operations from going deep into the core of the system, reduce the burden of back-end services in handling abnormal states, thereby improving the stability and predictability of the overall service.
+- **Enhanced Observability (Error Observability)**: Returns standard HTTP 400 error codes and clear error messages, making it easier for such client errors to be captured and classified by monitoring systems (such as Prometheus). SREs can set up specific alerting rules based on this to identify anomalous API call patterns, such as persistent UID mismatch errors from an automated tool or a specific client, which may indicate a flaw in the configuration management process.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    1. **Keep API semantics clear**: Strictly follow RESTful principles to ensure semantic consistency between path parameters and payload data.
+    2. **Verify early, fail fast**: Verify all basic inputs at the earliest stage of the request processing pipeline, and return meaningful error information immediately.
+    3. **Backward Compatibility**: This change is released through a rollback (backport), ensuring that users of older versions can also obtain this stability improvement, which is a good practice for maintaining the long-term maintainability of the service.
+- **Anti-Pattern**:
+    1. **Silent handling of inconsistencies**: Older versions may ignore this inconsistency, or handle it with unpredictable behavior (for example, create or update based on the UID in the payload), which violates user expectations and may become a hidden data source.
+    2. **Ambiguous Error Response**: Returning a generic 500 error or ambiguous message can make it difficult for clients and SREs to diagnose the source of the problem.
+
+### Related indicators (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: In `API request success rate`, distinguish between `client error (4xx)` and `server error (5xx)`. This change accurately classifies requests that might otherwise be classified as 5xx or silent failures as 4xx client errors, providing a more realistic reflection of the health of the service itself.
+- **SLO (Service Level Objective)**: You can set a goal for the `PUT /api/datasources/uid/:uid` endpoint, such as "4xx error rate less than X%", where X should be based on normal client usage patterns. An increase in UID mismatch errors may trigger a review of the SLO and point to the client integration needing to be fixed.
+- **Related Page**: This improvement is directly related to the management and reliability of the Grafana API. You can further refer to practices such as [[grafana-api-gateway]], [[api-versioning-strategy]] and [[defensive-programming-in-sre]] to gain a deeper understanding of how to improve system robustness at the API design level.

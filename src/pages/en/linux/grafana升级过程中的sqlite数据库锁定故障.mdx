@@ -1,0 +1,63 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana Issue #115875: Failed to upgrade 12.3.0 to 12.3.1 due to database"
+category: "故障排查与解决"
+confidence: medium
+---
+
+## Overview
+
+In SRE operation and maintenance practice, the smooth upgrade of the monitoring system is a key link to ensure the continuity of observability services. This case records in detail how when Grafana was upgraded from version 12.3.0 to 12.3.1, the underlying SQLite database was locked, causing migration failure and eventual service crash. This issue is particularly typical in environments based on Kubernetes (EKS) and using Amazon EFS as persistence storage, and it reveals that you must carefully consider its concurrent access and file locking characteristics when selecting a database storage backend in a containerized deployment. Such failures directly affect the stability of the [[observability]] platform and may interrupt dashboard viewing and alarm notifications, thereby affecting the [[reliability]] of the entire system.
+
+## Core concepts
+
+To understand this failure, you need to understand the following key concepts:
+
+1. **SQLite lock mechanism**: SQLite is an embedded database that manages concurrent access through file locks. In the case of write-single-read-multiple or long transactions, it locks the database file, preventing other processes or connections from writing. Grafana will perform database migration or write operations multiple times when it is started and running, and these operations require acquiring locks.
+2. **Grafana migration process**: Grafana will execute multiple migrators (such as `migrator`, `secret-migrator`, `resource-migrator`) in sequence when it starts. Each migrator attempts to lock the database before starting, performs its tasks, and then releases the lock. This is a serial process.
+3. **Network File Systems and Locks**: The Amazon EFS used in the question is a Network File System (NFS). NFS's support for file locks (especially `fcntl` locks) is different from that of local file systems, which may cause inconsistent lock status or locks being held for a long time, causing the process that expects to release the lock to be unable to acquire the lock.
+
+The lock conflict chain is clearly shown in the log: the `star` migrator reported "`database is locked`", and then `sqlstore.transactions` began to continuously retry to obtain the lock, which eventually caused the `provisioning` module that relied on the database to fail, and the entire Grafana service startup status changed to `Failed`.
+
+## Practice
+
+Based on the provided fault log, the following troubleshooting and solution steps can be sorted out:
+
+### 1. Fault phenomenon and log analysis
+
+* **Critical Error Log**: At the end of the startup log, find a clear error message:
+    ```
+    logger=stars t=2026-01-06T11:32:02.543141354Z level=error msg="Failed to run star migrations" err="failed to set dashboard_uid, org_id, and updated for star: database is locked"
+    ```
+    This indicates that the database has been locked while trying to migrate "stars" data.
+* **Lock retry loop**: A large number of `sqlstore.transactions` retry logs appear subsequently, indicating that the database lock continues to exist and subsequent operations cannot obtain the lock.
+* **Final crash**: Since the `provisioning` (data source preconfiguration) module relies on the database, its failure causes the entire service state to be unhealthy and exit.
+
+### 2. Analysis of environmental factors: impact of EFS storage
+
+This issue occurs on an EKS cluster using EFS as `/var/lib/grafana` (data directory, containing SQLite database files) storage. As a shared network storage, EFS has different lock semantics from local disks. When multiple Pods share the same EFS volume, or there are multiple threads/multiple connections within a single Pod competing to access the database, lock acquisition and release may cause delays or conflicts at the NFS level, thereby amplifying the possibility of SQLite lock problems.
+
+### 3. Solutions and avoidance measures
+
+* **Preferred solution - rollback version**: As mentioned by the issue reporter, immediately rolling back to the previous working version (12.3.0) is the most direct recovery method and can quickly restore [[observability]] services.
+* **Root cause avoidance - change storage backend**:
+    * **Use a persistent database**: In a production environment, it is strongly recommended to switch Grafana's back-end database from SQLite to an independent database service such as [[mysql]], [[postgresql]] that supports higher concurrency and more stable locking mechanisms. This is an officially recommended best practice.
+    * **Use high-performance block storage**: If you must use a file-based database, you should choose block storage that supports strong consistency file locks (such as Amazon EBS) for database files instead of network file storage (NFS/EFS).
+* **Temporary mitigation (caution required)**: In rare cases, you can try to manually clean up possible remaining SQLite lock files (such as `-journal` files or `-wal` files), but this involves the risk of data corruption and is generally not recommended in a production environment. Make sure to completely stop all Grafana instances before proceeding.
+
+## SRE Essentials
+
+Looking at this incident from the perspective of Site Reliability Engineering, the following key points can be summarized:
+
+* **Correlation with reliability**: This failure directly causes the **availability** of the monitoring platform to be impaired. Grafana is a core visualization tool, and its downtime affects the efficiency of troubleshooting and performance analysis. This event reflects the profound impact of the underlying dependency (storage) selection on the upper-layer service [[availability]].
+* **Best Practices and Anti-Patterns**:
+    * **Anti-Pattern**: In production-level, especially containerized environments, use SQLite (especially via NFS shared storage) as the main database for critical applications. SQLite is suitable for embedded, single instance, development or small applications.
+    * **Best Practice**:
+        1. **Configure an independent, proven database backend for critical applications**.
+        2. **Fully test** in a production-like environment before upgrading, especially versions involving database migration.
+        3. **Implement a strict [[rollback]] plan** to ensure rapid recovery in the event of service interruption.
+        4. **Monitor database lock wait times and transaction failure rates** (if using a standalone database) as part of [[SLI]].
+* **Related indicators (SLI/SLO)**:
+    * **SLI (Service Level Indicator)**: You can define "Grafana service startup success rate" or "Dashboard/alarm API request success rate".
+    * **SLO (Service Level Objective)**: Set goals for the above SLI, such as "In 99% of the months, the Grafana monthly launch success rate should reach 100%", or "The availability of the dashboard query API should exceed 99.9%."
+    * This failure will cause the above SLI data to drop significantly, trigger a risk assessment of SLO, and may require the initiation of an incident response process.

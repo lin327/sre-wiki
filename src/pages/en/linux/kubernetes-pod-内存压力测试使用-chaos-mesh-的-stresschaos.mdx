@@ -1,0 +1,92 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "How to efficiently stress test Pod memory"
+category: "故障注入"
+confidence: medium
+---
+
+## Overview
+
+In a Kubernetes environment, validating an application's behavior under memory pressure is a key part of ensuring its reliability. Memory stress testing can help the SRE team identify whether the application has memory leaks, whether resource limits are reasonable, and the ability to recover from OOM (out of memory) scenarios. `Chaos Mesh` is a powerful chaos engineering platform, and its built-in `StressChaos` tool can easily inject CPU and memory pressure into Pods. This article will delve into how to use `StressChaos` to conduct effective memory stress testing, focusing on solving common confusions you may encounter during use, such as inaccurate display of memory usage in the container, pressure values ​​inconsistent with expectations, etc., and provide correct operating practices and principle analysis.
+
+## Core concepts
+
+- **StressChaos**: A type of fault injection experiment provided by `Chaos Mesh`, which uses the `stress-ng` system testing tool to create memory or CPU workloads within a specific cgroup (control group) of the target Pod, thereby simulating resource constraints.
+- **Memory Stress Test**: refers to the process of purposefully increasing the memory consumption of an application until it reaches or exceeds the set resource limit (memory limits), and observing the application's performance degradation, abnormal behavior, or being terminated by Kubernetes (OOM Killed).
+- **cgroup memory limit**: Kubernetes limits the memory that containers can use through the Linux cgroup mechanism. Limit values ​​are stored in the `/sys/fs/cgroup/memory/memory.limit_in_bytes` file. Traditional monitoring tools in the container such as `free` or `top` read the information of the host `/proc/meminfo`, not the limit value of the current container, which often leads to misunderstandings.
+- **OOM Killer**: When the cgroup memory usage exceeds the limit, the Linux kernel's OOM Killer will be triggered. It will select and terminate the process that consumes the most memory according to a certain algorithm (based on `oom_score_adj`, etc.) to free up memory and prevent system crashes.
+
+## Practice
+
+### 1. Set test goals
+First, you need to deploy a target application with explicit memory resource limits. For example, use the `hello-kubernetes` Helm chart and configure resource requests and limits in `values.yaml`:
+```yaml
+resources:
+  requests:
+    memory: '200Mi'
+  limits:
+    memory: '500Mi'
+```
+
+### 2. Correctly measure container memory usage
+Inside a container, you should not rely on `free -m` or `top` to evaluate memory usage. The correct way is to read the cgroup file system:
+```bash
+# Check the memory limit
+cat /sys/fs/cgroup/memory/memory.limit_in_bytes
+
+# Check the current memory usage
+cat /sys/fs/cgroup/memory/memory.usage_in_bytes
+```
+The value of `memory.usage_in_bytes` (in bytes) is the actual memory consumed by the container.
+
+### 3. Write and apply StressChaos configuration
+Create a `StressChaos` YAML file to specify memory pressure parameters. For example, to inject a total memory pressure of 200MiB for 1 hour:
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: mem-stress
+  namespace: chaos-mesh
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - hello-kubernetes
+  stressors:
+    memory:
+      workers: 4 # Number of parallel worker processes
+      size: 200MiB # Specify the total memory size
+  duration: '1h'
+```
+Use the `kubectl apply -f memory.yaml` command to apply this configuration.
+
+### 4. Verify the pressure injection effect
+After applying the configuration, check `memory.usage_in_bytes` inside the container again and its value will be increased accordingly. If the injected pressure causes memory usage to exceed limits, the container may be terminated with an OOM. You can view Pod events through `kubectl describe pod`, and you will usually see the restart reason of `OOMKilled`.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: Memory stress testing is a proactive means of verifying application reliability. It helps teams:
+    - Discover whether the configured resource limits (requests/limits) match the actual needs of the application.
+    - Test the application's ability to recover after an OOM event (depending on Pod restart strategy).
+    - Evaluate the impact of Kubernetes QoS levels (Guaranteed/Burstable/BestEffort) on OOM Killer decisions.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**:
+        1. **Use the correct monitoring tool**: Always use the cgroup interface (`/sys/fs/cgroup/memory/`) within the container to monitor memory to ensure accurate data.
+        2. **Understand how StressChaos works**: Note that the `size` parameter specifies the total memory pressure, not the size of each worker (based on `stress-ng` source code behavior).
+        3. **Properly configured probes**: The application's liveness probe (livenessProbe) and readiness probe (readinessProbe) are crucial for automatic recovery, but they may cause the Pod to be quickly restarted during stress testing. Whether to retain them needs to be weighed based on the purpose of the test.
+        4. **Focus on the QoS level of the Pod**: Set clear resource requests and restrictions for the application, making it a `Guaranteed` Pod, which can gain certain protection from node memory pressure.
+    - **Common anti-patterns**:
+        1. **Reliance on `free`/`top` to evaluate container memory**: This can lead to serious misjudgments of resource usage and limits.
+        2. **Ignore OOM event analysis**: When a Pod is restarted due to OOM, the `dmesg` log and Pod events should be deeply analyzed instead of just restarting the application.
+        3. **Injecting high-intensity stress into the production environment without adequate testing and planning**: Stress testing should be conducted in the staging environment and a response plan should be developed.
+
+- **Related Indicators (SLI/SLO)**:
+    - **SLI (Service Level Indicator)**: Consider `pod_oom_killed_count` (number of Pods terminated due to OOM) or `container_memory_working_set_bytes / container_spec_memory_limit_bytes` (memory usage).
+    - **SLO (Service Level Objective)**: For example, you can set "the number of unexpected restarts of the core service Pod due to memory reasons within 24 hours is less than 1 time."
+
+- **Observability**: When performing stress testing, the application's business indicators (such as error rate, latency) and system indicators (such as the above-mentioned memory usage, cgroup statistics) should be simultaneously observed to comprehensively evaluate the impact of memory pressure on services.
+
+## In depth: Kubernetes memory management mechanism
+
+Kubernetes' eviction manager periodically checks the resource usage of nodes and pods. When a container's memory working set (`working_set`, calculated as `memory.usage_in_bytes - total_inactive_file`) exceeds its limit, an eviction or OOM Kill is triggered. It should be noted that Kubernetes disables swap by default to avoid performance uncertainty caused by paging. Understanding this mechanism can help to set resource limits and design chaos experiments more rationally, thereby truly improving the robustness of the system.

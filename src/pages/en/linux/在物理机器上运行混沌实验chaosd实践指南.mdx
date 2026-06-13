@@ -1,0 +1,87 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "How to run chaos experiments on your physical machine"
+category: "混沌工程"
+confidence: medium
+---
+
+## Overview
+
+Chaos Engineering is a key practice of system reliability engineering. Its core is to test the fault tolerance and resilience of the system by actively and controllably injecting faults into the production or pre-production environment. While platforms like Chaos Mesh excel in Kubernetes environments, many traditional or non-containerized services still run on physical machines. chaosd is a tool born to fill this gap. It allows SRE teams to simulate and verify failure scenarios on physical servers, thereby ensuring the overall robustness of the system under a hybrid architecture.
+
+## Core concepts
+
+chaosd is an independent command line tool and service evolved from `chaos-daemon`, the core component of Chaos Mesh. It is designed to provide an easy-to-use and powerful chaos experiment executor for non-Kubernetes environments. Its core value lies in extending the practice of chaos engineering from cloud native environments to a broader infrastructure level.
+
+chaosd mainly has the following advantages:
+- **Easy of use**: Create, manage and restore chaos experiments with simple command line instructions.
+- **Rich fault types**: Supports multi-level fault simulation of physical machines, covering multiple levels such as process, network, Java virtual machine (JVM), stress test, disk and host.
+- **Flexible working mode**: It can be used as a one-time use command line tool or as a permanent service to facilitate integration into automated processes.
+
+## Practice
+
+The following will take simulated network faults as an example to introduce in detail the complete process of using chaosd to conduct chaos experiments. This experiment will make the specified domain name inaccessible to the target server.
+
+### 1. Obtain and install
+
+First, download the chaosd toolkit from the official mirror. Note that chaosd requires glibc v2.17 or higher to run.
+
+```bash
+curl -fsSL -o chaosd-v1.0.1-linux-amd64.tar.gz https://mirrors.chaos-mesh.org/chaosd-v1.0.1-linux-amd64.tar.gz
+tar xvf chaosd-v1.0.1-linux-amd64.tar.gz
+```
+
+After decompression, you get two directories: `chaosd` (the main tool program) and `tools` (including dependent tools such as `stress-ng`, `Byteman`, etc.).
+
+### 2. Create and execute fault injection
+
+Execute the following command to inject a 100% network packet loss fault on `chaos-mesh.org` for the specified network card (`ens33`). Because this operation modifies network rules, you must use `sudo` to gain root privileges.
+
+```bash
+sudo ./chaosd attack network loss --percent 100 --hostname chaos-mesh.org --device ens33
+```
+
+Upon successful execution of the command, a unique experimental UID is returned (for example: `c55a84c5-c181-426b-ae31-99c8d4615dbe`). **Be sure to save this UID** as it will be key for subsequent recovery experiments.
+
+### 3. Verify the impact of the fault
+
+Use the `ping` command to verify that the fault has taken effect. The goal is to observe 100% packet loss.
+
+```bash
+ping chaos-mesh.org
+```
+
+The expected output will show that no packets can be received. After a period of time, press `Ctrl+C` to terminate. The statistics should show `100% packet loss`.
+
+### 4. Resume experiment
+
+After the fault injection is completed, use the previously saved UID to restore the network to a normal state. Also requires root privileges.
+
+```bash
+sudo ./chaosd recover c55a84c5-c181-426b-ae31-99c8d4615dbe
+```
+
+After the recovery is successful, execute `ping chaos-mesh.org` again. You should be able to receive a normal reply and verify that the system has been restored as before.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+chaosd is an active defense tool to improve system reliability. By simulating failures such as network partitions, high CPU/memory loads, and process exceptions at the physical machine level, the SRE team can verify the effectiveness of existing alerting rules, [[observability]] monitoring panels (such as metrics, logs, link tracing), and automated troubleshooting processes. This is ideal for regression testing improvements proposed in the [[postmortem]] document.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    - **Conduct in non-production environment first**: Be sure to verify the failure scenario and its impact scope in a test or pre-production environment before promoting it to the production environment.
+    - **Set clear experimental goals and assumptions**: For example, "Assume that after the process is killed, the service should be able to automatically restart triggered by the monitoring system within 30 seconds."
+    - **Small explosion radius**: Use `--hostname` in the initial stage to accurately limit the hosts or services affected by the failure to avoid large-scale chain reactions.
+    - **Integrated Automation**: Combine chaosd's recovery steps with CI/CD pipelines or operation and maintenance orchestration tools (such as Ansible) to ensure that experiments are reproducible and the environment can be automatically cleaned.
+- **Common anti-patterns**:
+    - **Experiments without monitoring and unplanned**: Blindly injecting faults into the production environment without complete [[observability]] and emergency response plans may lead to unexpected large-scale failures.
+    - **Forgot to recover**: `chaosd recover` was not used to clean up after the fault was injected, resulting in "remaining faults" and affecting normal services. Be sure to create a post-lab checklist.
+    - **Only focus on "injection" and ignore "measurement"**: The value of chaos experiments is not only to create faults, but also to measure the performance of the system under faults. [[SLO]]/[[SLI]] need to be defined in advance and their changes monitored during the experiment.
+
+### Related indicators (SLI/SLO/SLA)
+When running chaosd experiments, you should focus on SLIs related to system stability, such as:
+- **Error Rate**: Whether the service's request error rate (such as HTTP 5xx errors) exceeds a preset SLO threshold during fault injection.
+- **Latency**: Whether the service's P99/P95 latency increased significantly due to the failure.
+- **Availability**: Whether the core service recovers automatically within a predefined recovery time objective (RTO) or through manual intervention.
+Experimental results can be used to evaluate whether the current [[SLO]] is too loose or strict and guide subsequent [[Error Budget]] management decisions.

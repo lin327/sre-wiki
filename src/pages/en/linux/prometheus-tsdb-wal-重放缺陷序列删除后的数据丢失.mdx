@@ -1,0 +1,59 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'tsdb: fix WAL replay dropping samples for series re-created after stale"
+category: "Prometheus"
+confidence: high
+---
+
+## Overview
+In Prometheus' time series database (TSDB), Write-Ahead Log (WAL) and Write-Behind Log (WBL) are key components to ensure data durability and recover data after restart or crash. The WAL replay process is responsible for reloading the samples recorded in the log into memory. This document analyzes a race condition defect that occurs during WAL replay, which causes all sample data of a sequence under certain conditions to be lost after restarting, and details the fix.
+
+## Core concepts
+To understand this issue, you need to first clarify the following key concepts:
+- **WAL (Write-Ahead Log)**: All data written to TSDB (including samples, delete markers, etc.) are first logged to WAL and then applied to the Head block in memory. This ensures that data can still be recovered after a process crash.
+- **WBL (Write-Behind Log)**: generated during the Head block compression (Compaction) process, recording newly received samples during compression to ensure data integrity.
+- **Series**: A time series defined by a unique set of tags. Each sequence has a unique internal reference (ref) in TSDB.
+- **Stale Deletion**: When a sequence has no new samples within a specified period of time, it will be marked as stale and eventually deleted. This is an asynchronous and sharded operation.
+- **Series Re-creation**: After a series is deleted stalely, a write with the same tag is received soon, thereby creating a new sequence object (possibly with a new ref).
+
+## Practice
+### Problem analysis: How race conditions occur
+The problem stems from the parallel execution and out-of-synchronization of two key operations during WAL replay:
+1. **Asynchronous Delete**: Stale deletion of a sequence (triggered by a "full delete tombstone") is sharded and applied asynchronously to the replay processor.
+2. **Synchronous parsing**: New sequence records (representing sequence reconstructions of the same tag) are parsed and mapped to sequence objects in the main dispatch coroutine.
+
+The race condition occurs at the following timing:
+1. There is a "complete deletion tombstone" record in WAL, which is used to delete sequence A.
+2. Immediately afterwards, a record appears in WAL to create a new sequence B with the same label (sequence reconstruction).
+3. When the main distribution coroutine processes this new record, the deletion operation has not yet been applied by the corresponding processor. Therefore, the new ref resolved by this record is incorrectly mapped to the old sequence object A that is "doomed to die".
+4. Subsequently, the delete operation is applied by the processor and sequence object A is marked as deleted.
+5. Replay continues, and all sample records belonging to the new ref (which should belong to the new sequence B) will be discarded because they reference a deleted sequence object, resulting in the loss of all data in the new sequence.
+
+### Fix: Track and Replace
+The core idea of the fix is to actively track in the dispatch coroutine those sequence objects that have been issued delete instructions but have not yet been applied by the processor.
+1. **Tracking objects to be deleted**: When the distribution coroutine issues a deletion instruction, the sequence object and its ref will be recorded in a mapping table.
+2. **Intercept and Replace**: When replaying the sequence record, if it is found that the newly parsed ref is mapped to a "to be deleted" object that is being tracked, perform the following operations:
+    - **Unmap**: Remove the sequence object from the lookup map (safely identified by pointer to prevent conflict with the processor applying the removal).
+    - **Rebuild Sequence**: Create a completely new sequence object for the new record and use its own ref for mapping.
+3. **Accounting**: The statistics (such as sample counts, etc.) of the replaced old sequence object will be settled asynchronously on its original processor and after all in-progress append operations are completed.
+4. **Loss statistics**: Samples that are still queued for processing on the replaced old sequence will be discarded and counted in the "unknown reference" counter, instead of being appended and then deleted. This causes the `head_samples_re-appended_total` and `head_samples_deleted_total` metrics to remain unchanged, but causes the `unknown_refs` counter to increase in replays that trigger this race condition.
+
+Ultimately, this fix ensures that sequences rebuilt immediately after stale removal receive all of their sample data correctly, and the resulting state is exactly as it would have been had the race condition not occurred.
+
+## SRE Key Points
+### Association with reliability
+This flaw is a serious data reliability problem. Under certain timing conditions (high sequence elimination rate accompanied by rapid rewriting of the same tag), Prometheus may cause the data of a specific time series to be permanently lost after restarting, directly violating the promise of data durability.
+
+### Observability and incident response
+- **Observability**: Fixed an unexpected spike in the `unknown_refs_total` counter if such a race condition occurs. SREs can monitor this metric to identify if this race condition has occurred, even though the final data is complete. This is an important diagnostic clue.
+- **Event Response**: If monitoring finds that `unknown_refs` increases abnormally after startup and is accompanied by alarms about missing specific sequence data, you should consider whether this race condition is related. You need to check the Prometheus version and confirm whether this patch has been applied.
+
+### Best Practices and Anti-Patterns
+- **Best Practice**: Keep your Prometheus version updated and apply important bug fixes promptly. For critical monitoring systems, upgrades should be verified in a test environment.
+- **Common Antipattern**: Ignore `unknown_refs` warnings in startup logs. These warnings may not only indicate simple configuration issues, but may also hide deeper data consistency races.
+
+### Related Indicators (SLI/SLO/SLA)
+- **SLI**: This flaw directly affects SLI for **Data Durability** and **Data Accuracy**. After repair, it should ensure that the sequence data loss rate is zero under the same load and restart scenarios.
+- **SLO/SLA**: Data loss directly threatens SLO based on data integrity (for example, "the data retention period for key indicators is 15 days"). SREs need to ensure that the SLOs the monitoring infrastructure relies on are not compromised by such underlying storage flaws. `unknown_refs_total` can be included in health assessment as an observational metric.
+
+Related pages: [[prometheus]], [[tsdb]], [[slo]]

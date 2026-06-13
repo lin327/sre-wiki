@@ -1,0 +1,60 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with ShuttleCloud | Prometheus Blog"
+category: "可观测性"
+confidence: high
+---
+
+
+## 概述
+
+ShuttleCloud 是全球领先的可扩展邮件与联系人数据导入系统，为 Google、Comcast 等主要邮件服务商提供服务。随着业务增长和客户需求提升，特别是更严格的 SLA 要求，其早期由脚本、邮件报告和多个第三方服务构成的分散监控体系已无法满足需求。本文探讨了 ShuttleCloud 为何并如何引入 Prometheus，构建了一个集中、灵活的监控和告警系统，从而更好地保障服务可靠性并满足 SLA。这个案例清晰地展示了 Prometheus 如何帮助团队，尤其是资源有限的初创公司，建立起专业的可观测性能力。
+
+## 核心概念
+
+在采用 Prometheus 之前，ShuttleCloud 的监控是碎片化的：系统指标通过 Ansible 调度的 Cron 脚本监控，业务指标依赖第三方 Dashboard 服务（Ducksboard）和邮件报告，外部服务存活检查则由 Pingdom 负责。这导致了三个主要问题：**监控系统不集中**、**告警机制不统一**（邮件、推送通知等混杂）、以及**部分关键业务指标缺乏告警**，只能依赖人工检查。
+
+选择 Prometheus 的核心原因在于其独特的设计哲学和技术优势：
+- **灵活性**：无需预先定义固定的指标模式。指标可以随时添加或修改，这对于尚不完全清楚需要监控什么的初期团队至关重要。
+- **标签与强大的查询语言**：Prometheus 的标签模型允许用同一套指标监控不同环境、项目或实例，并通过 PromQL 进行灵活聚合与查询。例如，`http_requests_total{job="my_app", environment="staging"}` 可精确筛选特定时间序列。
+- **无需复杂依赖**：Prometheus 本身是一个独立的二进制文件，不需要像 Sensu 那样额外维护 Redis 或 RabbitMQ 等中间件，降低了部署和运维的复杂度。
+- **原生服务发现支持**：Prometheus 可与 DNS 服务集成，实现新实例的自动发现与监控，这对于动态环境非常友好。
+
+## 实践
+
+ShuttleCloud 的监控演进经历了三个清晰的阶段。
+
+**第一阶段：脚本与第三方服务时代。**
+最初，他们使用基于 Ansible 和 Cron 的脚本监控主机资源（磁盘、内存），通过邮件发送警报。外部服务监控依赖 Pingdom，业务指标则通过定制脚本从 CouchDB 提取、处理后存入 MySQL，并生成邮件报告或推送到外部 Dashboard。这个方案存在严重的碎片化问题。
+
+**第二阶段：拥抱 Prometheus，建立统一监控。**
+为解决上述问题，他们引入了 Prometheus。
+1.  **基础设施监控**：首先利用 `node_exporter` 采集主机指标，并利用已有的内部 DNS 服务进行自动服务发现。对于 `node_exporter` 未提供的自定义指标，他们使用了 **textfile collector** 功能进行暴露。
+2.  **业务指标监控**：开发了自定义的 **operation exporter**，将核心业务指标（如请求总数、状态统计、错误数）暴露为 Prometheus 指标，例如：
+    - `operation_requests_total`
+    - `operation_statuses_total`
+    - `operation_errors_total`
+    这使得他们能够实时、集中地掌握数据迁移的状态和性能。
+3.  **外部监控**：使用 **Blackbox Exporter** 替代 Pingdom 进行外部黑盒监控。除了检查前端可达性，它还被用于监控 SSL 证书的到期时间，这是一个非常实用的功能。
+4.  **可视化与告警**：
+    - 在 **Grafana** 中创建仪表板，其查询语言与 PromQL 一致，集成简单。
+    - 在 **Alertmanager** 中定义告警规则，并与 **PagerDuty** 集成，实现严重告警的按班次通知，非关键告警则通过邮件发送。
+5.  **高可用考虑**：他们在两个可用区部署了多个 operation exporter 实例，Prometheus 能够聚合来自所有实例的数据（例如取最大值），从而提升监控的覆盖性和可靠性。
+
+**当前架构简图：**
+Prometheus 通过 DNS 服务发现从各处抓取（Scrape）指标数据，包括来自 `node_exporter` 的主机指标、自定义 `operation_exporter` 的业务指标以及 `blackbox_exporter` 的外部探测结果。数据经 Prometheus 存储和计算后，由 Grafana 进行可视化，并通过 Alertmanager 触发告警至 PagerDuty 或邮件。
+
+## SRE 要点
+
+- **与可靠性的关联**：集中化的监控是实践 SRE 的基石。ShuttleCloud 通过 Prometheus 统一了原本分散的监控视图，获得了对基础设施和业务操作的全面洞察，这是管理 Error Budget 和履行 SLA 的前提。实时业务指标监控使其能更快地发现和响应影响用户迁移的问题。
+- **最佳实践**：
+    1.  **从核心开始，逐步扩展**：他们从 `node_exporter` 提供的基础指标开始，然后逐步添加自定义业务指标，这种方法风险低、见效快。
+    2.  **利用服务发现**：自动化监控目标的发现是保持监控系统与动态基础设施同步的关键。
+    3.  **分层告警**：根据严重性分级处理告警（如 PagerDuty vs 邮件），可以避免“告警疲劳”，确保重要事件得到及时关注。
+    4.  **保持简单**：选择无需复杂依赖的 Prometheus，降低了初创团队的运维负担。
+- **常见反模式**：
+    1.  **监控碎片化**：不同指标使用不同系统，导致上下文切换、维护困难且无法关联分析。
+    2.  **缺乏告警或依赖人工检查**：关键业务指标如果没有自动告警，故障发现将严重滞后。
+    3.  **监控系统本身不做高可用**：虽然他们初期未对 Prometheus/Alertmanager 做 HA，但意识到了其风险并计划改进。
+- **相关指标（SLI/SLO/SLA）**：Prometheus 的引入使 ShuttleCloud 能够精确定义和测量 **SLI**，例如：`迁移操作成功率 = operation_requests_total{status=”success”} / operation_requests_total`。这为制定和兑现给客户承诺的 **SLA**（如 99.5% 可用性）提供了量化依据。
+- **未来展望与遗留问题**：ShuttleCloud 提出了一个普遍存在的挑战——**如何测试告警规则是否有效**。他们希望能有机制注入模拟指标来验证告警触发逻辑，这是保障告警可靠性的下一步。

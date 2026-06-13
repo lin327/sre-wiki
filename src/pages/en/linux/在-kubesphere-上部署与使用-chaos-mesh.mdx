@@ -1,0 +1,78 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Deploy Chaos Mesh on KubeSphere - Chaos Mesh Blog"
+category: "混沌工程"
+confidence: high
+---
+
+
+## 概述
+
+混沌工程是 SRE 实践中主动验证系统韧性、发现潜在脆弱点的重要手段。Chaos Mesh 作为一个云原生混沌工程平台，能够为 Kubernetes 环境注入包括 Pod、网络、文件系统和内核在内的多种故障。KubeSphere 则是一个基于 Kubernetes 的云原生分布式操作系统，通过其应用商店（App Store）功能，极大地简化了第三方应用的部署与管理。本文将指导您如何利用 KubeSphere 的应用商店快速部署 Chaos Mesh，并利用其控制台（Chaos Dashboard）创建和执行一个简单的网络延迟混沌实验，从而轻松开启您的混沌工程之旅。
+
+## 核心概念
+
+### Chaos Mesh
+Chaos Mesh 是一个开源的云原生混沌工程平台，专门设计用于在 Kubernetes 集群中编排和执行各类故障注入。其核心架构包括 Chaos Dashboard（可视化控制台）和 Chaos Controller Manager（核心控制器）。通过 Chaos Mesh，工程师可以定义和运行复杂的混沌实验（Chaos Experiments），以可控的方式模拟生产环境可能遇到的各种故障场景，从而验证系统在压力下的表现。
+
+### KubeSphere
+KubeSphere 是一个面向云原生应用管理的分布式操作系统，以 Kubernetes 为内核。它提供了即插即用的架构，允许第三方应用（如 Chaos Mesh）无缝集成到其生态系统中。KubeSphere 3.2.0 版本引入了动态加载社区 Helm Chart 到应用商店的功能，这为 Chaos Mesh 的一键部署提供了便利基础。
+
+### KubeSphere 应用商店
+这是 KubeSphere 平台内置的应用市场，允许管理员和用户从预定义或社区贡献的 Helm Chart 中快速安装应用。通过应用商店，部署像 Chaos Mesh 这样复杂的工具变得像安装手机应用一样简单，无需深入了解底层的 Kubernetes 资源和 Helm 配置细节。
+
+## 实践
+
+### 前提条件
+在开始部署前，请确保：
+1.  已安装并启用 KubeSphere 的 [应用商店](https://kubesphere.io/docs/pluggable-components/app-store/) 组件。
+2.  已在 KubeSphere 中创建了工作空间、项目，并准备了一个具有 `platform-regular` 角色且被邀请为项目操作者（Operator）的用户账户（例如 `project-regular`）。
+
+### 步骤 1：通过应用商店部署 Chaos Mesh
+1.  使用 `project-regular` 账户登录 KubeSphere 控制台。
+2.  进入 **应用商店**，在搜索框中输入 `chaos-mesh` 并点击搜索结果进入应用详情页。
+3.  在 **应用信息** 页面，点击右上角的 **安装** 按钮。
+4.  在 **应用设置** 页面，配置应用的 **名称**、**位置**（即部署的命名空间）以及 **应用版本**，然后点击 **下一步**。
+5.  您可以按需编辑 `values.yaml` 文件进行高级配置，或者直接点击 **安装** 使用默认配置。
+6.  等待部署完成。部署成功后，Chaos Mesh 的应用状态将显示为 **运行中**。
+
+### 步骤 2：访问 Chaos Dashboard
+1.  部署完成后，进入 Chaos Mesh 所部署的项目，在 **资源状态** 页面找到 `chaos-dashboard` 服务。
+2.  复制 `chaos-dashboard` 的 **NodePort** 号。
+3.  在浏览器中通过 `https://&lt;任意节点IP>:<NodePort>` 访问 Chaos Dashboard。
+4.  根据 [管理用户权限](https://chaos-mesh.org/docs/manage-user-permissions/) 的文档指引生成一个 Token，并使用该 Token 登录 Dashboard。
+
+### 步骤 3：创建并运行一个混沌实验
+为了验证混沌实验的效果，我们先部署一个目标应用。
+1.  部署示例应用 `web-show`：
+    ```bash
+    curl -sSL https://mirrors.chaos-mesh.org/latest/web-show/deploy.sh | bash
+    ```
+2.  通过浏览器访问 `http://&lt;任意节点IP>:8081`，查看 `web-show` 应用的界面，此时应能正常看到数据。
+3.  登录 Chaos Dashboard，创建一个新的混沌实验。
+    *   **目标（Target）**：选择 **网络攻击（Network Attack）**，例如 `NetworkDelay`（网络延迟）。
+    *   **作用范围（Scope）**：通过标签选择器将实验范围限定为我们的目标应用，设置为 `app: web-show`。
+4.  配置好实验参数（如延迟时长）后，**提交** 实验。
+5.  回到 `web-show` 应用页面，观察实验效果。您将看到网络延迟显著增加，这直观地展示了混沌实验对目标应用的影响。
+
+## SRE 要点
+
+### 与可靠性工程的关联
+部署和使用 Chaos Mesh 是践行 **主动风险管理** 的关键一步。通过在 KubeSphere 这样一个统一的平台上便捷地运行混沌实验，SRE 团队可以：
+*   **验证 SLO 的韧性**：在实验中观察系统在故障注入下是否仍能满足 [[service-level-objective|SLO]]，从而验证 Error Budget 的消耗速度是否符合预期。
+*   **完善事件响应流程**：混沌实验可以作为演练，测试监控告警的及时性、Runbook 的有效性以及团队的应急响应能力。
+*   **发现系统盲点**：主动注入故障有助于发现依赖关系中的隐式故障模式、配置错误或未被监控覆盖的组件。
+
+### 最佳实践与常见反模式
+*   **从非生产环境开始**：始终在开发或测试环境中建立混沌工程实践，成熟后再逐步引入到生产环境。
+*   **遵循爆炸半径控制原则**：在 KubeSphere 中部署 Chaos Mesh 时，利用命名空间进行隔离；创建实验时，通过精确的标签选择器严格控制故障影响的范围（Scope），避免“雪崩效应”。
+*   **实验应渐进式增加复杂性**：从单个故障（如 Pod 延迟）开始，逐步过渡到复合故障场景。
+*   **反模式：无计划地实验**：避免在无明确假设和目标的情况下随意注入故障。每次实验都应旨在验证一个具体的可靠性假设。
+
+### 相关指标（SLI/SLO/SLA）
+混沌实验直接影响系统的 **可用性** 和 **性能** 相关 SLI。
+*   **可用性**：实验可能导致服务错误率（Error Rate）升高，直接影响 `Availability = (Total Time - Downtime) / Total Time`。
+*   **性能**：例如网络延迟实验会直接影响请求延迟（Latency），如 `P99 latency < 500ms`。
+*   **实验观测**：通过 `web-show` 等应用的可视化界面，可以直接观测到关键 SLI 在故障注入前后的变化，这是验证系统是否达到 [[service-level-objective|SLO]] 的直接证据。
+
+通过在 KubeSphere 上部署 Chaos Mesh，团队获得了一个强大且易用的工具来持续验证和提升系统的韧性，这是实现高可靠性的现代化 SRE 实践的重要组成部分。更多关于混沌实验的设计与执行，可参考 [[chaos-engineering-principles]]。

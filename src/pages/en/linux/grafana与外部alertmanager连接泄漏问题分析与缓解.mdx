@@ -1,0 +1,69 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana issue"
+category: "alerting"
+confidence: high
+---
+
+## Overview
+
+This document details a serious resource leak problem that occurs when Grafana (especially version 9.x) uses the Unified Alerting function to send notifications to the external Prometheus AlertManager. This problem caused the TCP connection established between Grafana and AlertManager to not be closed properly. As alarm notifications continued to be sent, the number of connections continued to accumulate, eventually exhausting the upper limit of file descriptors set by the operating system or the Grafana service, causing the Grafana service to crash and the alarm notification to fail. This issue poses a direct threat to the reliability of the monitoring system and is a key scenario that SREs need to pay close attention to and master mitigation methods when operating and maintaining the Grafana and Prometheus alarm stacks.
+
+## Core concepts
+
+- **Connection Leak**: It means that an application (such as Grafana) opens a network connection (such as an HTTP request), but does not properly close (`close`) the connection after use, resulting in the system resources (such as file descriptors, memory) occupied by it not being released. A leaked connection persists in the system's TCP connection table until it is reclaimed by the operating system (which usually takes a long time).
+- **TCP connection status `ESTABLISHED`**: Indicates that the connection has been successfully established and is transmitting data or waiting for application layer protocol operations. In this case, the leaking connection will remain in this state.
+- **File Descriptor**: In Unix/Linux systems, all I/O operations (network sockets, files, etc.) are performed through file descriptors. Each open network connection occupies a file descriptor. When file descriptor usage reaches the upper limit set by the system (`ulimit`) or service (such as Grafana's `LimitNOFILE`), new I/O operations will fail with a "`too many open files`" error.
+- **HTTP Connection Pool**: HTTP clients (such as those used by Grafana) typically maintain a connection pool to reuse established TCP connections and avoid re-doing the TCP handshake for each request, thus improving performance. This issue may stem from a specific HTTP client configuration or implementation flaw in Grafana, causing connections to not be effectively reused or returned to the connection pool.
+
+## Practice
+
+### Problem confirmation
+1. **Observe the number of connections**: Use the `netstat` or `ss` command to continuously monitor the number of connections between the Grafana process and AlertManager (default port 9093).
+    ```bash
+    watch -n 10 'netstat -antp | grep grafana | grep 9093 | wc -l'
+    ```
+    In a problem environment, this number will continue to grow over time (especially when there are alarm notifications) until it reaches thousands or even tens of thousands.
+2. **Check system logs and Grafana logs**: Pay attention to the `"too many open files"` errors that appear in the Grafana logs. These errors usually start to appear when the number of connections approaches the upper limit, and lead to failure to send alerts and abnormal functionality of Grafana.
+
+### Mitigation and troubleshooting steps
+While this issue is confirmed to be a bug in Grafana 9.x, the following steps can be taken to mitigate it while waiting for an official fix:
+
+1. **Temporarily increase system limit**: As an emergency measure, you can temporarily increase the file descriptor limit of the Grafana service process.
+    - Edit Grafana's systemd service file (usually located at `/etc/systemd/system/grafana-server.service` or `/usr/lib/systemd/system/grafana.service`).
+    - Find the `LimitNOFILE` parameter under the `[Service]` section and increase its value (e.g. to `65536`).
+    - Reload systemd configuration and restart Grafana service:
+        ```bash
+        sudo systemctl daemon-reload
+        sudo systemctl restart grafana-server
+        ```
+    *Note: This is only a temporary mitigation measure and cannot fundamentally solve the connection leak problem, but it can buy the system more time to recover. *
+
+2. **(Advanced) Try to configure the connection pool parameters**: Community members have reported that adding the following configuration to the JSON data field of the AlertManager data source in Grafana's data source configuration file `datasource.yml` or UI can help control the connection behavior:
+    ```yaml
+    jsonData:
+      handleGrafanaManagedAlerts: true
+      implementation: prometheus
+      # Try adding the following parameters to control connection pooling and timeouts
+      httpMethod: POST
+      timeoutSeconds: 30
+    ```
+    This configuration is not an officially recommended solution and the results may vary depending on the environment, but it is worth trying.
+
+3. **Monitoring and Alerting**: Establish monitoring of Grafana service file descriptor usage. You can configure a simple alert rule to alert when the number of open file descriptors of the Grafana process exceeds a certain threshold (such as 70% of the total limit), so that you can intervene before the problem occurs.
+
+## SRE Key Points
+
+- **Reliability correlation**: This problem directly leads to the unavailability of the core monitoring component Grafana, which in turn affects the smooth flow of the entire alarm channel. It is a typical reliability event caused by resource leakage. The SRE must treat this as a high priority issue.
+- **Observability and Incident Response**:
+    - **Observability**: Grafana application logs (error messages), operating system indicators (file descriptor usage, TCP connection status) and network traffic need to be observed simultaneously.
+    - **Incident response**: When Grafana alarms or service failures are caused by `too many open files`, the response steps should include: 1) Confirm the problem (check logs and connection numbers); 2) Implement temporary mitigation (increase `LimitNOFILE`); 3) Troubleshoot and confirm the root cause (connection leak); 4) Develop a long-term repair plan (such as upgrading Grafana to a fixed version).
+- **Best Practices and Anti-Patterns**:
+    - **Best Practices**: Regularly upgrade Grafana to the stable version to obtain security patches and defect fixes; conduct resource usage baseline modeling and alerts for key services (such as Grafana, Prometheus).
+    - **Anti-Pattern**: Only "solve" the resource exhaustion problem by infinitely increasing the system limit (`ulimit`), while ignoring the root cause; lack of monitoring of the reliability of the monitoring tool itself (blind spot).
+- **Related Indicators (SLI/SLO)**:
+    - **SLI**: You can define "`Grafana alarm notification success rate`" or "`Grafana service HTTP request success rate (excluding `5xx` errors)`" as a reliability indicator. These SLIs can worsen significantly when such connection leaks occur causing notifications to fail.
+    - **SLO**: Set goals based on the above SLI, such as "`Monthly alarm notification success rate &gt; 99.9%`". This failure results in SLO loss.
+    - **Error Budget**: This event should be counted towards the consumption of Error Budget. By analyzing such events, improvements to the Grafana architecture or operation and maintenance processes can be driven, such as establishing better pre-release test cases to cover connection stability under long-term running.
+
+**Related page reference**: [[alerting-best-practices]] [[file-descriptor-monitoring]] [[prometheus-alertmanager-architecture]]

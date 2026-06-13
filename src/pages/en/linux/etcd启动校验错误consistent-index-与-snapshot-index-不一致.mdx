@@ -1,0 +1,61 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Antitheiss found “consistent_index isn’t equal to snapshot index”"
+category: "data-consistency"
+confidence: medium
+---
+
+## Overview
+
+In etcd cluster operation and maintenance, ensuring data consistency is the highest priority matter. This document stems from a startup checksum error discovered by the Antithesis platform on the etcd master branch. When an etcd node attempts to start, it checks whether its consistent_index is equal to the snapshot_index. If not equal, the node will refuse to start and throw a fatal error. This kind of failure will directly cause the cluster members to be unable to recover or join, seriously affecting the availability and [[data-consistency]] of the service. Understanding the cause and impact of this error is key to SRE troubleshooting and prevention.
+
+## Core concepts
+
+Before delving into the problem, it is necessary to clarify the meaning and relationship of the two key indexes:
+
+1. **`consistent_index`**: This is a monotonically increasing sequence number that records the index of the latest log entry submitted by the application layer (business logic layer) and applied to the state machine (for example, back-end storage). Each time etcd successfully submits a write request, the index is updated. It is the "application-side" token of transaction submission.
+2. **`snapshot_index`**: This is the log index contained in the last created snapshot file. Snapshot is etcd's mechanism for accelerating recovery and synchronization. It contains the complete state machine state and corresponding log index at a certain moment. It is a checkpoint stored persistently on disk.
+3. **Start verification logic**: During etcd startup, the `Verify` function will be called (as shown in the log `client/pkg/verify/verify.go`). A key check of this function is that `consistent_index` must be greater than or equal to `snapshot_index`. This is because `consistent_index` represents the applied state, while `snapshot_index` represents the persisted state snapshot. Under normal circumstances, it is impossible for applied state to lag behind persisted snapshots. The error message `consistent_index:193,snapshot_index:192` clearly shows that the application index recorded by the node (193) is higher than the index recorded by the latest snapshot (192), which is logically contradictory and may point to data corruption or inconsistent state.
+
+## Practice
+
+### Error phenomenon
+The etcd node fails to start, and the log or error output contains the following key information:
+```
+message: "consistent_index isn't equal to snapshot index",
+details: {consistent_index:193,snapshot_index:192}
+```
+The node process usually exits immediately, unable to provide any service.
+
+### Possible trigger conditions (inference)
+According to etcd's code logic and error definition, this problem may be caused by the following reasons:
+* **Write Failures and Crash**: A crash occurs after persisting `consistent_index` to disk (such as `db` file), but before generating the corresponding snapshot. During recovery, the two indexes may be out of sync due to file corruption or log replay order issues.
+* **Data File Corruption**: The data file storing `consistent_index` or the snapshot file containing `snapshot_index` is corrupted.
+* **Improper manual intervention**: Unusual operations or restoration of the etcd data directory, such as directly replacing some files, destroying the correspondence between the index and the snapshot.
+
+### Preliminary troubleshooting steps
+When encountering this error, the SRE should perform the following actions:
+
+1. **Confirm fault scope**: First determine whether the problem occurs on a single node or multiple members. Use `etcdctl member list -w table` to check cluster member status.
+2. **Check member and endpoint status**: For members that are still healthy, use `etcdctl --endpoints=<healthy member list> endpoint status -w table` to view their index values ​​as a comparison reference.
+3. **Protect data**: **Immediately back up** the entire data directory of the problematic node (including the `data/` and `wal/` subdirectories). This is a mandatory step before any repair operation.
+4. **Check detailed logs**: Check the detailed logs before and after etcd is started to look for earlier error messages that may cause file damage or abnormal exit.
+
+## SRE Key Points
+
+### Association with reliability
+This error is directly related to the [[crash-recovery]] capabilities and reliability of etcd clusters. The verification of `consistent_index` and `snapshot_index` is one of etcd's self-protection mechanisms, designed to prevent the use of inconsistent states for recovery, which may lead to more serious data corruption or brain splitting. Although this mechanism can cause startup failure in extreme cases, it avoids more insidious and catastrophic data inconsistency problems.
+
+### Best practices and common anti-patterns
+* **Best Practice**:
+    * **Periodic Health Checks**: Monitor the process status, disk space, and I/O latency of etcd members.
+    * **Backup Strategy**: Regularly perform a complete offline backup of etcd (using `etcdctl snapshot save`) or data directory backup, and verify the recoverability of the backup.
+    * **Avoid dirty shutdown**: Ensure that the etcd node is stopped gracefully such as `systemctl stop etcd` to avoid immediate termination caused by `kill -9`.
+* **Common anti-patterns**:
+    * Using snapshots (such as LVM snapshots) on the etcd data directory without coordination may result in inconsistent WAL log and data file timestamps.
+    * Directly copying or modifying etcd's data files (`member/snap/db`) without using the `etcdctl` tool can easily destroy internal consistency.
+
+### Related Indicators (SLI/SLO)
+* **SLI (Service Level Index)**: can be defined as "etcd cluster member startup success rate". Each node startup attempt (including restarts after a failure) is recorded as an event, and the number of failures is the error count.
+* **SLO (Service Level Objective)**: For production environments, you can set an SLI target of 99.9% or higher. Continuous occurrence of `consistent_index` verification errors will directly pull down this SLI, triggering an alarm and requiring immediate processing.
+* **Monitoring and Alerting**: The logs of etcd should be monitored to provide real-time alerts for errors containing `"consistent_index isn't equal to snapshot index"` or similar information. At the same time, monitoring node restart frequency is also an important indirect indicator.

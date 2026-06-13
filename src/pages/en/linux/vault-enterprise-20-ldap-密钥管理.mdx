@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "LDAP secrets management now available in IBM Vault Enterprise 2.0"
+category: "Secrets Management"
+confidence: high
+---
+
+## Overview
+In enterprise environments, Lightweight Directory Access Protocol (LDAP) remains the cornerstone of authentication and authorization. However, the management and rotation of keys (particularly passwords) associated with LDAP accounts has long been a major source of operational friction and security risk. Traditional solutions often lack the granular control, observability and automation capabilities required for enterprise-level operations. IBM Vault Enterprise 2.0 introduces a new LDAP key engine architecture designed to fundamentally solve these challenges and improve identity security and operational reliability to a new level by providing a standardized automation framework.
+
+## Core concepts
+### Legacy LDAP Key Management Challenges
+Legacy systems face many problems when managing password rotation for hundreds or even thousands of LDAP static roles:
+* **Limited Control**: Lack of flexible ability to pause rotations during maintenance windows or adjust rotation schedules based on account importance.
+* **Opaque retry logic**: When rotation fails due to network instability or directory locking, the retry mechanism is often opaque and may result in permanent account lockout.
+* **High-privilege master account risk**: Traditional models often rely on a high-privilege "master account" to perform password rotation for all other accounts, which itself constitutes a critical security attack point.
+
+### Vault Enterprise 2.0 new architecture
+The new version of the LDAP engine integrates static roles into Vault's **Centralized Rotation Manager**, restructuring the entire management process. Core new concepts include:
+* **Initial state solution**: When creating a static role, the administrator can directly set the initial password of the account. This ensures that Vault is the single source of truth for credentials from the first second of an account's lifecycle, eliminating the "greenfield" management headache.
+* **Self-managed process**: Allow each LDAP account to authenticate and update passwords using its own credentials. This decentralized approach eliminates the need for a high-privilege master account and perfectly implements the principle of least privilege.
+* **Centralized Rotation Manager**: Provides a unified operation and maintenance plane for all migrated LDAP static roles, with enterprise-level capabilities such as configurable scheduling, intelligent retry, and pause/resume control.
+
+## Practice
+### Migrate from old version to new architecture
+For users currently using Vault 1.21.x or earlier, the migration process to upgrade to version 2.0 is designed to be low-disruption:
+1. **Automatic migration trigger**: When you unseal the Vault for the first time after upgrading to 2.0, the system will automatically identify all LDAP static roles still managed by the old plugin and start the task of migrating them to the new centralized rotation manager in the background.
+2. **Ensure business continuity**: The migration runs as a background task and does not hinder the regular operations of the LDAP key engine (such as credential acquisition, role management). For specific roles that are being migrated, their rotation will be **briefly paused** and the new rotation plan will be resumed immediately after the migration is completed.
+3. **Monitoring and Governance**: Use the **`static-migration` API endpoint** to monitor the migration progress in real time. It is recommended that the "Migration Successful" status be a necessary condition for the final signature confirmation of the upgrade process.
+
+### Key configuration and operation and maintenance capabilities
+Once the migration is complete, you can take advantage of the new manager's core features:
+* **Configurable rotation schedule**: Precisely define password rotation times to avoid business peaks or synchronization windows.
+* **Intelligent retry and backoff**: When the LDAP server is unreachable, the manager will adopt configurable backoff and retry strategies to prevent account lockouts due to temporary interruptions.
+* **Operations Pause Control**: During infrastructure maintenance or incident response, password rotation for specific roles or role groups can be paused for unprecedented granularity of operations control.
+
+## SRE Key Points
+### Association with reliability
+* **Improve system resilience**: Through intelligent retry and pause control, the risk of large-scale service interruptions caused by credential rotation failure due to temporary failures or maintenance of the LDAP service is significantly reduced, and the overall system reliability is enhanced.
+* **Observability and Incident Response**: The centralized rotation manager and `static-migration` API provide clear observation points for the key rotation process. During incident response, SREs can quickly pause all rotations to focus on root cause analysis and avoid "secondary failures."
+* **Operation and Maintenance Efficiency**: The automated and standardized rotation process reduces the manpower consumed by manual operations and troubleshooting (such as dealing with locked accounts), allowing the team to focus on higher-value reliability engineering.
+
+### Best Practices and Anti-Patterns
+* **Best Practice**: Use the new architecture to implement **minimum privilege self-managed rotation** for each account, and configure an **automated rotation plan** that conforms to the business cycle. Make the status check of the migration API a key gate for upgrade releases.
+* **Common anti-pattern**: **Creating or relying on a new high-privilege "service account" to perform rotation**. This defeats the purpose of a self-managed process and introduces new, concentrated points of risk.
+
+### Related Indicators (SLI/SLO)
+Although not mentioned directly in the article, based on this capability, SRE teams can define and track the following key reliability indicators:
+* **SLI (Service Level Indicator)**: LDAP password rotation success rate (number of successes / total number of planned times), delay and error rate of rotation operations.
+* **SLO (Service Level Objective)**: For example, "The monthly scheduled LDAP static role password rotation success rate should be greater than 99.9%."
+
+This feature is an important practice for [[secrets-management]] and [[identity-security]] in terms of automation and security operation and maintenance. Its design concept is highly consistent with the principles of "reduce explosion radius" and "quick control" in [[incident-response]].

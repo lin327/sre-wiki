@@ -1,0 +1,44 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'grafana/grafana Issue #103284: SQL Expressions / Alerting Editor: Can''t"
+category: "数据处理与查询"
+confidence: medium
+---
+
+## Overview
+
+When building Grafana-based observability pipelines, SQL expressions are a powerful tool that allow users to reprocess and analyze results from different data sources or queries (identified by RefID). This page explores a specific technical issue: when a SQL expression references a query that contains metric data (such as time series tags or multi-table structures), the raw results of the referenced query cannot be viewed directly in the query editor due to the intermediate state of the underlying data format conversion. Understanding this issue is critical to building reliable alerting rules and dashboards, as it is the basis for ensuring the correctness of the data processing process.
+
+## Core concepts
+
+- **RefID (Query Reference ID)**: In the Grafana query editor, each individual query (such as a Prometheus query or SQL query) is assigned a unique identifier, usually A, B, C, etc. Subsequent queries (such as SQL expressions) can reference the results of previous queries through these IDs.
+- **Metric Data**: Usually refers to the data returned by time series databases such as Prometheus and InfluxDB. It is characterized by containing rich metadata such as labels (Labels), and the data structure may not be a strict row and column table.
+- **Dataplane**: Grafana’s internal normalization layer used to unify data returned from different data sources. Its goal is to define a standard set of data formats to simplify plug-in development and data processing. In this question, the intermediate format involved is called "Full long", a long table format that is still being defined.
+- **SQL Expressions**: A query type provided by Grafana that allows users to use SQL syntax to calculate, filter, and transform the results of other queries.
+
+## Practice
+
+### Problem scenarios and performance
+
+The issue occurs in Grafana's query editor (e.g. for the evaluation of alerting rules). When a user configures a SQL expression query and references other queries (such as `query(A)`) in its `FROM` or `JOIN` clause, it is expected that a preview of the raw results of the referenced query (such as RefID A and B) will be seen directly in the editor. However, what happens is that these preview results are not displayed correctly.
+
+According to the analysis of the problem report, the root cause lies in an internal step in the data flow process:
+1. When a SQL expression is configured to reference a RefID, Grafana attempts to take the results of that reference query as input.
+2. If the referenced query returns "metric data" (containing labels or multi-table structures), the system will first convert it into a format to adapt it to the table structure required for SQL expression processing.
+3. The target format for this conversion is called "Full long". However, this intermediate format has not yet been formally defined and documented in the Grafana dataplane project.
+4. Since the input format (referenced original result) and output format ("Full long") of this intermediate conversion step are both unstable or not fully compatible, the preview function cannot correctly parse and display the original query results.
+
+### Scope of influence
+
+This issue primarily affects Grafana's query building and debugging experience. It makes it difficult for users to verify the correctness of prequeries when writing complex queries or alarm rules based on SQL expressions, making debugging more difficult. When the query is eventually executed, the data may be processed correctly in the background, but the opacity in the editing process reduces productivity and configuration confidence.
+
+## SRE Key Points
+
+- **Reliability**: This issue is directly related to **the reliability of observability systems**. The SRE team relies on Grafana to build monitoring and alerting. If the intermediate data cannot be verified during configuration, alarm rules may be set incorrectly, resulting in false positives or false negatives, affecting the timeliness and accuracy of incident response (Incident Response).
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: When configuring complex SQL expressions or alert rules, you should first test each underlying query (RefID A, B, etc.) individually to ensure that it returns the expected data. Grafana's "Explore" view can be used to perform independent validations and then be combined into expressions.
+    - **Anti-Pattern**: Over-reliance on building and validating all queries simultaneously in the SQL Expression Editor. When a problem occurs, it is difficult to pinpoint whether it is an error in the underlying query or a problem with expression logic or format conversion.
+- **Related Metrics (SLI/SLO)**: Although this issue does not directly correspond to a runtime metric, it affects the **Monitoring Configuration Accuracy** internal reliability metric. A relevant SLI could be "First-time correctness of alert rule configurations" and an SLO could be "Core business monitoring rules take effect 95% of the time without debugging." Resolving this issue will help meet this SLO.
+- **Inspiration for SRE tool chains**: SRE should pay attention to the maturity of its data model when selecting and relying on open source tools. The instability of core components like the Grafana data plane that are still evolving can seep into user workflows. On critical paths (such as core business alarms), it is recommended to conduct sufficient stress testing and integration verification on the tool chain.
+
+Related internal terms and concepts include [[data-plane]], [[observability]], and [[alerting-pipeline]].

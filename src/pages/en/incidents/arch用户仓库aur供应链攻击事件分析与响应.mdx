@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Hundreds of AUR packages compromised"
+category: "security"
+confidence: medium
+---
+
+## Overview
+
+This incident describes a large-scale supply chain attack on the Arch User Repository (AUR). The attacker took advantage of a large number of AUR packages that were in an "orphaned" state (that is, without active maintainers) to steal data by injecting malicious npm dependencies (`atomic-lockfile`) into their build scripts. This incident poses a serious security threat to Arch Linux users who rely on AUR, as well as users of Arch-based distributions such as Manjaro. In SRE practice, supply chain security is a key link in ensuring the overall reliability and security of the system. Such incidents highlight the importance of strict review and monitoring of upstream dependencies.
+
+## Core concepts
+
+### Supply Chain Attack
+This is a type of attack that targets end users by contaminating some aspect of the software development, distribution, or build process. In this incident, the attacker did not directly invade the official Arch Linux repository, but used user-defined AUR packages to indirectly attack users by introducing malware into the dependencies of these packages. [[supply-chain-attack]]
+
+### Arch User Repository (AUR)
+AUR is a community-driven package building system that allows users to share and maintain packages outside of official repositories. It does not provide precompiled binaries per se, but rather PKGBUILD (build scripts). Users need to use AUR assistant tools such as `makepkg` or `yay`, `paru` to build and install software packages locally based on these scripts. Its openness also brings risks, especially when packages are orphaned and lack community oversight.
+
+### Malicious dependency injection
+The attacker added the malicious npm package `atomic-lockfile` as a build-time dependency of the contaminated AUR package. When users build these AUR packages, the malicious package will be executed during the construction process. Its main function is to steal sensitive data (such as SSH keys, environment variables, cloud credentials, etc.) and leak it. This is a stealthy attack because it occurs during a user-initiated, seemingly normal build process.
+
+## Practice
+
+### Incident response process
+According to Arch community announcements and incident developments, a typical incident response process includes the following stages:
+1. **Discovery and Confirmation**: Community members discover anomalies and report them, and security researchers (such as "sodiboo") confirm the attack vector and scope of impact.
+2. **Containment**: The Arch team immediately began isolating and processing the affected AUR packages. This may involve temporarily locking commit permissions for these packages, or simply removing the malicious `PKGBUILD`.
+3. **Eradication**: Analyze all affected package lists and clean up malicious code. Community maintainers provide [Affected Package List](https://gr.ht/aur_pkg_list.txt) for users to check themselves.
+4. **Recovery and Notification**: Issue an official announcement to inform users to check whether a contaminated version is installed and recommend remedial measures such as resetting credentials.
+5. **Review and Reinforcement**: The AUR community discusses and may implement stricter package maintenance strategies and introduce automated security scanning and other measures to prevent similar incidents from happening again.
+
+### User side protection measures
+For Arch Linux users, the following practices can be adopted to reduce risk:
+* **Audit AUR dependencies**: Before installing an AUR package, check its `PKGBUILD` file, especially the `depends` and `makedepends` arrays, and be wary of dependencies that are unfamiliar or from suspicious sources.
+* **Use a sandbox or staging environment**: Build and test AUR packages in an isolated environment (such as virtual machines, containers) to avoid direct exposure to risks on the main system.
+* **Select active packages**: Give priority to AUR packages with active maintainers, recent updates, and more community discussions. Avoid using orphaned packages.
+* **Monitor build output**: Watch for any unusual network connections, file writes, or command executions during the build process.
+
+## SRE Key Points
+
+### Association with reliability
+Supply chain attacks directly threaten the **security** of the system, and security is an important pillar of system reliability. A compromised system cannot provide reliable business services. This incident shows that even if the core operating system (Arch Linux) itself is reliable, the risks of its peripheral ecosystem (AUR) can be transmitted to end users, leading to catastrophic consequences such as data leaks and system backdoors. [[reliability-engineering]]
+
+### Incident response and best practices
+* **Establish a response process**: The organization should formulate an incident response plan in advance for software supply chain interruptions (such as dependencies being poisoned, warehouses being invaded) and clarifying the steps for notification, containment, and repair.
+* **Minimize Trust**: Following the principle of least privilege, trust in any external dependencies should be conditional. Enforce dependency locking and verify hashes of build artifacts.
+* **Automated Monitoring**: Ideally, tools (such as Dependabot, but adapted to the AUR environment) should be used to continuously monitor the health and security vulnerabilities of project dependencies.
+* **Community Communication**: In the open source ecosystem, timely and transparent community communication is crucial to quickly respond to incidents and reduce user damage.
+
+### Related Indicators (SLI/SLO/SLA)
+Although this incident mainly involves safety, related indicators can be considered from the perspective of reliability:
+* **SLI (Service Level Indicator)**: You can set indicators such as "no known high-risk vulnerability rate for key dependencies" and "build-time dependency source credibility score" to measure the health of the supply chain.
+* **SLO (Service Level Objective)**: Set target values ​​for these SLIs, such as "Conduct security scans on all critical production dependencies every month, and high-risk vulnerabilities need to be mitigated within 24 hours."
+* **SLA (Service Level Agreement)**: In internal services, a commitment to dependency security may be required; for open source projects (such as AUR), the community implicitly maintains the reliability reputation of its services through announcements and response times.

@@ -1,0 +1,42 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "GitHub Issue"
+category: "SRE实践"
+confidence: medium
+---
+
+## Overview
+
+In modern distributed systems and microservices architectures, sub-millisecond (microsecond or even nanosecond) time measurement is critical for performance analysis and troubleshooting. Grafana is the core observability tool of the SRE team. The accuracy and completeness of its data display directly affects the decision-making efficiency of engineers. This document documents a Grafana-specific display issue: In the tooltip of the time series panel, values ​​smaller than 1 millisecond (ms), such as microsecond (μs) or nanosecond (ns) level data, are not displayed correctly when the unit is set to "duration (s)". This issue can mislead the SRE about the system's critical path performance.
+
+## Core concepts
+
+This question involves the data formatting and display logic of the Grafana front-end, and is mainly related to the following concepts:
+
+1. **Tooltip**: A temporary information box displayed when hovering on the time series chart, used to display the precise data value at a specific time point. For SREs, this is a key interactive element for quickly verifying data points and locating anomalies.
+2. **Unit**: Grafana provides a series of predefined data formatting units for converting raw values ​​(such as seconds `0.0005`) into human-readable formats (such as `500μs`). The "duration (s)" and "seconds (s)" mentioned in the question are two different unit options.
+3. **Data formatting chain**: After the raw data is passed from the data source to Grafana, it will be processed through a formatting chain, including aggregation, calculation and final unit conversion. Failure to display the tooltip indicates that the handling of very small values ​​(`< 0.001`) is defective or missing in the formatting logic for the 'duration (s)' unit.
+
+## Practice
+
+**Reproduction scenario**: In Grafana v9.0.2, create a time series panel with a data source that provides millisecond-level or finer time measurement data (such as function execution time). Set the panel's Tooltip to the display unit (such as Value), and configure the data series' Unit to **duration (s)** in the panel's Override or global settings.
+
+**Phenomenon**: When hovering to view a data point, for values ​​such as `0.0001` (should be displayed as `100μs`) or `0.000000001` (should be displayed as `1ns`), the tooltip will be blank or display "0". After changing the unit to **"seconds (s)"**, the same value will be correctly displayed as `0.0001s` or `1e-9s`.
+
+**Temporary Workaround**: Until Grafana officially fixes this issue, SREs can adopt the following workarounds:
+1. **Adjust data unit**: If business permits, adjust the time unit in the backend data source or query from "seconds" to "milliseconds" or "microseconds", and use the corresponding Grafana unit (such as "milliseconds (ms)").
+2. **Use other visualization methods**: For data that require extremely high precision, consider using the Table panel or the Stat panel, which generally format values ​​more directly and are less affected by this issue.
+3. **Aggregation in the data processing layer**: Pre-aggregate the data in the query (such as calculating average, percentile), so that the value range falls above milliseconds, and then use the "duration (s)" unit.
+
+## SRE Key Points
+
+- **Direct impact on observability**: This issue breaks a critical link in the data-information-insights chain. When an SRE attempts to investigate a microservice call that is causing increased latency, the tooltip cannot show the microsecond elapsed time, making root cause analysis difficult and increasing incident response times (MTTR).
+- **Best Practices and Notes**:
+    - **Unit Selection**: When configuring critical dashboards (such as SLO monitoring), the selected units should be fully tested, especially when extremely small or extremely large numerical ranges are involved.
+    - **Cross-validation**: Don't rely entirely on a single visual element (such as a tooltip). Cross-validate by combining query data (using Grafana's query history or Explore function), original data tables, and alert rules.
+    - **Monitor Grafana itself**: Incorporate Grafana's availability into its own monitoring. Display flaws like this could impact the team's ability to monitor other systems.
+- **Related indicators (SLI/SLO/SLA)**:
+    - The problem itself does not affect the collection and calculation of system **SLI** (service level indicators), but it will affect the **presentation** of SLI in Grafana.
+    - If the target value of SLO or the threshold of the error budget window falls at the microsecond level, then this display issue may cause the SRE to be unable to visually verify the SLO status on the Grafana UI and need to rely on back-end calculations or directly query the database, increasing the operational burden.
+
+&gt; **Follow-up**: This issue has been reported in Grafana's GitHub repository. As an SRE, you can follow the progress of this issue and verify whether it has been fixed when upgrading the Grafana version. For core monitoring panels, it is recommended to verify the behavior of the new version in a test environment before upgrading. For related concepts, please refer to [[grafana]] and [[observability]].

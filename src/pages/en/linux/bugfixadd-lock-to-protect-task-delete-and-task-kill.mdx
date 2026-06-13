@@ -1,0 +1,67 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd/containerd Pull Request #12378'"
+category: "可靠性与容错"
+confidence: medium
+---
+
+## Overview
+
+In container runtimes (such as containerd), the management of task life cycle requires handling of multiple concurrent operations. The PR for this fix aims to resolve a specific race condition: while a `Delete` (delete) operation is being executed, another concurrent `Kill` ​​(terminate) operation will fail because the underlying tRPC service has been shut down. This kind of problem will directly affect the reliability of the system and the robustness of error handling. It is a typical scenario that SRE needs to pay attention to and prevent when maintaining a large-scale container orchestration platform. By introducing a fine-grained locking mechanism, this fix ensures the atomicity of task state operations and prevents unexpected failures due to concurrency.
+
+## Core concepts
+
+- **Race Condition**: refers to multiple concurrent operations (such as goroutine) accessing shared resources (such as task status), and their final results depend on the relative timing of execution. In this case, `Delete` and `Kill` ​​operate the same task at the same time, which may cause a race condition.
+- **Lock**: A synchronization mechanism used to coordinate access to shared resources by multiple execution threads. By acquiring a lock, an operation ensures that other operations attempting to operate on the same resource must wait while it is executing.
+- **Task Lifecycle**: In containerd, a task represents a running containerized process. Its state machine usually includes stages such as creation, running, stopping, and deletion. `Delete` and `Kill` ​​are two key life cycle transition operations.
+- **tRPC**: Remote procedure call protocol used in containerd for inter-component communication. The `Delete` operation stops the tRPC service of the shim process associated with the task, which causes any subsequent calls (such as `Kill`) that depend on that service to fail.
+
+## Practice
+
+The fix protects access to shared state by adding a lock on the critical path. Specifically:
+
+1. **Problem Scenario**: When `local.Delete` is called, it will call `TaskManager.Delete`, which will then execute `shimTask.delete`. This removal process will shut down the shim's tRPC service. If during or after this process, another request attempts to terminate the same task through `local.Kill`, `Kill` ​​needs to first obtain the task object through `getTaskFromContainer`, and the tRPC service that the acquisition process depends on may have been closed, causing an error.
+
+2. **Solution**: Introduce the same lock (`l.locker`) in the `getTaskFromContainer` function and the `Delete` operation of the `local` layer.
+    - In `getTaskFromContainer`, use `l.locker.Lock(context.Background(), container.ID)` to obtain the lock. This ensures that the task ID is not removed by other operations (such as deletion) during retrieval of the task object.
+    - In the `Delete` operation of `local` (code not fully shown, but according to the PR description), the same lock should also be acquired. This ensures that the deletion operation and the acquisition of the task object do not overlap.
+
+    In this way, when `Kill` ​​requests to obtain a task through `getTaskFromContainer`, if the task is being deleted, `Kill` ​​will wait for the lock to be released. If the task has been deleted after the lock is released, `getTaskFromContainer` will return an explicit `NotFound` error instead of an ambiguous error due to the tRPC service being shut down.
+
+    ```go
+    // Pseudocode shows the repaired logic
+    func (l *local) Kill(...) {
+        // ... pre-check ...
+        //Call getTaskFromContainer protected by lock
+        t, err := l.getTaskFromContainer(ctx, container)
+        if err != nil {
+            return err // may be "task not found"
+        }
+        // ... subsequent termination logic ...
+    }
+
+    func (l *local) getTaskFromContainer(...) {
+        l.locker.Lock(context.Background(), container.ID) // Get the lock
+        defer l.locker.Unlock(container.ID)
+        // ... get the task ...
+    }
+
+    func (l *local) Delete(...) {
+        l.locker.Lock(context.Background(), containerID) // Obtain the same lock
+        defer l.locker.Unlock(containerID)
+        // ... perform deletion, including stopping the tRPC service ...
+    }
+    ```
+
+## SRE View Points
+
+### Association with reliability
+- **Improve system robustness**: This fix eliminates a race condition that may cause operation failure, making the task management logic more reliable in high-concurrency scenarios. SREs should consider such concurrency defects as potential failure modes.
+- **Explicit error handling**: Fixed so that when trying to operate on a task that has been deleted, the system will return an explicit "not found" error instead of a hard-to-diagnose connection error. This greatly improves problem diagnosability and incident response efficiency.
+
+### Best practices and common anti-patterns
+- **Best Practice**: Access to shared state, especially operations involving lifecycle transitions (create/deletion), should carefully evaluate concurrency requirements and use locks or other synchronization primitives if necessary. The granularity of the lock should be as fine as possible (such as locking by container ID in this case) to reduce the impact on performance.
+- **Common anti-pattern**: Assume operations are serial and ignore the possibility of concurrent access. In distributed or event-driven systems, this is often the source of failures in production environments.
+
+### Related indicators
+- While this fix itself does not directly define SLI/SLO, it affects the measurement of error rates. A `ttrpc closed` error caused by a race condition should not count towards the effective error budget on the user side. Fixing issues like these helps make Error Budget consumption more accurately reflect real user experience issues rather than internal implementation flaws in the system.

@@ -1,0 +1,37 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "PromCon is Only One Month Away; See You in Person or via Live Stream!"
+category: "SRE 会议与社区"
+confidence: medium
+---
+
+## Overview
+
+PromCon is the annual flagship conference dedicated to the CNCF Prometheus monitoring ecosystem. For SRE, this is not only a technical feast, but also a key window to gain insight into cutting-edge trends in reliability engineering and learn from industry best practices. PromCon EU 2025 is held in Munich, and its agenda deeply covers core topics from protocol evolution (such as OpenMetrics 2.0) to navigating the complex observability ecosystem, directly related to the performance and reliability of SRE when building and maintaining large-scale distributed systems.
+
+## Core concepts
+
+This PromCon conference focused on several core concepts that profoundly affect the daily practice of SRE:
+
+- **OpenMetrics 2.0**: As the evolution of the de facto standard for Prometheus crawling metrics, it defines the future direction of metric exposure and is critical to ensuring the standardization, interoperability and long-term reliability of metric data.
+- **PromQL evolution and new features**: PromQL is the core language for SRE to analyze indicators, calculate SLO, and configure alarms. The introduction of new features (such as native histogram operations, more functions) directly enhances the SRE's ability to perform complex queries and inferences.
+- **OpenTelemetry integration**: As OpenTelemetry becomes a unified observability standard, Prometheus's deep integration with data models, SDKs, and resource attributes means that SREs need to plan and optimize hybrid observability stacks to achieve seamless correlation of trace, log, and metric.
+- **Downsampling and Delta Metrics**: New metric processing strategies proposed for long-term storage and cost optimization are technical options that SREs must evaluate when planning monitoring data lifecycle management.
+- **Agentic AI and Monitoring**: The application of AI agents in the monitoring field indicates that event analysis and root cause location may develop in a more automated direction, and is a potential frontier for SRE to improve fault response efficiency.
+
+## Practice
+
+From the topics of PromCon 2025, we can extract a number of action guidelines closely related to SRE practice:
+
+1. **Building a future-oriented indicator pipeline**: The discussion on Parquet storage, downsampling and Delta indicators in the meeting provided new ideas for cost-effective long-term monitoring storage of SRE architecture. Practitioners should evaluate these options to balance data query performance, retention period, and infrastructure cost.
+2. **Deepen OpenTelemetry integration**: The SRE team should start using OpenTelemetry as a unified instrumentation SDK, generate Prometheus format indicators and OTLP format traces at the same time in the application, and understand how its Resource Attributes correspond to Prometheus' label system, thereby establishing more powerful correlation analysis capabilities.
+3. **Master the enhanced alarm methodology**: The "new alarm methodology" mentioned in the conference may involve the design of advanced alarm rules such as multi-window, multi-burn rate, etc., or be combined with AI-assisted anomaly detection. SREs should learn and experiment with these modes to reduce alert fatigue and improve alert accuracy and operability.
+4. **Participate in community knowledge sharing**: PromCon’s Lightning Talks format encourages sharing of frontline practices. SRE engineers can regard this as a valuable opportunity to present their own cases and obtain rapid feedback from peers, thereby promoting the precipitation and evolution of monitoring knowledge within the organization.
+
+## SRE Key Points
+
+PromCon conference content is closely aligned with SRE core responsibilities:
+
+- **Association with reliability and observability**: The Prometheus ecosystem is the cornerstone of building a modern observability platform. The full-link technology progress from collection, storage to query and visualization in the conference directly supports more refined SLI measurements, more accurate SLO calculations and deeper system behavior insights in SRE practice. The OpenTelemetry integration part is particularly critical. It promotes the evolution of observability from "index-centered" to "correlated event-centered", which can greatly improve the efficiency of fault diagnosis.
+- **Best practices and common anti-patterns**: Best practices include **proactively following core protocol evolution** (such as OpenMetrics), **adopting cloud-native standards** (such as OTLP) in the monitoring stack, and **leveraging new tool chains for cost optimization** (sampled below). A common anti-pattern is to use monitoring tools in isolation and ignore integration with ecosystems such as OpenTelemetry, resulting in the formation of data islands and hindering reliability analysis from a global perspective.
+- **Relevant Metrics (SLI/SLO/SLA)**: The technologies discussed at PromCon are critical infrastructure for SLO-driven development and operations. For example, more efficient and lower-cost metric storage allows SREs to define more granular SLOs for more services; stronger PromQL capabilities make it possible to define and query complex SLIs (such as latency based on multi-dimensional quantiles). The free live broadcast and recording provided by the conference itself also reflect the open and sharing culture of the Prometheus community, which itself promotes the transparency and popularization of SLO practices.

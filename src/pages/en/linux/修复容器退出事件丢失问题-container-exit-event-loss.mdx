@@ -1,0 +1,40 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[release/2.0] cri:fix lost container exit events if they arrive before info"
+category: "容器与运行时"
+confidence: medium
+---
+
+## Overview
+
+In containerized infrastructure, `containerd` is a widely adopted industry-standard container runtime. It is responsible for managing the complete life cycle of the container, including creation, running, stopping and status notification. Container exit events are one of the core observability signals and are crucial for orchestration systems such as Kubernetes. They are used to update Pod status, trigger garbage collection, and drive other operation and maintenance logic. This fix targets a race condition bug that could cause critical container exit events to be lost during a `containerd` restart or recovery. Loss of such events can undermine system reliability, lead to inconsistent states, and possibly even cascading failures. Ensuring that all state change events are delivered reliably is the cornerstone of building a predictable and observable distributed system.
+
+## Core concepts
+
+Understanding this problem requires analyzing several key aspects of `containerd` handling container events:
+
+- **Container Event**: A structured message describing a container state change (such as `created`, `started`, `stopped`, `deleted`). Among them, "exit event" specifically refers to the event generated when the container stops executing.
+- **Event Queuing and Distribution**: `containerd` internally queues captured events and then distributes them to different subscribers, such as CRI plugins (used to communicate with Kubernetes), shims and other monitoring systems.
+- **Info Cache**: To improve performance and provide context for events, `containerd` maintains an in-memory cache that stores the current information about the container (such as labels, status summaries). Events often need to be correlated or verified with information in this cache before being distributed.
+- **Race Condition**: In this bug, the race condition occurs during `containerd` restart recovery. If a container's exit event is quickly reconstructed and reaches the event handler **before** the corresponding container information is reloaded into the cache, then the processor may determine that the event is invalid or cannot be processed because it cannot find the container's information, and thus **silently discard** it.
+
+## Practice
+
+The core logic of this fix is to adjust the timing of event processing to ensure that events will not be mistakenly discarded due to temporary cache missing. Its repair ideas can be summarized as the following principles:
+
+1. **Event priority processing**: In the event handler, even if the corresponding container information has not been loaded into the cache, the exit event should not be directly rejected or discarded.
+2. **Delayed correlation or redelivery**: The repaired logic will adopt a more robust processing method. For example, it can hold the event temporarily and wait for the relevant container information to be ready before processing; or more directly, ensure that a record of the container exists in the storage layer (such as a metadata database), even if the memory cache has not been updated, the event should be considered valid and the processing flow can continue.
+3. **Guaranteed at-least-once processing semantics**: This fix aims to achieve event processing semantics closer to "at least once", i.e. the event will eventually be processed (perhaps after a short delay) rather than being permanently lost. This is critical for components that require precise state synchronization, such as Kubernetes node resources.
+
+After deploying this fix (included in the `containerd` 2.0 release), operators can expect that the `containerd` service's associated container lifecycle events will become more complete and reliable when the `containerd` service is restarted due to upgrade or crash recovery.
+
+## SRE Key Points
+
+- **Reliability**: This bug directly affects the **observability reliability** of the system. Losing exit events means that the monitoring system cannot sense the true final state of the container, which may cause Kubernetes to think that the Pod is still running, thus affecting scheduling decisions and resource statistics. This is a potential risk of SLO (Service Level Objective) violation, especially for applications that rely on container state for self-healing.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Treat container runtime events (such as through the CRI interface) as a key **SLI (Service Level Indicator)** data source. Conduct end-to-end testing of the event pipeline, especially in interference scenarios such as `containerd` restarts, to verify the event loss rate.
+    - **Anti-Pattern**: Assume that underlying runtime events are "perfectly reliable". SREs should assume that any event may be lost or delayed, and implement idempotent logic and state verification mechanisms at higher layers (e.g., Kubernetes controllers, monitoring aggregators).
+- **Related indicators**:
+    - **SLI**: The rate of difference between `container_exit_events_received_total` and `container_exit_events_expected_total` (derived from the `container_start` event).
+    - **Alarm**: Set an alarm to be triggered when the count of exit events in a short period of time (such as 5 minutes) is abnormally low after `containerd` is detected to be restarted. This can provide an indirect indication of whether the issue targeted by this fix occurs.
+- **Related Page**: This fix is ​​closely related to the container runtime's **event processing pipeline**, **Kubernetes node stability**, and **containerd's lifecycle management**. You can refer to [[containerd-lifecycle-management]], [[kubernetes-pod-status-reconciliation]] and other pages for more macro context.

@@ -1,0 +1,60 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "containerd can not be used with github.com/u-root/u-root due to genproto"
+category: "构建与依赖"
+confidence: medium
+---
+
+## Overview
+
+In SRE practice, building a reliable and reproducible container runtime environment is fundamental work. As the cornerstone of containerd ecosystems such as Kubernetes and Docker, the stability of its construction process is directly related to the update and deployment of container images. This document documents a specific dependency conflict issue encountered when building containerd using the Go workspace (go work) mode, which originated from the modular split of Google's genproto library. Understanding these types of dependency management issues is critical to ensuring the reliability of your build system and avoiding interruptions in your production deployment pipeline.
+
+## Core concepts
+
+**Go workspace (go.work)**: The workspace mode introduced in Go 1.18 is designed to simplify the development of code repositories containing multiple modules. By creating a `go.work` file in the top-level directory, multiple local modules can be unified into a single build context, making cross-module code modification and testing more convenient.
+
+**Ambiguous Import**: This error is reported when the Go toolchain finds that the same package path (package path) is provided from two different modules in the same build context. This is usually because one library depends on an older version of a module, while another library depends on a newer version of that module (which may have been split into finer-grained submodules), causing the compiler to be unable to determine which one to use.
+
+**google.golang.org/genproto module split**: Google modularized and refactored its huge `genproto` dependency. The original unified `google.golang.org/genproto` module has been split into multiple smaller modules, such as `google.golang.org/genproto/googleapis/rpc` and `google.golang.org/genproto/googleapis/api`, aiming to improve the granularity of dependency management and reduce unnecessary dependency downloads. containerd and its dependencies (such as ttrpc, OpenTelemetry client) may reference the old and new versions of `genproto` respectively.
+
+## Practice
+
+### Problem recurrence
+
+The issue reappears when following the standard steps to clone the containerd repository and try to build using `go work`. The key steps are as follows:
+
+1. Clone the containerd repository to a local directory.
+2. Initialize a Go workspace in the parent directory of the warehouse, and use containerd as a member module of the workspace.
+3. Try building the containerd main program in a workspace environment (`go build ./containerd/cmd/containerd`).
+
+The build process fails with the following error:
+
+```
+ambiguous import: found package google.golang.org/genproto/googleapis/rpc/status in multiple modules:
+    google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 (...)
+    google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 (...)
+```
+
+Similar conflicts also occur with the `googleapis/api/httpbody`, `googleapis/rpc/errdetails` and `googleapis/rpc/code` packages.
+
+### Problem analysis and solution ideas
+
+**Root Cause**: containerd itself and its dependencies (such as `github.com/containerd/ttrpc`, `go.opentelemetry.io/otel/...`, `github.com/grpc-ecosystem/grpc-gateway/v2`) declare a direct or transitive dependency on `google.golang.org/genproto` in `go.mod`. In a standard single-module build, the dependency resolver selects a unified, compatible version (usually a newer version that contains the compatibility layer of the split module). However, in the `go.work` workspace environment, the dependency resolution rules of the Go toolchain may change, and it will get confused when it sees both the old total module `genproto` and the new submodule (such as `genproto/googleapis/rpc`) providing the same package path.
+
+**Possible solutions**:
+1. **Version Alignment**: Ensure that all modules in the workspace (including containerd and its dependencies) use consistent dependency versions that support genproto's new module structure. This may require updating the `go.mod` files of containerd or related dependencies.
+2. **Use the `replace` directive (temporary solution)**: In the `go.work` file or `go.mod` of a specific module, use the `replace` directive to force the old version of `genproto` to point to the corresponding submodule of the new version. This is a hack that is not recommended for production use, but can be used to quickly verify whether this is causing the problem.
+3. **Avoid `go.work` builds (current workaround)**: As mentioned in the issue, building containerd in an environment that does not contain a `go.work` file will not encounter this problem. This is feasible for scenarios where containerd only needs to be built separately, but it poses an obstacle to compact image building processes (such as k4s projects) that need to be integrated with other components such as u-root.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: The stability and reproducibility of the build environment are the first line of defense for system reliability. Such dependency conflicts will block the continuous integration (CI) pipeline, delay the release of security patches and key features, and directly affect the update rate and reliability of the service.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: In large projects or monorepo, the need to introduce a `go.work` workspace should be carefully evaluated. If used, the workspace build process should be explicitly tested in CI to ensure consistent dependency resolution.
+    - **anti-pattern**: Assume that the build environment of upstream dependencies is exactly the same as the local development environment. The build process must be verified in an environment similar to the production deployment (such as CI).
+    - **anti-pattern**: When faced with such dependency conflicts, blind use of the `replace` directive may mask deeper version compatibility issues, and priority should be given to seeking a formal solution that allows the relying parties to update their `go.mod`.
+- **Related Indicators (SLI/SLO)**:
+    - **Build Success Rate**: A key SLI is the build success rate of the `containerd` component in the CI pipeline. A target SLO might be "99% of CI triggers successfully build all components within 10 minutes."
+    - **Dependency update timeliness**: Tracking whether the project's dependency versions on key basic libraries (such as `genproto`) follow up with official recommended version updates in a timely manner can be used as a leading indicator to prevent such problems.
+
+[[container-runtime]] [[dependency-management]] [[continuous-integration]]

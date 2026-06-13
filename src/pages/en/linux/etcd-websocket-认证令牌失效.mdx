@@ -1,0 +1,99 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd GitHub Issue"
+category: "SRE"
+confidence: high
+---
+
+## Overview
+
+When building distributed system monitoring or configuration management applications based on etcd, using WebSocket to continuously observe (Watch) key value changes is a common and efficient pattern. When authentication is enabled on the etcd cluster, ensuring that the WebSocket client can correctly pass authentication is the key to ensuring the continuity of the data flow. Based on a typical production problem, this document provides an in-depth analysis of the `etcdserver: invalid auth token` authentication failure error that may be encountered when using non-gRPC clients such as Kotlin to connect to etcd through WebSocket, and provides root cause analysis and solutions. This issue directly affects the observability and reliability of applications that rely on real-time data synchronization.
+
+## Core concepts
+
+To understand this issue, it is necessary to distinguish between the two main API protocols provided by etcd and their authentication mechanisms:
+
+1. **HTTP/JSON API (v3)**: Provides RESTful interfaces including Watch. The client authenticates by passing a JSON Web Token (JWT) via an HTTP header.
+2. **gRPC API (v3)**: This is etcd’s native, high-performance API, and all functions including Watch are provided through gRPC. When a WebSocket connection is made to the `/v3/watch` endpoint, the etcd server will encapsulate the WebSocket frame into a gRPC message for processing.
+
+The key point is that etcd's WebSocket proxy behaves more like a gRPC server than an HTTP server when handling authentication. Therefore, it has specific requirements on how the authentication token is delivered.
+
+- **"Bearer" scheme**: This is the standard format for the HTTP Authorization header (`Authorization: Bearer <token>`). Many HTTP client libraries adopt this format by default or manually.
+- **"gRPC" scheme**: In the gRPC protocol, the client usually passes the token via `Authorization: grpc-token=...` or a custom header. etcd's WebSocket proxy requires a compatible format.
+
+In the above case, the user puts the token into the `Sec-WebSocket-Protocol` header and appends the `Bearer` prefix. Although this is a creative usage, it does not meet the etcd WebSocket proxy's parsing expectations for authentication tokens, causing the backend gRPC layer to be unable to correctly extract and verify the token.
+
+## Practice
+
+### Problem recurrence and error analysis
+
+1. **Prerequisite**: etcd authentication is enabled.
+2. **Operation**: Use the client to perform HTTP authentication to obtain the token, and then use the token to connect to `/v3/watch` through WebSocket.
+3. **Error client code (example)**:
+    ```kotlin
+    httpClient.ws(method = HttpMethod.Get, host = "localhost", port = 2379, path = "/v3/watch") {
+        // Error: Putting token into Sec-WebSocket-Protocol header
+        header(HttpHeaders.SecWebSocketProtocol, "Bearer, $token")
+    }
+    ```
+4. **Server side log**:
+    ```json
+    {"level":"warn","ts":"...","logger":"etcd-server","caller":"v3rpc/server.go:186","msg":"failed to authenticate the request","error":"etcdserver: invalid auth token"}
+    ```
+    The log clearly states that the authentication failed.
+
+### Solution: Correct authentication method
+
+According to etcd source code and community practice, when accessing protected endpoints via WebSocket, the token should be passed via the standard `Authorization` header**. The primary purpose of the `Sec-WebSocket-Protocol` header is to negotiate the WebSocket subprotocol, not to pass authentication credentials.
+
+**Example of correct client connection code:**
+```kotlin
+httpClient.ws(method = HttpMethod.Get, host = "localhost", port = 2379, path = "/v3/watch") {
+    // Correct: use standard Authorization header
+    header(HttpHeaders.Authorization, "Bearer $token")
+}
+```
+
+**Server configuration check:**
+Make sure the etcd server is configured with token-based authentication. Check startup parameters or environment variables:
+```bash
+# For example, the following parameters should be included in the startup command
+--auth-token=jwt --auth-token-options='{"sign-method":"HS256","private-key":"path/to/key"}'
+```
+If you are using embedded etcd in a Kubernetes environment, please check the relevant configuration. [[etcd-cluster-health]]
+
+### Monitoring and Debugging
+
+If the problem persists, please add detailed logs on the client and server. For etcd servers, increase `--log-level` to `debug` and pay attention to the log output related to `auth`. At the same time, you can use the `etcdctl` tool to verify that the token itself is valid:
+```bash
+ETCDCTL_API=3 etcdctl --endpoints=http://localhost:2379 \
+  --user=<username>:<password> \
+  auth status
+```
+
+## SRE Key Points
+
+### Relevance to reliability and observability
+
+- **Monitor data flow interruption**: Watch is a real-time pipeline for obtaining etcd status changes. Authentication failure will cause this critical observability path to be completely interrupted, making it impossible for operation and maintenance personnel or automated systems to perceive real-time changes in cluster status, which may delay fault detection and response. [[websocket-watch]]
+- **Service dependency risk**: Any component that relies on etcd Watch for configuration delivery, service discovery or lock service will suffer from cascading failures due to authentication issues, directly affecting the SLO of the overall service.
+
+### Best practices and common anti-patterns
+
+- **Best Practices**:
+    1. **Clear the protocol differences**: When designing the client, it must be clear whether it is connected to etcd's HTTP interface or the WebSocket (essentially gRPC) interface, and adopt the corresponding authentication header format.
+    2. **Unified Authentication Code Library**: Encapsulates an etcd client library to uniformly handle the authentication logic of HTTP and WebSocket connections to avoid confusion among downstream users.
+    3. **Key rotation**: Implement a regular rotation policy for the JWT private key used for authentication, and ensure that all clients can update the key before it expires.
+
+- **Common anti-patterns**:
+    1. **Assume HTTP behavior applies to all interfaces**: Wrongly assuming that all endpoints follow the same HTTP authentication specification.
+    2. **Use of obfuscated header information**: Put authentication information into non-standard locations such as `Sec-WebSocket-Protocol`, causing protocol parsing to fail.
+    3. **Lack of end-to-end validation**: After deploying the authentication configuration, all access paths including WebSocket were not regression tested.
+
+### Related Indicators (SLI/SLO/SLA)
+
+- **SLI**:
+    - `etcd.watch.connection_success_rate`: The proportion of successful Watch connections established via WebSocket.
+    - `etcd.watch.auth_failure_rate`: The number of Watch connection failures due to authentication issues.
+- **SLO**: For critical systems that rely on real-time monitoring, an SLO similar to "WebSocket Watch connection success rate &gt; 99.9%" should be set, and the authentication error rate should be used as the core alarm indicator. [[grpc-authentication]]
+- **Error Budget**: When authentication errors consume too much of the Error Budget, a root cause investigation should be triggered instead of simply restarting the client service.

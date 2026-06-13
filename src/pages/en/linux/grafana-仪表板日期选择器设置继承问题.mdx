@@ -1,0 +1,66 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Dashboard Non-Default Week Start overridden by org default"
+category: "监控与可观测性"
+confidence: medium
+---
+
+## Overview
+
+In the daily use of the observability platform, personalized configuration of dashboards is crucial to improving operation and maintenance efficiency. A common requirement is to customize the starting day of a time range (for example, starting on Monday, Sunday, or Saturday) based on different team or project conventions. This page documents a specific flaw discovered in Grafana v12.0.1: when a user navigates from a dashboard that uses the organization's default week start setting to a dashboard configured with a custom week start (such as Saturday), the date picker still incorrectly displays the organization default setting until the page refreshes. This problem may mislead users, affect the accurate understanding of the data time range, and add unnecessary steps.
+
+## Core concepts
+
+### The level set at the beginning of the week
+
+Week start setting in Grafana follows an explicit inheritance and override logic, which directly affects the default behavior of date pickers:
+
+1. **Organization-level default settings**: This is the most basic global configuration, setting a default week start day (for example, Monday) for the entire Grafana instance. All new dashboards and users initially inherit this setting.
+2. **Dashboard-level settings**: Dashboard editors can override the organizational default and specify a different week start day (for example, Saturday) for individual dashboards. This setting is designed to suit the viewing habits of a specific dashboard or team.
+
+### Application and synchronization of settings
+
+Normally, when a user opens or navigates to a dashboard, the interface should immediately read and apply the week start configuration unique to that dashboard (or inherited from the organization), thus updating the date picker component. This flaw indicates that under certain client-side navigation scenarios (non-full-page refresh), the interface state is not properly synchronized with the latest dashboard configuration.
+
+## Practice
+
+### Steps to reproduce the problem
+
+The following steps can reproduce this issue stably:
+
+1. **Environment configuration**:
+    * Keep the Grafana organization's week start setting to the default value (such as "Default" or "Monday").
+    * Create or use a dashboard called "Dashboard A" with its Week Start setting left as "Default".
+    * Create or use a dashboard called "Dashboard B" with its start-of-week setting explicitly configured to "Saturday" (or other non-default value).
+2. **Operation sequence**:
+    * First open and view "Dashboard A". Note that the date picker displays the starting day according to the organization default.
+    * Navigate within the Grafana interface and open "Dashboard B".
+    * After the "Dashboard B" page loads, **immediately check the date picker**, you'll notice that it still shows "Dashboard A" or the organization's default week start day, instead of "Saturday" as that dashboard is configured.
+    * At this point, perform a browser page refresh.
+    * Check the date picker again, now it will correctly display "Saturday".
+
+### Impact and Avoidance
+
+* **Direct impact**: Users will perform data query and analysis based on the wrong time range without manually refreshing the page, which may lead to decision-making bias.
+* **Temporary workaround**: If users need to ensure that the time range is set accurately after navigating to a new dashboard through the sidebar or search, they can make a habit of manually refreshing the browser page.
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+
+* **User experience and trust**: The unpredictability of interface behavior will weaken the trust of operation and maintenance personnel in monitoring tools. During emergency troubleshooting, an incorrect time range may directly lead to a deviation in the problem location direction and extend the fault recovery time (MTTR), which directly affects the reliability target of the service [[slo]].
+* **Error budget consumption**: Although this is a front-end interaction defect, the potential misoperation caused by it can be regarded as a "use reliability" risk. Frequent occurrence of such issues prompts teams to invest resources in fixing front-end defects, which indirectly consumes the error budget [[error-budget]] used to improve core back-end reliability.
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    * **Test Coverage**: In upgrade tests involving UI functions with complex configuration inheritance (such as time pickers, variable templates), cross-page navigation scenarios should be explicitly included to ensure correct client state management.
+    * **Configuration Verification**: As part of "observability as code", the expected and actual application results of the dashboard's configuration (including time settings) should be guaranteed by automated testing.
+* **Common anti-patterns**:
+    * **Ignore client state**: It is assumed that all configurations will be completely re-issued by the server during page navigation, ignoring the complex state caching and synchronization logic that may exist in the front-end application (SPA).
+
+### Related indicators (SLI/SLO/SLA)
+
+* **SLI (Service Level Indicator)**: Consider the ratio of "dashboard time picker showing correct configuration immediately after navigation" as a UX SLI.
+* **SLO (Service Level Objective)**: Set a goal for this SLI, such as "99.9% of dashboard navigation operations should correctly render the time configuration within 2 seconds".
+* **SLA (Service Level Agreement)**: For Grafana as an internal platform, this flaw may not directly affect external SLA, but will reduce internal user satisfaction (Internal SLA). Promptly fixing such usability-impacting flaws is key to maintaining the platform's internal contract.

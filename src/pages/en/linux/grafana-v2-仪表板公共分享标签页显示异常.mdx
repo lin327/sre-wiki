@@ -1,0 +1,54 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "grafana/grafana#117199 Public Sharing does not support tabs"
+category: "仪表板与可视化"
+confidence: medium
+---
+
+## Overview
+
+In the Grafana v2 dynamic dashboard function, when using the "Public Share" function to share a dashboard containing tabs, the expected tab layout fails, and all tab content is expanded and displayed as a row layout. This issue affects the accuracy and usability of the monitoring dashboard as a core tool for observability, and may interfere with the interpretation of monitoring data by operations personnel and external stakeholders. For SRE practices that rely on public sharing links for status synchronization or reporting, this is a functional flaw to be aware of and avoid.
+
+## Core concepts
+
+- **Dashboard Layout**: The arrangement of panels in the Grafana dashboard. v2 Dynamic Dashboards introduces a more flexible layout with tabs, an advanced way to organize panels, allowing the creation of multiple logical views within a single dashboard.
+- **Tabs**: A feature of Dashboard v2 that allows multiple rows or panel groups to be organized into switchable tabs to focus on different monitoring views without scrolling the entire dashboard.
+- **Public Sharing**: A feature of Grafana that allows generating a link to a dashboard that can be accessed without logging in. This allows operations teams to securely share critical monitoring views with external partners, customer support teams, or non-technical stakeholders.
+
+## Practice
+
+### Problem reproduction and verification
+
+1. **Create a dashboard with tabs**: In Grafana v2, use the tab feature to organize your panels.
+2. **Use the public sharing function**: Click the share button in the upper right corner of the dashboard, select "Public Sharing" and generate a public link.
+3. **Check public link view**: Access the generated link in no login state or in a new browser session. At this time, the content that should have been switched in the form of tabs will all be displayed on the page in the form of continuous rows.
+
+### Impact Assessment and Avoidance
+
+This issue is a clear functional defect (Bug), not a configuration error. Based on current information, there is no direct configuration item to fix this behavior. As an SRE, you need to take the following temporary measures when relying on public sharing capabilities to deliver information:
+
+- **Feature Downgrade**: Temporarily avoid using tab layouts for dashboards that must be shared via public links. Related content can be organized in a traditional "row" layout, or multiple independent dashboards can be created.
+- **Alternative Sharing Mechanism**: Consider using Grafana’s “Snapshot” feature as an alternative. A snapshot generates a static copy of the current state of the dashboard. Its layout is exactly the same as when it was created and does not rely on subsequent data updates. It is suitable for archiving or one-time sharing.
+- **Monitoring and Tracking**: Follow the progress of issue [grafana/grafana#117199](https://github.com/grafana/grafana/issues/117199) in Grafana’s official GitHub repository and wait for the official fix. Clearly mark this restriction in internal team documentation until the issue is resolved.
+
+## SRE Key Points
+
+- **Association with reliability, observability, incident response**:
+    - **Reliability**: The monitoring dashboard itself is a tool to ensure system reliability, and the reliability of its own functions is crucial. Public sharing layout anomalies reduce the reliability of information delivery and may cause critical status to be misunderstood or ignored.
+    - **Observability**: The dashboard is the main interface for visualizing the three pillars of observability (metrics, logs, and traces). A confusing layout will prevent operation and maintenance personnel from quickly obtaining context and affect fault diagnosis efficiency.
+    - **Incident Response**: In the event of a critical incident, SREs may need to quickly share dashboards with collaborative teams. Abnormal functions will increase communication costs and slow down the response pace.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practices**:
+        1. **Monitoring tools themselves**: Monitor monitoring tools like production systems. Regularly check the rendering capabilities of key dashboards (especially those intended for public sharing).
+        2. **Manage expectations**: Clearly document known tool limitations (such as this issue) within the team and organization to avoid relying on unstable functionality at critical moments.
+        3. **Backup Sharing Path**: Maintain "snapshot" backups of critical dashboards, or design alternative views that do not rely on this defective functionality.
+    - **Common anti-patterns**:
+        1. **Assuming the tool functions perfectly**: Putting it into critical use without fully testing all dependency scenarios (such as public sharing).
+        2. **Ignore known defects**: Know that the problem exists but do not take avoidance measures, hoping that it will not affect you.
+
+- **Relevant Indicators (SLI/SLO/SLA)**:
+    - This problem directly affects the **user experience** of the monitoring system. A relevant SLI (Service Level Indicator) could be "the success rate of public shared links rendering the dashboard layout correctly."
+    - While internal SREs typically do not define formal SLOs for such UI defects, "core dashboard functionality (including sharing) availability" can be tracked as a key reliability goal when building an internal development platform (IDP) or observability platform.
+
+Related pages: [[Dashboards & Visualization]], [[Incident Response]]

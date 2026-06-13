@@ -1,0 +1,109 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "containerd/containerd Issue"
+category: "container-runtime"
+confidence: high
+---
+
+## Overview
+
+In a Kubernetes-based environment, the image warehouse configuration of the container runtime (such as containerd) is the key to ensuring that nodes can pull images correctly and efficiently. This document details a common pitfall caused by default configuration: the registry host configuration path (`config_path`) used for CRI in the containerd configuration uses colon-separated multipath syntax. When one of the paths does not exist, containerd will not report an error or warning, but will silently ignore the configuration completely, causing the node to fall back to accessing the source repository on the public Internet. This is a serious reliability and security issue for clusters deployed on isolated networks or that require forced use of private mirror warehouses.
+
+## Core concepts
+
+### containerd configuration structure
+
+The core configuration file of containerd is usually located in `/etc/containerd/config.toml`. Among them, the configuration section of the CRI plug-in (`[plugins."io.containerd.grpc.v1.cri"]`) contains all settings for interacting with the container image repository.
+
+### CRI and registry hosts mechanism
+
+containerd interacts with Kubernetes through CRI (Container Runtime Interface). In order to flexibly control the pulling behavior of different image repositories, containerd supports creating a `hosts.toml` file for each domain name (such as `registry.k8s.io`) in the directory specified by `config_path`. This mechanism allows image overwriting, image rewriting, and custom certificate configuration.
+
+### The core of the problem: Silent failure
+
+The `config_path` field supports colons (`:`) to separate multiple search paths (similar to the `PATH` environment variable on Linux systems). However, if any directory path in the list does not exist at runtime, containerd's CRI plugin will treat the entire config_path as invalid and ignore it completely, without producing any warning or error message in the log. This "silent failure" behavior is the root cause of this issue.
+
+## Practice
+
+### Reproduction and Diagnosis Steps
+
+1. **Confirm problem configuration**:
+    Check the containerd main configuration file:
+    ```toml
+    # CRI plugin section in /etc/containerd/config.toml
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+          endpoint = ["https://registry-1.docker.io"]
+    [plugins."io.containerd.grpc.v1.cri".registry.configs]
+    ```
+    Focus on the `config_path` item, the default may be:
+    ```toml
+    config_path = "/etc/containerd/certs.d:/etc/docker/certs.d"
+    ```
+
+2. **Check if the directory exists**:
+    Verify that each directory listed in `config_path` exists:
+    ```bash
+    ls -d /etc/containerd/certs.d /etc/docker/certs.d
+    ```
+    If `/etc/docker/certs.d` does not exist, this is most likely causing the problem.
+
+3. **Test image pull**:
+    Try using `crictl` to pull the image and observe the behavior:
+    ```bash
+    sudo crictl pull registry.k8s.io/pause:3.10
+    ```
+    If the image pull request is unexpectedly sent to the public repository instead of the local image you expected, it means that the customized `hosts.toml` configuration does not take effect.
+
+4. **Check container logs**:
+    Check the containerd logs for any warnings about configuration paths or repositories. According to reports, there are usually no error logs here, making troubleshooting more difficult.
+
+### Repair plan
+
+The most straightforward fix is to ensure that `config_path` only contains directories that actually exist and are needed.
+
+1. **Modify configuration file**:
+    Edit `/etc/containerd/config.toml` and change `config_path` to a single valid path. For example, if you're just using containerd's own configuration directory:
+    ```toml
+    config_path = "/etc/containerd/certs.d"
+    ```
+
+2. **Create the necessary directory structure**:
+    Make sure the `config_path` directory you specified exists, and create the corresponding subdirectory and `hosts.toml` file according to the image warehouse domain name.
+    ```bash
+    sudo mkdir -p /etc/containerd/certs.d/registry.k8s.io
+    # Then create and edit /etc/containerd/certs.d/registry.k8s.io/hosts.toml
+    ```
+
+3. **Restart the containerd service**:
+    Make configuration changes take effect.
+    ```bash
+    sudo systemctl restart containerd
+    ```
+
+4. **Verify repair results**:
+    Try pulling the image again, and use network tools (such as `tcpdump`, `netstat`) or check the local image repository logs to confirm whether the request is correctly routed to your image repository.
+
+## SRE Key Points
+
+### Association with reliability
+
+* **Deployment Reliability**: Configuration errors will cause the Kubernetes node to be unable to pull images from the specified private image warehouse, causing Pod creation to fail (`ImagePullBackOff`), directly affecting application deployment and updates.
+* **Obscurity**: Due to the lack of clear error logs, this issue consumes a lot of troubleshooting time for the SRE team, especially after new node initialization or cluster upgrade.
+
+### Best practices and common anti-patterns
+
+* **Anti-Pattern**: Use the default configuration directly without checking and adjusting it after generating it, especially in non-standard environments (such as Docker not installed, directory structure different).
+* **Best Practice**:
+    1. **Post-build checks**: Every time after generating a configuration using `containerd config default`, be sure to review key fields, especially `config_path`.
+    2. **Keep paths concise**: On dedicated nodes, it is best to point `config_path` explicitly to the only required directory and avoid using multi-path syntax unless you are sure that all paths exist.
+    3. **Verify configuration**: After modifying the configuration and restarting the service, functional verification (such as `crictl pull`) should be performed immediately, and do not rely solely on the service "starting successfully".
+    4. **Version Control**: Incorporate valid `config.toml` and `certs.d` directory structures into version control (such as Ansible playbook, Puppet manifest) to ensure the consistency of node configuration.
+
+### Related Indicators (SLI/SLO)
+
+* **SLI**: You can monitor the failure rate of `crictl pull` commands, or the frequency of `ImagePullBackOff` occurrences in Kubernetes events.
+* **SLO**: Set a goal, such as "All production nodes must be able to successfully pull the base image required for their namespace within 5 minutes of startup."
+
+This issue highlights the importance of end-to-end verification in infrastructure automation and configuration management. For SRE, understanding such "silent failure" behavior patterns when containers are running is key to building a robust system. You can refer to the [[container-runtime-debugging]] page to learn more about common diagnostic methods for container runtime issues.

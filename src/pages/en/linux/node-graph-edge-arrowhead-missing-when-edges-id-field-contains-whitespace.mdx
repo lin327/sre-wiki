@@ -1,0 +1,49 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'GitHub Issue #104978 - Node Graph: Edge arrowhead missing when edge''s ID"
+category: "可视化与可观测性"
+confidence: medium
+---
+
+## Overview
+
+Node Graph is a powerful visualization plugin in Grafana for displaying distributed systems, microservice dependencies, or network topology. It visually presents the connections and flows between entities through nodes and edges, which is crucial for SRE to perform system-level fault analysis, dependency link tracking, and service mapping. However, a known flaw in its rendering logic causes edge direction arrows to be lost under certain conditions, severely impairing the view's ability to convey critical topological information. This article will analyze the problem based on a specific bug report and provide relevant practical guidance.
+
+## Core concepts
+
+- **Node Graph**: A topological graph visualization, where nodes represent entities (such as services, hosts), and edges represent connections or dependencies between entities (such as request flow, data transmission). In SRE practice, it is often used for service dependency mapping (Service Map) and impact analysis.
+- **Edge Arrowhead**: In a directed graph, edge arrows are used to indicate the direction of data flow or dependencies. The lack of arrows will make the directed edges blurred, and users cannot tell whether it is "source node -&gt; target node" or the reverse relationship, which will cause trouble when tracing the source of faults (such as traffic abnormality traceback).
+- **Edge ID (edge ​​identifier)**: In the Node Graph data model, each edge is usually identified by a unique `id` field. This `id` is not only used for deduplication, but its value is also often used by front-end code to generate the `id` attribute of SVG elements or perform style association. **When this ID string contains spaces (such as `'Edge 1'`), it may break the expected behavior of front-end rendering engines (such as D3.js or SVG processors)**, causing the `<marker>` element or path marker used to draw the arrow to not be applied correctly, causing the arrow to disappear.
+
+## Practice
+
+### Problem recurrence
+
+According to reports, this issue can be reproduced in Grafana v11.6.0 by following these steps:
+1. Add a "Node Graph" panel to the dashboard.
+2. Configure the data source to return two nodes and an edge. The key is that the `id` field value of the edge needs to contain spaces.
+3. Examples of data structures for reproduction are as follows:
+    - **Nodes**: The `id` field contains `"test"` and `"test 2"`.
+    - **Edges**: `source` is `"test"`, `target` is `"test 2"`, and **`id` field is `"test-test 2"` (including spaces)**.
+4. Observe in the panel that the edge should appear as a line segment connecting the two nodes, but the arrow indicating the direction is missing.
+
+### Avoidance methods
+
+Until an official fix is released, the following workarounds are available:
+- **Avoid using spaces in Edge ID**: This is the most straightforward method. When generating data, replace spaces in the ID field with hyphens (`-`), underscores (`_`), or other non-space characters. For example, change `"test-test 2"` to `"test-test_2"`.
+- **Use other unique fields without spaces as Edge ID**: If there are other unique fields without spaces in the data source (such as numeric `requestId`), you can preferentially use it as the `id` of Node Graph.
+
+### Things to note in a production environment
+
+For teams that rely on Node Graph for real-time monitoring, this bug can cause:
+- **Alarm context lost**: When SRE personnel troubleshoot faults based on the service dependency graph, missing arrow edges may mislead their judgment of the direction of fault propagation.
+- **Dashboard reliability decreased**: Unexpected display errors occur in key operation and maintenance dashboards that rely on this view, affecting decision-making efficiency.
+It is recommended to do a quick review of the existing Node Graph dashboard in-house to check if there are edge IDs containing spaces and correct them according to the above circumvention method.
+
+## SRE Key Points
+
+- **Relationship to Observability**: Node Graph is an important component of **system architecture observability**. It provides a macro, topological level view that complements micro data such as indicators, logs, and traces. Its rendering errors (such as missing arrows) directly reduce the "quality" of the architectural information and may mask the true behavior of the system.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: When designing the Node Graph data model, establish a clear naming convention for the `id` field and explicitly prohibit the use of spaces or special characters to ensure its robustness as a "technical identifier". At the same time, add checks for the format of such fields in the CI/CD or data verification process.
+    - **Common anti-pattern**: Using user-oriented business labels (such as `"Request from A to B"`) directly as technical identifiers (`id`), ignoring the need for identifiers to meet the strict requirements of machine parsing.
+- **Relevant Metrics (SLI/SLO)**: While this bug does not directly impact traditional latency or error rate SLI, it does impact the "availability and accuracy of the monitoring system itself"**. Consider "Core Feature Rendering Accuracy of Key Monitoring Panels (such as Dependency Graphs)" as a secondary internal SLI for tracking such issues that impact the reliability of operational views.

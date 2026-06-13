@@ -1,0 +1,41 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana Blog: Faster fixes, less context sharing: how Grafana Assistant"
+category: "可观测性工具"
+confidence: medium
+---
+
+## Overview
+
+In traditional observability tool interactions, when an alarm is triggered and requires assistance from an AI assistant, engineers often need to spend valuable time explaining existing data sources, service architecture, key indicators and other contextual information to them. This repetitive context sharing process significantly delays the initiation of troubleshooting. Grafana Assistant aims to solve this pain point by pre-learning and continuously maintaining a persistent knowledge base about your infrastructure in the background, so that the AI ​​assistant has the necessary environmental awareness when users ask questions, thereby achieving faster and more accurate fault diagnosis.
+
+## Core concepts
+
+At the heart of Grafana Assistant is its “infrastructure memory” or “knowledge base”. This is not a static configuration list, but a searchable semantic knowledge base automatically built and maintained by AI agents. It proactively discovers and learns from your infrastructure by analyzing connected telemetry data sources such as Prometheus, Loki, Tempo.
+
+The learning scope of the knowledge base covers each discovered service group and structured to generate documented knowledge in five key areas:
+1. **Identity and Purpose**: Basic information of the service, its namespace/cluster and technology stack.
+2. **Key Indicators**: Names and labels of indicators actually related to the service, including golden signals such as latency, error rate, traffic, and saturation.
+3. **Deployment topology**: Kubernetes resources, number of replicas, scaling configuration and container details.
+4. **Dependencies**: upstream and downstream service connections, database/cache relationships, message queue interaction and external integration.
+5. **Log structure**: available log tags, detected log formats (JSON, logfmt, etc.), common patterns and extracted field names.
+
+This structured knowledge is stored as searchable shards in a vector database, supporting millisecond-level semantic retrieval, ensuring that assistants can quickly obtain accurate context when needed.
+
+## Practice
+
+Grafana Assistant's knowledge base construction and maintenance process is fully automated and does not require any configuration or management by the user. The workflow is as follows:
+
+1. **Automatic Data Source Discovery**: The agent automatically identifies all connected Prometheus, Loki, and Tempo data sources in the Grafana Cloud stack.
+2. **Parallel Metric Scanning**: The AI ​​agent concurrently queries your Prometheus data sources to discover services, deployments, and infrastructure components.
+3. **Enrichment with logs and link tracing**: Associate Loki and Tempo data sources with corresponding metrics, adding context about log formats, trace structures, and service dependencies.
+4. **Generate structured knowledge**: For each discovered service group, the agent generates documented knowledge covering the five areas mentioned above.
+
+The entire knowledge base is automatically refreshed on a weekly basis to ensure that the assistant's understanding of the infrastructure keeps pace with the evolution of the environment. You can browse discovered service groups at any time in the settings of Grafana Assistant, or manually trigger a scan to refresh the knowledge base in advance.
+
+## SRE Key Points
+
+* **Relevance to Reliability and Incident Response**: Preloaded context can significantly improve incident response times. In an incident, every second counts. Even for experienced engineers, eliminating the context gathering step can save valuable time. For team collaboration, it enables developers who are not familiar with a specific service to accurately query its upstream dependencies, breaking information silos.
+* **Best Practice**: Think of Grafana Assistant’s knowledge base as a dynamic embodiment of your organization’s operational knowledge. Team members are encouraged to engage in exploratory inquiries to promote a shared understanding of the overall system architecture. Regularly check what it has learned (in settings) to ensure its accuracy.
+* **Common Anti-Pattern**: Avoid taking the assistant's final answer as the absolute truth. Its answers are based on an automatically learned knowledge base, and its knowledge may lag if rapid and incompletely perceived changes occur in the environment (such as large-scale temporary changes). For key decisions, it still needs to be verified with real-time data.
+* **Related indicators**: This function directly serves to improve key reliability indicators such as **MTTD** (Mean Time to Detect) and **MTTR** (Mean Time to Recovery). By providing more precise context, it helps define and locate problems faster, potentially reducing the consumption of the Error Budget. For defining **SLO** (Service Level Objective), the key indicators and golden signals learned by the assistant can serve as a valuable starting point and reference.

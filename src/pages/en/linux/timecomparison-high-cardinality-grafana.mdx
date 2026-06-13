@@ -1,0 +1,40 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'TimeComparison: High cardinality #125103'"
+category: "可观测性与监控"
+confidence: medium
+---
+
+## Overview
+
+In the daily work of SRE, comparative analysis of time series data based on Grafana (such as comparing the current period with the previous period) is a key means to troubleshoot performance regressions and discover abnormal traffic patterns. The `TimeComparison` function is designed for this purpose. However, when the monitoring indicator has High Cardinality characteristics (that is, the time series has a large number of unique tag combinations, such as `user_id`, `request_path`), this function may encounter performance bottlenecks or display errors. This page focuses on a known issue with Grafana in this scenario and its fix, aiming to help SREs understand potential risks and adopt best practices.
+
+## Core concepts
+
+- **High Cardinality**: refers to a label (Label) in a time series database (such as Prometheus, Loki) that has a large number of unique values. High cardinality will cause the number of time series to explode, putting tremendous pressure on storage, query, and visualization performance. This is one of the anti-patterns that SREs must carefully control when designing monitoring architecture and SLI.
+- **TimeComparison function**: In Grafana, this usually means enabling the "Compare" option in the Panel settings to display data for the current time period and data for a reference time period in the past on the same chart for visual comparison of trends.
+- **Essence of the problem**: The original Issue states that when a query returns a large number of time series (Many Series), and the comparison window (for example, comparing the past 1 hour) returns a time series label set that is not exactly consistent with the current window, a display error or crash will occur. This is essentially a flaw in data alignment and insufficient processing of high-cardinality scenes at the rendering level.
+
+## Practice
+
+When encountering such problems, you can take the following measures:
+
+1. **Diagnosis and Avoidance**:
+    - **Observe UI Performance**: Panels may take a long time to load, display "No Data", or have JavaScript errors.
+    - **Inspect query result set**: In Grafana's query editor, click Query History or use the Data Inspection view to confirm the number of time series returned. If the number is extremely large (e.g. thousands or more), this issue may be triggered.
+    - **Temporary workaround**: Consider proactively adding or simplifying labels in comparison queries to reduce cardinality. For example, the `user_id` tag is ignored when comparing, and only the `service` level aggregate data is compared.
+
+2. **Upgrades and Fixes**:
+    - **Upgrade Grafana version**: This issue has been fixed in subsequent versions. Make sure your Grafana instance is upgraded to a version that includes this fix (see the link in the official Release Notes or Issue).
+    - **Verification Fix**: After the upgrade, run the high-cardinality comparison query again on the same panel to verify that the display returns to normal.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: The reliability of the monitoring system itself (Monitoring the Monitor) is crucial. Such UI/rendering layer bugs will directly cause the SRE to be unable to effectively use key analysis tools, affecting the speed and accuracy of incident response, which is an **availability degradation**. It reminds us that the stability of monitoring stack components such as Grafana is also part of overall system reliability.
+- **Best Practices and Anti-Patterns**:
+    - **Control Cardinality (Best Practice)**: Avoid high-cardinality labels from source design, or use **Recording Rules** to pre-aggregate high-cardinality data to generate aggregated time series for comparison.
+    - **Sharding and Sampling (Best Practice)**: For high-cardinality raw data that must be preserved, consider using a backend that supports efficient queries (such as Mimir, VictoriaMetrics) or enable sampling.
+    - **Ignore cardinality (anti-pattern)**: Unrestricted use of dynamic user IDs, request IDs, etc. as tags will not only cause such display problems, but also cause a sharp increase in TSDB pressure and slow down queries. In severe cases, it may affect the availability of the entire monitoring platform.
+- **Related Indicators (SLI/SLO)**:
+    - **SLI**: can be defined as "the ratio of the number of successful renderings of the Grafana panel to the total number of attempts when processing the comparison query".
+    - **SLO**: For the core monitoring panel, you can set a goal such as "99.5% of the time the comparative analysis function can respond normally". The fix for this bug directly contributes to achieving this SLO.

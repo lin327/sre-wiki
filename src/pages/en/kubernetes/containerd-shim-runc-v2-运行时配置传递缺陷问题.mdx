@@ -1,0 +1,90 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd/containerd issue #13352: containerd-shim-runc-v2 does not receive"
+category: "容器运行时"
+confidence: medium
+---
+
+## Overview
+
+In containerd v2.2.1, when a non-runc OCI runtime (such as `crun`) is configured as the default runtime through the CRI (Container Runtime Interface) plug-in, the `containerd-shim-runc-v2` process may not receive the correct `BinaryName` parameter from the containerd main process when performing the initial information query (`-info` call). This bug will cause the shim to try to find `runc` in the default path instead of the user-specified runtime (such as `crun`), causing the container to fail to start. For SRE environments that require the use of specific versions or different OCI runtimes (such as `crun`, `kata`, etc.), this issue will directly affect the deployment and scalability of the service.
+
+## Core concepts
+
+### containerd runtime architecture
+
+containerd adopts a layered architecture, where runtime management is implemented through the shim process. `containerd-shim-runc-v2` is the default shim for managing OCI runtimes based on the runc class. When the CRI plugin receives a request to create a container, it starts the corresponding shim process (e.g. `io.containerd.runc.v2`) based on the configured `runtime_type`. Subsequently, the containerd main process will manage the container life cycle through shim.
+
+### The function of BinaryName parameter
+
+In a CRI runtime configuration, the `options.BinaryName` field is used to specify the binary file path of the underlying OCI runtime (e.g. `runc`, `crun`). This parameter is critical because the shim process needs to call this binary to actually create and execute the container (such as performing `create`, `start`, `kill`, etc.). If this parameter is not passed correctly, the shim will fall back to looking for an executable named `runc` in its `$PATH` environment variable, causing the search to fail under the custom installation path.
+
+## Practice
+
+### Problem Reproduction and Diagnosis
+
+1. **Problem**: An error similar to the following appears in the containerd log, indicating that the shim cannot find the specified runtime:
+    ```
+    time="2026-05-06T11:46:58.461730753Z" level=error msg="failed to load runtime info" error="failed to run [/mnt/k8s/bin/containerd-shim-runc-v2-2.2.1 -info]: exit status 1 (stderr: \"io.containerd.runc.v2: failed to look up the path of \\\"runc\\\": exec: \\\"runc\\\": executable file not found in $PATH\")" runtime=/mnt/k8s/bin/containerd-shim-runc-v2-2.2.1
+    ```
+2. **Critical Configuration Check**: The problem usually occurs in the `[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes]` section of the `containerd` configuration file (`config.toml`). A typical problematic configuration example is as follows (corresponding to the scenario using `crun`):
+    ```toml
+    [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.crun]
+      runtime_type = 'io.containerd.runc.v2'
+      runtime_path = '/mnt/k8s/bin/containerd-shim-runc-v2-2.2.1'
+      # ...other options ...
+      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.crun.options]
+        BinaryName = '/mnt/k8s/bin/crun-1.27.1'
+        SystemdCgroup = true
+    ```
+    Although `BinaryName` points to `crun`, it is not used by the `-info` call of the shim process.
+
+### Solution
+
+Currently, the reliable solution to this problem is to upgrade containerd to a version that fixes the flaw. Please check containerd official release notes or related issues for fix version information.
+
+Until a fix is available, the following **temporary workarounds** may be considered (weigh the risks):
+
+1. **Symbolic link or move file**: Copy or link the specified OCI runtime binary file (such as `crun`) to the system `$PATH` and name it `runc`. This is the most direct but inelegant method and may pollute the system environment.
+2. **Modify shim startup environment**: Set a `PATH` environment variable containing a custom runtime path for the `containerd-shim-runc-v2` process by modifying the startup environment or wrapper script of the containerd service. This needs to be done carefully to ensure that other components are not affected.
+
+### Configuration verification
+
+After the problem is resolved, verify that the OCI runtime is correctly recognized:
+1. Use `crictl` or directly call the `-info` command of shim to check the runtime information. A successful call should return JSON information containing the correct runtime path.
+    ```bash
+    /mnt/k8s/bin/containerd-shim-runc-v2-2.2.1 -info
+    ```
+2. Check the containerd log to confirm that there are no more `failed to look up the path of` related errors.
+3. Try starting a simple container and see if it runs successfully and uses the expected runtime (confirm via `docker inspect` or inspecting the process tree).
+
+## SRE Key Points
+
+### Impact on reliability
+
+This issue directly affects the availability of the container runtime and is a P1/P2 level event. Once triggered, it will result in:
+* **Service Deployment Broken**: All new containers that depend on this runtime (including the Pod's Sandbox and user containers) fail to start.
+* **Scaling failure**: Deployment or StatefulSet based on this runtime cannot be expanded, affecting automatic scaling.
+* **Failure recovery blocked**: After a node restart or container crash, the related Pod cannot be rescheduled to the node.
+
+### Best Practices and Anti-Patterns
+
+* **Best Practice**:
+    * **Version Management**: Strictly test and lock the version combination of containerd and its related components (such as shim, runtime), and fully verify before upgrading.
+    * **Configuration as code**: Incorporate `containerd`'s `config.toml` into version control and deploy it uniformly through tools such as Ansible and Puppet to avoid configuration drift.
+    * **Monitoring and Alarming**: Monitor runtime-related errors in containerd logs (such as `failed to load runtime info` in this example), and set alarms to ensure that problems are discovered as soon as possible.
+    * **Standardized Runtime**: Unify the OCI runtime as much as possible across the cluster to reduce the complexity and potential problems introduced by multiple runtime configurations.
+* **Common anti-patterns**:
+    * **Manual modification of node configuration**: Manually modify `config.toml` or binary files on the production node, resulting in inconsistent configuration.
+    * **Ignore log errors**: Turn a blind eye to the error logs of containerd or kubelet and fail to detect potential problems in time.
+    * **Unverified upgrade**: Directly upgrade the core components of the cluster without testing in the pre-release environment.
+
+### Related Indicators (SLI/SLO/SLA)
+
+* **SLI (Service Level Indicator)**:
+    * `pod_startup_success_rate`: Specifies the success rate of Pod transitioning from `Pending` state to `Running` state at runtime. This issue directly causes this metric to drop.
+    * `container_runtime_errors_total` (derived from the Prometheus metric `container_runtime_operations_errors_total` or containerd metric): Count of specific error types (such as runtime startup failures).
+* **SLO (Service Level Objective)**: You can set "the Pod startup failure rate caused by runtime configuration errors to be less than 0.1%".
+* **SLA (Service Level Agreement)**: The level of availability promised to internal customers for workloads supported by a specific runtime.
+
+**Associated pages**: [[containerd]], [[container-cri-runtime]]

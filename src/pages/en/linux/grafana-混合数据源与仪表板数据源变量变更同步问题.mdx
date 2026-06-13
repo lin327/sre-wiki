@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "grafana/grafana#113579"
+category: "仪表板与可视化"
+confidence: medium
+---
+
+## Overview
+
+In Grafana dashboards, variables are the core functionality for dynamic data querying and view interaction. A common SRE practice is to use a `--Mixed --` data source to combine multiple queries, and a `--Dashboard --` data source to reference query results from other panels on the dashboard to build complex derived views or comparative analyses. However, there is a known flaw in this scenario: panels using the `-- Mixed --` data source and containing the `-- Dashboard --` sub-data source do not refresh automatically when the dashboard variables change, and their updates rely on the user manually clicking the refresh button. This issue breaks the intended interaction logic of the dashboard and may cause SRE personnel to make judgments based on outdated data, affecting the reliability of fault response and system monitoring.
+
+## Core concepts
+
+- **Mixed Data Source (`-- Mixed --`)**: A special data source type of Grafana that allows multiple queries from different backend data sources to be configured within a single panel. It does not query data itself, but serves as a routing and aggregation layer for queries.
+- **Dashboard data source (`-- Dashboard --`)**: Another special data source that allows panels to directly reference query results from other panels on the same dashboard. This is often used for data reuse to avoid repeatedly defining complex query logic.
+- **Variable` and refresh mechanisms**: Grafana variables are used in dynamic parameterized queries (e.g., `WHERE region = $region`). When a variable's value changes, Grafana re-evaluates all queries that depend on that variable and updates the corresponding panels.
+- **Data Dependency Chain**: In this problem scenario, there is a data dependency chain: `Variable Change` -&gt; `Update "Main Panel"` -&gt; `"Hybrid Panel" should read the latest results of "Main Panel" through "Dashboard Data Source" and update`. The current flaw is that the last link in the chain is not triggered automatically.
+
+## Practice
+
+### Problem recurrence
+
+According to the issue report, the flaw can be reproduced with the following minimal configuration:
+
+1. **Create dashboard variable**: Create a custom variable (for example, named `example`) with the options `1,10,100`.
+2. **Create main panel**: Create a panel (such as Stat type), and the data source is a regular data source (such as PostgreSQL). Use the above variables in its query (for example, `random() * $example` in SQL).
+3. **Create a Mixing Panel**:
+    * Set the panel's data source to `--Mixed --`.
+    * In the query configuration, set the data source for query A to `--Dashboard --` and point to the ID of the Dashboard created in step 2.
+4. **Validation defect**: Change the value of variable `example`. Observed that the "Main Panel" data is updated but the data of the "Mixed Panel" remains unchanged until the entire dashboard is refreshed manually.
+
+A dashboard JSON that can be directly imported to reproduce this issue is included in the [original Issue](https://github.com/grafana/grafana/issues/113579).
+
+### Solutions and avoidance methods
+
+Before Grafana officially fixes this flaw, SRE can use the following methods to circumvent it:
+
+1. **Avoid using Dashboard data source directly in mixed data sources**: This is the most direct way to avoid it. If you need to correlate results from multiple data sources, consider data aggregation at the back-end service layer, or use other visualization methods (such as report export).
+2. **Use templated queries instead of references**: Instead of using the `--Dashboard --` data source to reference another panel, the same query logic and variable templates are directly configured in each subquery of the "Mixed Panel". Although this increases configuration redundancy, it ensures that each query responds to variable changes.
+3. **Add panel refresh option**: As a temporary measure, automatic refresh can be enabled for the "Hybrid Panel" (set through `Panel -&gt; Options -&gt; Refresh`), but this will bring additional data source request overhead, and the refresh interval may not exactly match the timing of variable changes.
+
+## SRE Key Points
+
+- **Correlation with Reliability**: The accuracy and timeliness of the dashboard are directly related to the SRE's judgment of the system status. The failure of variable-driven dynamic views may cause operation and maintenance personnel to miss key changes and delay incident response. For example, if the data in a dashboard used for troubleshooting is not updated after the variable is changed (such as switching clusters), it will mislead the direction of locating the problem.
+- **Observability Principle**: This problem violates the principle of observability that "data should reflect the true state of the system in a timely manner". Monitoring data “freshness” (Data Freshness) is a key non-functional metric. SREs should test the integrity of variable interactions when building dashboards to avoid such single points of failure.
+- **Best Practices**:
+    * **Test variable-driven views**: Systematically test whether all variable changes trigger expected data updates before key monitoring dashboards go live.
+    * **Simplified Data Flow**: Prioritize simple, straightforward data source configuration. Complex nested references, such as mixed data sources referencing dashboard data sources, can introduce hidden points of failure.
+    * **Documented Known Limitations**: For tool defects that cannot be immediately fixed, their impact scope and workaround methods should be clearly documented in the team's internal documentation.
+- **Related indicators (SLI/SLO/SLA)**:
+    * **SLI**: You can define "the proportion of all panels that automatically complete data refresh within X seconds after the key variables of the dashboard are changed."
+    * **SLO**: For key monitoring dashboards, set an internal goal of "99.9% of variable changes triggering updates to all relevant panels within 10 seconds."
+    SLA SREs need to consider such toolchain limitations when negotiating SLAs with internal users.
+
+This issue reflects the importance of data flow automation in the monitoring tool chain. SREs need to have a deep understanding of the characteristics and limitations of the tools used and incorporate them into system reliability design considerations. Related concepts like [[grafana-variables]] and [[dashboard-design-best-practices]] are also worth learning more about.

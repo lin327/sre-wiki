@@ -1,0 +1,57 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[KEP] csi: global mount fallback for reconstruction'"
+category: "存储与卷管理"
+confidence: medium
+---
+
+## Overview
+
+In a Kubernetes cluster, the node (kubelet) is responsible for managing the storage volumes used by Pods. When a kubelet recovers from a reboot, it requires a "rebuild" process to re-identify and manage previously mounted volumes. If this process fails, it can cause serious reliability problems: the global mount becomes an "orphan", not associated with the Pod, but also not unmounted. [[kubelet-restart]] The problem is that [[attach-detach-controller]] may think that the volume is no longer used by the current node and mount it to another node, eventually causing multiple nodes to mount the same read-write (RWO) volume, causing file system corruption (such as EBS, iSCSI, FC). The fix introduced in this article is for CSI volumes. It prevents such failures and improves the reliability of storage by adding the ability to roll back and read volume data from the global mount directory.
+
+## Core concepts
+
+To understand this fix, you need to clarify the following concepts and their relationships:
+
+* **`vol_data.json`**: This is a metadata file maintained by kubelet for each mounted volume, containing key information needed to reconstruct the volume specification (`volume.Spec`), such as `specVolID` (volume identifier) and `volumeLifecycleMode` (whether `Persistent` or `Ephemeral`). It is one of the "sources of truth" for volume status.
+* **Global Mount**: A mount point created by the CSI driver at the node level and shared by all Pods using the volume (for example, `/var/lib/kubelet/plugins/kubernetes.io/csi/<driver>/<vol>/mount`). A Pod local mount usually points to this global mount through a bind-mount.
+* **Pod local mount**: A mount point located within the Pod sandbox directory and used directly by the Pod.
+* **Volume Reconstruction**: When kubelet starts, the process of discovering and restoring previously mounted volumes by scanning its status directory. It will read `vol_data.json` in the Pod's local directory and global mount directory to reconstruct the volume information.
+* **`VolumeReconstructionFallback` feature gate**: A new alpha feature switch is used to control whether to enable this fallback mechanism.
+
+**Root cause of the problem**: Before repair, if the pod's local `vol_data.json` is missing or corrupted, volume reconstruction will fail. The volume will be marked as failed to rebuild (`volumesFailedReconstruction`), and its `cleanupMounts` process will only try to unmount the Pod's local bind mount, but will not clean the global mount. The result is an active, orphaned global mount remaining on the node.
+
+## Practice
+
+This PR fixes the above issues with two key changes and feature gating:
+
+1. **Enriched global mount `vol_data.json`**: When the `csiAttacher.MountDevice` function creates a global mount, in addition to the original information, it will also write the two fields `specVolID` and `volumeLifecycleMode` to `vol_data.json` in the mount directory. This gives the file all the information necessary to reconstruct `volume.Spec` independently.
+
+2. **Implement fallback logic**: When kubelet's `ConstructVolumeSpec` function attempts to load `vol_data.json` from the Pod's local directory and fails, if the `VolumeReconstructionFallback` feature is turned on, it will call a new auxiliary function `findGlobalMountDataBySpecVolID`. This function scans all CSI global mount paths (`/var/lib/kubelet/plugins/kubernetes.io/csi/*/*/vol_data.json`) for a global `vol_data.json` file that matches a known `specVolID` and uses its data to reconstruct the volume specification. This ensures that global mounts are correctly identified and associated even if Pod local state is lost.
+
+3. **Release via feature gates**: This feature is turned off by default and needs to be explicitly enabled with `--feature-gates=VolumeReconstructionFallback=true`. This allows for progressive deployment and validation in production environments.
+
+**Usage examples and processes**:
+```
+1. kubelet starts, triggering volume reconstruction.
+2. For a CSI volume, try to read its Pod local `vol_data.json`.
+3. (Assumption) The file is lost and the read fails.
+4. Check whether `VolumeReconstructionFallback` is enabled.
+5. If enabled, search for matching `vol_data.json` in all CSI global mount directories of the node through `specVolID`.
+6. After finding it, the `volume.Spec` is successfully reconstructed using the global file information, and the volume is normally associated back to the Pod.
+7. Avoid global mount leaks caused by reconstruction failure.
+```
+
+## SRE Key Points
+
+* **Relationship with reliability and incident response**: This is a typical storage reliability problem caused by software defects, which may cause data corruption (Data Corruption) and is a P0 level event. This fix significantly improves the success rate of storage recovery after kubelet restarts by adding redundant state paths (globally mounted files as fallback), and reduces manual intervention in handling "orphan mount" events. In incident response, if a node is found to have abnormal global CSI mounts and no associated Pods, this known issue can be prioritized.
+
+* **Best Practices and Common Anti-Patterns**:
+    * **Best Practice**: You should evaluate and plan to enable the `VolumeReconstructionFallback` feature gating after upgrading to a Kubernetes version that contains this fix. At the same time, strengthen the monitoring of CSI volume status (such as `node.status.volumesInUse`) and mount point consistency.
+    * **Common anti-patterns**: Ignore volume reconstruction failure alarms after kubelet restarts; focus only on application layer recovery after file system damage, without investigating the correctness of the underlying storage mount status; for clusters using RWO stale volumes, such critical stability fixes are not evaluated and deployed.
+
+* **Related Metrics (SLI/SLO/SLA)**: This issue affects the **Availability** and **Durability** SLI of the storage. Relevant monitoring indicators should include:
+    * `kubelet_volumes_failed_reconstruction_total` (new or existing metric counting volumes that failed to be rebuilt).
+    * Success rate of CSI driver-related mount/unmount operations.
+    * The number of "orphan" global mount points on the node that are not associated with any Pod (can be collected through custom scripts or metrics).
+    * SLO goal: The proportion of application downtime related to storage mounts caused by inconsistent volume status should approach zero.

@@ -1,0 +1,43 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Fix sandbox task API endpoints for non-runc runtimes"
+category: "容器运行时"
+confidence: medium
+---
+
+## Overview
+
+In container orchestration and management platforms, clear abstraction between container runtime interfaces (such as CRI) and underlying runtimes (such as runc, kata-containers, gVisor) is crucial. The issue fixed this time stems from the containerd project erroneously coupling general fields to specific runtime (runc) options when reconstructing the sandbox task API, causing the sandbox task API endpoint to fail in non-Runc runtimes. This change is of great significance to ensure reliability in multi-runtime environments and forward compatibility of APIs. It is a design pattern issue that SREs need to pay attention to when maintaining complex infrastructure.
+
+## Core concepts
+
+- **Sandbox API**: In the containerd architecture, the sandbox provides an isolated execution environment for running one or more containers. The sandbox API is responsible for managing the life cycle of the sandbox, including creation, start, stop, and deletion.
+- **Task API**: Task is the representation of the process in the container on the host. The task API is responsible for managing the life cycle of these processes, such as creation, startup, wait, and deletion.
+- **Runc Options**: This is a configuration structure provided for a specific runtime (in this case runc) and contains parameters that apply only to that runtime.
+- **`CreateTaskRequest`**: This is the core request message structure used to create a new task in the task API, and contains all common parameters required to create a task.
+- **Separation of Concerns**: This is an important software design principle that requires clear separation of code responsibilities for different functional modules. In API design, this means that configuration related to a specific runtime should be encapsulated in its own options, while common, cross-runtime parameters should be placed in a common request structure.
+
+## Practice
+
+The core practice of this fix is to correct the placement of API fields to comply with the separation of concerns principle.
+
+1. **Issue Review**: In the previous implementation (PR #9736), the two fields `Address` and `Version` were incorrectly added to the `RuncOptions` structure. These two fields are actually the basic information used by the sandbox task API for positioning and communication, regardless of whether runc or other runtimes are used.
+2. **Error consequences**: Since these fields are bound in `RuncOptions`, when using non-Runc runtime (such as the scenario discussed in PR #12986), the system cannot obtain the correct sandbox task API address and version information, causing the process to fail.
+3. **Repair**:
+    - **Deprecated error fields**: Deprecate or remove the `Address` and `Version` fields in `RuncOptions`.
+    - **Migrate to Generic Request**: Migrate these two fields into the more generic `CreateTaskRequest` message structure. In this way, any runtime can obtain the necessary API connection information through this common request when creating a task.
+    - **Backwards Compatibility**: Fixes need to consider the impact on existing clients using older APIs, possibly through version negotiation or providing a compatibility layer to smooth the transition.
+
+This fix, while minor, clearly demonstrates the importance of properly demarcating the boundaries between "platform-generic logic" and "runtime-specific logic" in API design.
+
+## SRE Key Points
+
+- **Reliability Impact**: This issue directly affects the reliability of Kubernetes clusters or other containerd users using non-Runc runtimes. Failure to create the sandbox task correctly will cause the Pod to fail to start, affecting the normal operation of the workload.
+- **Observability Correlation**: When troubleshooting such issues, SREs need to be able to clearly trace the API call chain from the scheduling layer to the underlying runtime. Incorrect field placement can obscure this link, making it difficult for error logs (such as "Unable to connect to the sandbox task server") to point to real design flaws.
+- **Best Practices and Anti-Patterns**:
+    - **Anti-Pattern**: Place common, basic facility communication parameters (such as service address, version) in runtime-specific configuration options. This is overcoupling and violates the open-closed principle (open to extension, closed to modification).
+    - **Best Practice**: Always keep the API structure clear and common. Generic parameters should be placed in generic requests/responses, and implementation-specific configuration should be encapsulated within its own options structure. This helps support multiple backend implementations and simplifies client development.
+- **Relevant Metrics and SLOs**: For platforms running containerd, you can pay attention to the following SLI to ensure the stability of such issues:
+    - `containerd_sandbox_create_request_total{result="success|error"}`: The success rate of sandbox creation requests.
+    - `containerd_task_create_request_total{runtime="runc|kata|..."} `: Task creation success rate broken down by runtime. If you find that the task creation success rate of non-Runc runtimes is significantly lower than that of Runc, it may indicate similar design coupling issues.
+- **Related pages**: [[containerd-architecture]], [[container-runtime-interface]]

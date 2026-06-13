@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Dashboards: repeated rows get mixed up (GitHub Issue #96537)'"
+category: "可观测性和告警"
+confidence: medium
+---
+
+## Overview
+
+Repeated Rows is a key feature in Grafana dashboards that allows users to dynamically generate an identical set of row layouts based on template variables such as environment, service name, or instance. This is critical for building scalable, reusable monitoring views. However, as reported in Grafana GitHub Issue #96537, a regression flaw was introduced in version 11.3.0, causing when multiple duplicate rows using the same variable are defined on the same dashboard, the resulting final row layout order is out of order and fails to be continuously rendered in the expected order. This problem directly affects the readability of the monitoring dashboard and the accuracy of data presentation, and may cause trouble for SREs in their daily troubleshooting and performance analysis work.
+
+## Core concepts
+
+1. **Repeated Rows**: A feature in Grafana that allows users to configure a row (Row) to dynamically replicate multiple copies based on multiple values of a selected variable. Each copied row carries the same panel layout, but the data is filtered or grouped based on the variable value corresponding to that row.
+2. **Template Variable and Multiple Selection**: Variable drop-down menu at the top of the dashboard. When a variable is configured as "multi-select", the user can select one or more values. The repeat row functionality usually relies on a multi-select variable like this to generate a row for each value selected.
+3. **Layout Order**: refers to the vertical order of rows in the dashboard. In normal repeating row behavior, for a dashboard with variable `V` defined and containing rows `R1` and `R2`, when variable `V` has the value `[a, b]` selected, the expected sequence of generated rows would be: `R1-a, R1-b, R2-a, R2-b`. Repeated instances (`a`, `b`) of each line definition (`R1`, `R2`) should be kept consecutive, and instance groups defined in different lines should also be arranged in the order of `R1`, `R2`.
+4. **Regression Bug**: Refers to the abnormality of functions that originally worked normally in the new version of the software. In this case, the user confirmed that they did not encounter this problem in Grafana version 11.2.2, indicating that version 11.3.0 introduced a code change that broke the sorting logic of duplicate rows.
+
+## Practice
+
+According to the reproduction steps provided in the Issue, the following is the operation process to reproduce this bug in Grafana 11.3.0 version:
+
+1. **Create dashboard and variables**:
+    - Create a new blank dashboard.
+    - Create a variable in the dashboard settings (e.g. named `env`).
+    - Set the variable type to 'Custom' and enter multiple values ​​(e.g. `a, b`) in 'Custom Multi-Value'.
+    - Make sure the "Enable multiple selection" option is checked.
+
+2. **Configure duplicate rows**:
+    - Add two empty rows to the dashboard.
+    - Enter edit mode for the first line. In the row's settings, find the "Repeat" option and select the variable `env` created in step 1.
+    - Similarly, enter edit mode for the second line and set the same repeated variable `env` for it.
+
+3. **Trigger and observe the problem**:
+    - Return to dashboard viewing mode.
+    - In the variable drop-down menu at the top, select both the values ​​`a` and `b`.
+    - Observe the resulting row layout. In buggy versions, the generated row order may be out of order, for example: `R1-a, R2-a, R1-b, R2-b` or other non-consecutive, interleaved arrangements instead of the expected `R1-a, R1-b, R2-a, R2-b`.
+
+4. **Validate using sample JSON**:
+    - This Issue provides a dashboard JSON file ([grafana-repeated-rows.json](https://github.com/grafana/grafana/issues/96537)) containing the above configuration. This JSON can be loaded via Grafana's "Import Dashboard" feature to verify the issue directly in the affected version (11.3.0).
+
+For SREs, the key is understanding the impact of this bug: it won't cause data loss or query failure, but it will severely disrupt the visual logic and readability of the dashboard. When the order of rows is out of order, it is difficult for engineers to quickly locate the panel of a specific environment or instance, which increases the cognitive load and time cost of troubleshooting.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: The dashboard is the core interface of the monitoring system, and the certainty and predictability of its own layout is part of "Usability" (Usability). A confusingly laid out dashboard reduces the efficiency of transmitting monitoring information and indirectly affects the team's perception and response speed of the system's reliability. This bug weakens the "interface reliability" of the monitoring system.
+- **Best Practices and Avoidances**:
+    - **Version Review and Testing**: Before upgrading core monitoring components like Grafana, the functionality of key dashboards (especially those using complex repeating row layouts) should be verified in a test environment. This example shows that even a point version upgrade (11.2.2 → 11.3.0) can introduce breaking changes.
+    - **Version Rollback**: If this problem is discovered after upgrading and dashboard layout is a key requirement, consider rolling back to a version that has been verified to be normal (such as 11.2.2) until the upstream fix is ​​released.
+    - **Follow upstream updates**: Subscribe to notifications for this GitHub Issue to get fix status and subsequent version updates. The Grafana team usually prioritizes bugs that affect user experience.
+- **Relevant Metrics (SLI/SLO)**: While this issue does not directly result in technical SLI (e.g. error rate, latency), it affects **effectiveness of monitoring observability**. Think of it as an indirect metric that measures "dashboard layout correctness" or "monitoring interface user experience". A stable dashboard layout is a prerequisite for SREs to work efficiently.
+- **Incident Response Implications**: During troubleshooting, if the dependent Grafana dashboard has an abnormal layout, the SRE should first consider whether it is a known front-end display bug, and try to conduct preliminary verification by refreshing the page, switching browsers, checking versions, etc., to avoid misjudgment as a back-end data problem, thereby saving troubleshooting time.

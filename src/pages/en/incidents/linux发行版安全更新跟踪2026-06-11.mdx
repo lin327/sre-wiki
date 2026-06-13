@@ -1,0 +1,57 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Security updates for Thursday"
+category: "事件响应与维护"
+confidence: medium
+---
+
+## Overview
+
+Regular tracking and timely application of security updates for operating systems and software packages is one of the core responsibilities of site reliability engineering (SRE) and operation and maintenance teams to maintain system security and stability. This page summarizes security update notices released by multiple mainstream Linux distributions on June 11, 2026. These updates usually include fixes for known vulnerabilities (CVE) and are key operations to prevent security incidents and reduce system risks. The SRE team needs to establish mechanisms to obtain this information on a regular basis and incorporate it into regular maintenance and change management processes.
+
+## Core concepts
+
+- **Security Update Announcement**: Published by the Linux distribution maintenance team to inform users that a specific software package has a security vulnerability and provide a new version of the package that has fixed the vulnerability. Ignoring these updates may expose your system to known attacks.
+- **Package managers**: such as `dnf`, `apt`, `zypper`, are the main tools for obtaining and installing these security updates. SRE automation processes should integrate these tools to automate patch management.
+- **Scope of Impact**: Different updates target different components (such as kernel, encryption library, network services, web server). Assessing the impact of each update on the production environment is a prerequisite for developing a deployment plan.
+
+## Practice
+
+1. **Get and check for updates**:
+    SRE teams should subscribe to the relevant distribution's security mailing list or monitor aggregated information sources like [LWN.net](https://lwn.net/). After receiving the update information, you can use the corresponding command on the affected server to check the specific update status. For example:
+    ```bash
+    # On RHEL-based systems (AlmaLinux/Red Hat/Oracle)
+    dnf updateinfo list security
+
+    # On Debian/Ubuntu
+    apt list --upgradable | grep -i secur
+
+    # In SUSE
+    zypper patch --category security --dry-run
+    ```
+
+2. **Planning and Deployment**:
+    All updates should not be applied blindly and automatically. The [[change-management]] process needs to be followed:
+    - **Assessment**: Check the update announcement details (such as CVE numbers) to determine its impact on specific services in this environment (for example, a Samba update may only affect the file server).
+    - **Testing**: Verify installation and functionality first in a pre-release or test environment to ensure updates will not cause service interruptions or compatibility issues.
+    - **Deployment**: Schedule maintenance windows and deploy in batches using configuration management tools (such as Ansible, Salt) or directly through the package manager. The health status of critical services must be verified after updating.
+
+3. **Verification and Recording**:
+    After the update is completed, confirm that the service indicators are normal through the monitoring system ([[observability]]) and check the system logs for any abnormalities. All changes, including security updates, should be documented, including which packages were updated, which systems were affected, when they were completed, and a rollback plan if necessary.
+
+## SRE Key Points
+
+- **Link to Reliability**: Unpatched security vulnerabilities are a significant reliability risk. Attackers exploiting vulnerabilities may cause data leakage, service interruption, or complete control of the system, resulting in serious [[incident-response]] incidents.
+- **Best Practices**:
+    - **Automation**: Implement automatic detection, testing and deployment pipelines (such as GitOps workflow) for security updates as much as possible.
+    - **Prioritization**: Prioritize updates based on CVSS score and asset importance, high-severity vulnerabilities on critical assets should be addressed immediately.
+    - **Patch Windowing**: Establish regular patch management cycles (e.g. monthly) and reserve fast lanes for "urgent" security updates.
+- **Common anti-patterns**:
+    - **Not updated for a long time**: System patches are shelved for a long time, resulting in a large backlog of security updates.
+    - **Direct deployment without testing**: Directly executing commands such as `yum update` in the production environment may cause compatibility issues.
+    - **Ignoring non-core system updates**: Believing that the development or testing environment does not need to strictly manage patches, this will become a springboard for attackers to move laterally.
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI** related to patch management can be defined, such as "the proportion of critical security patches deployed to the production environment within 7 days of the announcement".
+    - This ratio can be used as an **SLO** target for team operations efficiency. If patch deployment is not timely and leads to security incidents, it will directly affect user-facing [[service-level-agreement|SLA]] (such as availability commitments).
+
+This update involves many widely used core components such as [[postgresql-jdbc]], [[kubernetes]], [[openssh]], [[samba]], [[kernel]], etc. The operation and maintenance team should immediately check their own technology stack and start the corresponding evaluation and update process.

@@ -1,0 +1,40 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "The Schedule for the PromCon Europe 2023 is Live"
+category: "社区与事件"
+confidence: high
+---
+
+## Overview
+
+PromCon Europe 2023 is the eighth international conference entirely dedicated to Prometheus monitoring systems, taking place in Berlin, Germany, from September 28 to 29, 2023. As a flagship event jointly organized by CNCF and the Prometheus team, this conference brings together Prometheus users and developers around the world to exchange knowledge, best practices, and insights gained from using Prometheus in large-scale production environments. For SRE practitioners, this conference is a valuable window to understand the cutting-edge development of the Prometheus ecosystem, optimization of monitoring architecture, and cloud native cost management.
+
+## Core concepts
+
+The agenda of this meeting reveals several core evolution directions of the Prometheus ecosystem in SRE practice:
+
+1. **Open standards integration**: The topic `Towards making Prometheus OpenTelemetry native` points to the deep integration of Prometheus and OpenTelemetry, the observability framework standard. This means that future monitoring data collection, transmission and processing will be more seamlessly connected to unified telemetry standards, which is crucial to building an observability platform for heterogeneous environments.
+2. **Very large-scale monitoring**: `How to Monitor Global Tens of Thousands of Kubernetes Clusters with Thanos Federation` focuses on using Thanos (a high-availability extension of Prometheus) and the federation mechanism to deal with the monitoring challenges of thousands of Kubernetes clusters on a global scale. This involves monitoring system scalability, data aggregation strategies and long-term storage architecture design.
+3. **Multi-dimensional cost optimization**: The topic `Where's your money going? The Beginners Guide To Measuring Kubernetes Costs` directly hits the core pain point of the SRE team - directly linking resource consumption (CPU, memory, storage) and cost. Achieving granular measurement of Kubernetes costs through monitoring is a key step in achieving FinOps (cloud financial management).
+4. **Tool chain evolution**: `Prometheus Java Client 1.0.0` and `Perses` represent the maturity and expansion of the monitoring tool chain itself. The former marks the stability of the Prometheus indicator bureau client API, while the latter may provide new visualization or declarative configuration capabilities for the Prometheus ecosystem.
+
+## Practice
+
+The 21 full-length speeches and up to 20 lightning speeches at this conference provide the SRE team with a practical blueprint for applying Prometheus to complex scenarios:
+
+- **Implement multi-cluster federated monitoring**: Based on the practices of Thanos and Prometheus federation, the SRE team can design a hierarchical monitoring architecture. The Prometheus instance of the underlying cluster is responsible for local high-fidelity collection, while the upper-level global Thanos Querier or federated node is responsible for cross-cluster data aggregation and global query, thereby achieving a global view while ensuring data locality.
+- **Integrating OpenTelemetry**: The practical direction is to use OpenTelemetry Collector as a unified telemetry data pipeline to receive signals from different technology stacks (such as logs, tracking, indicators). Prometheus can be used as one of the metric exporters or obtain metrics directly from the OTel Collector, simplifying data collection in hybrid cloud environments.
+- **Cost measurement implementation**: SRE can deploy cost allocation tools (such as Kubecost, OpenCost) in Kubernetes. These tools use the underlying resource indicators (such as node CPU, memory allocation) collected by Prometheus, combined with cloud service provider billing data or predefined prices, to calculate the cost of each namespace, deployment or service. These cost metrics can then be used to set budget alerts, optimize resource requests, or drive architectural decisions.
+- **Client library best practices**: Using official client libraries such as the stable version of `Prometheus Java Client 1.0.0` can ensure the standardization, consistency and long-term maintenance of indicator exposure, and reduce monitoring data quality or compatibility issues caused by client inconsistencies.
+
+## SRE Key Points
+
+PromCon topics closely focus on the core goals of SRE: **reliability, observability, and efficient operation and maintenance**.
+
+- **Relationship with Reliability and Observability**: Large-scale monitoring (Thanos Federation) is the basis for ensuring the reliability of distributed systems. It enables SRE to quickly locate the impact area and root cause of faults from a global perspective. OpenTelemetry integration promotes more comprehensive observability (metrics, logs, tracing correlations) and provides a data foundation for more accurate SLO definition and Error Budget management.
+- **Best Practices and Common Anti-Patterns**:
+    * **Best Practices**: Embrace open standards (such as OpenTelemetry) to reduce the risk of vendor lock-in; leverage mature scaling solutions (such as Thanos) to solve scale bottlenecks; use cost monitoring as an important part of reliability monitoring.
+    * **Common anti-patterns**: Relying only on a single Prometheus instance in a large-scale environment leads to query performance and storage bottlenecks; monitoring and cost data are separated, making effective resource optimization impossible; using unofficial or outdated client libraries creates hidden maintenance risks.
+- **Relevant Metrics (SLI/SLO/SLA)**: While this session focuses on monitoring the system itself, the techniques discussed directly serve to define and measure user-facing **Service Level Indicators (SLI)**. For example, with improved global monitoring, service availability (as SLI) can be calculated more accurately, allowing for the development of reasonable Service Level Objectives (SLOs) and Service Level Agreements (SLAs). Although the cost indicator is not directly SLI, excessive or uncontrolled resource consumption will affect the long-term sustainability and reliability of the service, and indirectly affect the ability to achieve SLO.
+
+By participating in such community activities and applying the practices discussed, SRE teams can continue to improve the maturity of their monitoring systems, thereby more effectively ensuring the reliability of complex systems. For more community activities and discussions, please refer to [[prometheus-observational]].

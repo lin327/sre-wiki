@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana GitHub Issue"
+category: "故障排除"
+confidence: high
+---
+
+## Overview
+
+When Grafana performs a version upgrade, its backend will execute a database migration (DB Migration) script to update the table structure or data. This process is highly dependent on the database driver and version-specific features supported by Grafana. The issue described in this article is a critical compatibility error that occurs when interacting with MariaDB 10.11.6 databases when upgrading Grafana from 11.5.4 to 11.6.1. This problem will cause Grafana to fail to start. The migration command execution is interrupted when initializing the resource database, and the error message is `Unknown system variable 'transaction_isolation'`. Understanding this issue is critical to ensuring a smooth upgrade of Grafana in a mixed database environment.
+
+## Core concepts
+
+The core of this error is that the database driver (or proxy layer) used by Grafana 11.6.1 version uses variable names that are not recognized by the current MariaDB version when trying to set or read the database transaction isolation level.
+
+- **`transaction_isolation` and `tx_isolation`**: These are system variables used to define the database transaction isolation level. In MySQL 5.7 and later, and MariaDB 10.5.1 and later, the standard variable name is `transaction_isolation`. However, in MariaDB 10.5.0 and earlier, the variable name is still the old-style `tx_isolation`. Grafana's database connection layer needs to correctly identify the backend database type and version to query or set using the corresponding variable names.
+- **Database Version Compatibility**: As a fork of MySQL, MariaDB remains compatible in many aspects, but there are subtle differences in some system variable naming, default values, or behavior. Applications such as Grafana rely on their ORM or database driver to handle these differences automatically. This type of incompatibility error occurs when the driver cannot accurately determine the database type and version.
+- **Grafana Resource Server**: The `Resource Server` mentioned in the error message is an internal component introduced by Grafana 11.x for managing teams, permissions and other functions. It has an independent database schema, and its initialization and migration process first triggered this error.
+
+## Practice
+
+### Problem Diagnosis
+1. **Confirm the source of the error**: During the upgrade process, the Grafana container log will clearly display the error `Error 1193 (HY000): Unknown system variable 'transaction_isolation'`. This indicates a SQL-level error that occurred during the execution of the database migration script.
+2. **Verify database version**: Use the `SELECT version();` command to confirm the specific version of MariaDB used. In this case `10.11.6-MariaDB`, which is supposed to support the `transaction_isolation` variable. The root of the problem is more likely to be the response strategy of the Grafana driver to the "MariaDB" type identifier, rather than the lack of the variable itself.
+3. **Check community and official channels**: This issue has been reported in Grafana GitHub Issues (#104582), indicating that this is a known compatibility flaw.
+
+### Solutions and temporary workarounds
+Currently (as of April 2025), the root cause of this issue is being tracked internally within Grafana, and a final fix awaits an official release with a patch. The following temporary measures can be taken until a fix is released:
+
+1. **Keep the current Grafana version temporarily**: If the functions meet the requirements, you can not upgrade to 11.6.1 temporarily and wait for subsequent versions (such as 11.6.2 or 11.7.x) to fix this problem.
+2. **Adjust the Grafana database connection string configuration (may be effective in some scenarios)**: Some community users try to specify different parameters for the MySQL connection in Grafana's `grafana.ini` configuration, or use different database driver parameters to "trick" the driver into using `tx_isolation`. This method has mixed results and needs to be tested with caution.
+    ```ini
+    [database]
+    type=mysql
+    # Try to add or modify driver parameters
+    parameters = parseTime=true&charset=utf8mb4&loc=Local
+    ```
+3. **Upgrade MariaDB version**: Upgrade MariaDB to 10.6 or higher. The new version not only supports `transaction_isolation` natively, but may also improve compatibility with various client drivers. This is a fundamental way to solve the problem from the environmental level.
+4. **Rollback the Grafana version**: If the upgrade fails and cannot be repaired, you need to roll back Grafana to the previous normal version (such as 11.5.4), and ensure that the database file has not been irreversibly modified (Grafana migration usually records the version number, and database compatibility needs to be evaluated before rolling back).
+
+## SRE Key Points
+
+- **Reliability and Incident Response**: This case is a typical **software upgrade failure** event. It emphasizes the importance of fully testing before any production upgrade in a **pre-release environment** that is as consistent as possible with the production environment. SREs need to have a clear rollback plan for upgrades.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Maintain a clear component compatibility matrix (such as Grafana version vs database version); combine infrastructure as code (IaC) with configuration management to ensure that the test environment and production environment configurations are isomorphic.
+    - **Anti-Pattern**: Perform a major version upgrade of the database or core application directly in the production environment without testing; ignore warning messages in the application log.
+- **Related indicators**:
+    - **SLI/SLO**: Although it does not directly correspond to an SLI, failure to upgrade will affect the **availability** of the service. "Core service (e.g. Grafana) upgrade success rate" can be tracked as an internal **SLO**.
+    - **Error Budget**: Such upgrade incidents will consume the **Availability Error Budget**, prompting the team to plan the release cadence and testing process more rigorously.
+- **Observability correlation**: Complete logs (such as Grafana startup logs), indicators (such as database connection status) and alarms (such as Grafana process survival monitoring) can help SRE quickly discover new problems after the upgrade.
+
+## Related pages
+- [[database-configuration]]
+- [[database-migration]]
+- [[observability-fundamentals]]

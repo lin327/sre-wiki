@@ -1,0 +1,79 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[Sev2] New annotation: Color label is not programmatically associated with"
+category: "可观测性与前端"
+confidence: medium
+---
+
+## Overview
+
+This document documents in detail an important web accessibility (Accessibility, referred to as A11y) issue in Grafana. This issue affects users of screen readers (e.g. NVDA, JAWS, Narrator) who are unable to correctly understand the functional context of the "Pick a color" button through assistive technologies when creating new annotations. As SREs, we not only focus on system reliability but also ensure product accessibility to meet broader user needs, regulations (e.g. WCAG, Section 508) and provide a seamless user experience. An inaccessible interface will become a "user experience breakpoint" in service reliability. Especially during emergency troubleshooting, operation and maintenance personnel who rely on screen readers may encounter obstacles.
+
+## Core concepts
+
+### Web Content Accessibility Guidelines (WCAG)
+
+WCAG is an internationally recognized standard for web content accessibility. This issue directly violates **WCAG 2.1 Guideline 4.1.2 (Name, Role, Value)**. This guideline requires that for all user interface components (such as buttons, input boxes), their name (Label), role (such as button), and current value (State) must be programmatically determined by assistive technology.
+
+### Programmatic association
+
+In HTML, the `<label>` element is associated with the `id` of a specific form control through the `for` attribute, or the control is nested directly inside the `<label>`. This association allows screen readers to correctly read the description text associated with the control. In this issue, the "Color" label and description text do not establish such an association with the "Pick a color" button, causing the screen reader to only read the text of the button itself ("Pick a color") and lose key contextual information ("Color to use for the annotation event markers").
+
+### Screen Reader
+
+Screen readers are the primary assistive technology for visually impaired users using computers. It converts visual information on the screen into an accessible form through speech synthesis or braille output. Proper programmatic markup is fundamental to ensuring that screen readers are able to provide accurate information.
+
+## Practice
+
+### Problem recurrence
+
+According to the original issue report, it can be reproduced in Grafana version 12.2.0 by following these steps:
+
+1. Create or edit a dashboard.
+2. Enter the Annotations tab and click the "New query" button.
+3. In the "New Annotation" dialog box, find the "Pick a color" button.
+4. Use a screen reader (NVDA, JAWS, or Narrator) to navigate to the button.
+
+**Actual broadcast result**: `"Clickable, Pick a color, button"` — label and description missing.
+
+**Desired broadcast result**: `"Color. Color to use for the annotation event markers. Pick a color, button."` — Contains complete labels, descriptions, and roles.
+
+### Repair ideas and verification
+
+From an SRE and front-end development perspective, fixing this issue requires ensuring that the component implementation complies with the A11y specification. This usually involves:
+
+1. **Code level**: In components such as React/Vue that render the "Pick a color" button, use the `aria-labelledby` or `aria-describedby` attributes, and point their `value` to the `id` of the DOM element containing the "Color" title and descriptive text respectively. Alternatively, wrap the button with a parent `<label>` element containing a title and description (if semantically appropriate).
+2. **Test Level**: Integrating automated accessibility testing tools (such as axe-core) into the CI/CD process can capture such basic issues. More importantly, manual testing with real screen readers needs to be included in the release process, especially after modifying relevant UI components.
+
+### Monitoring and Metrics
+
+While this issue is not a runtime error per se, as SREs we can incorporate it into monitoring and quality metrics by:
+- **Accessibility Compliance Scan**: Run automated scans of key pages in your production environment on a regular basis to track trends in the number of violations of WCAG rules.
+- **User Feedback Analysis**: Classify and track accessibility-related issues from user support channels as an indicator of system health.
+
+## SRE Key Points
+
+### Association with reliability
+
+Product accessibility is a component of generalized reliability. An inaccessible interface means that it is "unreliable" to a specific group of users. For SRE, if the on-duty engineer relies on a screen reader during a fault, and such flaws in the tool interface will seriously affect the efficiency of incident response (Incident Response). Therefore, it makes sense to track and prioritize accessibility flaws as a "user experience disruption."
+
+### Best practices and common anti-patterns
+
+- **Best Practices**:
+    - Consider accessibility (Shift-Left Accessibility) early in development.
+    - Use semantic HTML elements (such as `<button>`, `<input>`) instead of semantically unsemantic `<div>` to build interactive components.
+    - Provide clear, programmatically relevant labels for all interactive components.
+    - Ensure color contrast meets WCAG AA standards.
+- **Common anti-patterns**:
+    - Rely solely on visual position (such as "text next to button") to imply control purpose.
+    - Use CSS to hide necessary label text (unless specific A11y hiding techniques are used, such as the `sr-only` class).
+    - Ignore the assistive technology test and do the visual test only.
+
+### Related indicators (SLI/SLO/SLA)
+
+While there is no direct SLI, accessibility can be incorporated into broader user experience SLOs:
+- **SLI Example**: "Coverage via automated accessibility checks during key user journeys (e.g. creating dashboards, configuring alerts)".
+- **SLO Example**: "95% WCAG 2.1 Level AA compliance for product core functionality".
+- **Association with SLAs**: For products that serve enterprise customers or government agencies (such as Section 508 compliance), accessibility compliance may be part of a contractual or regulatory requirement.
+
+Related page references: [[grafana-accessibility-checklist]], [[incident-response-runbook]], [[slo-best-practices]]

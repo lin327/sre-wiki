@@ -1,0 +1,42 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "One Year of Open Prometheus Development"
+category: "监控与可观测性"
+confidence: medium
+---
+
+## Overview
+Prometheus is an open source system monitoring and alerting toolkit known for its multidimensional data model and powerful query language (PromQL). It is particularly suitable for modern cloud-native environments based on container and microservice architectures. By reviewing the first year after its public release, this article reveals how the open source community, ecological construction, and engineering practices jointly promote the success of a monitoring tool, and extracts important implications for site reliability engineering (SRE).
+
+## Core concepts
+Prometheus's success is built on several core design philosophies and models that were articulated in the project's early public stages and have shaped its subsequent development direction.
+
+**Open source and community-driven development**: Although the Prometheus project started on GitHub in 2012, it was officially made public in January 2015 after more than two years of internal maturity and production verification on SoundCloud. This "internal incubation, cautious disclosure" strategy ensures the stability of core functions. After being made public, the project quickly attracted attention on platforms such as Hacker News and attracted a large number of high-quality contributors. The community not only contributed code fixes and new features (such as service discovery for Kubernetes, EC2), but also created a large number of **Exporters** to translate existing system metrics into Prometheus' data model, greatly expanding its ecosystem.
+
+**Pull model and multidimensional data model**: Prometheus adopts a model that actively pulls (Pull) indicators, which makes it more suitable for dynamic and elastic cloud-native environments. Its data model is centered on indicator names and key-value pairs (Labels), supports highly flexible queries and aggregation, and provides a strong foundation for in-depth analysis of system behavior.
+
+**Ecosystem & Integration**: The project’s growth is reflected not only in the core code, but also in the broad ecosystem. The community has contributed many tools, and popular visualization tools such as Grafana have also added native support for Prometheus, forming a complete closed loop from collection, storage, query to visualization and alerting. This ecological synergy is key to Prometheus’s rapid adoption.
+
+## Practice
+Based on the development history of Prometheus, we can summarize the following experiences and specific operating modes applicable to SRE practice.
+
+**From internal success to open source release**: Before making a monitoring tool open source, it must be polished and verified in an internal production environment for a long time (such as Prometheus for two years). This ensures the reliability and usefulness of the tool and is the basis for building trust in the community. Public launches should be accompanied by a clear website, documentation, and blog introduction, and be prepared to receive feedback from early users.
+
+**Building and bootstrapping healthy communities**: The Prometheus team’s experience shows that early adopters tend to be high-quality technology users and contributors. When leading open source projects, the SRE team should actively interact with the community through mailing lists, IRC/Discord, GitHub Issues and other channels to encourage constructive discussions and contributions. The initial attention a project receives (like a Hacker News hit) is a double-edged sword, requiring the team to respond quickly to ensuing support and development needs.
+
+**Ecology first, focus on core**: Faced with community demand for visualization tools (such as PromDash), the Prometheus team made a key strategic decision: to focus on the enhancement of core monitoring functions (such as new query language features, configuration hot loading, service discovery), and integration with Grafana as the main way to improve user experience. This "focus on the core, empower the ecosystem" model is worth learning from the SRE team, that is, clarifying its core responsibilities (such as providing reliable indicators and alerts) and actively collaborating with mature ecosystem partners.
+
+**Technical Roadmap and Version Management**: At the end of the first year of public disclosure, Prometheus has clarified its next technical focus: improving Alertmanager, supporting long-term storage integration, and releasing a stable 1.0 version. For tools or platforms maintained by SREs, formulating a clear and transparent technical roadmap and managing the community's expectations for stable versions (such as 1.0) are the guarantee for the long-term healthy development of the project.
+
+## SRE Key Points
+Prometheus' development history and best practices are closely tied to the core SRE principles.
+
+**Association with reliability, observability, and event response**: The real-time indicator capture, multi-dimensional storage and powerful PromQL query capabilities provided by Prometheus are the cornerstones of building an observability system. It enables SRE teams to quickly define and track **Service Level Indicators (SLI)** to establish **Service Level Objectives (SLOs)**. An SLO-based Error Budget strategy can guide release speed and troubleshooting decisions. Its built-in alarm manager and rich alarm routing and grouping functions are key triggers and information sources for the incident response process.
+
+**Best Practices and Common Anti-Patterns**:
+* **Best Practice**: Adopt the concept of "monitoring as code" and incorporate Prometheus' configuration, dashboard and alarm rules into version control; design a reasonable label structure to avoid performance problems caused by high cardinality labels; combine Prometheus with infrastructure as code (such as Kubernetes) and use its service discovery mechanism to achieve automated monitoring.
+* **Common anti-patterns**: Rushing to open source the tool without sufficient internal verification; ignoring community feedback and contributions, causing the project to stagnate; trying to build a large and comprehensive "Swiss Army Knife" monitoring platform instead of focusing on core data storage and query capabilities and letting the ecosystem solve peripheral needs.
+
+**Related metrics (SLI/SLO/SLA)**: Although this article does not directly define specific SLIs, Prometheus's capabilities make it possible to define and measure various SLIs, such as: HTTP request success rate (`sum(rate(http_requests_total{code=~"2.."}[5m])) / sum(rate(http_requests_total[5m]))`), request latency (using `histogram_quantile`) calculation), service availability (based on probe or liveness probe metrics). These SLIs are the technical basis for developing SLOs and final SLAs.
+
+For related concepts, please refer to [[prometheus-architecture]] and [[alerting-practices]].

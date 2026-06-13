@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd PR #12954: adhere to runc 1.4 oci standard where pid.limit 0"
+category: "容器运行时"
+confidence: high
+---
+
+## Overview
+
+In a containerized environment, limiting the number of container processes (PIDs) is a key means to prevent resource exhaustion, ensure system stability, and implement security policies. `pid.limit` is a key configuration item defined in the OCI (Open Container Initiative) runtime standard, which is used to specify the maximum number of processes allowed to be created in a container. Recently, with the refinement of the OCI standard in runc version 1.4, the semantics of a `pid.limit` value of `0` has undergone important changes. This document is intended to explain the core of this change, its implementation in containerd, and what you need to pay attention to as an SRE.
+
+## Core concepts
+
+**Process Limit (PID Limit)**: PID Limit is a resource limit of the container cgroup. It controls the total number of processes that a container and all its child processes can create. Setting a reasonable PID Limit can effectively prevent malicious or unexpected resource exhaustion attacks such as Fork Bombs, and protect the stability of the host kernel and other containers.
+
+**OCI Runtime Standard**: The OCI standard defines specifications for container runtimes and images. Container runtimes (such as runc) must follow this standard to handle parameters in the configuration file (`config.json`).
+
+**Key Change (runc 1.4)**: According to runc 1.4's implementation of the OCI standard, the semantics of a `pid.limit` field value of `0` are clarified as:
+- **New behavior (runc 1.4 and later)**: `pid.limit: 0` means limit the number of processes to `1` (i.e. only the init process itself).
+- **Old behavior (early versions)**: `pid.limit: 0` is usually interpreted as "unlimited".
+
+This change is intended to remove ambiguity and be consistent with the initial default behavior of `cgroup`'s `pids.max` (the default was `max`, i.e. no limit; setting `0` could cause confusion in some contexts). containerd has been adapted via PR #12954 to ensure compliance with this new standard.
+
+## Practice
+
+The main practical impact of this change on SREs is the compatibility of container configurations and the prudent upgrade process. When planning to upgrade containerd or the underlying runc to version 1.4 or higher, you must do the following:
+
+1. **Configuration Audit and Verification**:
+    - Review `pid.limit` values that are set explicitly or implicitly in all container templates, Helm Charts, or Kubernetes Pod specifications.
+    - Pay special attention to containers that do not have `pid.limit` explicitly set. In older versions, unset usually meant unlimited; in newer versions, if the runtime maps `0` to `1`, the behavior may be different (depending on the runtime default). You need to check the default configuration policies of containerd and runc.
+    - If the business container relies on the old behavior of "`pid.limit: 0` means unlimited", the configuration must be modified to an explicit high value (such as `4096` or set according to actual needs) before upgrading.
+
+2. **Upgrade and Test**:
+    - Fully upgrade testing in a pre-production environment. Pay special attention to applications that are known to create large numbers of processes (e.g., certain web servers, JVM applications, CI/CD workloads).
+    - Monitor the process number metrics within the container (such as `container_processes` or through the `PIDS` column of `kubectl top pods`) to ensure that the application does not reach an unexpected PID upper limit after the limit change, causing startup failure or process creation being rejected.
+
+3. **Troubleshooting preparation**:
+    - Updated the incident response manual to include "Process creation failed due to PID Limit" into the list of possible failure reasons.
+    - Prepare relevant troubleshooting commands, such as `crictl inspect <container_id>` or `runc state <container_id>` to view the actual cgroup restrictions applied to the container.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: The semantic change of PID Limit directly affects the operational reliability of the container. Wrong understanding may lead to two consequences:
+    - **Resource exhaustion risk**: A container that was expected to be unlimited is accidentally limited to running only 1 process, causing the application to not start or run.
+    - **Security policy invalid**: Containers that are originally set to limit (e.g. `4096`), if due to configuration confusion are mistakenly set to `0` and interpreted as unlimited, will lose protection against fork bombs.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Always explicitly set a reasonable `pid.limit` value in the container configuration rather than relying on the default value. This is consistent with the principle of "explicit over implicit", making configuration intent clear and resistant to changes in the underlying runtime default behavior. Define different PID Limit baselines based on application type (e.g. stateless web service vs. batch job).
+    - **Common anti-pattern**: When upgrading container runtimes (containerd, runc) or Kubernetes nodes, rolling upgrades are performed directly without checking and testing existing container resource limit configurations, causing large-scale failures.
+
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: You can monitor "the process creation failure rate of the container due to the PID Limit reaching the upper limit". A common observable signal is a `cgroup.event` or `cannot create process` related error that appears in the `kubelet` or container runtime logs.
+    - **Associated SLO/SLA**: An increase in this error rate will directly affect the application's availability (Availability) SLO, because critical processes (such as health check probes) may not be started, causing the container to be restarted or marked as unhealthy. Therefore, this error rate should be included in the application reliability monitoring system.
+
+The SRE team should document this change in the upgrade checklist and as a knowledge base entry to help team members understand the potentially broader impact of a small change in configuration semantics in a containerized environment. For related configuration principles, please refer to [[container-resource-limits]] and [[cgroup-fundamentals]].

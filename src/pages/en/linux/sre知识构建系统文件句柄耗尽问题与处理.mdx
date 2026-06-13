@@ -1,0 +1,68 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'grafana/grafana 问题 #105210'"
+category: "构建与部署"
+confidence: medium
+---
+
+## Overview
+
+In a Grafana build process, users reported encountering a "Too many files open" system error when executing `make run`. The core of the problem is not only that the resource limit is reached, but also that the build system fails to recognize this fatal error and abort correctly, but continues to run with incomplete data. This phenomenon highlights a crucial principle in SRE (Site Reliability Engineering): the build process must be reliable and terminate quickly and unambiguously when it fails. A build system that cannot handle critical errors can mask problems, waste resources, and potentially push incomplete output to downstream environments, ultimately affecting the stability of the service and the trustworthiness of the delivery pipeline.
+
+## Core concepts
+
+1. **File descriptor exhaustion (Too many open files)**:
+    * In Unix-like systems, all input/output operations (files, network connections, sockets, etc.) are performed through file descriptors. The operating system has default and maximum limits on the number of file descriptors that can be opened by a single process (viewed with `ulimit -n`).
+    * Large build tasks (such as compiling, packaging, running integration tests) may open a large number of temporary files or perform many operations concurrently, thereby hitting this limit. When the limit is reached, the system call fails and returns an error.
+
+2. **Build system exit code (Exit Code)**:
+    * A well-designed build system (such as Make) should immediately stop all subsequent steps and report the failure to the caller when any step fails (the command returns a non-zero exit code). This is the key to achieving "fail fast".
+    * The case in the question shows that the build process may have mishandled errors and failed to check the return value of the `make run` intermediate step, causing the build to "limp onwards".
+
+3. **SRE’s Fail Fast Principle (Fail Fast)**:
+    * In distributed systems and DevOps practices, "fail fast" means immediately stopping related operations and raising an alert at the earliest moment a problem is detected. This helps:
+        * **Reduce Breakage**: Prevent error states from being persisted or propagated.
+        * **Quick Location**: Lock the fault point to the latest changes or configurations.
+        * **Cost Savings**: Avoid wasting computing resources and time on tasks that are destined to fail.
+
+## Practice
+
+To address such build reliability issues, the following systematic troubleshooting and resolution steps can be taken:
+
+1. **Problem Reproduction and System Check**:
+    * After reproducing the problem in the development environment, use `cat /proc/sys/fs/file-nr` or `lsof -p <PID> | wc -l` to monitor the file descriptor usage of the process.
+    * Check and adjust system-level and user-level restrictions:
+        ```bash
+        # Temporary adjustment (valid only for current session)
+        ulimit -n 65535
+
+        # Permanent adjustment (need to edit /etc/security/limits.conf or /etc/security/limits.d/)
+        * soft nofile 65535
+        *hard nofile 65535
+        ```
+
+2. **Analysis and Repair Build Tools**:
+    * Review the `Makefile` or build script to ensure that every command that may fail properly propagates the exit status. In the Makefile, you can leverage the `.DELETE_ON_ERROR` target or check the `$?` variable after each command.
+    * Consider including explicit detection and friendly error prompts for common failure modes (such as file descriptor exhaustion) in your build scripts or toolchains, rather than leaving them to generate obscure system errors.
+
+3. **Strengthen monitoring and alarm**:
+    * In CI/CD pipelines, set clear resource limits (e.g. memory, CPU, timeouts) on build tasks.
+    * Monitor file descriptor usage trends for build tasks, if you see a consistent increase, it may indicate a resource leak (for example, a file handle that was not closed properly).
+    * Set clear alarm notifications for build failures to ensure the development team is informed immediately.
+
+## SRE Key Points
+
+* **Link to Reliability**: **The build process itself is the first line of defense for the reliability of a production environment**. A fragile build process that fails to fail cleanly will produce unverified or incomplete artifacts that will directly lead to service failure once deployed to a production environment. Ensuring the reliability of your build is fundamental to achieving overall system reliability.
+* **Best Practice**:
+    * **Treat the build like a production system**: impose strict reliability requirements on it, including fast fail, resource isolation, and clear logging.
+    * **Define the SLO** for the build: For example, "99.9% of trunk commits should build successfully within 10 minutes".
+    * **Automated Health Checks**: Integrate checks on critical resources (such as disk space, memory, file handles) into the build process.
+* **Common anti-patterns**:
+    * **Non-zero exit codes ignored**: This is the core of the problem reported in this report, and it invalidates the build system's reliability claims.
+    * **Environment Difference**: The system limitations of the development environment and the production environment (including the build server) are inconsistent, causing the problem to be exposed in CI.
+* **Related Metrics (SLI/SLO/SLA)**:
+    * **SLI (Service Level Indicator)**: Build success rate, average build time, build failure rate.
+    * **SLO (Service Level Objective)**: For example, build success rate ≥ 95% (measures the stability of the build pipeline).
+    * **Error Budget**: The build failure rate in excess of the SLO, which can be used to weigh the risk of introducing new tooling or refactoring.
+
+For a more complete understanding of SRE practices, see [[sre-fundamentals]]. For handling after a build failure, the process in [[incident-response]] is also applicable. At the same time, building the observability of the system is the key to ensuring its health. You can refer to the principles of [[observability]].

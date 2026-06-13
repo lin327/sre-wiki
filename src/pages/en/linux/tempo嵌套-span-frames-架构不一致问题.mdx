@@ -1,0 +1,48 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana Issue #121740: Tempo: nested span frames under one nestedFrames"
+category: "分布式追踪与日志"
+confidence: medium
+---
+
+## Overview
+
+In the observability platform Grafana Tempo, the `trace search` query functionality has a data consistency flaw when constructing response data. When a trace contains multiple `SpanSets` (span sets), the multiple nested frames (span subframes) generated for it and stored in the same `nestedFrames` cell may have different Schemas (field structures). This problem will cause rendering errors or abnormal behavior in UI components that rely on these nested frames (such as table visualizations), affecting the efficiency of SRE engineers in analyzing and troubleshooting distributed tracing data. Understanding the cause and fix of this issue is critical to ensuring the accuracy and reliability of your tracking data.
+
+## Core concepts
+
+- **`nestedFrames`**: In Grafana's data model, a cell of a data frame can contain another complete data frame, forming a nested structure. In Tempo's search results, under a certain field of a trace row, there will be multiple nested data frames representing different `SpanSets` within the trace.
+- **`SpanSet`**: In Tempo's semantics, a trace can be logically divided into multiple `SpanSet`s. Each `SpanSet` is usually associated with a specific tag or combination of properties, allowing for more granular analysis of a specific portion of the trace.
+- **Schema**: In this context, the structural definition of the data frame, including which fields (columns) are included, their order, and the data types of the fields. A consistent Schema is a prerequisite to ensure that data can be merged, queried and displayed correctly.
+
+## Practice
+
+### Problem phenomenon and recurrence
+When a `trace search` query is executed on a trace containing multiple `SpanSets`, Tempo's backend processing code (located in `pkg/tsdb/tempo/search.go`) will independently scan its dynamic properties for each `SpanSet` to generate corresponding nested frames. Since different `SpanSet` may have different sets of dynamic properties, the final generated nested frame will have:
+1. **Different number of fields**: For example, a `SpanSet` frame contains `http.method` and `http.url` columns, while another frame may only have `http.method` column.
+2. **Different column order**: Even if the field names are the same, the sort order may be inconsistent.
+
+This inconsistency can cause components like Grafana’s table visualizations to fail or display clutter when trying to merge or present this nested data. This problem can be reproduced through the officially provided [Test Data Frame](https://github.com/user-attachments/files/26435991/trace_search_nestedframes_mismatch.dataframe.json) in conjunction with the test data source.
+
+### Repair suggestions and logic
+The fundamental solution is to ensure that all nested frames under the same trace share a unified, predefined Schema. The repair ideas are as follows:
+1. **Precomputed Union Schema**: Before generating nested frames for a trace, first traverse **all** `SpanSets` of the trace.
+2. **Collect dynamic attributes**: Collect all dynamic attribute keys that appear in `SpanSet`, and infer their data types to form an "attribute union set".
+3. **Uniform construction frame**: Define a unified list of fields according to this union set and a stable sort order (for example, in alphabetical order by attribute name).
+4. **Fill data**: This unified field list is then strictly followed when building nested frames for each `SpanSet`. For attributes that a `SpanSet` does not have, fill in the corresponding columns with `nil` or empty values.
+
+In this way, although the underlying data is different, the output data structure (Schema) remains consistent, thus ensuring the stability of the upstream consumer.
+
+## SRE Key Points
+
+### Reliability, observability and incident response correlation
+This issue is directly related to the accuracy of observability data. During incident response, SRE relies on accurate, consistent tracing data to locate bottlenecks or error points in the microservice call chain. Schema inconsistencies may lead to loss or misreading of critical information, extending MTTR (Mean Time to Repair). Ensuring that the output format of each link in the data pipeline from collection to display complies with the agreement is a key step in maintaining data reliability.
+
+### Best practices and common anti-patterns
+- **Best Practice**: When designing an API or processing pipeline that outputs multiple sub-data structures, a unified output schema should be **predefined and enforced**. Even if there are differences in the underlying input data, the output should remain structurally consistent by filling in default values. This is an important data contract (Data Contract) design pattern.
+- **Common anti-pattern**: Assume that nested data structures at the same level are always the same. In dynamic schema scenarios (such as dealing with freely labeled tracking data), the "union" problem of fields must be handled explicitly rather than relying on implicit assumptions.
+
+### Related indicators (SLI/SLO/SLA)
+While this bug itself does not directly correspond to a standard SLI, it affects the following:
+- **Data Availability**: For downstream functions (such as tables, lists) that rely on `trace search` results, if Schema inconsistency causes rendering failure, the availability of the function can be regarded as impaired.
+- **Data Accuracy**: Consider adding automated checks for Schema consistency as an internal SLI on the data producer (Tempo backend) or consumer (Grafana frontend) to monitor the recurrence of similar problems. Ensuring that data tracking query results are structured correctly is part of meeting internal data quality SLOs.

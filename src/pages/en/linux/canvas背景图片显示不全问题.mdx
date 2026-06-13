@@ -1,0 +1,54 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Canvas background image wont load in completely"
+category: "issue跟踪"
+confidence: medium
+---
+
+## Overview
+
+This document documents and analyzes a flaw found in the Grafana Canvas visualization panel. This issue affects the usability of monitoring dashboards where large images (SVG or PNG) used as backgrounds cannot be fully viewed and navigated when certain features are enabled. For SRE teams that rely on Canvas to create custom topology diagrams, flowcharts, or large architectural diagrams, this flaw may directly impact the usability of their monitoring views and therefore needs to be identified, tracked, and resolved. This is a typical software defect and is a type of event that needs to be reported and handled in the [[incident-response]] process.
+
+## Core concepts
+
+- **Canvas visualization**: A flexible panel type in Grafana that allows users to freely place and connect various elements on a draggable canvas to build a customized visual interface.
+- **Zoom to content**: A view feature designed to automatically adjust the canvas viewport to fully display all placed elements. This feature is activated in certain versions.
+- **Essence of the Problem**: This defect indicates that the implementation of the "Zoom to content" function conflicts with the rendering and interaction logic (such as panning and zooming) of the background image, causing the viewport of the background image to be incorrectly restricted or cropped, and unable to be zoomed and positioned synchronously with the canvas content.
+
+## Practice
+
+### Steps to reproduce the problem
+
+According to the original issue report, this issue can be reliably reproduced in the following environments:
+
+1. **Environment preparation**: Use a Grafana version with the "Zoom to content" feature enabled (for example, v12.2.0).
+2. **Create Canvas**: Create a new Canvas panel.
+3. **Set background**: Set a large picture (SVG or PNG format) as the background of the canvas.
+4. **Configure size**: Set the "size" of the background image to "original size".
+5. **Operation Verification**: Try to view the entire background image by dragging the mouse or zooming with the wheel. At this time, you will find that the edge of the image cannot be displayed, and the truncated area cannot be located through normal operations.
+
+### Temporary solution
+
+Until an official fix is released, you can try the following workarounds to restore canvas usability:
+
+- **Disable function**: The most direct way to circumvent this is to find and **turn off the "Zoom to content" function** in the settings of the canvas panel. This should restore the original pan and zoom behavior of the background image.
+- **Resize images**: If your business allows, consider using a smaller resolution image or crop an existing image to better fit the default viewport size of the canvas.
+
+## SRE Key Points
+
+### Impact on reliability and user experience
+
+* **Impaired monitoring visualization**: For teams that use Canvas to display critical infrastructure topology, deployment pipelines, or business status diagrams, incomplete display of background images will directly destroy the integrity and readability of monitoring information, reducing the effectiveness of [[observability]].
+* **Functional regression**: This is a clear feature rollback that affects users' trust in the stability of the Grafana platform. In an SRE practice, any flaws that impact the functionality of core monitoring tools should be considered a high priority.
+
+### Incident response and best practices
+
+1. **Reporting and Tracking**: Such issues should first be reported through official channels (such as Grafana GitHub Issues), with complete reproduction steps and environment information. The SRE team should establish a process to ensure that defects in the monitoring tool itself are reported to the supplier in a timely manner.
+2. **Impact Assessment**: When assessing the impact of an incident, not only downstream services must be considered, but deficiencies in internal monitoring tools must also be taken into consideration. For example, unavailability of the Canvas panel may impact a team's ability to monitor a specific system.
+3. **Version Management and Testing**: Before upgrading core monitoring components such as Grafana, the compatibility of new functions (such as "Zoom to content") with existing dashboards should be fully tested in the pre-release environment to avoid functional rollbacks in the production environment.
+
+### Related indicators
+
+* While this issue does not directly result in traditional SLI (e.g. error rate, latency), it affects the **usability** of the monitoring tool and the **integrity of data presentation**. SRE teams can be measured indirectly by:
+    * **Dashboard Availability**: As part of monitoring the overall availability of the system.
+    * **User Feedback/Number of Tickets**: The number of user reports about issues with the Canvas panel can be used as an indicator of the health of the feature.

@@ -1,0 +1,39 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Live/Plugins: Fix"
+category: "变更管理与兼容性"
+confidence: high
+---
+
+## Overview
+
+During the evolution of software systems, the renaming of terms and attributes is a common refactoring operation, with the main purpose of improving clarity and avoiding ambiguity. However, when these properties belong to a public interface or are widely used, any changes must be handled carefully to ensure backward compatibility and prevent components that rely on the old behavior (such as third-party plug-ins) from breaking their work. This document details a typical change in the Grafana ecosystem: to resolve attribute naming confusion, the `namespace` in the plug-in interface was renamed to `scope`, and the core parsing logic was updated to support both the old and new attribute names, thereby achieving a smooth transition.
+
+## Core concepts
+
+In the context of Grafana's plugin or data source configuration, both the terms namespace and scope may relate to a resource's organizational hierarchy, but they point to different hierarchies.
+
+- **`namespace`**: A core concept in cloud-native environments such as Kubernetes, used to achieve logical isolation of resources within a cluster. In some components or configurations of Grafana, there may be a higher-level `namespace` attribute corresponding to the cloud native `namespace`.
+- **`scope`**: This is a more general term meaning "scope". In this change, it is used to represent the more specific configuration scope of the plug-in or data source instance itself, to distinguish it from the parent's `namespace` attribute mentioned above.
+
+**Motive for renaming**: There are two attributes named `namespace` in the same configuration object or interface, but at different levels, which can easily cause confusion among developers. Renaming child `namespace` more explicitly to `scope` clearly expresses its semantics and makes the configuration structure easier to understand and maintain.
+
+## Practice
+
+The core of this change is to correct the internal semantics while maintaining compatibility with external interfaces. The specific technical implementation is as follows:
+
+1. **Original question**: In PR [117275](https://github.com/grafana/grafana/pull/117275), the development team renamed the `namespace` attribute representing the specific scope of the plugin to `scope`. However, this change affects external components that interact with plugins directly through address strings (such as data source connection addresses). Many existing plugin code or configurations may still use the old `namespace` attribute to specify scope.
+
+2. **Compatibility Solution**: To address the resulting breaking changes, PR [119108](https://github.com/grafana/grafana/pull/119108) has updated Grafana’s internal address resolution logic. The new parser is designed to accept both the `scope` and `namespace` attributes.
+    - When both properties are present in the configuration, there is usually an explicit precedence defined (e.g. `scope` takes precedence over `namespace`).
+    - This modification ensures that whether plugin developers adopt the new `scope` attribute or continue to use the old `namespace` attribute, their configuration can be correctly parsed and loaded by Grafana.
+
+## SRE Key Points
+
+For site reliability engineers, such changes bring several key revelations, which are directly related to system stability and operation and maintenance efficiency:
+
+- **Change Management and Backwards Compatibility**: This is one of the core principles in SRE work. Any modification to the external interface (API, configuration format, attribute name) must evaluate its explosion radius. Grafana’s approach of renaming for clarity and then applying a compatibility layer to ensure that old plugins continue to work is a good example. It balances long-term code health with short-term system stability. When planning their own system changes, SREs should help develop a release process that includes compatibility checks, grayscale releases, and rollback plans.
+- **Configuration Management and Observability**: Plug-in configuration is part of system observability. Clear naming of properties facilitates correct configuration and debugging. When the naming changes, related documents, monitoring alarm rules, and automated configuration scripts must be updated simultaneously, otherwise configuration errors or monitoring blind spots may result. This change emphasizes the importance of maintaining configuration schema (Schema) consistency.
+- **Dependency Management and Supply Chain Security**: Modern applications rely heavily on plug-ins or third-party libraries. When the core platform undergoes such interface changes, SRE needs to proactively identify affected internal plug-ins and business teams and notify them to adapt or take advantage of the compatibility period. This requires a clear dependency graph. At the same time, this reminds us that assumptions about changes in external components (such as "a certain configuration field name will not change") are sources of risk and need to be verified in integration testing and monitoring.
+
+**Related Metrics (SLI/SLO/SLA)**: Although this change itself does not directly correspond to an SLI, it is closely related to the key SRE metric **Change Failure Rate**. By achieving backward compatibility, production failures or plug-in failures caused by interface changes can be significantly reduced, thereby reducing the change failure rate and maintaining the system's SLO.

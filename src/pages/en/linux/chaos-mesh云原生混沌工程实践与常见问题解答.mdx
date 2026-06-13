@@ -1,0 +1,42 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Mesh Q&A at KubeCon EU 2022"
+category: "混沌工程"
+confidence: medium
+---
+
+## Overview
+Chaos Mesh is an open source, Kubernetes-focused, cloud-native chaos engineering platform. It is designed to help operations and developers actively inject various faults into distributed systems to verify the fault tolerance of the system and discover potential defects, thereby improving the resilience of the overall system. In SRE practice, active chaos experimentation is a key part of building reliable systems and continuously learning from failures. This article is based on the Chaos Mesh team’s Q&A at KubeCon EU 2022, sorting out its core functions, architectural points, and practical methods.
+
+## Core concepts
+Chaos engineering involves injecting faults in a controlled manner in a production or pre-production environment and observing system behavior to discover and fix problems. Chaos Mesh is a cloud-native implementation of Kubernetes, and its core concept revolves around Kubernetes resources.
+
+**Chaos Mesh architecture components**: Chaos Mesh usually includes `chaos-controller-manager`, `chaos-daemon` and Dashboard. Among them, `chaos-daemon` is the core execution unit. It runs on each target node in the form of DaemonSet and is responsible for performing fault injection (such as setting TC rules and operating file systems) on specific Pod network namespaces or nodes. This design enables fault injection deep into the container without relying on the specific implementation of the container network interface (CNI).
+
+**Fault Types**: Unlike fault injection tools that only focus on the network layer, Chaos Mesh provides an extremely rich set of fault types. In addition to `NetworkChaos`, it also includes `PodChaos` (such as Pod Kill), `IOChaos` (file system failure), `TimeChaos` (time offset), `StressChaos` (resource pressure), `DNSChaos`, etc., and supports failures of specific platforms such as JVM, GCP, Azure, etc.
+
+**Workflow engine**: Chaos Mesh has a built-in workflow engine, allowing users to orchestrate multiple chaos experiments, pre-scripts (such as health checks), and post-steps (such as alarms) into a complete automated experiment process. This makes initialization and orchestration of experiments flexible and manageable.
+
+## Practice
+Based on frequently asked questions at KubeCon Q&A, here are a few key aspects of Chaos Mesh in practice:
+
+### Platform Compatibility and Deployment
+* **Operating System**: Currently Chaos Mesh mainly supports Linux environment. Contributors in the community are already trying to port some of its features to Windows, and related discussions can be tracked in GitHub Issue #2956.
+* **Network Integration**: Chaos Mesh still works even when using CNI (such as Cilium) that does not rely on iptables. Its `chaos-daemon` will enter the network namespace of the target Pod and directly use the `tc` (Traffic Control) command to set network delay, packet loss and other rules, which is decoupled from CNI.
+
+### Experimental design and arrangement
+* **Pre-initialization script**: Totally OK. Users can use Chaos Mesh's Workflow engine to execute customized initialization scripts (for example, confirm service status, back up data) before officially injecting chaos. This is achieved via the `Task` field in the workflow, giving the experiment great flexibility.
+* **Coordination with service mesh**: Service mesh frameworks like Istio and Linkerd mainly provide fault injection capabilities at the RPC/network layer. As a supplement, Chaos Mesh provides lower-level and broader fault injection capabilities (such as Pod restart, disk I/O delay, system clock jump), and the two can be used together to cover different fault scenarios.
+
+### Compare with similar tools
+Chaos Mesh is similar to commercial chaos engineering tools such as Gremlin, but its core advantage is that it is an open source project designed specifically for Kubernetes and is deeply integrated with Kubernetes' API and resource model. It serves as a Kubernetes plug-in, making defining and executing chaos experiments in a cloud-native environment as natural as deploying a normal Kubernetes workload.
+
+## SRE Key Points
+* **Relevance to Reliability**: Chaos Engineering is a powerful means of validating the effectiveness of [[SLO]] (Service Level Objective) and [[Error Budget]] (Error Budget) policies. By simulating Pod failures, network partitions, etc. through Chaos Mesh, you can proactively verify whether the system's performance under real pressure can still meet [[SLI]] (service level indicator) requirements.
+* **Observability Dependence**: Successful chaos experiments are highly dependent on comprehensive observability. While faults are being injected, system metrics, logs, and distributed link traces must be closely monitored to accurately capture the scope of the fault impact and system recovery behavior.
+* **Best Practice**:
+    1. **Start Small**: Experiment in non-production environments (e.g. pre-release, test environments) and gradually increase the severity and scope of failures.
+    2. **Always perform under observation**: Ensure there is sufficient monitoring and alarm coverage to enable timely intervention when the experiment exceeds expectations.
+    3. **Review after the experiment**: Regardless of whether new problems are discovered in the experiment, the system behavior should be analyzed, experience summed up, and the operation and maintenance manual or architecture design should be updated.
+* **Common anti-pattern**: Without perfect monitoring or team consensus, large-scale, destructive chaos experiments are conducted directly in the production environment, which may lead to unexpected serious failures.
+* **Related Metrics**: Although Chaos Mesh itself does not directly produce [[SLI]], the goal of the experiment is to verify the fault-tolerant design related to these SLIs. For example, verify that the service's error rate (a common SLI) recovers quickly within a preset threshold after a Pod is killed.

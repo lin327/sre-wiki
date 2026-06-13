@@ -1,0 +1,36 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Fill Screen Doesn't Work with Row Layout"
+category: "observability-tools"
+confidence: medium
+---
+
+## Overview
+
+When building an observability dashboard, proper screen layout is critical for effective presentation of information. As a widely used visualization tool, Grafana's layout function directly affects the efficiency of the SRE team in monitoring key indicators (such as SLI) and analyzing system behavior. This page documents a UI flaw found in Grafana v13.0.1 related to the "Row" layout, where the "Fill Screen" feature does not work as expected. Although this problem does not directly affect back-end data collection and reliability, it will affect the visual presentation and monitoring information density of the front-end panel, causing an indirect impact on operation and maintenance efficiency.
+
+## Core concepts
+
+In a Grafana dashboard, a row is a container for organizing panels. It allows users to logically group multiple panels together and collapse/expand them. **Fill Screen** is a layout option designed to make the container (including the row itself and the panels within it) expand to utilize all available vertical space in the browser viewport, thereby maximizing the amount of information displayed within the limited screen.
+
+The core of this problem is an inconsistency in the implementation of the feature: when the "Fill Screen" option is applied on the "Row" layout, the height of the row container itself is expanded, but the child panels (Children Panels) inside it are not expanded vertically to fill the space left by the parent container. This results in visually unused white space, defeating the purpose of the feature.
+
+## Practice
+
+According to the problem report, this defect can be reproduced stably. The steps are as follows:
+1. Create a new blank dashboard in Grafana (v13.0.1).
+2. Add a "Row" component.
+3. Enable the Fill Screen option for both the row component and the layout (subpanel) inside it.
+4. Add one or more panels to the row.
+5. Observe that although the height of the row itself has expanded to fill the screen, the added panel does not expand vertically to fit the height of the row, resulting in a blank space at the bottom.
+
+This issue is confirmed to occur at the **dashboard front-end layout level** and has nothing to do with the data source, specific panel plug-ins or back-end services. The problem occurred in the version after the new layout mechanism was introduced (Grafana v13.0.1), indicating that this may be a regression flaw introduced in the new UI framework or layout logic. Currently, users may need to adjust their dashboard design strategy before an official fix.
+
+## SRE Key Points
+
+* **Impact on Observability**: This issue primarily affects the **usability** and **information presentation efficiency** of the dashboard. When critical system indicators (SLI) or log panels do not fully utilize screen real estate, SRE personnel may not be able to quickly obtain a complete view during incident response, increasing cognitive load and analysis time.
+* **Best Practices and Workarounds**:
+    * **Follow upstream fixes**: As an SRE, you should pay attention to Grafana's version updates and GitHub Issues to obtain official fix information for this issue. Until a fix is ​​released, consider temporarily avoiding using the "Fill Screen" option of the "Row" component in layouts that require precise use of screen space.
+    * **Alternative layout strategy**: You can consider using **Grid layout** or **the resizing function of the panel plug-in** to manually control the panel size to achieve an approximate full-screen display effect. This requires a trade-off between flexibility and maintenance costs.
+    * **Dashboard as Code**: Defining dashboards through JSON models or Dashboard-as-Code tools helps quickly update the layout after issues are fixed and maintain dashboard consistency across environments.
+* **Related Metrics**: While this issue does not directly impact [[service-level-objectives]], it is indirectly related to the **usability** of the dashboard, a user experience SLI. A dashboard with an abnormal layout may reduce the "fault location efficiency" of the operation and maintenance team.

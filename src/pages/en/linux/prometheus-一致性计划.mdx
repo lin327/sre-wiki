@@ -1,0 +1,41 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Introducing the Prometheus Conformance Program"
+category: "监控与可观测性"
+confidence: medium
+---
+
+## Overview
+
+Prometheus is the standard for metric monitoring in cloud native and beyond. In order to ensure interoperability between components, avoid users from encountering unexpected problems during integration or migration, and encourage parallel innovation within the ecosystem, the Prometheus project launched the **Prometheus Consistency Plan** with the assistance of CNCF. The program aims to provide a public, verifiable framework for projects and vendors to demonstrate that their components comply with Prometheus’ specifications and standards. For SRE teams, relying on certified components is a critical step in building a reliable, predictable monitoring platform.
+
+## Core concepts
+
+The program is organized around two core certification levels:
+
+1. **Component Compliance**: For a specific Prometheus component or protocol. For example, a remote write library can be declared `Prometheus Remote Write 2021-05 compliant`. This ensures that the component correctly implements the specified version of the specification.
+2. **Ecosystem Compatibility**: For a complete software product. For example, a monitoring system can be declared as `Prometheus 2.26 compatible`. This mark is calculated based on the product of the compliance scores of all relevant components of the product. It indicates that the product integrates well with the specified version of the Prometheus ecosystem.
+
+Both levels of certification are time-sensitive and are valid for **2 minor releases or 12 weeks** (whichever is longer). This motivates vendors and projects to continually update their products to maintain certification validity.
+
+## Practice
+
+Compliance programs are run through a public and continuously expanding [test suite](https://github.com/prometheus/compliance). Projects and suppliers can use these tests to verify their own compliance and submit documentation to the program to obtain the certification mark.
+
+At program launch, compliance testing is provided for the following three components:
+
+- **PromQL**: Prometheus query language. Currently, test results need to be manually interpreted, and the coverage is basically complete.
+- **Remote Read-Write**: Protocol for storing data remotely. Testing is fully automated but is still a work in progress (WIP).
+- **OpenMetrics**: A cloud-native monitoring and telemetry data format standard. The test is partially automated and the coverage is basically complete, but additional questionnaires may be required.
+
+There are also plans to add testing for **Prometheus Remote Read** and **TSDB** (Time Series Database) in the future. The entire community is invited to improve existing tests and contribute new test cases.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: When building SLO (Service Level Objective) and Error Budget systems, the stability of the underlying monitoring data collection and query paths is crucial. Using consistency-certified components can significantly reduce indicator loss, query errors, or unexpected behaviors caused by inconsistent protocol implementations, thereby directly improving the reliability of the monitoring system. This reduces the risk of the monitoring system itself becoming a source of failure.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: When selecting new monitoring components (such as long-term storage, dashboard tools or alert managers), give priority to those products that have `Prometheus x.y compatible` certification. This provides predictability guarantees for integration with existing Prometheus stacks.
+    - **Anti-Pattern**: Just because a tool "supports the Prometheus format" assumes it is fully compatible. Uncertified "compatibility" may have subtle but critical implementation differences that may expose issues under specific queries or high loads, increasing the complexity of investigating issues during incident response.
+- **Relevant Indicators (SLI/SLO)**: The initiative itself focuses on interoperability, which is a **prerequisite** for building a reliable monitoring system. For a reliable monitoring system, its SLOs might include things like "Prometheus query latency P99 < 1s" or "Metric collection availability &gt; 99.9%". Using certified components helps achieve these SLOs more consistently.
+
+[[observability-principles]]

@@ -1,0 +1,40 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd/containerd Pull Request #13304: Fix pull progress reporter timer"
+category: "故障修复"
+confidence: high
+---
+
+## Overview
+
+In a container runtime (such as containerd), pulling container images through the container runtime interface (CRI) is a core operation. In order to manage the timeout of pull operations, containerd internally implements a "Pull Progress Reporter". It monitors the activity of pull requests through a timer. If no requested activity is observed within a preset timeout window (`timeout`) (for example, the first byte is not received), the operation will be actively canceled to avoid resource leaks or indefinite hanging. This fix addresses intermittent test failures and potential production risks caused by the reporter not properly resetting the timer on a specific state transition (from "idle" to "active").
+
+## Core concepts
+
+**Pull Progress Reporter and Timer**:
+The reporter works by monitoring `activeReqs` (number of active requests). When `activeReqs` is 0, the system is in the "idle" state. When a new pull request is started, `activeReqs` becomes non-zero and the system enters the "active" state. The purpose of the timer is to ensure that each active pull request has a complete timeout window from the time it is initiated to the arrival of its first network byte.
+
+**Flaw Logic**:
+The old implementation logic is: at each poll (tick), if `activeReqs == 0` is found, `lastSeenTimestamp` (last activity timestamp) is reset. However, it does not reset the timer when the state transitions from `0` to non-`0` (i.e. from idle to active). This means that the timeout window for new requests is actually calculated from the timestamp recorded when the last idle poll was made, rather than from when the request was actually made.
+
+**Impact of the problem**:
+If a new request is initiated immediately after an idle poll, its available timeout window will be smaller than the preset `timeout` value. In extreme cases (such as when the network authentication handshake takes a long time), this "compressed" window may cause the request to be prematurely canceled by the reporter before the data is actually transmitted, causing the operation to fail.
+
+## Practice
+
+**Fix Solution**:
+The core of the fix is to make the reporter aware of the "0 → non-0" transition of `activeReqs`. The specific implementation is to track the `activeReqs` value of the previous polling cycle (for example, using a variable `prevActiveReqs`). Reset the timer (`lastSeenTimestamp`) immediately when a change from `prevActiveReqs == 0` to the current `activeReqs &gt; 0` is detected. This ensures that each newly initiated pull request gets a full, unconsumed timeout window to receive the first byte of the response.
+
+**Testing and Validation**:
+The fix is verified through the following test plan:
+1. **Unit Test**: Perform 20 iteration tests on the repaired `PullProgressReporter` logic to verify its timer reset behavior in various scenarios.
+2. **Compilation and static analysis**: Ensure that the code compiles correctly and passes the `go vet` check.
+3. **Integration Test**: Focused on running the previously failed `TestCRIImagePullTimeout/HoldingContentOpenWriter*` series of test cases. This test exactly replicates the original flaw by simulating holding a local content writer (causing `activeReqs` to be temporarily 0) and triggering a network pull (involving an authentication handshake) immediately after release. After the fix, a CI (Continuous Integration) run showed that these tests all passed.
+
+## SRE Key Points
+
+- **Reliability Correlation**: This fix directly improves the reliability of container image pull operations. It eliminates "False Timeout" caused by state machine logic flaws, makes the timeout mechanism more accurate, and reduces business interruptions caused by misjudgments by the monitoring layer.
+- **Observability and Debugging**: While this fix does not directly increase observability, it makes timeout-based failure signals more believable. When SRE is troubleshooting `context canceled` or `timeout` errors, it can more confidently determine whether the problem is caused by real network or server-side delays rather than bugs in the client monitoring code.
+- **Best Practice**: This case highlights that **all possible state transitions** must be carefully considered when implementing stateful monitoring or management logic. It is not enough to perform a reset operation in a specific state (such as "idle"), you must ensure that the transition point into a critical state (such as "active") is also properly initialized. This applies to various resource pooling, connection pooling, and timeout monitoring scenarios.
+- **Common anti-pattern**: Avoid state management based only on periodic checks (tick) and ignore event-driven state transition points. This mode can easily miss key status change signals, resulting in incomplete logic.
+- **Related Metrics**: While this fix does not define new SLIs/SLOs, it directly affects existing image pull-related SLIs, such as "Image pull success rate" and "Image pull timeout rate". After the fix, timeouts caused by client monitoring code will be reduced, making the metrics more reflective of true upstream service performance.

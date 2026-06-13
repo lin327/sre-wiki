@@ -1,0 +1,46 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issue"
+category: "前端可观测性工具问题"
+confidence: medium
+---
+
+## Overview
+
+This article documents a front-end UI issue discovered in Grafana v13.0.1. The issue involves the responsive behavior of the left navigation menu (commonly known as the "hamburger menu") in the dashboard view: when the user resizes the browser window from a smaller size (~1200px) to a larger size (~1500px), the menu automatically expands and requires the user to manually close it. This behavior is inconsistent with previous Grafana versions (such as v12) and may disrupt the workflow of SRE engineers quickly viewing and switching dashboards. Although this is a UI-level flaw, its impact on tool operation fluency is directly related to the user experience and operation efficiency of the observability platform.
+
+## Core concepts
+
+* **Grafana Dashboard (Dashboard):** The core interface for visual monitoring data (such as metrics, logs, traces), and is the main workbench for SRE to monitor system status, alarm troubleshooting, and performance analysis.
+* **Hamburger Menu:** Refers to the collapsible/expandable navigation sidebar on the left side of the dashboard, used to quickly switch between different dashboard folders, star views and browsing panels.
+* **Responsive Design:** Refers to a technology in which interface elements (such as menus and layouts) can automatically adjust their layout and display state according to changes in the viewport or browser window size. This problem is a reflection of the flaws in state management in responsive design.
+* **Reproducibility (Reproducibility):** The problem report states that this problem does not occur 100%, which brings challenges to locating and fixing the problem. In SRE practice, problems that are difficult to reproduce stably often require more in-depth code review or specific environment analysis.
+
+## Practice
+
+### Steps to reproduce the problem
+According to the problem report, you can try to reproduce it by following these steps:
+1. Open a dashboard in Grafana v13.0.1.
+2. Resize the browser window to a narrower width (approximately 1200 pixels).
+3. Then resize the browser window to a wider size (larger than 1500 pixels).
+4. Observe whether the hamburger menu on the left expands automatically.
+
+### Temporary solution
+* **Close the menu manually:** When the menu expands unexpectedly, click the close button (X) at the top of the menu or click the main content area of the dashboard to close it.
+* **Lock window size:** When using the dashboard for critical operations (such as troubleshooting), try to avoid frequently resizing the browser window to avoid triggering this issue.
+
+### Tracking and Updates
+The issue has been submitted to the Grafana official GitHub repository. Affected users are advised to:
+* Follow Issue [#124506](https://github.com/grafana/grafana/issues/124506) for the latest fix status and official solution.
+* Provide more recurrence environment information (such as operating system, specific browser version details) in the Grafana community forum or related issues to help developers locate the problem.
+* After Grafana releases an update, evaluate whether it contains a fix for this issue and plan an upgrade.
+
+## SRE Key Points
+
+* **Relationship with Reliability:** Although this problem does not directly cause monitoring data loss or service interruption, it reduces the operational reliability and user experience of the monitoring tool itself. The work efficiency of SRE partly depends on the stability and convenience of the tool chain. A UI flaw that frequently interferes with operation may delay response to alerts.
+* **Best Practices:**
+    * **Tool version management:** When upgrading core observability tools (such as Grafana), adequate testing should be performed, especially for major version upgrades (such as from v12 to v13). Consider testing UI and key workflow compatibility in a pre-release environment.
+    * **Community Engagement:** SRE teams should actively monitor the issue trackers of the open source tools they use. For bugs that affect workflow, submitting reports in a timely manner, providing detailed recurrence information, and paying attention to subsequent repairs are important parts of maintaining the health of one's own technical ecosystem.
+    * **Workflow Resilience Design:** Even when using mature tools, be aware that unexpected behavior like this exists. Best practice documents within the team can be established to record temporary workarounds for known problems and reduce the interference of problems on the actual troubleshooting process.
+* **Related Metrics (SLI/SLO):** Although this issue is difficult to measure directly with traditional SLI, it is about "tool usability" and "operational fluency". This can be seen as a negative factor in the engineer's "operating experience." Tool flaws like these that hinder productivity can be taken into account when assessing overall team effectiveness or platform health.
+* **Common anti-pattern:** Ignoring minor UI-level glitches as unimportant. In fact, these details can add up, impact the satisfaction of using the tool, and can cause disruptions at critical moments.

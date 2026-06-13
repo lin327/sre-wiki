@@ -1,0 +1,67 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Share your #ChaosMeshStory!'"
+category: "混沌工程"
+confidence: low
+---
+
+## Overview
+Chaos Engineering is a key methodology for proactively verifying system resilience in SRE and platform engineering practices. Its core is to discover system weaknesses and potential risks by controllably injecting faults into production or production-like environments, so as to repair them in advance before faults occur and improve the overall reliability of the system. As an open source, cloud-native chaos engineering platform under CNCF, Chaos Mesh provides the Kubernetes ecosystem with powerful fault injection and experiment orchestration capabilities, enabling teams to systematically conduct chaos experiments and transform theoretical reliability objectives (SLOs) into verifiable practices.
+
+## Core concepts
+**Chaos Engineering**: Not simply creating chaos, but an engineering discipline based on scientific methods. It follows the cycle of "define steady-state assumptions", "introduce real-world events", "observe steady-state deviations", and "continuous improvement". The goal is to build confidence in the distributed system's ability to withstand unexpected situations in a production environment.
+
+**Chaos Mesh**: A chaos engineering platform designed specifically for Kubernetes. It allows users to define and execute "Chaos Experiments" in a declarative (YAML) manner. Its core components include:
+- **Chaos Controller Manager**: Responsible for coordinating and managing the life cycle of chaos experiments.
+- **Chaos Dashboard**: Provides a Web UI for visually creating, managing, and monitoring experiments.
+- **Chaos Daemon**: A daemon process that runs on each target node and is responsible for actually injecting system-level faults (such as network latency, I/O latency, kernel errors, etc.).
+
+Through Chaos Mesh, there are many types of faults that can be injected, including but not limited to:
+- **Pod Chaos**: Kill or pause Pods.
+- **Network Chaos**: Simulate network delay, packet loss, and partitioning.
+- **IO Chaos**: Simulate file I/O delays or errors.
+- **Time Chaos**: Offset the time in the Pod.
+- **Stress Chaos**: Puts stress on the CPU or memory.
+
+## Practice
+The basic process for starting a chaos experiment is as follows:
+
+1. **Install Chaos Mesh**: Deploy Chaos Mesh to the Kubernetes cluster through Helm Chart.
+    ```bash
+    helm repo add chaos-mesh https://charts.chaos-mesh.org
+    helm install chaos-mesh chaos-mesh/chaos-mesh --namespace chaos-mesh --create-namespace
+    ```
+
+2. **Define Experiment**: Use a YAML file to declare a chaos experiment. For example, a simple Pod failure experiment (`pod-chaos.yaml`):
+    ```yaml
+    apiVersion: chaos-mesh.org/v1alpha1
+    kind: PodChaos
+    metadata:
+      name: pod-kill-example
+      namespace:default
+    spec:
+      action: pod-kill
+      mode: one
+      selector:
+        namespaces:
+          -default
+        labelSelectors:
+          app: my-app
+      duration: "60s"
+    ```
+    This experiment will randomly kill a Pod with the label `app: my-app` in the `default` namespace for 60 seconds.
+
+3. **Execution and Monitoring**: Apply this YAML file (`kubectl apply -f pod-chaos.yaml`) and Chaos Mesh will start executing the experiment. You can monitor the experiment status through the Chaos Dashboard or by viewing the Chaos Mesh logs. The key is to also monitor the **Service Level Indicators (SLIs)** of the application, such as error rate, latency, etc., to observe whether the system steady state is affected.
+
+4. **Analysis and Improvement**: After the experiment, analyze the monitoring data. If SLIs fluctuate unexpectedly or exceed the **SLO** threshold, it indicates that the system has a resilience weakness. Optimize the architecture, add redundancy, or improve the circuit breaker and current limiting mechanism based on the discovered problems, and then re-run the experiment to verify the improvement effect.
+
+## SRE Key Points
+Chaos engineering is closely linked to SRE practices and is a key means to achieve "prevention is better than cure".
+
+- **Linked to Reliability**: Chaos experiments directly serve the management of the **Error Budget**. By proactively consuming Error Budget for experiments, risks can be discovered within a controllable budget and avoid being forced to stop feature release due to insufficient error budget in the event of a real failure, thereby maintaining a balance between development speed and stability. Experimental results help the team translate abstract SLOs into verifiable, concrete reliability requirements.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practices**: Start with small-scale, low-risk experiments (such as in a test environment); always define clear "blast radius" and experiment termination conditions; integrate chaos experiments into the CI/CD pipeline as a quality gate before deployment; establish a "Game Day" culture and organize the team to conduct practical exercises on a regular basis.
+    - **Anti-Pattern**: Conducting large-scale production experiments without monitoring and contingency plans; treating chaos engineering as a one-time "hackathon" activity rather than an ongoing practice; focusing only on technical failures and ignoring the potential impact on business processes and user experience.
+- **Relevant Metrics**: The effectiveness of a chaos experiment should be measured by the risks it uncovers and the resulting reliability improvements it brings. Direct metrics include experiment coverage (which critical paths or services are covered), the number of defects found, **MTTR** (mean time to recovery) reduction, etc. An indirect indicator is that **SLI/SLO** achievement rates have become more stable and predictable.
+
+&gt; **Related concepts**: In order to more fully understand the practical background of chaos engineering, it is recommended to refer to the following related topics: [[fault-injection]] (detailed explanation of fault injection technology), [[slo]] (service level objectives), [[blameless-culture]] (blameless culture).

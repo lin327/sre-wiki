@@ -1,0 +1,76 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana GitHub Issue #106328: Annotations: Incorrect filtering of tags when"
+category: "故障分析"
+confidence: high
+---
+
+## Overview
+
+In Grafana dashboards, annotations are metadata that mark specific events or time periods. In order to query and display comments in a refined manner, users can configure a query containing multiple tags (Tags) and use the `MatchAny` option to control the matching logic (`False` means that all tags must match, that is, AND logic; `True` means that any tag can match, that is, OR logic). This page analyzes a tag filtering bug that occurs in the `MatchAny=False` scenario: when the query condition contains tags that only specify the key (Key) but not the value (Value), the query results will be incorrect and comments that should not be selected will be returned. Understanding the rationale for this problem is critical to ensuring the accuracy and reliability of monitoring data.
+
+## Core concepts
+
+### 1. Comment label matching
+Grafana annotations can be appended with multiple tags in the form of key-value pairs. For example, an annotation might have both `maintenance` and `meta:span` tags. When querying comments, you can specify a set of tags as filter conditions.
+
+### 2. `MatchAny=False` (AND logic)
+When `MatchAny=False`, the query logic requires that the selected annotation must **contain all tags specified in the query conditions**. This is the most restrictive filtering method and is designed to pinpoint events with a specific combination of attributes.
+
+### 3. The difference between key matching and key value matching
+- **Key matching only**: Using a tag such as `maintenance` in a query condition means matching any annotation that has a tag with `maintenance` as the key, regardless of its value (for example, matching `maintenance:planned` and `maintenance:unplanned`).
+- **Key-value matching**: Using tags such as `meta:no-span` in query conditions requires exact matching of tags with the key `meta` and the value `no-span`.
+
+## Practice
+
+### Problem recurrence and impact
+At the heart of the problem is a flaw in the tag match counting logic of the Grafana backend when querying with `MatchAny=False`.
+
+**Example scenario**:
+- Annotations A1 (`maintenance`, `maintenance:planned`, `meta:span`) and A2 (`maintenance`, `maintenance:planned`, `meta:no-span`) exist.
+- Query Q1: `matchAny=False, tags: maintenance, meta:no-span`. Only A2 is expected to be returned because A2 has both `maintenance` and `meta:no-span`.
+- **Actual result**: Q1 returned A1 and A2. This is because `maintenance`, as a key-only condition, matches both the `maintenance` and `maintenance:planned` tags in A1, causing the total match count to incorrectly satisfy the condition.
+
+### Root cause analysis (from source code)
+The source of the problem lies in Grafana's storage layer code (e.g. `xorm_store.go`). The logic is as follows:
+
+1. **Parse query tags**: Parse the tags in the query into objects, such as `{Key: "maintenance", Value: ""}` and `{Key: "meta", Value: "no-span"}`.
+2. **Construct subquery count**: Construct a SQL subquery to count the number of tags matching the current annotation. Conditions are connected using `OR`:
+    ```sql
+    SELECT SUM(1) FROM annotation_tag ...
+    WHERE ... AND (
+        (tag.key = 'maintenance') OR
+        (tag.key = 'meta' AND tag.value = 'no-span')
+    )
+    ```
+3. **Execute `MatchAny=False` check**: The total number of matching tags returned by the above subquery is required to be equal to the number of tags defined in the query condition (2 in this example).
+
+**Flaws**:
+- **Overbroad key matching**: The condition `(tag.key = 'maintenance')` will match all tags with the key `maintenance` (regardless of their value), causing a comment to be counted twice because multiple tags (such as `maintenance` and `maintenance:planned`) meet this condition at the same time.
+- **Counting logic error**: The system counts the **total number of tags** that satisfy the `OR` condition, rather than the number that satisfies the **different tag conditions**. For an annotation that has both `maintenance` and `maintenance:planned`, it might count as 2 matches (one against the `maintenance` key condition and once against the `maintenance:planned` key condition), but this should only count as satisfying 1 separate tag condition.
+
+### Solutions and workarounds
+This issue is currently identified as a bug in the Grafana community. Until an official fix is released, the following workarounds can be taken:
+
+1. **Avoid using key-only tags for `MatchAny=False` queries**: This is the most direct workaround. Always try to specify explicit values ​​for labels in query criteria.
+2. **Use more specific tags**: When designing tags for events, try to use key-value pairs with clear meanings (such as `maintenance:type:planned`) rather than relying on key-only tags.
+3. **Use `MatchAny=True` with post-processing**: If the business logic allows, you can use `MatchAny=True` to obtain a wider result set, and then perform secondary filtering on the front end of Grafana or through variable expressions.
+4. **Wait for and apply the official fix**: Follow the progress of [Issue #106328](https://github.com/grafana/grafana/issues/106328) and apply the fix in subsequent versions of Grafana.
+
+## SRE Key Points
+
+### Association with reliability
+- **Observability Data Accuracy**: Annotations are an important complement to event logs and system status. Incorrect filtering will cause key events (such as planned maintenance `maintenance:planned` or sudden failure `maintenance:unplanned`) to be incorrectly displayed or hidden on the dashboard, affecting the efficiency of troubleshooting and trend analysis.
+- **Potential risks of alert rules**: Although this bug mainly affects annotation display, the matching logic error behind it may also appear in other tag-based query scenarios. SREs need to be alert to possible unexpected behavior of any monitoring query that relies on complex tag filtering.
+
+### Best Practices and Anti-Patterns
+- **Anti-Pattern**: In key monitoring queries, especially when using AND logic (`MatchAny=False`), rely on key-only tags for filtering. This is an imprecise and error-prone practice.
+- **Best Practices**:
+    - Define clear and complete tag key-value pairs for all key events and metadata.
+    - When creating new annotation queries or alert rules in Grafana, fully verify in a test environment that the filtering results are as expected.
+    - For complex multi-criteria filters, give preference to queries that specify all values ​​explicitly.
+
+### Related indicators (SLI/SLO)
+While this issue does not directly impact standard SLI, it is indirectly related to the broad SRE goal of monitoring system availability and trustworthiness. A relevant observability SLO could be: "99% of dashboards, when configured with multi-condition annotation queries, return annotation sets consistent with design expectations." Monitoring and auditing the accuracy of such queries can be one of the measures to improve the reliability of the overall monitoring system.
+
+**Related concept pages**: [[annotations]], [[matchany-filtering]], [[grafana-queries]], [[sre-monitoring-standards]]

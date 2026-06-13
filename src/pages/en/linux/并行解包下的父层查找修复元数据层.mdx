@@ -1,0 +1,44 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "containerd/containerd"
+category: "可靠性与故障处理"
+confidence: high
+---
+
+## Overview
+
+This knowledge entry documents the fix for a critical flaw in the containerd container runtime that affected the parallel unpacking functionality of the image layer. In a cloud-native environment, containerd serves as the core container runtime and distribution system, and its stability and performance are directly related to the deployment efficiency of workloads. Parallel unpacking is an important performance optimization tool designed to speed up container startup by processing multiple image layers concurrently. However, a small oversight in the implementation details can lead to metadata inconsistencies that affect the correct behavior of the system. This fix reflects the strict pursuit of system state consistency and is a typical example of SRE focusing on the micro-level of reliability.
+
+## Core concepts
+
+To understand this fix, you need to master the following core concepts:
+
+- **containerd and Snapshotter**: containerd is an industrial-grade container runtime that is responsible for managing the complete life cycle of containers. Snapper is a containerd plugin for managing the file system layer (snapshots) of a container, with each snapshot representing a view of the file system.
+- **Metadata**: In containerd, the metadata layer is responsible for persistently storing information about all images, containers, and snapshots and their relationships, including parent-child hierarchical relationships.
+- **Chain ID and parent chain ID**: The image is composed of multiple layers (Layer), and each layer has a unique chain ID. The parent chain ID points to the next layer on which this layer depends, thus forming a chain structure. Properly maintaining this chain is the basis for ensuring that the merged view of the file system is correct.
+- **Parallel Unpacking**: An optimization technique. When decompressing an image composed of multiple layers, parallel depacking allows multiple layers to be decompressed simultaneously, rather than strictly sequentially from bottom to top, significantly reducing overall decompression time.
+- **Prepare() method**: A key method of the snapper interface, used to prepare necessary metadata and underlying storage before creating a new snapshot. It needs to be called correctly during the parallel unpacking process.
+
+## Practice
+
+**Problem background and root cause**:
+In scenarios where the parallel unpacking function is enabled, when the `Prepare()` method is called for an image layer, the `parent` parameter of the method is not passed correctly. However, the parent chain ID information required for this call is actually stored in a label. In the internal logic of the metadata layer, it mainly relies on the `parent` parameter to find the parent layer metadata, while ignoring the equivalent information contained in the tag. This caused the lookup to fail, breaking the record of parent-child relationships between snapshots.
+
+**Repair**:
+The core of the fix is to enhance the logic of the metadata layer to find the parent layer. The specific modification ensures that when the search through the `parent` parameter of the `Prepare()` method fails, it will further check whether the provided tag contains the parent chain ID information. If included, the relationship is established correctly using the value in the tag as the parent chain ID.
+
+**Verification method**:
+The fix includes a new integration test that simulates the behavior of the Remote Snapper. Remote snapper refers to a scenario where the actual storage of the snapshot is not local and needs to be obtained through the network. In this scenario, the requirements for metadata consistency are particularly strict. The test constructs a parallel unpacking call sequence to verify that the repaired metadata layer can correctly handle this situation of relying on tags to pass the parent chain ID, ensuring that issue #13264 is resolved.
+
+## SRE Key Points
+
+- **Relevance to reliability and incident response**: This type of defect is a hidden **status inconsistency** problem. It may not be exposed in normal serial processes, but it will show up under concurrent conditions. Once triggered in a production environment, it may cause container startup failure or file system view errors, causing service interruption. SRE needs to incorporate such concurrent race conditions into the failure mode library during post-mortem analysis.
+- **Best Practices**:
+    - **Adequate integration testing**: Especially for core components such as containerd, various execution paths (such as parallel modes) and component interactions (such as different types of snappers) must be covered. Testing that simulates complex scenarios such as remote snappers is critical.
+    - **Defensive Programming and Data Consistency**: In interface design, when key data may be provided through different channels (parameters, labels), all valid channels should be logically considered to ensure a consistent view of the data.
+- **Common anti-patterns**:
+    - **Assume the call path remains unchanged**: When refactoring or optimizing (such as introducing parallel unpacking), the impact on the existing call chain, especially the implicit data transfer method, was not fully evaluated.
+    - **Ignore edge and exception scenarios**: Scenarios such as remote snappers tend to be more complex than local scenarios and need to be covered by explicit tests.
+- **Related indicators (SLI/SLO/SLA)**: This fix itself does not directly define a new SLI, but it indirectly maintains the reliability of the two key SLIs "container startup success rate" and "image preparation time" by ensuring the correctness of the `containerd` image unpacking function. An associated SLO might be "Image unpacking success rate &gt; 99.9% for a given degree of parallelism".
+
+**Related pages**: [[containerd]], [[snapper]], [[metadata]], [[chain ID]], [[parallel unpacking]], [[remote snapper]], [[event response]], [[integration test]]

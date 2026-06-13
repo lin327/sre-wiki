@@ -1,0 +1,73 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[Bug] When NRI plugin fails on RunPodSandbox, containerd leaks resources'"
+category: "容器运行时"
+confidence: high
+---
+
+## Overview
+
+In the Kubernetes ecosystem, containerd serves as the core container runtime, and its stability and resource management capabilities are crucial. Node Resource Interface (NRI) is an extension mechanism of containerd that allows plug-ins to inject custom logic at key nodes in the container life cycle (such as creation and startup). However, this case revealed a flaw in a specific error handling path: when the NRI plug-in failed to execute in the `RunPodSandbox` hook phase, containerd failed to properly clean up the started sandbox (Sandbox) and container runtime (Shim) processes, resulting in resource leaks. This issue has important warning significance for maintaining the long-term stability and reliability of the cluster.
+
+## Core concepts
+
+- **NRI (Node Resource Interface)**: An extensible plug-in framework for running custom hooks at various stages of the container life cycle (such as `RunPodSandbox`, `CreateContainer`) to implement advanced functions such as resource reservation and affinity adjustment.
+- **RunPodSandbox**: A key operation in CRI (Container Runtime Interface), responsible for creating and starting a Pod's sandbox environment (usually a lightweight container), providing network and storage namespace for business containers within the Pod.
+- **Shim (containerd-shim)**: containerd is an independent process started for each container (or sandbox), responsible for managing the actual life cycle of the container (running, stopping, deleting). Stopping a container or sandbox essentially stops and cleans up its corresponding shim process.
+- **Resource Leak**: It means that after the operation is completed, system resources (such as processes, file descriptors, mount points) that should be released are not released correctly, and continue to occupy system resources, which may eventually lead to node resource exhaustion and affect stability.
+
+## Practice
+
+### Problem Scenario and Reproduction Path
+The issue was discovered during the Kubernetes end-to-end test (E2E test). The test process is as follows:
+1. Call `RunPodSandbox` through CRI to start a Pod sandbox.
+2. Inside containerd, the `StartSandbox` function executes successfully, which means that the underlying Shim process has been started and running.
+3. Subsequently, NRI’s `RunPodSandbox` hook is called. **This hook is designed to return an error** in test configurations, simulating plugin failure.
+4. At this point, the error handling process is started, but the cleanup of the started resources is missing.
+
+### Root cause analysis
+By analyzing the code logic in `pkg/cri/server/sandbox_run.go`, the problem can be clearly located:
+- On line 299, after `StartSandbox` succeeds, the Shim process and associated rootfs, `/dev/shm` mount points already exist.
+- After an error occurs, the existing cleanup logic (defer statement) can only handle part of the transaction:
+    - ✅ **Metadata Cleanup**: The defer on line 164 will remove the metadata for this sandbox from storage.
+    - ✅ **NRI Notification**: The defer on line 351 will send a `RemovePodSandbox` notification to the NRI framework.
+    - ❌ **Process Stop**: **No** calls to `sandboxService.StopSandbox()` or `controller.Stop()` to stop the Shim process.
+    - ❌ **Mount Point Unmount**: **No** logic to unmount mounted rootfs and shm.
+This causes the Shim process to become an "orphan process" and the file system mount point continues to be occupied, causing resource leaks.
+
+### Repair solutions and best practices
+The **fix** is clear: insert a defer statement after `StartSandbox` succeeds but before the NRI hook is called (i.e. between lines 313 and 344). This statement should check the function's return error (`retErr`), and when an error occurs, call `c.sandboxService.StopSandbox(ctx, sandbox)` to ensure that the underlying resource is recycled correctly.
+
+```go
+// Sample fix code snippet (located at pkg/cri/server/sandbox_run.go)
+defer func() {
+    if retErr != nil {
+        // StopSandbox will internally handle Shim process stopping and mount point cleaning
+        if err := c.sandboxService.StopSandbox(ctx, sandbox); err != nil {
+            log.G(ctx).WithError(err).Warn("Failed to stop sandbox on RunPodSandbox hook failure")
+        }
+    }
+}()
+// ... subsequent calls to NRI hooks
+```
+
+**Defensive Programming** is one of the core principles of SRE. This case shows that after introducing external extension points (such as NRI hooks), it is necessary to ensure that the error handling path of the main process covers all possible failure points and has complete resource rollback capabilities. At the same time, the existing rollback test (`sandbox_run_rollback_test.go`) needs to increase coverage of NRI hook failure scenarios to prevent similar problems from recurring.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: Resource leakage is a typical problem that affects node stability. Leaked processes and mount points will slowly consume resources such as CPU, memory, file descriptors, etc., which may cause the node to be `NotReady` or trigger the kubelet's eviction policy. The fix for this bug directly improves the long-term operational reliability of the node.
+- **Relevance to Observability**: This type of leak may be difficult to detect through regular monitoring because of its slow rate. SRE needs to pay attention to the following abnormal signals:
+    - The number of `containerd-shim-*` processes on the node slowly increases over time and does not match the actual number of running Pods.
+    - Orphaned mount points belonging to terminated Pods appear in `/proc/mounts`.
+- **Incident Response and Troubleshooting**: When a container runtime resource leak is suspected, you should perform:
+    1. Compare the number of Pods on the node with the number of Shim processes: `ps aux | grep containerd-shim | grep -v grep | wc -l`.
+    2. Check containerd's logs for errors related to sandbox stop failures.
+    3. Analyze `/proc/mounts` to find possible remaining overlay or shm mounts.
+- **Best Practices and Anti-Patterns**:
+    - **Anti-Pattern**: After integrating an external extension or hook, assuming it will never fail, or missing a cleanup step in the wrong path.
+    - **Best Practice**: Follow the principle of "**Start on successful path, clean up on failed path**". Define a clear rollback path on failure for every operation that may introduce side effects (such as starting a process, creating a mount) and include it in automated tests.
+- **Related Indicators (SLI/SLO)**: Consider defining the following SLI to monitor the recurrence of this type of problem:
+    - `containerd_leaked_shim_process_count`: The number of detected "orphan" shim processes (can be judged by the process name and parent process).
+    - `containerd_sandbox_run_failure_cleanup_success_rate`: The success rate of subsequent cleanup operations (`StopSandbox`) when `RunPodSandbox` fails due to hooks. The SLO for this metric should be set to 100%.
+
+[[sandbox-management]] [[nri-extension-framework]] [[cri-error-handling]]

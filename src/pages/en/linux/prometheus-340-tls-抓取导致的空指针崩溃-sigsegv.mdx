@@ -1,0 +1,71 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "SIGSEGV in `tlsRoundTripper.RoundTrip()` during scrape"
+category: "故障与诊断"
+confidence: medium
+---
+
+## Overview
+
+This document describes a serious stability issue that occurred after upgrading Prometheus to version 3.4.0. The problem is manifested in that the Prometheus process crashes due to accessing an invalid memory address (`SIGSEGV`) when performing indicator scraping (Scrape). The specific stack points to the `tlsRoundTripper` structure related to TLS configuration. For SREs that rely on Prometheus for critical monitoring, it is critical to understand the causes, diagnostic methods, and preventive measures for this problem to ensure the reliability of the monitoring system.
+
+## Core concepts
+
+The root cause of this crash is that **Prometheus 3.4.0 version (or the `prometheus/common` library it depends on) failed to correctly initialize a pointer field inside the TLS poller (`tlsRoundTripper`) used to perform HTTP requests when processing the TLS client configuration**.
+
+- **Nil Pointer Dereference**: In the Go language, when trying to access a member pointed to by a pointer pointing to a `nil` (uninitialized or nulled) memory address, the runtime will trigger a `SIGSEGV` error, causing the process to crash. In this case, it happens within the `tlsRoundTripper.RoundTrip()` method.
+- **TLS Poller (tlsRoundTripper)**: This is a component in the `prometheus/common` library that is responsible for encapsulating the standard HTTP poller and injecting custom TLS configuration (such as client certificate, CA check, etc.) for all outbound HTTP requests (such as Prometheus crawling the target). Its correct initialization is the basis for secure communication.
+- **Impact of version change**: Users have problems after upgrading from 3.2.1 to 3.4.0. This indicates that version 3.4.0 (or its transitive dependency `prometheus/common` v0.63.0) has introduced a flaw-introducing change in the logic of building or using TLS configuration structures.
+
+## Practice
+
+### Diagnostic steps
+
+1. **Analyze crash stack**:
+    - Key line: `github.com/prometheus/common/config.(*tlsRoundTripper).RoundTrip(0xc01ce0c420, 0xc00b4d1900)`.
+    - Confirmed that the crash occurred during the TLS handshake phase of an outbound HTTP request. The stack clearly points to the code of the `prometheus/common` library, not the main Prometheus logic.
+
+2. **Check environment and configuration**:
+    - **Version Information**: Confirmed that the crashing version is `prometheus, version 3.4.0` and the Go version is `go1.24.3`.
+    - **TLS Configuration**: Check all parts of the Prometheus configuration file that refer to `tls_config` (such as `tls_config` in `scrape_config`, or `tls_config` in `remote_write`/`remote_read`). Even if the configuration in the original issue is empty, in actual deployment, any crawling task that uses custom TLS configuration (such as `insecure_skip_verify: true`, `cert_file`, `key_file`) may trigger this issue.
+
+3. **Reappearance and Isolation**:
+    - Check the Prometheus logs for error messages before the crash.
+    - Try to temporarily simplify the configuration, for example, remove the `tls_config` of all crawling tasks or restore it to the default value, and observe whether it still crashes. This can help confirm whether the issue is related to a specific TLS configuration.
+
+### Temporary solutions and fixes
+
+- **Downgrade version**: The most straightforward temporary solution is to roll back to a known stable version, such as 3.2.1. This is the preferred option to ensure the availability of the monitoring system before an official fix is ​​released.
+- **FOLLOW OFFICIAL FIX**: Keep an eye out for updates to the above GitHub Issue (#16622). The official team usually releases a patch version (such as 3.4.1) as soon as possible to resolve such regression issues. Upgrading to a repaired version is the fundamental solution.
+- **Validate Configurations**: Fully validate all TLS-related crawling configurations in a test environment before upgrading or applying new configurations.
+
+## SRE Key Points
+
+- **Reliability and Release Management**:
+    - This case highlights the importance of **Canary Deployment** and **Shadow Traffic** strategies. Upgrading a small number of instances or traffic before fully upgrading the production environment can detect such serious crashes in advance.
+    - SRE should establish a strict **version change review process**, especially for core infrastructure components, changes to their dependent libraries need to be evaluated.
+
+- **Observability and Incident Response**:
+    - **Process Liveness Monitoring**: The Prometheus process itself must be monitored for liveness. You can use systemd's `Restart` policy or Kubernetes' `livenessProbe` to achieve automatic recovery after a crash, but this only treats the symptoms rather than the root cause.
+    - **Alarm settings**: Set alarms such as "Prometheus instance restart" or "Prometheus collection target number drops sharply" to respond immediately when a crash occurs.
+    - **Crash Analysis**: Collect and analyze crash core dump files, combined with Go's stack information, to quickly locate specific lines of code and variable status, greatly speeding up problem diagnosis.
+
+- **Best Practices and Anti-Patterns**:
+    - **Best Practices**:
+        1. **Keep configuration simple**: Try to use the default TLS configuration unless necessary.
+        2. **Test coverage**: Before upgrading, use tools such as `promtool check config` to verify the configuration file syntax.
+        3. **Monitor dependencies**: Monitor GitHub Issues and Release Notes of key open source components (such as Prometheus) to know potential risks in advance.
+    - **Common anti-patterns**:
+        1. **Blind upgrade**: Directly upgrade the core components of the production environment without evaluating the impact of the change and without testing.
+        2. **Ignore crash logs**: Prometheus' own crash logs and core indicators are not monitored and analyzed.
+
+- **Relevant Indicators (SLI/SLO)**:
+    - **SLI (Service Level Indicator)**: Whether the growth rate of `prometheus_tsdb_head_chunks_created_total` is zero or fluctuates abnormally (implying that the crawling stops), and whether the sampling points of `scrape_duration_seconds` are lost in large numbers.
+    - **SLO (Service Level Objective)**: For the reliability SLO of the monitoring system, the goal of "Prometheus process uptime" should be covered. The collapse directly impacted the achievement of that goal.
+
+## Related pages
+
+- [[tls-configuration]]: Deep dive into the syntax and best practices for Prometheus TLS configuration.
+- [[prometheus-upgrade-guide]]: Standard process for planning and executing Prometheus version upgrades.
+- [[incident-response-for-monitoring-system]]: Incident response manual for failures of the monitoring system itself.
+- [[go-programming-panics-and-crashes]]: Understand the panic and crash mechanism in Go language.

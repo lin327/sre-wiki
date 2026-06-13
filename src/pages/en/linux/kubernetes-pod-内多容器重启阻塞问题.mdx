@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[Bug]: A container cannot restart when there is any terminating container"
+category: "故障模式"
+confidence: medium
+---
+
+## Overview
+
+In Kubernetes, Pod is the smallest unit for scheduling and running, and can contain one or more containers. These containers share network and storage, and their lifecycle is managed uniformly by kubelet. This document describes a known Kubernetes behavior (reported in issue #121398): when any container in a Pod is in the process of being terminated (for example, due to a `livenessProbe` failure), the restart of other containers in the same Pod that exit with a non-zero exit code and need to be restarted according to the `restartPolicy` will be temporarily blocked until the termination process of the previous container is completely completed. This behavior may violate some users' expectations regarding the "self-healing" capabilities of containers, and may affect the overall availability of the application.
+
+## Core concepts
+
+To understand this issue, you need to first clarify several key concepts of Kubernetes Pod lifecycle management:
+
+- **Container termination process**: When the container needs to be terminated (such as due to probe failure), kubelet will first send the `SIGTERM` signal. For containers with `preStop` hook, the hook will be executed first. Then wait for a grace period (`terminationGracePeriodSeconds`, default 30 seconds), and send `SIGKILL` after timeout to force termination. This process is a life cycle event for a single container in the Pod.
+- **Container relationship within Pod**: In the same Pod, containers are cooperating as a whole, but their life cycle management is independent at the restart level. `restartPolicy` (applied at Pod level, such as `Always`, `OnFailure`, `Never`) determines the restart behavior of all containers in the Pod after exiting.
+- **Restart triggering and blocking**: When a container (non-init container) exits with a non-zero status, kubelet will decide whether to restart it based on `restartPolicy`. However, if the Pod is in memory while another container is going through its termination process (in the `Terminating` state), the restart process for the new container will be delayed based on reported behavior.
+
+## Practice
+
+### Problem recurrence
+
+The issue can be reproduced with the following steps (based on the example in the issue):
+
+1. Create a Pod containing three containers:
+    - **`terminating-container`**: Configure a `livenessProbe` that must fail (for example, execute the `false` command), and set a longer termination processing time (capture the `TERM` signal through the shell and sleep for 15 seconds).
+    - **`restarting-container`**: A container that exits immediately after starting (such as exiting after executing `echo “start a container”`).
+    - **`log`**: A sidecar container used to observe the log output of the first two containers.
+2. Observe the output of the `log` container. The expected behavior is that `restarting-container` should restart immediately after exiting. However, it was actually observed that `restarting-container` did not restart while `terminating-container` was in the state of `terminating...` to `terminated`. The `restarting-container` will only restart after the `terminating-container` has been completely terminated.
+
+### Temporary circumvention method
+
+For applications that rely on rapid restarts of multiple containers to ensure availability, consider the following avoidance strategies:
+
+1. **Adjust container dependencies and order**: Use `initContainers` to handle pre-start dependency checks to ensure that dependencies are ready when the main application container starts. For sidecars that require frequent restarts, ensure that they are relatively independent from the life cycle management of the main container.
+2. **Minimize termination time**: Shorten the termination processing time of `terminating-container` and reduce the window that blocks the restart of other containers. This can be achieved by optimizing the `preStop` hook or setting shorter `terminationGracePeriodSeconds`.
+3. **Separate workloads**: If the timeliness of container restart is extremely high, consider splitting the functions into different, independently managed Deployments to avoid life cycle coupling between them within the same Pod.
+
+## SRE Key Points
+
+- **Impact on Reliability**: This behavior violates the principles of "fail fast" and "self-healing" in SRE. It can lead to extended service degradation time (MTTR) because the abnormal termination process of one container will "contagion" to other healthy containers of the same Pod, delaying their recovery. This is a potential risk for multi-container applications that require high availability (such as sidecar injection log collection, proxies).
+- **Observability and Event Response**: When troubleshooting the abnormally slow restart of containers in a Pod, SRE needs to pay attention to the overall status of the Pod, not just the status of a single container. Using `kubectl describe pod` or viewing kubelet logs, you can observe whether there are multiple containers in the Pod that are in the `Terminating` and `Waiting` (restart waiting) states at the same time, which can help identify such bottlenecks.
+- **Best Practices**:
+    - When designing a multi-container Pod, clarify the dependencies and life cycle expectations of each container, and avoid placing critical containers that require quick restart and containers that may terminate for a long time in the same Pod.
+    - Fully test the recovery behavior of the application in scenarios such as container probe failure and rapid exit, and include the observed restart delay into the Error Budget.
+    - Monitoring and alerting should cover pod-level health, such as `kube_pod_status_phase` and container restart count metrics (`kube_pod_container_status_restarts_total`).
+- **Anti-Pattern**: Over-reliance on the tight coupling of multiple containers within a single Pod to implement complex functionality, while ignoring their life cycle interaction in the event of failure. This may expand the fault domain (Blast Radius).
+- **Relevant Indicators (SLI/SLO)**:
+    - **SLI (Service Level Indicator)**: You can consider the "container restart delay", which is the time from the container exit to its replacement container successfully starting and entering the `Running` state.
+    - **SLO (Service Level Objective)**: For critical services, you can set SLO, such as "99% of container restarts should be completed within 10 seconds after exiting." This bug may directly affect the achievement of this SLO.
+- **Correlation Page**: Understanding this issue requires the specific mechanism of correlating [[pod-lifecycle]] and [[liveness-probe]]. For handling probe failures, refer to [[container-probes]] for best practices.

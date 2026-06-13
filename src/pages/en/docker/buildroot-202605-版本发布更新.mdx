@@ -1,0 +1,64 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Buildroot 2026.05 released"
+category: "构建与部署工具"
+confidence: medium
+---
+
+## Overview
+
+Buildroot is a widely used open source tool for automating the construction of cross-compiled embedded Linux system images. For SRE teams, especially when managing the reliability of edge devices, IoT endpoints, or specific hardware platforms, a reproducible, customizable, and automated build system is fundamental to ensuring system consistency and rapid deployment. Buildroot helps teams build reliable and easy-to-maintain embedded Linux environments by simplifying processes such as tool chain generation, kernel compilation, and root file system (rootfs) assembly, thereby extending SRE's reliability engineering practices from the server to the terminal device.
+
+## Core concepts
+
+### The core role of Buildroot
+Buildroot is essentially a build framework based on the Makefile and Kconfig configuration system. It can:
+1. **Automatically generate cross-compilation toolchain**: Generate appropriate GCC, glibc and other toolchains for the target CPU architecture (such as ARM, MIPS).
+2. **Manage software packages**: Maintains the building rules of thousands of popular embedded software packages, and can automatically handle downloading, patching, configuration, compilation and installation.
+3. **Assemble root file system**: Based on the software package and configuration selected by the user, generate a complete root file system image (such as ext4, cpio, squashfs, etc. formats) including the kernel, init system (such as BusyBox, systemd) and applications.
+
+### 2026.05 version critical update
+This release contains several important improvements that directly impact the capabilities and reliability of systems built with Buildroot:
+- **Arm Neoverse Core Support**: Added support for the Arm Neoverse processor architecture for servers and cloud computing. This means that SRE teams can now use Buildroot to build lightweight, optimized Linux systems for the next generation of high-performance Arm platforms, paving the way for deploying reliability toolchains in edge cloud scenarios.
+- **XFS Root Filesystem Generation**: Officially added the ability to generate root filesystems in the XFS filesystem format. XFS is a high-performance, journaled file system that is particularly suitable for processing large files and high concurrent I/O, making it a more reliable choice for edge nodes that need to store large amounts of logs or data.
+- **A large number of software package updates and bug fixes**: Continuously follow upstream projects, update many software package versions, and fix known issues, which directly improves the security, performance and stability of the built system at the software level.
+
+## Practice
+
+### Get and compile the new version
+To use Buildroot 2026.05, you can check out the corresponding tag from the official Git repository or download the release compressed package:
+```bash
+git clone https://gitlab.com/buildroot.org/buildroot.git
+cd buildroot
+git checkout 2026.05
+# Or use release package
+wget https://buildroot.org/downloads/buildroot-2026.05.tar.gz
+tar xf buildroot-2026.05.tar.gz
+cd buildroot-2026.05
+```
+Then, enter the configuration interface through `make menuconfig` and select the target architecture, required software packages and file system type. For example, to generate an XFS root file system, select a format other than `ext2/3/4` under the `Target images` menu.
+
+### Build systems that take advantage of new features
+For the Arm Neoverse platform, the corresponding target architecture (such as `aarch64`) should be selected during configuration, and Buildroot will automatically process the optimized compilation options for this microarchitecture. For scenarios where XFS is required, make sure that XFS file system support is included in the kernel configuration (usually included by default) and select XFS in the root file system generation options.
+
+## SRE Key Points
+
+### Association with reliability
+The core value of Buildroot is **reproducible builds**. By versioning and automating the build process of the entire system (from tool chain to application), it greatly reduces "configuration drift" caused by environmental differences or manual configuration, which is key to ensuring long-term reliable operation of embedded devices. SRE teams can use this to ensure that all similar devices are running the exact same, well-tested software stack.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    1. **Put Buildroot configuration into version control**: Manage `defconfig` files and custom override patches just like application code.
+    2. **Use its automation for CI/CD**: Integrate the Buildroot build into the continuous integration pipeline to realize automatic building and testing of firmware packages.
+    3. **Prefer official software packages**: Try to use software packages maintained by Buildroot, which have been tested for compatibility.
+- **Common anti-patterns**:
+    1. **Manually modify the output directory**: Make modifications directly in the `output/` directory. These modifications cannot be reproduced and tracked. They should be implemented through a custom `post-build` script or overwrite file.
+    2. **Ignore version control**: Buildroot versions and custom changes are not tracked, resulting in the inability to locate or reproduce the historical build environment.
+
+### Related indicators (SLI/SLO/SLA)
+Although Buildroot itself is a build tool, the quality of the system image it outputs directly affects device SLO. The following correlation indicators can be considered:
+- **SLI**: Firmware build success rate, build time, number of software packages to generate images, and number of security vulnerabilities.
+- **SLO**: Commitment to complete the firmware build for a specific hardware target within a certain time window; guarantee that the delivered firmware image passes the automated testing of the specific suite.
+- **SLA**: Firmware delivery service level agreement to internal customers (e.g. hardware team, field operations).
+
+Building a reliable and efficient embedded Linux system is the first line of defense to ensure the reliability of end devices. Buildroot provides solid infrastructure support for SRE practices through its mature, automated processes.

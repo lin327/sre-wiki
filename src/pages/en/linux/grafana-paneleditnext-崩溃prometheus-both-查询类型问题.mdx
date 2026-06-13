@@ -1,0 +1,74 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "“PanelEditNext crashes with Prometheus ‘Both’ query type” - GitHub Issue"
+category: "故障与调试"
+confidence: high
+---
+
+## Overview
+In Grafana's observability platform, the panel editor is the core component for building and debugging dashboards. When a user attempts to edit a panel that has a Prometheus data source configured and the query type is set to "Both" (i.e., performing both a range query and an immediate query), a front-end application crash occurs under certain user interface (UI) paths. This issue affects the stability and user experience of the dashboard editor and is a specific failure case that SREs and front-end developers need to pay attention to and resolve when maintaining the reliability of the Grafana platform. Understanding this issue can help avoid similar runtime errors caused by inconsistent component states.
+
+## Core concepts
+
+### Prometheus query type
+In Grafana's Prometheus data source, a query can specify different types:
+- **Range**: Execute queries based on time range and return time series data.
+- **Instant**: Execute the query at a specific point in time and return a single value.
+- **Both**: Enable both `range` and `instant` queries. When both `range: true` and `instant: true` exist in the query, the `getQueryTypeValue(query)` function returns the string `"both"`.
+
+### Panel editor path: v1 and v2
+Grafana currently has two sets of implementation paths for panel editors:
+- **v1 (`PanelEdit`)**: Traditional editor path, rendering the query editor through the `QueryEditorRow` component.
+- **v2 (`PanelEditNext`)**: Path to the next generation editor, which is the default experience (unless overridden via the `localStorage` key `grafana.dashboard.query-editor-next.v2-preference`). It is rendered through the `QueryEditorRenderer` component.
+
+The crash only occurs on the **v2** path, while the v1 path handles the same query correctly.
+
+### Application context (`app` attribute)
+Components that render the query editor require an `app` attribute to identify the current application context, such as a dashboard, exploration page, or panel editor. Different contexts determine the available UI options. Core `CoreApp` enumeration values include:
+- `CoreApp.Dashboard`
+- `CoreApp.PanelEditor`
+- `CoreApp.Explore`
+- `CoreApp.Correlations`
+
+The source of the problem lies in the `getQueryTypeOptions(includeBoth)` function, which only includes the `"both"` option in the returned option list when the `includeBoth` parameter is `true`. This parameter is `true` if the `app` value is `CoreApp.Explore`, `CoreApp.Correlations` or **`CoreApp.PanelEditor`**.
+
+## Practice
+
+### Problem diagnosis and reproduction
+1. **Trigger condition**: Use a panel configured with a Prometheus data source and the query type is explicitly set to "Both".
+2. **Enter v2 editor**: Open the editing interface of this panel. Make sure you are using the v2 path (`PanelEditNext`). This can be confirmed by checking if the key `grafana.dashboard.query-editor-next.v2-preference` exists in the browser's `localStorage` and is set to `"true"`.
+3. **Observe Error**: The editor interface will crash and the browser console will throw a `TypeError` pointing to the line of code in the `PromQueryBuilderOptions` component.
+
+### Solutions and Fixes
+The root cause of this issue is using the wrong app context in the wrong component. The `QueryEditorRenderer` component of the v2 path incorrectly hardcodes the `app` property of the query editor it renders to `CoreApp.Dashboard`, a context that does not contain support for the "Both" query type.
+
+**Repair Steps**:
+
+1. Locate the source file of the problem: `public/app/features/dashboard-scene/panel-edit/PanelEditNext/QueryEditor/QueryEditorRenderer.tsx`.
+2. Modify the code near line 78 to correct the value of the `app` attribute from the incorrect `CoreApp.Dashboard` to **`CoreApp.PanelEditor`**.
+
+```tsx
+// before fix (error)
+app={CoreApp.Dashboard}
+
+// After repair (correct)
+app={CoreApp.PanelEditor}
+```
+
+**Why is this the right fix? **
+The `QueryEditorRenderer` component is specifically used to render the query editor in the Panel Editor. Therefore, it should declare itself in the context of `CoreApp.PanelEditor`, not `CoreApp.Dashboard`. The wrong context value is always present, but only when the query type is "Both" because the option list is missing, causing the `.find()` method to return `undefined` and cause a crash. After correcting the context, `getQueryTypeOptions(true)` is called, the "Both" option is displayed correctly, and `.find()` is able to successfully find a match.
+
+## SRE Key Points
+
+### Relevance to reliability and incident response
+Such front-end crashes are direct failures that impact user experience and platform availability. The SRE needs to ensure that the monitoring system can capture JavaScript runtime errors on the front end and trigger alerts. In incident response, you need to quickly distinguish whether this is a user-specific operational issue or a reproducible code flaw in order to decide whether you need to issue a hotfix or notify the engineering team.
+
+### Best practices and common anti-patterns
+- **Context consistency**: This case is a typical "property context inconsistency" anti-pattern. Components should accurately declare their operating environment (such as the `app` attribute), and downstream logic relies on this attribute to provide the correct functional options. Hardcoding or passing incorrect context values ​​can lead to hidden flaws that are not exposed until certain boundary conditions are triggered (such as selecting the "Both" query type).
+- **Defensive Programming**: In `PromQueryBuilderOptions`, the call to `.find(...).label` lacked null checking. A more robust way of writing should first determine whether the result of `find` exists, for example: `const option = queryTypeOptions.find(...); const queryTypeLabel = option ? option.label : 'Unknown';`. While the root cause is upstream (the context of the error), downstream components should also be made more robust.
+- **Feature Flags and Progressive Release**: The coexistence of v1 and v2 paths reflects the strategy of progressive release. SREs and developers should note that the introduction of new paths may require comprehensive regression testing of existing functionality (such as support for all query types) to avoid regression defects.
+
+### Related Indicators (SLI/SLO)
+For crashes that affect the core functionality of the editor, the following SLI can be defined:
+- **SLI**: JavaScript error rate for the panel editor (example: crashes per minute unique sessions).
+- **SLO**: Can be set to "Panel Editor crash-free success rate ≥ 99.9% when the user performs critical operations (such as opening the editor, saving changes)". The occurrence of this problem will directly erode the Error Budget of this SLO.

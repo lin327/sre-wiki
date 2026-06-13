@@ -1,0 +1,94 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana GitHub Issue"
+category: "配置与部署"
+confidence: medium
+---
+
+
+## 概述
+
+在 Grafana 13 版本中，仪表板的管理与配置流程引入了不兼容性变更。对于依赖 `git` 进行配置管理（GitOps）或使用基础设施即代码（IaC）原则进行仪表板版本控制的 SRE 团队而言，这是一个关键问题。传统的“编辑仪表板 → 导出 JSON → 提交至版本库 → 配置加载”的工作流因 GUI 导出格式的改变而中断。本页面旨在阐明该问题的核心、影响范围以及可行的解决方案，以帮助团队维护其可观测性配置的可靠性与自动化流程。
+
+## 核心概念
+
+1.  **基于文件的仪表板配置 (File-based Provisioning)**：Grafana 支持通过监控特定目录中的 JSON 文件来自动创建或更新仪表板。此机制是实现仪表板作为代码（Dashboard as Code）进行管理的核心，允许将配置与代码仓库集成，实现变更追踪和可审计性。
+2.  **仪表板导出格式差异**：
+    *   **经典 JSON 模型 (Classic/ Dashboard JSON model)**：在 Grafana 12 及更早版本中，GUI 提供的导出格式。该格式被文件配置机制完全支持，是自动化工作流的事实标准。
+    *   **V1/V2 资源格式**：Grafana API 与内部存储的新格式。从 Grafana 13 开始，GUI 的“导出为代码”功能默认生成此格式的 JSON，但传统的文件配置目录 `type: file` **无法识别或加载**此格式的文件。
+3.  **v2 API 与 Provisioning 的冲突**：错误信息 `dashboard appears to be in v2 format. Please use the /apis/dashboard.grafana.app/v2 API` 明确指出，通过 GUI 导出的 JSON 属于新的 v2 API 格式，而基于文件的 Provisioning 加载器设计用于处理旧格式。这种架构上的不匹配是导致问题的根本原因。
+
+## 实践
+
+### 问题重现与影响
+
+在 Grafana 13.0.1 及后续版本中，遵循以下标准工作流会导致仪表板配置失败：
+
+1.  在 Grafana GUI 中创建或编辑一个仪表板。
+2.  通过 **导出 → 导出为代码** 获取 JSON 内容。
+3.  将此 JSON 内容保存为 `.json` 文件，并放置在 `dashboards-providers.yaml` 中 `type: file` 所配置的目录下。
+4.  重启 Grafana 或等待配置热重载。
+5.  **结果**：Grafana 日志出现错误，仪表板未加载，UI 中对应文件夹显示为空。
+
+### 当前解决方案与工作流调整
+
+由于经典的导出选项已移除，SRE 团队必须调整其配置管理流程。以下是两种可行的替代方案：
+
+#### 方案一：使用 API 进行导出（推荐）
+
+直接调用 Grafana 的 Provisioning API 来生成与文件配置兼容的 JSON。这确保了输出格式的正确性。
+
+```bash
+# 示例：使用 API 导出指定仪表板为经典 JSON 模型
+# 需要有效的认证令牌和管理员权限
+GRAFANA_URL="http://localhost:3000"
+DASHBOARD_UID="your-dashboard-uid"
+API_TOKEN="your-admin-api-token"
+
+curl -s -H "Authorization: Bearer $API_TOKEN" \
+  "$GRAFANA_URL/api/dashboards/uid/$DASHBOARD_UID" | \
+  jq '.dashboard' > provisioned-dashboard.json
+
+# 将生成的 provisioned-dashboard.json 文件放入配置目录
+```
+
+#### 方案二：使用工具进行格式转换
+
+如果已经存有大量使用新格式导出的仪表板 JSON，可以考虑编写脚本进行转换。但请注意，直接转换可能因 schema 差异而存在风险，建议在测试环境验证。
+
+#### 长期解决方案与文档依赖
+
+最理想的解决方式是 Grafana 官方：
+*   **恢复 GUI 中的兼容性导出选项**，或
+*   **更新文件配置加载器以支持 v2 格式 JSON**，或
+*   **在官方文档中明确说明推荐的自动化配置工作流**。
+
+目前，SRE 团队应优先采用 **方案一**，即通过 API 获取仪表板定义，这是最可靠的方法。同时，应密切关注 Grafana 官方文档关于[仪表板配置](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards)的更新。
+
+## SRE 要点
+
+### 可靠性、可观测性与事件响应的关联
+
+*   **可靠性**：仪表板是监控系统健康状况、跟踪 SLO（服务级别目标）表现的关键界面。无法通过自动化流程部署或更新仪表板，将直接影响运维团队快速获取系统视图的能力，从而削弱事件响应和容量规划的效率。
+*   **可观测性**：此问题直接冲击了可观测性配置的“配置即代码”原则。版本化、可审计的仪表板配置对于维护大规模、复杂的监控栈至关重要。
+*   **事件响应**：在故障期间，快速部署新的排查仪表板或更新现有面板是事件响应的标准操作。如果该流程因工具链问题而受阻，会显著延长 MTTR（平均修复时间）。
+
+### 最佳实践与常见反模式
+
+*   **最佳实践**：
+    1.  **验证配置流程**：在 Grafana 大版本升级后，务必测试整个配置部署管道（包括导出、文件存储、加载）。
+    2.  **使用 API 进行自动化**：优先使用 Grafana Provisioning API 或 `grafana-dashboard-import` 等官方 CLI 工具，而非依赖 GUI 导出。
+    3.  **版本控制与测试**：将仪表板定义 JSON 纳入 Git，并通过 CI/CD 管道进行语法检查和（如果可能）沙箱环境加载测试。
+    4.  **清晰的文档**：在团队内部文档中记录当前版本下仪表板配置的正确操作流程。
+
+*   **常见反模式**：
+    1.  **直接使用 GUI 导出文件进行配置**：这是本次问题的核心反模式，容易因版本变更而失效。
+    2.  **忽略配置热重载测试**：未验证配置文件修改后 Grafana 的实际加载行为。
+    3.  **缺乏配置备份与回滚计划**：未对仪表板配置版本进行管理，导致出现问题时难以回退。
+
+### 相关指标（SLI/SLO/SLA）
+
+此问题本身不直接影响 SLI，但会影响对 SLI 的监控能力。相关的运维指标可能包括：
+*   **配置变更部署成功率**：衡量仪表板配置自动化管道的可靠性。
+*   **仪表板可用性**：定义关键仪表板必须可访问且数据准确的 SLO。配置加载失败直接导致该 SLO 违约。
+*   **配置变更部署时间**：从代码提交到仪表板在生产环境生效的平均时间，此问题会使其大幅增加。

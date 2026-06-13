@@ -1,0 +1,56 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "“Dashboard Variables cut / hashed after 50 characters in PromQL query”"
+category: "可观测性"
+confidence: medium
+---
+
+## Overview
+
+When building a monitoring dashboard based on Prometheus or Mimir, [[Grafana]]'s dashboard variables are the core functionality for dynamic filtering. However, a known flaw or design limitation is that when the **content** of a variable (i.e. the tag value queried from the data source) is longer than 50 characters, Grafana truncates it and appends a hash suffix before inserting it into the PromQL query. This behavior will destroy queries that rely on accurate and complete tag values ​​for matching, directly affecting the accuracy and reliability of monitoring data. It is a "[[observability]] trap" that SREs need to be wary of and avoid in the tool chain.
+
+## Core concepts
+
+**Dashboard variables**: In Grafana, users are allowed to dynamically select values (such as service name, host name, environment) through drop-down menus, etc. These values are then injected into the PromQL query of the dashboard to achieve interactive filtering of data.
+
+**Truncation and hashing of variable contents**: This question specifically refers to the **value** of the variable rather than the variable name. When the variable type is "Query" and a label value (Label Value) returned by the query exceeds 50 characters, Grafana will:
+1. **Truncation**: Trim the original value to 50 characters.
+2. **Hashification**: Append a short hash value (such as `2b3c4d5a`) after the truncated string.
+
+The original design may be to prevent long values ​​from causing UI layout problems or long query strings, but this opaque treatment leads to changes in query semantics.
+
+## Practice
+
+The specific manifestations and impacts of this problem are as follows:
+
+1. **Problem triggering conditions**:
+    * There are tag values &gt; 50 characters long in the data source (e.g. Mimir/Prometheus), for example: `poolname: "/gn-pr-live-1156/vvvvvvvvvvvvv.cccc.bbbbbbbbbb.xx_443"` (53 characters).
+    * Create a "query" type variable in the Grafana dashboard whose query results can overwrite this long tag value.
+    * Use this variable in the panel's PromQL query (e.g. `{pool=~"$pool"}`).
+
+2. **Actual Behavior**:
+    * When viewing the actual PromQL execution in the Explore view or query editor, the variable `$pool` is replaced with a string like `/gn-pr-live-1156/vvvvvvvvvvvvv.cccc.bbbbbb**2b3c4d5a**`.
+    * This hashed string does not match the original tag value stored in the database, causing the query to not return the expected data and the dashboard panel to have a "no data" or error status.
+
+3. **Scope of influence**:
+    * According to the problem report, this problem has been confirmed to exist in Grafana 10.4, 11.3.2, 11.5.2, 12.1.x, 12.2.0 and other versions. It is not an accident, but a stable and reproducible behavior.
+
+**WORKAROUND/WORKAROUND**:
+* **Data Modeling Avoidance**: During the data ingestion or collection phase, long label values are mapped to a short identifier (ID) of length ≤ 50 characters by renaming (`relabel`).
+* **Query logic avoidance**: Avoid using variables directly for exact matching, and instead use regular expressions or partial matching (such as `poolname=~".*$pool.*"`), but this will sacrifice query performance and may introduce false matches.
+* **Upgrade or wait for fix**: Pay close attention to the official updates of Grafana, this issue has been reported, future versions may correct this behavior or add configuration options.
+
+## SRE Key Points
+
+This issue profoundly reflects the importance of "**monitoring system reliability**" itself in SRE practice. A flawed monitoring tool can become a blind spot.
+
+* **Relevance to Reliability**: Dashboard variable truncation directly destroys the accurate presentation of **[[SLI]]** (Service Level Indicators). When engineers cannot accurately filter traffic or error logs through preset variables (such as service pool names), the efficiency and accuracy of fault location (**[[incident response]]**) will be greatly reduced, and **MTTR** (mean time to recovery) may be extended.
+* **Best Practices and Anti-Patterns**:
+    * **Anti-Pattern**: Directly use natural tag values from the source system (such as Kubernetes, service discovery) that may contain long paths and unique IDs as the main filter for Grafana dashboard variables.
+    * **Best Practice**:
+        1. **Standardized Tags**: Establish team norms that require business-critical tag values (used for main dashboard filtering) to be limited to 50 characters in length.
+        2. **Abstraction layer design**: Create labels with clear semantics and controllable length (such as `service_group: “pool-alpha”`) in the indicator generation or aggregation layer (such as Prometheus’ relabeling or recording rules) for use in dashboards.
+        3. **Tool Validation**: When building key dashboards, verify that the variables used behave as expected at extreme values ​​(such as long labels) and include this in the **[[observability]]** quality checklist.
+* **Related Metrics**: This issue mainly affects label-based filtering capabilities and is indirectly related to the observability clause defined in **[[SLA]]** (Service Level Agreement), because without reliable observation, compliance cannot be reliably proven.
+
+&gt; **Related pages**: [[Grafana]], [[Prometheus]], [[Observability]]

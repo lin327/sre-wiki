@@ -1,0 +1,66 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'LLM: Dashboard/Panel Title/Description generation is not working after update"
+category: "故障排除"
+confidence: medium
+---
+
+## Overview
+
+Since version 10.2, Grafana has introduced the function of using large language models (LLM) to automatically generate dashboard titles, descriptions, and change summaries. This is an important feature to improve user experience and operation and maintenance efficiency. This feature relies on the Grafana LLM plugin to communicate with the Grafana Live (WebSocket-based) backend. This page is based on a GitHub Issue, which analyzes the regression failure of this function in Grafana 12.4 version, and provides SRE engineers with ideas for diagnosing and solving such integration problems.
+
+## Core concepts
+
+To understand this failure, you need to understand the following key concepts:
+
+- **Grafana LLM Plugin**: An official plugin that allows Grafana to interact with designated large language model services (such as OpenAI) to power AI assistive features.
+- **Grafana Live**: Grafana's real-time data push service, which often realizes real-time communication between the front and back ends through WebSocket connections. Requests and responses from AI-generated functions are likely to be transmitted over this channel.
+- **Function regression (Regression)**: refers to the abnormality or failure of old functions that originally worked normally in the new version of the software. This is a problem that needs to be avoided through rigorous regression testing in software development.
+
+## Practice
+
+### Troubleshooting steps
+
+1. **Environment Confirmation**:
+    - Confirm Grafana version is 12.4 or an affected version.
+    - Confirm that the `grafana-grafana-ai-applications` plugin is installed, enabled, and configured with a valid LLM service token.
+
+2. **Reproduction and Observation**:
+    - Create or open a dashboard.
+    - Try using the "✨ Auto generate" option next to the title or description input box.
+    - **Key observation point**: Use the "Network" tab of the browser developer tools (Chrome DevTools) to filter the "WS" (WebSocket) connection. Observe whether any new WebSocket messages are sent to the `grafana-live` endpoint after clicking the "Generate" button. According to reports, in version 12.4, this communication link is broken.
+
+3. **Log Analysis**:
+    - Check the Grafana server logs, paying special attention to error messages related to `llm`, `openai` or `live`.
+    - Check your browser console logs for front-end JavaScript errors or failed network requests.
+
+### Possible Mitigation Measures
+
+Before the official release of the repair version, the following temporary solutions can be considered:
+
+- **Version Rollback**: Roll back Grafana deployment to a known good version (such as 12.3). This is the most straightforward mitigation but comes with trade-offs.
+- **Plug-in version check**: Although the report mentions that the problem remains when using the latest plug-in, it is still necessary to ensure that the LLM plug-in has been updated to the latest compatible version to eliminate compatibility issues with the plug-in itself.
+- **Monitor official updates**: Pay close attention to the progress of this GitHub Issue (`#119781`) and Grafana's release notes, and wait for official fixes to be pushed.
+
+## SRE Key Points
+
+### Reliability impact
+This failure directly affects the operational efficiency of teams using Grafana. The failure of the automated generation function means that engineers need to manually write and update dashboard metadata, which increases the burden and may introduce human error. For teams that rely on this feature for standardized management, their **Dashboard Management SLO** (such as "Dashboard Description Completeness") may be affected.
+
+### Observability and incident response
+- **Observability**: This case highlights the importance of monitoring the AI integration capabilities themselves. The SRE team needs to be able to monitor the health of the LLM plug-in, the stability of the WebSocket connection, and the success rate/latency of the build function. This can be accomplished through a custom dashboard, leveraging Grafana's `grafana_*` metrics (if present), or application logs.
+- **Incident Response**: When such an issue is reported, the SRE should guide the user through the standard "Environment-Reproduction-Log" diagnostic process. Quickly identify whether the issue is general or environment-specific and link the issue to the specific version change (from 12.3 to 12.4).
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    1. **Pre-deployment testing**: Before upgrading core platforms like Grafana, key user flows, including AI-assisted features, should be fully tested in a pre-release environment.
+    2. **Follow the change log and known issues**: Check [Grafana What's New](https://grafana.com/docs/grafana/latest/whatsnew/) and GitHub Issues regularly to learn about the features of the new version and known regression issues.
+    3. **Component dependency monitoring**: Establish independent alarms for the health status of key components such as Grafana Live and LLM plug-ins.
+- **Common anti-patterns**:
+    1. **Ignore "small" features**: Title generation is considered a "nice to have" feature, and its failure will not cause the service to be unavailable, so it will be ignored during upgrade checks. In fact, this will gradually erode operational efficiency and team confidence.
+    2. **Isolated troubleshooting**: Only check the LLM plug-in configuration, ignoring possible changes in the front-end communication link (WebSocket).
+
+### Related Indicators (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: Can monitor `llm_generation_request_success_rate` (LLM generation request success rate) and `llm_generation_request_latency` (request latency).
+- **SLO (Service Level Objective)**: For example, "99.5% availability of dashboard AI generation functionality in Grafana environment".
+- **Note**: This SLI/SLO is primarily for internal tool usage experience and is not typically directly incorporated into customer-facing SLAs, but is critical to improving internal engineer productivity.

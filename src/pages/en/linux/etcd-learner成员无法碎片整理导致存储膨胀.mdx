@@ -1,0 +1,64 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "ETCD Learner members cannot be defragmented, causing persistent storage bloat."
+category: "分布式系统故障"
+confidence: medium
+---
+
+## Overview
+
+In etcd clusters, learner members are used for non-voting replication, often used to increase read capacity or synchronize data before making cluster changes (such as promoting members). Defragmentation is a key operation to maintain the storage efficiency of etcd database. It is usually performed after compaction to reclaim the space occupied by old versions of data. This page describes a known operational issue: etcd learner members do not support defragmentation RPC, causing their database size to be unable to be reduced and may grow without limit in a long-running production environment, causing storage bloat and potential risks.
+
+## Core concepts
+
+### ETCD Learner Member
+Learner is a special member type in etcd cluster. It does not participate in Raft consensus voting, but receives a complete replica of all data in the cluster. Its main functions include:
+* **Reduce the risk of cluster changes**: When adding a new node to an existing cluster, first join the synchronized data as a learner, and then promote it to a voting member, which can reduce the impact on cluster availability.
+* **Extended read-only capacity**: Provide additional read endpoints for clients to spread the read load.
+
+### Defragmentation
+As etcd key-value data is updated and deleted, a large amount of unused "fragmented" space will be generated inside its underlying BoltDB database file. The `etcdctl defrag` command triggers an RPC call asking the target member to defragment its database files and free up the space for the operating system. This action is necessary because the etcd database file (default quota is 2GB) can quickly reach the space limit when it is severely fragmented, causing the cluster to refuse writes.
+
+## Practice
+
+### Problem performance
+In an etcd cluster containing learner members (such as 3 voting members + 1 learner), the following phenomenon will be observed when performing standard maintenance procedures:
+
+1. **Inconsistent CLI behavior**: Running `etcdctl defrag` (without specifying an endpoint) successfully defragments all **voting members**, reducing their database size from, say, 8.5MB to 7MB, but **silently skips** learner members.
+2. **Direct operation fails**: Attempts to perform defragmentation directly against the learner endpoint will fail with an explicit error:
+    ```
+    rpc error: code = Unavailable desc = etcdserver: rpc not supported for learner
+    ```
+3. **Storage continues to grow**: Due to the inability to perform defragmentation, the database file size of the learner member remains unchanged (such as 30MB) after the first synchronization, even though the cluster data is compressed and defragmented multiple times. Over time, new data writes may cause it to eventually reach the quota limit.
+
+### Root cause analysis
+This is a design limitation of the etcd server. To ensure that learners do not impact the stability of the core consensus process, many administrative RPCs (including `Defragment`) are intentionally set not to serve learner members. Some versions of the client CLI (such as etcdctl) provide the `--include-learner` flag, but this does not solve the underlying problem of the underlying RPC being unavailable.
+
+### Impact Assessment
+* **Operation and Maintenance Barrier**: The inability to perform storage maintenance on learner members makes cluster management difficult.
+* **Upgrade Risk**: When it is planned to promote learner members to voting members (such as rolling upgrade or expansion or reduction), a learner whose storage is close to the quota limit may not be able to complete the upgrade, or a quota alarm will be triggered due to writing new logs immediately after the upgrade, affecting cluster stability.
+* **Waste of resources**: Bloated database files take up unnecessary disk space.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+* **Reliability Threat**: This issue directly threatens the long-term reliability of the cluster. A learner node with unlimited storage growth may become a single point of failure or cause operation failure in any future operation that requires it to be promoted to a voting member, destroying SLO (such as cluster availability, change success rate).
+* **Observability**: The database size (`DB SIZE`) of learner members must be monitored as a critical SLI. An alert threshold should be set (e.g. 70% of quota) to intervene before learner storage grows to dangerous levels. Merely monitoring voting members is not enough.
+* **Incident response**: When receiving a learner member storage space alarm, operation and maintenance personnel need to evaluate immediately. Workarounds (as described below) may be required until an official fix is ​​released, and may involve coordinated downtime windows to resynchronize data.
+
+### Best practices and common anti-patterns
+* **Anti-Pattern**: In a long-running cluster, retain a learner member that does not perform storage maintenance for a long time. This can be mistaken for a "low-risk" operation, but it actually plants a reliability bomb.
+* **Best Practice**:
+    1. **Planning life cycle**: Treat learners as temporary members. Clarify the timetable for promotion or removal after joining the cluster.
+    2. **Monitoring and Alarming**: Set monitoring and alarming for the database size and disk usage of all etcd members (including learners).
+    3. **Workaround**: In situations where the learner must exist for a long time and alarms are stored, the officially supported "rebuild" method is the only reliable way:
+        * Remove the learner member.
+        * Start over with a new, clean etcd node and join the cluster as a brand new learner to synchronize data.
+    4. **Focus on upstream fixes**: Continue to pay attention to the etcd project’s progress in fixing this issue. Future versions may introduce officially supported functions such as `--include-learners`.
+
+### Related indicators (SLI/SLO/SLA)
+* **SLI (Service Level Indicator)**: `etcd_member_db_size_bytes` (tag distinguishes `is_learner`).
+* **SLO (Service Level Objective)**: The database size of all etcd members (including learners) should be stable below 50% of the quota after two defragmentation cycles. Or set to: The database size of a learner must be less than 70% of the quota before a scheduled learner promotion operation.
+* **SLA (Service Level Agreement)**: An internal commitment that can be mapped to "cluster data node management capabilities", that is, ensuring the maintainability of all data copies.
+
+To learn more about the basics of etcd cluster management, please refer to [[etcd-cluster-management]].

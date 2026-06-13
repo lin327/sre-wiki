@@ -1,0 +1,48 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Mesh Blog - How to Simulate I/O Faults at Runtime"
+category: "混沌工程与故障注入"
+confidence: medium
+---
+
+## Overview
+
+In a production environment, file system failures occur from time to time due to various reasons such as disk failure and administrator misoperation. As a core part of the practice of chaos engineering, simulating these I/O failures is critical to verifying the resilience of applications and services. The ability to dynamically inject file system-level faults (such as delays, errors) at runtime without modifying the application itself or restarting the Pod greatly improves the flexibility and safety of fault drills. Chaos Mesh, as a chaos engineering platform, makes this process standardized and simple through `IOChaos` custom resources.
+
+## Core concepts
+
+The core idea of ​​simulating I/O faults at runtime is to inject faults after system calls (such as `read`, `write`) initiated by the target program, but before the request reaches the target file system. Achieving this mainly relies on two key technologies:
+
+**1. ChaosFS (Chaos Filesystem)**
+ChaosFS is a custom intermediate file system layer that is inserted between the application and the real file system. The workflow is: **Target program system call** -&gt; **Linux kernel** -&gt; **ChaosFS** -&gt; **Target file system**. Because ChaosFS has complete control over the I/O request flow, arbitrary delays or errors can be easily injected within it without modifying the underlying file system or application code.
+
+**2. ptrace (Process Trace)**
+`ptrace` is a powerful Linux system call that allows one process (tracer) to observe and control the execution of another process (tracee) and inspect and modify its memory and registers. In I/O fault injection scenarios, `ptrace` is used to solve two key problems:
+- **Dynamic replacement of open file descriptors (FD)**: When ChaosFS is mounted, but the target process already has a file open pointing to the old path, you can use `ptrace` to make it call the `dup2` system call to point the open file descriptor to the new path through ChaosFS.
+- **Injection execution logic**: By modifying the instruction pointer (RIP) register of the tracee process, it executes a small binary program (usually written in assembly) injected by the tracer, thereby completing the file descriptor replacement operation in the context of the target process.
+
+## Practice
+
+The I/O fault injection process based on ChaosFS and ptrace is a carefully designed sequence. The overall process is as follows:
+
+1. **Enter the namespace and mount the file system**: The fault injection process first uses the `setns` system call to enter the `mnt` namespace of the target container. Subsequently, execute `mount --move` to move the target container's original file system mount point (such as `/mnt`) to a backup path (such as `/mnt_bak`). Next, mount ChaosFS to the target path (such as `/mnt`), and use the backup path (`/mnt_bak`) as its backend storage. At this point, new file operations to `/mnt` will flow through ChaosFS.
+2. **Replace open file descriptor**: Use `ptrace` to attach to the target process. For each open file where a fault needs to be injected, tracer controls tracee to execute a pre-written assembler. The program will sequentially call system calls such as `fcntl`, `lseek`, `open`, `lseek`, `dup2` and `close` to seamlessly switch the file descriptor from the original file to the corresponding file on ChaosFS.
+3. **Failure Validation and Recovery**: After the replacement is completed, all subsequent I/O operations of the target process on related files will go through ChaosFS. At this time, predefined fault rules (such as delays, read and write errors) can be applied to the ChaosFS layer. During recovery, you can uninstall ChaosFS and move the original file system mount point back, or restore the file descriptor through a mechanism similar to `ptrace`.
+
+This series of operations avoids the high overhead, configuration complexity, and intrusiveness of injecting sidecar containers through mutating admission webhook in earlier versions.
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+Runtime I/O fault injection is a direct means of verifying the **resilience** of the system. By simulating scenarios such as disk latency, I/O errors, etc., SRE can evaluate whether the service's degraded behavior, timeout mechanisms, and error handling paths are effective when part of the infrastructure fails. This is directly related to the service's ability to achieve the **SLO (Service Level Objective)**. During this process, you need to pay close attention to the application's **observability** indicators (such as request latency P99, error rate, throughput), which are the key **SLI (Service Level Indicator)** to judge the scope of failure impact and system recovery capabilities.
+
+### Best practices and common anti-patterns
+- **Best Practice**: Use low-intrusive, dynamically start-stop injection methods (such as the new implementation of Chaos Mesh 1.0) to avoid lasting performance impacts on production traffic. Plan for backups and rollbacks before injecting, and fully validate the fault injection script itself in an isolated test environment.
+- **Common anti-pattern**: Relying on early technologies that require modification of Pod startup commands or injecting expensive sidecars, which may complicate the deployment process and cause unpredictable performance losses. In addition, blindly injecting faults without fully understanding application file access patterns may invalidate test results or trigger unexpected cascading failures.
+
+### Related indicators
+- **SLI**: Application layer error rate, API request delay, database query time.
+- **SLO**: Define availability targets for the application's core functionality during chaos experiments where I/O failures occur (e.g., API availability &gt; 99.5%, or critical query P99 latency < 500ms).
+- **Error Budget**: The Error Budget consumed through chaos experiments can be used to quantitatively evaluate the reliability margin reserved by the system to deal with real production failures.
+
+Related concepts: [[Chaos Engineering]], [[FUSE (User Space File System)]], [[Observability]], [[Fault Injection]].

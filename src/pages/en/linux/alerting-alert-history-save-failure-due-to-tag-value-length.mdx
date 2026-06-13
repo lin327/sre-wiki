@@ -1,0 +1,82 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Alerting: value too long when saving history batch.'"
+category: "Alerting"
+confidence: medium
+---
+
+## Overview
+
+This document documents a specific alerting functionality failure that occurred after upgrading Grafana to version 12.4.0. When the system attempts to save the history of alarm status changes to the database, if the associated folder path is too long, the PostgreSQL database will report an error "value too long", causing the history record to fail to be saved. This problem directly affects the auditability and traceability of alarm events, and is a boundary condition that needs to be paid attention to when maintaining the reliability of the alarm system.
+
+## Core concepts
+
+Understanding this problem requires the following key concepts:
+
+1. **Alert State History**: The Grafana alarm system will record each status change (such as "alarming", "recovered") for display in the UI and subsequent analysis. These historical records will be stored persistently.
+2. **Tag and tag value**: When storing alarm history, Grafana will automatically attach some metadata tags, where the value of the **`grafana_folder`** tag is the full path of the folder to which the alarm rule belongs (for example: `Business Units/Tecnología y digital (tyd)/...`).
+3. **Database Schema Limitation**: Grafana uses a PostgreSQL database to store this data. In the table in question, the `value` column used to store the tag value is defined as `varchar(100)`, which has a maximum length of 100 characters. When the tag value (here, the folder path) exceeds this limit, the database insert operation fails.
+
+## Practice
+
+### Problem reproduction and confirmation
+
+1. **Trigger condition**: Create a folder with a deep path level in Grafana (such as a path exceeding 100 characters in the example), and create and trigger an alarm rule under the folder.
+2. **Observation Phenomenon**: The following error message will be found in the Grafana log:
+    ```
+    logger=ngalert.state.historian backend=annotations rule_uid=... msg="Failed to save history batch" err="error saving alert annotation batch: pq: value too long for type character varying(100)"
+    ```
+3. **Database verification**: Directly query the `tag` table in Grafana's PostgreSQL database to find records with `key = 'grafana_folder'` and the `value` field length exceeds 100.
+
+### Solution
+
+**Option 1: Adjust the database architecture (recommended direct solution)**
+
+This is a temporary fix that was verified to work in the issue report. A database administrator is required to execute:
+
+```sql
+ALTER TABLE tag ALTER COLUMN value TYPE varchar(150);
+```
+Or set to a larger value (such as `varchar(255)`) based on the actual longest path length.
+
+**Note**: This operation needs to be performed during the Grafana maintenance window and ensure you have modify permissions on the `tag` table.
+
+**Option 2: Standardize folder naming (preventive best practice)**
+
+To avoid hitting such implicit limitations, it is recommended that when managing Grafana folders in your organization:
+- Limit the depth of folder paths and the length of each layer name.
+- Establish naming conventions and keep paths concise.
+- This action requires no code modifications, but does require cross-team coordination.
+
+### Monitoring and Detection
+
+SREs can proactively discover this issue by:
+- Monitor whether the `value too long for type character varying` keyword appears in the Grafana application log.
+- Periodically query the database to look for "long path" folders that may be at risk:
+  ```sql
+  SELECT key, value, LENGTH(value) FROM tag WHERE key = 'grafana_folder' AND LENGTH(value) > 90 ORDER BY LENGTH(value) DESC;
+  ```
+
+## SRE Key Points
+
+### Reliability correlation
+
+This problem directly affects the data persistence reliability of the alarm system. Although the alarm triggering itself is not affected, the loss of key historical records (original data points of SLI) will affect subsequent review, auditing and compliance, which is a **functional degradation**. When defining the SLI related to alarm history, the "history saving success rate" needs to be taken into consideration.
+
+### Best Practices and Anti-Patterns
+
+- **Anti-Pattern**: Relying on the database's default or undocumented column length limits without input validation or clear guidance at the application layer.
+- **Best Practices**:
+  1. **Upgrade Test**: In the staging environment of a major version upgrade, fully test the functions involving persistent storage (such as alarm history, logging).
+  2. **Configuration as code**: For resources such as folders, use Provisioning or API to manage them in the form of code to facilitate unified control of path length.
+  3. **Monitoring driver**: Establish monitoring and alarming for error logs of key components of Grafana (especially ngalert) to achieve rapid discovery.
+
+### Related Indicators (SLI/SLO)
+
+- **SLI (Service Level Indicator)**: Alarm status history writing success rate. Calculation formula: `History batches successfully written / Total attempted write batches`.
+- **SLO (Service Level Objective)**: Can be set to `99.9%` to ensure that the vast majority of alarm history is reliably saved. When this metric falls below the target, an incident response should be triggered to troubleshoot storage or configuration issues.
+
+### Related links
+
+- For more information about Grafana folder management, please refer to `[[grafana-folder-management]]`.
+- For the overall architecture and design of the alerting system, see `[[alerting-system-design]]`.

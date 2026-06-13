@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd/containerd Pull Request #13331'"
+category: "容器运行时与编排"
+confidence: medium
+---
+
+## Overview
+
+In a containerized environment, checkpoint/recovery technology is the key to achieving live migration of containers, rapid failure recovery, and resource optimization. CRIU (Checkpoint/Restore In Userspace) is a common tool to achieve this function. It creates checkpoints by checking (dumping) the process status to disk, and can restore (restore) these statuses to rebuild the process. However, the evolution of underlying Linux kernel features sometimes creates compatibility challenges. As a representative of the high-performance, asynchronous I/O framework in the Linux kernel, io_uring's unique memory mapping (anonymous memory inode) method cannot currently be handled correctly by CRIU. This problem will affect the checkpoint operation of the application container running high-performance asynchronous I/O, and is a technical boundary that must be paid attention to in system reliability engineering. This page documents how to recognize and gracefully handle this limitation in the container runtime (containerd), thereby improving operational reliability and user experience.
+
+## Core concepts
+
+- **CRIU**: A powerful Linux tool capable of freezing a running process, saving its complete state to disk (checkpoint), and allowing the process to be restored from that state (recovery). In the container ecosystem, CRIU is used to implement container checkpoints and recovery, supporting container migration and failure recovery scenarios.
+- **io_uring**: A modern interface in the Linux kernel designed to provide an asynchronous, lock-free mechanism for high-performance I/O. It exchanges data between user space and kernel space through a shared ring buffer, significantly reducing system call overhead. The underlying implementation involves a specific anonymous memory mapping (`anon_inode:[io_uring]`).
+- **Container Checkpoint**: Use technologies such as CRIU to completely save the status of all processes in the container to form a checkpoint image. This image can be stored, transferred, and used when needed to launch a new container instance that is identical to the original state.
+- **Compatibility Pre-Check**: Proactively detect whether the system environment meets operational requirements before performing key operations (such as checkpoints) that may fail due to environmental restrictions. This is a defensive programming practice that moves errors forward and provides clear feedback, consistent with the SRE principles of "fail fast" and "provide actionable information."
+
+## Practice
+
+### Problem recurrence
+
+When a container that uses io_uring for asynchronous I/O operations (e.g., high-performance network servers, databases) attempts to be checkpointed, CRIU fails because it cannot recognize or process the `anon_inode:[io_uring]` mapping entry in the `proc/PID/maps` file. Failure messages are often cryptic, such as:
+```
+Error (criu/files-reg.c:1260): Unknown shit 600 (anon_inode:[io_uring])
+```
+This kind of error message is extremely unfriendly to operation and maintenance personnel and makes it difficult to quickly locate the source of the problem.
+
+### Repair plan and implementation
+
+Containerd introduces a **pre-check step** in the CRIU checkpointing process. The specific logic is as follows:
+
+1. **Detection timing**: Before calling CRIU for the actual `dump` operation, the containerd runtime performs a pre-check.
+2. **Detection method**: Parse the `/proc/PID/maps` file of the target container main process (PID 1). Check if there is a line containing `anon_inode:[io_uring]`.
+3. **Error handling**:
+    - **io_uring detected**: Abort the checkpoint operation immediately and return a clear and structured error message to the upper caller (such as Kubernetes' kubelet). The error message clearly states that the checkpoint failed because the target process used io_uring, which CRIU does not currently support checkpointing.
+    - **Not Detected**: Continue with subsequent CRIU checkpoint process.
+4. **User Impact**: The user (or the upper-layer orchestration system) will receive an understandable error (such as `io_uring is not supported for checkpoint`) and can take corresponding measures accordingly, such as:
+    - Avoid checkpointing this container.
+    - Evaluate whether the application can be configured not to use io_uring (if the business allows it).
+    - Follow the containerd and CRIU communities for support for io_uring in future releases.
+
+This fix transforms underlying technical limitations into clear constraints on the user side, which is a typical case of improving system observability and operation and maintenance friendliness.
+
+## SRE Key Points
+
+- **Reliability correlation**: This fix directly improves the reliability of the container platform. It transforms a "hidden fault" that causes an operation to fail unexpectedly and is difficult to debug into a predictable "explicit constraint" with a clear error message. This avoids operation and maintenance personnel from spending a lot of troubleshooting time due to ambiguous errors in the production environment, and also allows the upper-layer orchestration system to make more reasonable scheduling decisions (such as marking nodes or containers that do not support checkpoints). This is an important practice for **reducing time to recovery (MTTR)** and **optimizing error budget consumption**.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: When integrating complex external tools such as CRIU, always consider the boundaries of their capabilities and perform necessary environmental pre-checking. Error messages must be clear and specific, pointing to the source of the problem and possible solutions.
+    - **Anti-Pattern**: Ignore tool limitations and expect users or operations personnel to dig out problems on their own through obscure error logs. This approach increases operational complexity and uncertainty in fault recovery.
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI**: Container checkpoint operation success rate; average number of checkpoint operation failures and distribution of causes (such as the proportion of failures due to io_uring).
+    - **SLO**: An SLO can be specified for checkpoint requests for configurations known to be unsupported (such as when io_uring is used), the system should return an explicit error within 1 second with a 0% success rate.
+    - **SLA**: When providing container live migration services to customers, the requirements for the application technology stack (such as whether to use io_uring) should be clearly stated to avoid service unavailability due to technical compatibility issues.
+- **Further Thoughts**: This fix is ​​a classic "workaround" solution. In the long term, SRE should continue to pay attention to the progress of the upstream community (containerd, CRIU). Once CRIU gains support for io_uring, this precheck logic may need to be removed or adjusted to enable new functionality. This reflects the SRE's responsibility to track the evolution of the technology stack and update the operation and maintenance strategy in a timely manner. At the same time, this also reminds us that when adopting new technologies (such as io_uring), we must fully evaluate its compatibility with the existing operation and maintenance tool chain.

@@ -1,0 +1,63 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.36 Sneak Peek"
+category: "平台与基础设施"
+confidence: medium
+---
+
+## Overview
+
+Kubernetes v1.36 is scheduled to be released in April 2026. For the SRE team, timely understanding and planning for version upgrades are key to ensuring cluster stability and security. This version update includes API deprecation and removal that follows established policies, aiming to improve cluster security, performance, and resource management efficiency. Understanding these changes helps the SRE team develop a smooth upgrade plan, proactively conduct application migration and compatibility testing, and avoid service interruptions due to incompatible changes. [[api-deprecation-policy]]
+
+## Core concepts
+
+The changes in this version mainly focus on the evolution of Kubernetes API lifecycle management and several core functions.
+
+**API Lifecycle Management**: Kubernetes projects follow a clear [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/). Stable (GA) API will not be removed in major versions; Beta API needs to support at least 3 versions after being deprecated; Alpha API can be removed in any version without notice. All removal operations require a migration path in the deprecation guide. [[api-deprecation-policy]]
+
+**SELinux label application**: Traditionally, applying the correct SELinux label to a volume requires recursively relabeling the file system contents, which can cause delays in Pod startup. The new feature significantly improves performance and consistency by applying labels directly on mount via the `mount -o context=XYZ` option. [[selinux]]
+
+**ServiceAccount token external signing**: Allows the cluster to delegate the signing of ServiceAccount tokens to an external key management service or hardware security module, enhancing security and simplifying centralized key management. [[serviceaccount]]
+
+**Dynamic Resource Allocation (DRA)**: DRA allows for more flexible allocation of physical devices such as GPUs. The v1.36 version has expanded its capabilities to support device "taints" and device partitions (Partitionable Devices), making scheduling control more granular and resource utilization higher. [[dynamic-resource-allocation]]
+
+## Practice
+
+Here are the specific areas that the SRE team needs to focus on and take action in preparation for the v1.36 upgrade.
+
+### Response to deprecation and removal
+
+1. **Handling Service `.spec.externalIPs` deprecation**: This field is deprecated due to the security risk of man-in-the-middle attack (CVE-2020-8554) and is planned to be removed in v1.43. Starting with v1.36, using this field will generate a warning. Existing Services using `externalIPs` should be evaluated and migrated:
+    * **Cloud environment**: Prioritize using `type: LoadBalancer`.
+    * **Simple port exposure**: Consider using `type: NodePort`.
+    * **Complex Routing Requirements**: Evaluate and adopt a more secure and flexible Gateway API. [[KEP-5707]]
+
+2. **Removed `gitRepo` volume driver**: `gitRepo` volumes have been deprecated since v1.11 and were permanently removed and cannot be enabled in v1.36 due to a serious security vulnerability (allowing node root code execution). Workloads that depend on this volume must be migrated to a supported alternative, such as:
+    * Use Init Container to pull code from Git repository.
+    * Use sidecar tools such as `git-sync`. [[KEP-5040]]
+
+### Optimize using new features
+
+3. **Leverage Fast SELinux Volume Labels (GA)**: This feature is enabled by default in v1.36 for all volumes. Pod authors can enable it explicitly via `spec.SELinuxMount: true`. SRE teams should test compatibility with existing security policies, especially scenarios involving shared volumes for privileged and unprivileged Pods. Compatibility can be managed by setting the `securityContext.seLinuxChangePolicy` field. [[KEP-1710]]
+
+4. **Enable ServiceAccount token external signature (GA)**: If you need to integrate cloud KMS or HSM, after this feature is upgraded to the stable version, you can specify the external signature service in the `kube-apiserver` configuration to improve token security. [[KEP-740]]
+
+5. **Planning new DRA functions**:
+    * **Device Taint (Beta)**: SREs can work with platform teams to leverage `DeviceTaintRule` to flag devices that require maintenance or are not suitable for specific workloads to prevent them from being allocated by the scheduler. [[KEP-5055]]
+    * **Partitionable Devices (new feature)**: Allows a single hardware accelerator (such as a GPU) to be partitioned into multiple logical units for allocation. Platform teams can leverage this feature to improve utilization of expensive resources such as GPUs, optimizing cost and efficiency by allocating precise partitions of devices to different workloads. [[KEP-4815]]
+
+## SRE Key Points
+
+* **Relationship with reliability and observability**:
+    * **Advance planning and testing**: Conduct impact analysis on deprecated and removed items (such as `externalIPs`, `gitRepo`), and verify the application migration plan in the test environment, which is the basis for ensuring the reliability of the upgraded service.
+    * **Performance Observation**: After the SELinux tag acceleration feature GA, Pod startup time (as one of the SLIs) should be monitored for expected improvements.
+    * **Security Observability**: After enabling ServiceAccount token external signature, you need to ensure that the monitoring system can track the status of the external signature service and token issuance events. This is an important part of security incident response.
+
+* **Best Practices and Common Anti-Patterns**:
+    * **Best Practice**: Establish version upgrade SOP, including feature status check, dependency evaluation, canary release, etc. Actively pay attention to deprecation warnings and treat them as to-do items.
+    * **Anti-Pattern**: Ignore deprecation warnings and wait until features are forcibly removed before being forced to migrate in a hurry, causing service interruptions. Enabling new security features (such as SELinux mount policies) in production without adequate testing.
+
+* **Related indicators (SLI/SLO/SLA)**:
+    * **Upgrade Risk SLI**: The proportion of workloads in the production cluster that still use deprecated APIs. The target should be 0%.
+    * **Startup Performance SLI**: Pod time from `ContainerCreating` to `Running` in SELinux enforcement mode.
+    * **Security Compliance SLI**: The proportion of ServiceAccount tokens in the cluster that are signed by external services.

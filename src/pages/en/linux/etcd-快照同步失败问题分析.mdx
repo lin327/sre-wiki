@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd-io/etcd#21418"
+category: "etcd-cluster"
+confidence: medium
+---
+
+## Overview
+
+In distributed systems, etcd serves as the key state storage of systems such as Kubernetes, and the strong consistency of its cluster relies on efficient and reliable data synchronization between nodes. When the cluster experiences data delays or needs recovery, the master node sends a database snapshot to the lagging slave nodes. This article analyzes a typical snapshot synchronization failure case. In this case, the etcd master node continued to encounter network connection interruption (EOF) and data short read (ioutil: short read) errors when trying to send a snapshot of about 487MB to the slave node. If such problems are not resolved, the slave node may be unable to catch up with the master node, affecting the fault tolerance and data consistency of the cluster. This is a reliability risk that SRE needs to be wary of.
+
+## Core concepts
+
+1. **Snapshot Sync**: When the etcd slave node lags behind the master node in too many log indexes, for efficient recovery, the master node will directly send a compressed file (snapshot) containing the complete database state instead of replaying the logs one by one. This is a key mechanism to ensure the recovery speed of large-scale clusters.
+2. **EOF (End Of File) Error**: An error that appears in the `snapshot_merge.go:72` log, indicating that the connection was unexpectedly closed while writing the contents of the in-memory database to the `Writer` of the network connection. This is usually a network layer issue such as a connection reset, peer timeout, or load balancer outage.
+3. **ioutil: short read**: The error that appears in the `rafthttp/snapshot_sender.go:102` log means that the amount of data the program expects to read is inconsistent with the amount of data actually read from the connection, and the actual amount read is less. This may be a direct result of EOF, or it may occur during the read phase.
+4. **Inconsistent cluster status**: As can be seen from the `endpoint status` output, the `DB SIZE` of the master node (Leader) is 487MB, but the `DB SIZE` of one of the slave nodes (ID: `adb3a32b44be819c`) is 414MB, and `RAFT INDEX` also lags behind. At the same time, the `.snap` file on the disk of the master node is very small (~9KB), but the `db` file is very large (274MB). This may be related to snapshot compression or fragmentation, and needs to be analyzed in combination with `--snapshot-count` and space reclamation policy.
+
+## Practice
+
+Based on the reported logs and status, diagnosis and response can follow these steps:
+
+1. **Phenomenon confirmation and log analysis**:
+    * First, pay attention to the recurring `failed to send database snapshot` alarm log to confirm that the problem continues to occur.
+    * Note the error pattern: each attempt to send fails within a short time (about 1.7 seconds) with a fixed error type (`EOF` followed by `short read`). This suggests that the problem is stable rather than sporadic jitters.
+
+2. **Network and connection troubleshooting**:
+    * **Basic Connectivity**: Use `ping`, `telnet` or `nc` to check connectivity on port 2379/2380 between the master node (`111.9.0.26`) and the lagging slave node (`111.9.0.27`).
+    * **Network bandwidth and quality**: The snapshot file is large (~487MB), check the network traffic, packet loss rate and retransmission rate during the sending period (from the log time point) (use `iftop`, `nload`, `tcpdump`, etc.). High latency or packet loss may cause the connection to time out.
+    * **Intermediary**: Check if your firewall, security group, load balancer, or service mesh (such as Istio) has a connection timeout or drop policy for long periods of heavy traffic.
+
+3. **Node resource check**:
+    * **Disk I/O**: Snapshot sending involves reading local database files. Use `iostat -x 1` to check `util%` (utilization) and `await` (average wait time) of the master disk. High disk I/O can cause the read phase to time out.
+    * **Memory and CPU**: Check the resource usage of etcd process and system at the time of failure. Insufficient memory may cause frequent GC, affecting performance.
+    * **File descriptor**: Make sure the `ulimit -n` setting is sufficient to avoid connection failure due to exhaustion of file descriptors.
+
+4. **etcd parameters and data health check**:
+    * **Snapshot settings**: Check the `--snapshot-count` parameter. Snapshot intervals that are too short can result in a large number of snapshots, increasing I/O and network burden.
+    * **Database fragmentation**: The master `db` file (274MB) is much smaller than the snapshot size reported in the log (487MB), while the slave `db` is 414MB. **Defragmentation** (defrag) may be required to reclaim the space occupied by deleted data and make the database size more accurate. You can use `etcdctl defrag --endpoints=...` for offline defragmentation (note that the service will be temporarily affected).
+    * **Cluster health**: Use `etcdctl endpoint health --cluster` and `etcdctl endpoint status --cluster -w table` to continuously monitor the status of each node.
+
+## SRE Key Points
+
+* **Correlation with reliability**: Snapshot synchronization failure directly threatens the **reliability** of the etcd cluster. If the slave node cannot be restored through snapshots, it may be left behind for a long time, or even unable to take over when the master node fails, reducing the `N-1` fault tolerance of the cluster. Sustained network I/O issues can also cause cascading failures.
+* **Observability**: The discovery of this issue relied on monitoring the `warn` level logs of the `rafthttp` and `etcdserver` components. Corresponding alarm rules should be established to provide real-time alarms for critical errors such as `failed to send database snapshot`. Meanwhile, network monitoring and disk I/O monitoring are important additions to troubleshooting this issue.
+* **Best Practices and Anti-Patterns**:
+    * **Anti-Pattern**: Ignore such warnings and expect them to "self-heal". etcd will not retry failed snapshot sending indefinitely, and long-term failure may cause the cluster to split.
+    * **Best Practice**: Establish a complete cluster health inspection process, including logs, indicators, network and disk. Perform database defragmentation regularly to maintain performance. Ensure that the etcd cluster is running on performance-proven dedicated nodes or storage with sufficient IOPS.
+* **Related indicators**:
+    * **SLI**: `etcd_server_has_leader` (whether the cluster is healthy), `etcd_disk_wal_fsync_duration_seconds` (WAL write delay), network throughput and error rate.
+    * **SLO**: Targets can be set for "etcd snapshot synchronization success rate" or "number of cluster lagging nodes", for example "number of slave nodes in the cluster whose RAFT INDEX lag exceeds the threshold < 1".
+    * **Error Budget**: This type of synchronization failure will consume the Error Budget of the cluster consistency guarantee. The frequency and duration of occurrence should be analyzed to assess the impact on the overall SLO.

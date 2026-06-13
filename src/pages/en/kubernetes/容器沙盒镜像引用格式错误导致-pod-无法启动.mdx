@@ -1,0 +1,82 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'CRI: tag+digest sandbox image breaks RunPodSandbox'"
+category: "容器运行时"
+confidence: high
+---
+
+## Overview
+
+In a Kubernetes cluster, the startup of each Pod relies on a base image (usually a pause image) called a sandbox to initialize its network namespace and shared process space. A container runtime interface (CRI) plugin (such as containerd's CRI) is responsible for parsing and pulling this image. This page records a key flaw in containerd in a specific version (2.3.x): when the configuration of the sandbox image uses the `tag@digest` format (such as `pause:3.10.1@sha256:...`), it will cause the `RunPodSandbox` RPC call to fail, making the entire node unable to schedule any Pods. This is a serious reliability issue and directly violates the node's availability SLO.
+
+## Core concepts
+
+### CRI and sandbox images
+
+* **CRI (Container Runtime Interface)**: The standard interface between the container runtime and kubelet defined by Kubernetes. containerd implements this interface through the built-in CRI plugin.
+* **Sandbox Image**: The core image of the Pod sandbox, specified by the `pinned_images.sandbox` (or legacy configuration `sandbox_image`) field in the CRI plugin configuration. The kubelet will reference this image when calling `RunPodSandbox`.
+
+### Image reference format
+
+Container image references can come in multiple formats:
+* `registry/image:tag` (most commonly used)
+* `registry/image@digest` (immutable reference based on content hash)
+* `registry/image:tag@digest` (contains both tag and digest, intended to provide uniqueness and human readability)
+
+### Nature of the problem
+
+This flaw exposes a regression in the image resolution logic of the containerd CRI plugin. In version 2.3.x, the plugin cannot correctly handle references in the `tag@digest` format when executing `RunPodSandbox`. Although the container runtime is able to successfully pull the image upon receiving the request, its internal lookup logic (possibly in a subsequent step) stores the image by its canonical name (i.e. only the `@digest` form), causing a lookup using the original reference containing the tag to report "Not Found".
+
+## Practice
+
+### Reproduction steps
+
+1. **Environment preparation**: Obtain containerd 2.3.x version and `crictl` tool.
+2. **Configuration containerd**: Create a configuration file and specify the image using the `tag@digest` format in the `pinned_images.sandbox` field.
+    ```toml
+    [plugins."io.containerd.cri.v1.images".pinned_images]
+      sandbox = "registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c"
+    ```
+3. **Start test containerd**: Use this configuration file to start an independent containerd instance.
+4. **Try to start Pod**: Use the `crictl runp` command to try to create a Pod sandbox.
+5. **Observation failure**: The command will fail immediately and return a `NotFound` error, indicating that the sandbox image cannot be found.
+6. **Verify that the image exists**: Use `ctr images ls` to check the image storage of containerd. You will find that the image has indeed been pulled and stored, but the name format is `registry.k8s.io/pause@sha256:278fb9...` (only summary).
+
+### Solutions and workarounds
+
+1. **Upgrade version**: Pay attention and upgrade to the containerd version that has fixed this issue (refer to the associated PR #13513).
+2. **Modify configuration format (recommended)**: Avoid using `tag@digest` format in sandbox image configuration. Use only a single identifier:
+    * **Use tag only**: `pause:3.10.1`
+    * **Use digest only**: `pause@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c`
+    Using a summary-only format is generally best practice because it ensures immutability and reproducibility.
+
+## SRE Key Points
+
+### Impact on reliability
+
+This is a **P0 level reliability defect**. It causes the affected node to become completely inoperable (`NotReady` state) and prevent any new Pods from being scheduled, directly reducing cluster capacity and potentially causing workload outages. Such issues can severely impact a node's SLO, especially the "Pod Start Success Rate" and "Node Availability" metrics.
+
+### Incident response and troubleshooting
+
+When multiple node Pods in the cluster fail to start and the error message involves that the sandbox image is not found, SRE should immediately:
+1. Check the node containerd version.
+2. Check the `pinned_images.sandbox` or `sandbox_image` field in the container runtime configuration to confirm whether the `tag@digest` format is used.
+3. Check the Pod events through `crictl pods` or `kubectl describe pod <pod-name>` and confirm that the failure reason is "failed to get sandbox image".
+
+### Best Practices and Anti-Patterns
+
+* **Best Practice**:
+    * Use digest references in critical infrastructure configurations (such as sandbox images) to ensure consistency and prevent supply chain attacks.
+    * Maintain compatibility matrix of container runtimes (containerd, CRI-O) and their configurations with Kubernetes major releases.
+    * Carry out version management and change recording for node initialization configuration and key component configuration.
+* **Anti-Pattern**:
+    * Use a version of the container runtime that is insufficiently tested or contains known flaws in a production environment.
+    * Configure key images using compound reference formats (such as `tag@digest`) that are complex and may be parsed differently by different components.
+
+### Related indicators and monitoring
+
+* **SLI**: Pod scheduling success rate on the node and the proportion of time the node status is `Ready`.
+* **SLO**: The cluster should ensure node availability (e.g. 99.9%), this flaw directly results in a violation of that SLO.
+* **Monitoring recommendations**: Monitor the kubelet and containerd logs for error patterns related to "sandbox image" and "not found", and set alarms. Monitor node status changes at the same time.
+
+**Related page**: [[containerd-cri]] [[kubernetes-pod-scheduling]] [[node-health-monitoring]] [[incident-response-runbook]]

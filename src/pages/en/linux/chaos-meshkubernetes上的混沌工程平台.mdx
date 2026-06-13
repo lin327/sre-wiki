@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Mesh Celebrates 100th Contributor"
+category: "混沌工程"
+confidence: medium
+---
+
+## Overview
+
+Chaos Mesh is an open source chaos engineering platform for Kubernetes environments for orchestrating and executing chaos experiments in controlled environments. As a sandbox project of CNCF (Cloud Native Computing Foundation), it aims to help engineers proactively discover weaknesses in distributed systems, thereby improving the overall reliability of the system before failures occur. For SREs, chaos engineering is a key practical tool for validating system resiliency, improving failure response processes, and achieving high SLO goals, and Chaos Mesh provides a powerful framework for implementing this practice within a cloud-native architecture.
+
+## Core concepts
+
+The core concept of chaos engineering is to actively inject faults in a production environment or a highly simulated environment through scientific experiments to observe and verify whether the system behaves as expected. Chaos Mesh embodies this idea into a series of "chaos experiments" that can be performed on a Kubernetes cluster.
+
+- **Chaos Experiment**: A predefined plan designed to simulate specific failures (such as network delays, Pod exceptions, I/O failures). Each experiment contains a target and an action.
+- **Fault Injection**: The core action of the experiment. Chaos Mesh supports injecting faults at different levels, including network, file system, operating system, and application processes (e.g., JVM).
+- **CRD (Custom Resource Definition)**: Chaos Mesh uses CRD to define and manage chaos experiments in Kubernetes, so that the experiments themselves can be declared, viewed and managed like other Kubernetes resources.
+- **Chaos Dashboard**: A web interface for visually managing chaos experiments, simplifying the creation, monitoring, and lifecycle management of experiments.
+- **Workflow**: A built-in orchestration engine that allows users to define the execution sequence (serial or parallel) of a series of chaos experiments (or other steps) to simulate more complex production-level failure scenarios.
+
+Together, these concepts form the cornerstone of Chaos Mesh, making it a valuable asset for SRE teams conducting reliability testing in Kubernetes environments.
+
+## Practice
+
+Depending on the development of the project and community contributions, here are some key practical components and modus operandi:
+
+1. **Deployment and Experiment Creation**: First deploy Chaos Mesh in the Kubernetes cluster. Experiments can be created by applying YAML files with `kubectl` or interactively through the Chaos Dashboard's web UI. For example, to create an experiment that injects network latency into an `nginx` Pod, you need to define a target selector and specify network failure actions.
+2. **Use the `chaosctl` tool**: The project provides the `chaosctl` command line tool to simplify the chaos development and debugging process. SREs can use it to quickly verify experimental status, debug issues, or develop.
+3. **Use Chaos Dashboard**: Through Dashboard, you can visually view all chaos experiments running in the cluster, monitor their status and impact, and perform start and stop operations, which is crucial for the observation and management of experiments.
+4. **Construct complex fault scenarios**: Using Chaos Mesh Workflow, SRE can design multi-stage fault scenarios. For example, you can first simulate a node failure, and then simulate the exhaustion of the database connection pool to test the system's cascading failure handling and recovery capabilities.
+5. **JVM level fault simulation**: JVMChaos implemented by contributors can simulate Java application faults, such as throwing specific exceptions or modifying method return values, which is very valuable for application layer reliability testing under microservice architecture.
+
+## SRE Key Points
+
+Integrating chaos engineering and Chaos Mesh into SRE practices can have a profound impact on system reliability and team responsiveness.
+
+- **Relationship with reliability goals**: Regularly running chaos experiments is an important means to verify whether the system SLI (service level indicator) can achieve the SLO (service level objective). By proactively discovering failures, teams can fix weaknesses and reduce Error Budget consumption, thereby increasing actual availability.
+- **Best Practices**:
+  - **Progressive Experiments**: Start with experiments that have a small impact and low risk, and gradually increase the complexity and blast radius.
+    [[Fault injection]]
+  - **Conduct in pre-production environment first**: Conduct chaos experiments in pre-production or grayscale environments as much as possible, and then consider the production environment after verification.
+  - **Build safety guardrails**: Always make sure there are clear termination conditions and rollback plans, and notify relevant teams before experimenting.
+  - **Incorporating Observability**: The value of chaos experiments depends largely on what we can observe. You must rely on a powerful [[observability]] stack (such as Prometheus, Grafana, distributed tracing) to collect and analyze data before and after experiments.
+- **Common anti-patterns**:
+  - "Bringing havoc" to the production environment without adequate preparation and monitoring.
+    [[incident response]]
+  - There is no review and improvement after the experiment, making the experiment a mere formality.
+  - Focus only on the injection and ignore the recovery and learning process after the experiment.
+- **Metric correlation**: Successful chaos engineering practice itself should also have metrics, such as "chaos experiment coverage" (the degree of coverage of key service failure modes), "mean time to repair (MTTR)" improvement, etc. This directly serves the reliability measurement system at the core of SRE.
+
+In short, Chaos Mesh is more than just a tool, it represents a culture of building more reliable systems through proactive defense. For SRE teams working to improve the reliability of Kubernetes clusters and cloud-native applications, understanding and utilizing such a platform is an important step toward greater maturity.

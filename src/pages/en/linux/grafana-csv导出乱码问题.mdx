@@ -1,0 +1,37 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[Table Panel] non-English characters in the downloaded CSV files have become"
+category: "故障排查"
+confidence: medium
+---
+
+## Overview
+
+In Grafana's table panel, exporting data through the `Inspect -&gt; Data -&gt; Download CSV` function is a common operation for operation and maintenance analysis and troubleshooting. Starting from Grafana version 11.1.1, this feature has a regression defect that affects data accuracy: non-English characters (such as Chinese, Japanese, etc.) in the exported CSV file will appear as garbled characters. For SRE teams that rely on complete and accurate data for analysis, this issue will directly affect the reliability of data delivery, causing interruptions in downstream analysis processes or misleading conclusions. The issue does not exist in version 11.1.0 but persists in versions 11.1.1, 11.1.2 and 11.2.0.
+
+## Core concepts
+
+To understand this problem, you need to understand several basic concepts related to file encoding:
+
+* **Character Encoding**: A standard for mapping characters to byte sequences. Common encodings include ASCII (supports English only), ISO-8859-1 (Western European languages), and UTF-8 (supports Unicode, covering almost all language characters). CSV files must be saved with the correct encoding in order to display the content correctly when opened.
+* **UTF-8 and BOM**: UTF-8 is currently the most common encoding standard. The beginning of the file can contain an optional "Byte Order Mark" (BOM) to identify the encoding type. Some applications, such as older versions of Microsoft Excel, may not correctly handle UTF-8 files with a BOM, or may not correctly detect UTF-8 files without a BOM.
+* **Character set conversion**: When Grafana generates CSV, it needs to correctly convert the UTF-8 encoded string obtained from the data source (such as MySQL) into the byte stream in the CSV file. Garbled characters usually occur in this conversion step, which may result from incorrect encoding declarations, improper conversion logic, or the addition/omission of BOM causing misreading by downstream software.
+
+## Practice
+
+To address this specific issue, the SRE team can take the following responses:
+
+1. **Temporary downgrade solution**: If the upgrade is blocked and the need for data export is urgent, the most direct temporary solution is to roll back the Grafana instance to the known available **11.1.0** version. Before downgrading, be sure to back up configuration and data, and evaluate the possible functional or security impacts of downgrading.
+2. **Check and Verify**: After exporting the CSV file in the problematic version, you can use a text editor (such as VSCode, Notepad++) or a command line tool (such as the `file -i` command) to check the file encoding to confirm whether it is UTF-8. At the same time, try to open the file in different software (such as LibreOffice Calc, Google Sheets) to determine whether the garbled characters are a parsing problem of the specific software (such as Microsoft Excel).
+3. **Official Issue Tracking**: This issue has been confirmed as an official defect in Grafana. The best practice is to follow the corresponding [GitHub Issue](https://github.com/grafana/grafana/issues/92640) and subscribe to updates to get the progress of the official fix. Avoid upgrading to affected versions (11.1.1 and above) until an official fix is ​​released.
+
+## SRE Key Points
+
+* **Relationship to Reliability**: While this was not a direct failure that resulted in service interruption, it undermined the broader reliability goal of **data integrity**. SRE needs to ensure that the monitoring and diagnostic tools themselves are reliable and can provide accurate data. This bug reduces the credibility of Grafana as an observability tool in the data export process.
+* **Best Practices and Common Anti-Patterns**:
+    * **Be careful with version upgrades**: Even minor version upgrades (such as from 11.1.0 to 11.1.1) may introduce regression defects. Before upgrading the production environment, comprehensive functional verification should be conducted in the pre-release or test environment, especially when it comes to key auxiliary functions such as data output and export.
+    * **Character encoding awareness**: When processing monitoring data in multi-language environments, SREs should always pay attention to the consistency of character encoding in the entire link from data source to final presentation (including API, UI, export files), and the UTF-8 standard is preferred.
+    * **Make good use of Issue tracking**: When encountering such software defects, you should actively use the official issue tracking system. This not only provides a solution, but also helps assess the impact scope and repair timeline of the problem, providing a basis for operational and maintenance decisions.
+* **Related indicators**: This issue does not directly affect the core SLI/SLO (such as request delay, error rate), but it affects the **operation and maintenance efficiency indicators**. For example, the SRE team may need extra time to manually repair exported data files, or delay failure analysis due to data unavailability, which indirectly affects MTTR (Mean Time to Repair). "Availability of data export functions of key tools" can be used as a supplementary operation and maintenance health indicator.
+
+[[encoding-basics]] [[grafana-administration]]

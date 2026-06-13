@@ -1,0 +1,64 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Announcing Prometheus 3.0"
+category: "prometheus"
+confidence: medium
+---
+
+## Overview
+Prometheus 3.0 is the first major version released by the Prometheus project since 2.0, marking its maturity from an early adopter project to a cornerstone of the cloud-native monitoring stack. While maintaining backward compatibility and stability, this version introduces a number of important new features aimed at improving user experience, enhancing ecological interoperability, and laying the foundation for future development. For the SRE team, understanding the changes in 3.0 is the key to planning monitoring platform upgrades and leveraging new features to improve observability efficiency.
+
+## Core concepts
+### Brand new UI (User Interface)
+Prometheus 3.0 enables a completely rewritten web interface by default. The new UI design is more modern and concise, and introduces a PromLens-like tree view to facilitate understanding of complex PromQL queries. To facilitate the transition, users can temporarily switch back to the old interface through the `old-ui` function flag. It is worth noting that as a new component, the new UI may have undiscovered problems, and the community encourages users to provide positive feedback.
+
+### Remote Write 2.0
+Remote Write 2.0 is a major upgrade of the monitoring data remote writing protocol. It natively supports new elements such as metadata, Exemplars, creation timestamps and native histograms, and uses string persistence technology to effectively reduce the size of the transmission load and reduce CPU usage during compression and decompression. The protocol also improves the handling of partial writes, providing clients with more detailed error information.
+
+### Native UTF-8 support
+Prometheus 3.0 supports all valid UTF-8 characters in metric names and label names by default. This simplifies integration with applications that follow semantic conventions such as OpenTelemetry and avoids the previously cumbersome step of converting characters such as periods into underscores. If either the producer or consumer does not support UTF-8, the system will automatically fall back to the traditional escape method. PromQL queries also support the new quote syntax accordingly.
+
+### OpenTelemetry (OTLP) integration
+To fulfill its commitment to the OpenTelemetry ecosystem, Prometheus 3.0 enhances interoperability:
+* **OTLP Ingest**: Prometheus can now serve as a native sink for the OTLP metrics protocol, receiving data via the `/api/v1/otlp/v1/metrics` endpoint.
+* **UTF-8 normalization**: Thanks to native UTF-8 support, Prometheus can losslessly store and query metrics from OpenTelemetry, eliminating confusion caused by naming conversions (such as dots to underscores). To achieve this, the OTLP ingest feature supports experimentally different translation strategies.
+
+### Native Histograms
+The native histogram is a more efficient indicator type. Compared with the classic histogram, it does not require preset or manual adjustment of the bucket boundaries, but sets predefined buckets based on exponential growth. This provides a lower-overhead, more efficient solution for measuring distributed data. **Note:** This feature is still in the experimental stage and is not enabled by default. It needs to be enabled through the `--enable-feature=native-histograms` flag.
+
+## Practice
+### Upgrade path and migration
+Upgrading from Prometheus 2.x to 3.0 requires following a clear path. **Officially strongly recommends upgrading to v2.55 first**, because the rollback from v3.0 can only be to v2.55, but cannot be rolled back to earlier versions. Prometheus 3.0 contains some breaking changes, mainly related to feature flags, configuration files, PromQL syntax, and scraping protocols. Before performing the upgrade, be sure to read the official [Migration Guide](https://prometheus.io/docs/prometheus/3.0/migration/) carefully, evaluate the impact and complete the necessary configuration adjustments.
+
+### Configuration example
+Enabling new features usually requires a declaration in the Prometheus configuration file. For example, to enable the OTLP ingestion function, you need to add the `otlp` related section in the configuration. To enable experimental native histograms, add a feature flag to the launch command. Here's a simplified example:
+```yaml
+# Enable OTLP reception in prometheus.yml (requires corresponding function flags)
+global:
+  scrape_interval: 15s
+
+# Add OTLP receiver configuration
+otlp:
+  translate_strategy: NoUTF8EscapingWithSuffixes # Experimental strategy example
+
+# Enable native histogram in startup command
+# ./prometheus --enable-feature=native-histograms
+```
+
+### Performance Observation
+The Prometheus team used macro benchmarks to compare the performance of version 3.0 with historical versions (2.0 and 2.18) under the same hardware, queries, and configurations. The results show that 3.0 has significant improvements in CPU and memory usage efficiency, which proves the results of the community's optimization of core storage and query engines over the past seven years. After the upgrade, the SRE team can focus on relevant monitoring indicators to verify performance improvements.
+
+## SRE Key Points
+* **Reliability and Stability**: Despite being a new major version, Prometheus 3.0 demonstrates good backward compatibility and stability in core functionality. Its performance improvement directly helps to carry more monitoring data under the same hardware resources and improves the reliability of the monitoring system itself.
+* **Observability enhancements**:
+    * **New UI with UTF-8**: Lowers the barrier to understanding and debugging monitoring data, especially for environments that contain complex naming or are mixed with OpenTelemetry.
+    * **Remote Write 2.0 and OTLP**: Provides a stronger foundation for building unified and efficient observability data pipelines. SRE can more seamlessly integrate Prometheus with components such as OpenTelemetry collectors.
+* **Best Practices and Anti-Patterns**:
+    * **Practice**: Conduct adequate testing and validation before upgrading. Simplify translation logic for existing monitoring data with new OTLP ingest and UTF-8 support. Pay attention to and gradually evaluate experimental features (such as native histograms).
+    * **Anti-Pattern**: Avoid jumping directly from earlier versions of 2.x to 3.0. Neglecting to read the migration guide can result in misconfiguration of your production environment or data loss. Immediately applying experimental features such as native histograms to core production monitoring may introduce unknown risks.
+* **Related Metrics (SLI/SLO/SLA)**:
+    * **SLI (Service Level Indicator)**: Monitor the CPU usage, memory usage, crawl latency, write latency, etc. of the Prometheus server itself to quantify the performance benefits after the upgrade.
+    * **SLO (Service Level Objective)**: Set goals for monitoring the availability and latency of data flows to ensure that new features (such as Remote Write 2.0) do not affect the reliability of data delivery.
+    * **Correlation**: The improvement of Prometheus performance directly affects its SLA commitment capability as the core component of the monitoring system.
+
+Related pages: [[prometheus-architecture]], [[sli-slo-sla]], [[capacity-planning]]

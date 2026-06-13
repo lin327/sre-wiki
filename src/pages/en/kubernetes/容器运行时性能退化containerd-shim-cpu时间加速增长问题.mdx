@@ -1,0 +1,59 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd-shim-runc-v2: accelerating CPU time growth on long-running nodes"
+category: "容器运行时"
+confidence: high
+---
+
+## Overview
+
+On long-running (e.g. 14+ days) Kubernetes nodes, the `containerd-shim-runc-v2` process may experience continued consumption of CPU time even if the containerized workload remains completely static and stable. More importantly, this consumption is not constant, but shows a trend of accelerated growth, that is, more CPU time is added every day than the previous day. This issue poses a direct challenge to SRE's core practices of ensuring long-term system stability and resource efficiency, especially in production environments that are sensitive to latency and resource usage. Without intervention, node CPU resources may be gradually exhausted within weeks, eventually leading to service performance degradation or scheduling failure.
+
+## Core concepts
+
+### containerd-shim-runc-v2
+In the containerd container runtime architecture, a `shim` is a lightweight process that acts as an intermediary between the containerd daemon and the actual container process (such as a container started through runc). Each container has a corresponding shim process. Its main responsibilities include: maintaining the container's standard input/output stream, reporting the container's exit status, and resuming container management when containerd restarts. `runc-v2` specifies the specific implementation of shim.
+
+### CPU TIME+ indicator
+In Linux systems, `CPU TIME+` or `utime + stime` is a cumulative measure of the CPU resources consumed by a process, measured in "ticks" or seconds. It represents the time it takes for the process to actually execute instructions in user mode and kernel mode. Continued growth of this metric is normal in itself, but changes in the growth rate (derivative) can reveal anomalies. In this case, the growth rate itself is increasing, indicating that the process's CPU efficiency is deteriorating over time.
+
+### Resource leak
+Traditionally, resource leaks are often referred to as memory leaks (see [[process-resource-leak]]). This case reveals a pattern of "CPU time leakage": not the direct loss of physical resources such as memory, but the inefficiency of the execution unit. This could be caused by a variety of reasons, such as internal data structures (such as mapping tables used to track container state) expanding infinitely over time, polling frequency or logical paths becoming increasingly inefficient due to some condition, or, as users speculate, caused by the accumulation of concurrent tasks such as goroutines.
+
+## Practice
+
+### Problem identification and monitoring
+The SRE team should incorporate the CPU time growth trend of the containerd-shim process into node health monitoring. Basic monitoring can include:
+1. **Periodic Sampling**: Use tools such as `top -b -n1`, `pidstat` or cAdvisor to record the CPU time of all `containerd-shim-runc-v2` processes at fixed intervals (such as every hour).
+2. **Trend Analysis**: Draw the collected data into charts. A normal stable workload should exhibit a nearly horizontal line of daily increments. The occurrence of positive acceleration (curve bending upward) is an early warning signal.
+3. **Correlation Analysis**: Monitor the memory (RSS) usage trend of the same process at the same time to determine whether there is a compound leak (such as memory growth observed at the same time in this case). However, be aware that CPU and memory issues can have independent root causes.
+
+### Problem reproduction and confirmation
+To confirm if the issue exists in your environment, you can follow these steps (simplified based on the original report):
+1. Select a node and confirm which containerd version it is running (for example, v1.7.27 or v2.0.7).
+2. Make sure that the node is running a batch of stable Pods that will not be restarted for a long time.
+3. Collect the CPU TIME+ values ​​of all shim processes every day for 2-3 consecutive weeks.
+4. Calculate daily increments. If the incremental sequence (eg: 2.00, 2.04, 2.09...) shows a clear increasing trend, the problem is confirmed.
+
+### Mitigation and avoidance
+Until an upstream fix is released, an effective mitigation measure is to restart nodes or containers in a planned manner:
+- **Reboot Node**: This cleanly kills all shim processes and resets their state. The original report stated that the mode would start growing again after a reboot, but would at least bring resource consumption back to baseline. Can be combined with rolling updates or node health checks, triggered when CPU usage approaches a threshold (such as 95%).
+- **Restart container**: For key services, the corresponding Pod can be restarted separately. This will also rebuild the corresponding shim process.
+
+It should be noted that this avoidance measure only treats the symptoms but not the root cause, and will introduce additional operation and maintenance overhead.
+
+## SRE Key Points
+
+### Reliability correlation
+This issue directly affects performance metrics in SLOs, specifically request latency and throughput. When the host's CPU is heavily occupied by "parasitic" processes, the CPU resources available to the business container are reduced, which may lead to performance degradation or OOM events. It also reduces the predictability of resource utilization and makes capacity planning more difficult.
+
+### Best Practices and Anti-Patterns
+- **Best Practice**: Implement a "scheduled restart" or "node drift" strategy for long-lived cluster nodes as a proactive preventive measure against resource degradation. Establish detailed observability of container runtime components (see [[node-observability]]), not only focusing on "whether it is running", but also on "whether its operating efficiency is attenuated".
+- **Common anti-pattern**: Ignore CPU/memory consumption trends of infrastructure processes (such as shims) and only monitor business containers. Completely avoid any kind of reboot on long-running nodes as it is considered destabilizing. This case just shows that absolute "no restart" may lead to more hidden and serious resource degradation problems.
+
+### Related indicators and alarms
+- **SLI (Service Level Indicator)**: Node available CPU resources, Pod startup delay, container OOM event count.
+- **SLO (Service Level Objective)**: For example, "99.9% of Pods start successfully within 10 seconds of scheduling." This issue may cause this SLO to fail.
+- **Alarm Rules**: You can design alarms to monitor the growth rate of the total CPU time consumption of all `containerd-shim-runc-v2` processes within a period of time, or monitor the change in the ratio of the node's "idle" CPU to the shim process's CPU consumption. For example: `avg_over_time(node_cpu_seconds_total{mode="idle"}[1d])` keeps going down, while `containerd_shim_cpu_seconds_total` keeps going up.
+
+This issue is closely related to [[container-runtime-lifecycle]] management and troubleshooting and is an important case in understanding the long-term behavior of container runtimes.

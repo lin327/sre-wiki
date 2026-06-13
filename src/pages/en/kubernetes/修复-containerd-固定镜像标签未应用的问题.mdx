@@ -1,0 +1,71 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Fix pinned label not applied when pinned_images config has no tag (#13336)"
+category: "容器运行时"
+confidence: medium
+---
+
+## Overview
+
+In a container runtime environment, managing the version stability of key base images is critical. `containerd` provides a "Pinned Images" mechanism that labels specific images (such as `containerd.io/pinned`) to mark and manage images that require fixed versions to avoid accidental updates. This document describes a bug that was introduced and fixed in an iteration of `containerd`: when an address was specified for a pinned image in a configuration file but a tag was not explicitly specified, the system failed to automatically apply the pinned tag, thereby breaking this core reliability mechanism. This fix ensures the robustness and consistency of fixed mirror configurations.
+
+## Core concepts
+
+**Pinned Images**: In the configuration of `containerd`, you can specify a set of images that require version locking through the `pinned_images` field. These images are usually used for core system services (such as Kubernetes pause containers, CNI plug-ins, CSI drivers, etc.) to ensure that their versions remain unchanged throughout the cluster life cycle, providing reproducible deployment and a stable operating environment.
+
+**Pinned Label**: `containerd` will automatically add a specific label (such as `containerd.io/pinned`) to images marked as `pinned` in the configuration. The functions of this label include:
+1. **Identification**: Clearly distinguish which images are managed and require fixed versions.
+2. **Protection**: Prevent garbage collection or garbage cleaning mechanisms from accidentally deleting these important images.
+3. **Query**: Allows administrators to quickly filter out all fixed images by tags.
+
+**Original bug**: A logic flaw was introduced during a previous refactoring of functionality from `SandboxImage` to the more general `PinnedImages`. When an image reference (such as `registry.k8s.io/pause:3.9`) is specified in the configuration but its label part is ignored or not parsed correctly in some code paths, the system cannot complete the normalized comparison of the image name, causing the subsequent "labeling" operation to be skipped.
+
+## Practice
+
+The core of this fix is to normalize the references before comparing them. This ensures that no matter what the image string format provided by the user is (whether it contains tags, whether it contains default prefixes such as `docker.io`, etc.), it can be converted into a unified internal format for comparison.
+
+**Fix logic**:
+1. When `containerd` processes the `pinned_images` configuration, for each specified image address.
+2. The system will first call the normalization function to process the string. The normalization process completes missing default tags (such as normalizing `nginx` to `docker.io/library/nginx:latest`) and ensures the integrity and consistency of image names.
+3. Subsequently, the system uses the standardized image name to compare it with the image list that has been pulled to the local, so as to accurately label the target image with a fixed label.
+
+**Configuration example** (`config.toml`):
+```toml
+[plugins."io.containerd.grpc.v1.cri"]
+  # ...other configuration ...
+
+  # Fixed image configuration example
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+    # Even if the image configured here does not have a label, the fixed label should be applied correctly
+    pinned_images = [
+      "registry.k8s.io/pause:3.9",
+      "docker.io/library/alpine", # should be processed correctly even if :latest is not specified
+      "quay.io/prometheus/prometheus:v2.51.0"
+    ]
+```
+
+Once fixed, `containerd` will ensure that all images in the above configuration (including `alpine`) are properly tagged and managed.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+* **Reliability**: The fixed image mechanism is the cornerstone to ensure service version certainty and deployment reproducibility. This bug will cause some critical images (especially those whose labels may be omitted during configuration) to not be locked correctly, causing failures during node reconstruction, image garbage collection, or unexpected updates, directly affecting the reliability of the service. Once fixed, SREs can rely on this mechanism with greater confidence.
+* **Observability**: A sound fixed mirroring system relies on tags. Querying images with the `containerd.io/pinned` label through `ctr images ls` or the CRI interface is an important means for operation and maintenance auditing and monitoring the image status. This fix ensures the accuracy of observability data.
+* **Incident response**: When you need to quickly roll back or troubleshoot version inconsistencies, it is crucial to be able to accurately control and identify the fixed image version running on the node. This bug may cause confusion during incident investigation, causing the actual version of some images to be different from the expected one.
+
+### Best practices and common anti-patterns
+* **Best Practice**:
+    1. **Explicitly specify tags**: Although `containerd` can handle unlabeled cases after the fix, the best practice is to always explicitly specify the image tag** (such as `image:v1.2.3`) in the `pinned_images` configuration. This makes the configuration intent clearer and avoids relying on runtime defaults.
+    2. **Versioned configuration**: Incorporate the `pinned_images` list into configuration management and bind it to the Kubernetes version or platform version to achieve versioned and traceable infrastructure management.
+    3. **Monitoring and Auditing**: Regularly (or during the CI/CD process) check the status of the fixed image tag on the node to ensure it is consistent with the configuration expectations.
+* **Common anti-patterns**:
+    1. **Reliance on implicit tags**: Write `nginx` instead of `nginx:1.25.3` in the configuration, which increases the uncertainty of the configuration.
+    2. **Ignore the update process**: Fixed images do not mean they will never be updated. There should be a dedicated process for evaluating, testing and updating the `pinned_images` list.
+    3. **Configuration Drift**: The `config.toml` on each node is inconsistent, resulting in different fixed image sets, which brings complexity to operation and maintenance.
+
+### Related indicators (SLI/SLO/SLA)
+* **SLI (Service Level Indicator)**: can monitor the consistency rate between "the number of images with the `containerd.io/pinned` label" and "the number of images defined in the `pinned_images` configuration item". This indicator should be close to 100%.
+* **SLO (Service Level Objective)**: For nodes running critical services, SLO should be set, requiring the application success rate of fixed image tags to reach above 99.99%.
+* **SLA (Service Level Agreement)**: This problem itself is an internal runtime defect, and SLA is usually not directly defined externally. However, the platform provider can include "fixed image configuration correctness guarantee" as part of the internal service level agreement and promise to repair such mechanical problems in a timely manner.
+
+[[containerd-configuration]] [[container-image-management]]

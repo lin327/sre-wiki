@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[release/2.1] backport: sandbox: forward Create fields, fix event topics'"
+category: "容器运行时"
+confidence: medium
+---
+
+## Overview
+In the container runtime ecosystem, containerd's Sandbox function provides a unified management interface for runtime sandboxes (such as Kata Containers, gVisor). This fix targets two key flaws in the Sandbox service: the gRPC proxy controller silently loses configuration fields when creating a sandbox, and the topic format does not comply with the convention when publishing events, causing failure. These problems directly affect the correct configuration acquisition of clients that rely on the gRPC proxy path and the event observability of the system, which are typical reliability and functional integrity risks.
+
+## Core concepts
+### gRPC Sandbox Controller Agent
+containerd's Sandbox service can be provided through gRPC. For high availability or load balancing, clients typically connect to a gRPC proxy service. The agent is responsible for forwarding the client's RPC calls to the actual controller, either local or remote. During the forwarding process, the proxy must pass all request fields completely, otherwise it will cause abnormal behavior of downstream services.
+
+### Sandbox creation process and configuration fields
+Creating a sandbox requires specifying several configurations. The `options` field usually contains runtime-specific options, and fields such as `netns_path` (network namespace path), `rootfs` (root file system), `annotations` (annotations), etc. are critical for setting up the sandbox environment correctly. These fields are explicitly listed in the create RPC request, and the proxy service must ensure that they are forwarded unchanged.
+
+### Event topic and event exchange
+containerd uses an internal event bus to publish and subscribe to system events (such as state changes of containers, tasks, and sandboxes). Each event has a topic and the format is strictly agreed. For sandbox events, the topic must start with `/sandboxes/` (such as `/sandboxes/create`). The event exchange component will verify the topic format, and non-compliant topics will be rejected, causing event publishing to fail and return an error.
+
+## Practice
+### Problem analysis
+1. **Incomplete field forwarding**: Before the fix, the gRPC Sandbox controller service only forwarded the `options` field when calling the local controller. Fields such as `netns_path`, `rootfs`, and `annotations` are "swallowed" at the proxy layer. As a result, sandboxes created through the proxy may be missing critical network and storage configuration, causing runtime errors.
+2. **Event topic format error**: In the code path of event publishing, the constructed event topic lacks the leading `/`, and uses `"sandboxes/create"` instead of the correct `"/sandboxes/create"`. This triggered the event system's validation rules, making the created event unpublishable, breaking event-based monitoring and state synchronization.
+
+### Repair plan
+* **Complete field forwarding**: In the `Create` method implementation of the gRPC proxy controller, ensure that all fields of `CreateSandboxRequest` (including `Options`, `NetnsPath`, `Rootfs`, `Annotations`, etc.) are assigned and passed to the local controller call.
+* **Canonical event subject**: In the code that publishes sandbox events, ensure that the event subject string uses the correct format, that is, includes a leading slash `/`.
+* **Increase test coverage**: Add unit tests for all RPC methods served by the controller (including `Create`, `Stop`, `Delete`, `Status`, `List`, etc.). The test will verify:
+    * Proxy correctly forwards all input fields.
+    * The event subject format is correct and published successfully.
+
+### Correct behavior verification
+After the fix, when creating a sandbox via a gRPC proxy path, you should see full `netns_path`, `rootfs` and `annotations` information in the final state or detailed configuration of the sandbox. At the same time, a properly formatted `/sandboxes/create` event should be observed in the system event stream.
+
+## SRE Key Points
+### Association with reliability
+This fix is a typical practice for **eliminating silent failures** and **guaranteeing error budgets**.
+1. **Configuration Drift Risk**: Field loss is a silent configuration error. The client may think that the configuration has been successfully delivered, but the runtime sandbox does not obtain the complete configuration, causing subsequent failures at unpredictable points in time. Fixing it improves the determinism and predictability of the system's behavior.
+2. **Observability Gap**: Event subject errors directly disrupt the event flow of the system. This is a serious observability blind spot for monitoring systems that rely on sandbox creation events to trigger subsequent processes (e.g. registration, monitoring) or to calculate availability metrics. Fixing it restored the integrity of the event bus.
+
+### Best practices and common anti-patterns
+* **Anti-Pattern: Over-cut or simplified proxy layer**: When designing a proxy or middle layer, discarding "non-core" fields for the sake of "simplification" is a dangerous practice. The contract of the downstream service (RPC interface definition) should be regarded as an agreement that cannot be violated, and the core responsibility of the proxy layer is to forward faithfully.
+* **Best Practice: Strict Contract Testing**: This fix supplements unit testing for all RPC methods, which is a key practice. From an SRE perspective, this is "testing to failure". Unit tests should not only verify positive functionality, but also verify boundary conditions (such as the passing of all optional fields, rejection of incorrect formats).
+* **Best practice: Standardized event Schema**: Event subject, payload format, etc. should have clear specifications (such as Schema definition or documentation). Constants or utility functions should be used in the code to generate event topics to avoid format errors caused by manual string splicing.
+
+### Related indicators
+* **SLI**: For Sandbox services, a relevant SLI could be "the proportion of successfully created and fully configured sandboxes". Creations with incomplete configuration should be considered failed.
+* **SLO**: You can set the SLO of "sandbox creation success rate", and the creation failure caused by the loss of configuration fields will be included in the error budget.
+* **Observability Metrics**: Monitors a counter for "event publishing failures" in the event exchange, specifically failures related to topic malformation. This indicator should have been elevated before this fix.
+
+### Related pages
+- [[containerd-architecture]]: Understand containerd's component architecture, including the location of the Sandbox service and event bus.
+- [[grpc-api-design]]: Considerations about field management and version compatibility in gRPC API design.
+- [[event-driven-observability]]: Discuss how to use event systems to build observability and the importance of event integrity.

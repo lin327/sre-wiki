@@ -1,0 +1,48 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana GitHub Issue"
+category: "可观测性工具"
+confidence: medium
+---
+
+## Overview
+
+In troubleshooting and performance optimization of distributed systems, link tracing (Traces) is the core means for SRE to locate the root cause of delays. The “Drilldown” function provided by Grafana’s Trace exploration application (Explore Traces App) can automatically analyze trace data and generate views that help understand service dependencies and latency distribution. The “Root cause latency” tab is particularly critical. However, since Grafana was upgraded to version 12.4.0, this function may experience a "No data for selected query" exception, although sufficient data exists in the underlying data source (such as Tempo). This issue directly blocks SRE from performing efficient root cause analysis and is a typical incident that affects the reliability of the observability tool chain.
+
+## Core concepts
+
+- **Traces Drilldown**: An automated trace data exploration interface provided by Grafana. It goes beyond the original TraceQL query and helps users quickly locate performance bottlenecks through structured interactive views (such as service topology diagrams and latency distribution diagrams).
+- **Root cause latency**: A specific analysis view in the Drilldown feature. Its purpose is to automatically infer the "root cause" Span or service that is most likely to cause the overall service delay from a large number of spans based on dependencies and timing.
+- **TraceQL**: Query language used by tracing backends such as Tempo to filter and retrieve specific Span and Trace. The Drilldown function ultimately translates its user-selected conditions (such as time range, duration threshold, main signal `nestedSetParent&lt;0`) into concrete TraceQL query statements.
+
+## Practice
+
+Based on the logs provided in the problem report, we can analyze the failure phenomenon and locate potential causes.
+
+1. **Recurrence of problem**:
+    When the user enters the Drilldown view and selects the "Root cause latency" tab in Grafana's Explore Traces App, the interface displays "No data for selected query". At the same time, the Grafana background log records error information from the `tsdb.tempo` plugin.
+
+2. **Log Analysis**:
+    The key error log is as follows:
+    ```
+    level=error msg="Failed to send request to Tempo" error="Get \"...\": context canceled"
+    level=error msg="Error processing TraceQL query" error="Get \"...\": context canceled"
+    ```
+    This indicates that when the Grafana backend sent a query request to the Tempo data source, the request was canceled (`context canceled`), causing the query to be terminated early. Subsequently, Grafana returned a `status: 400` (Bad Request) error response to the front end.
+
+3. **Root cause inference**:
+    - **Query Parameter Exception**: The canceled request URL contained a complex TraceQL query string: `q={nestedSetParent&lt;0 && true && duration &gt;= 268ms}`. The problem is likely to be in the Grafana 12.4.0 version, where the generation or encoding logic of TraceQL queries has changed, resulting in the construction of query statements that Tempo cannot parse correctly or considers to be invalid.
+    - **Version dependency**: The problem clearly occurred after upgrading to 12.4.0, and it works fine in the old version, which strongly points to a regression defect (Regression) introduced by the version update. `pluginId=tempo` clearly appears in the log, indicating that the problem lies in the interaction layer between Grafana and the Tempo data source plugin.
+    - **Front-end performance**: Because the back-end query failed and returned an error, the Drilldown front-end failed to receive any tracking data, so "No data for selected query" was displayed.
+
+## SRE Key Points
+
+- **Direct impact on reliability**: Such issues directly harm the reliability of the SRE core toolchain. When the key root cause analysis function fails, it will significantly extend the mean time to fault location (MTTR), affecting the efficiency and quality of incident response. SRE teams need to factor the availability and functional completeness of the monitoring tool itself (such as Grafana) into SLI/SLO considerations.
+- **Monitoring of Observability Tools**: The SRE should establish monitoring of the observability platform itself. For example, you can synthetically simulate key user actions (such as opening Drilldown and query a specific view) and monitor their success rate and latency to ensure that core analytics capabilities are available.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: Before upgrading core monitoring tools (such as Grafana), key workflows (especially Trace and Log correlation queries) should be fully tested in the pre-release environment. Maintain the habit of reviewing version update logs and pay attention to known bugs in a timely manner.
+    - **Common anti-pattern**: Ignoring the smooth upgrade test of the tool version and upgrading directly in the production environment; indiscriminately blaming the "no data" phenomenon returned by the tool on the data source or the lack of its own data, while ignoring that the tool itself may have defects.
+- **Related Indicators (SLI/SLO)**:
+    - While this is not a direct business SLI, it is possible to define internal metrics related to **observability tool feature availability**. For example:
+        - **SLI**: "Trace Drilldown root cause analysis function query success rate" = (number of query requests that successfully returned data) / (total number of query requests).
+        - **SLO**: The SLI should be 99.5% or higher during business hours. The bug that triggers this issue causes the SLI to fall below the SLO, thus generating an alert event that needs to be fixed.

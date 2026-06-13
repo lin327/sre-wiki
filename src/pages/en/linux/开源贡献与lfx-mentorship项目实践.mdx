@@ -1,0 +1,54 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "From a Newbie in Software Engineering to a Graduated LFX-Mentee"
+category: "社区与职业发展"
+confidence: medium
+---
+
+## Overview
+
+LFX Mentorship is a mentorship program organized by the Linux Foundation, aiming to provide beginners with valuable opportunities to participate in open source projects and receive guidance from industry experts. For practitioners or enthusiasts in the SRE and cloud native fields, participating in such projects is an important way to gain a deep understanding of system reliability, fault injection technology, and the Kubernetes ecosystem. This article is based on the experience of a beginner with a biomedical engineering background participating in the Chaos Mesh project. It explains the entire process from application to contribution to AWS Chaos functions. It shows how to learn and grow into a qualified open source contributor through practice under the guidance of senior mentors. This also reflects the practice of the core idea of ​​"improving system reliability by creating controllable faults" in SRE culture in community collaboration.
+
+## Core concepts
+
+- **LFX Mentorship**: A global mentorship program provided by the Linux Foundation, connecting participants (Mentee) with experienced mentors (Mentors) to jointly complete selected open source project topics. It provides a structured environment for newcomers to gain exposure to real-world code bases, follow open source collaboration processes, and receive professional feedback.
+- **Chaos Mesh**: A cloud-native chaos engineering platform for planned fault injection in Kubernetes environments to test system resiliency and fault tolerance. It is an important project in the CNCF Chaos technology panorama, and its architecture involves Kubernetes Operator mode, Custom Resource Definitions (CRDs), and controllers.
+- **AWS Chaos**: A functional extension of Chaos Mesh designed to simulate failure scenarios of Amazon cloud services (such as EC2, RDS, S3, etc.). Implementing this functionality requires combining the AWS SDK with Kubernetes' declarative API, typically by creating specific Pods within the cluster to execute AWS command line or SDK calls.
+
+## Practice
+
+### Application and selection process
+
+Participants need to actively browse the LFX Mentorship project list and select projects that match their own technology stack (such as Docker, AWS, Python) and are of interest to them. A resume and cover letter are required when applying. Based on the preliminary materials, the instructors of the Chaos Mesh project will ask applicants to complete an additional technical task (such as configuring the environment, running examples) to assess their learning ability and motivation. Once selected, participants will connect with mentors via instant messaging tools such as Slack and work together to develop a preliminary learning plan.
+
+### Initial learning and project familiarity
+
+After being selected, the instructor will assess the trainee's familiarity with key technologies (such as Kubernetes, Go language) and recommend learning resources. In the Chaos Mesh project, typical entry paths include:
+1. **Complete the interactive tutorial**: Quickly understand the basic usage and concepts of Chaos Mesh.
+2. **Implementing Hello-World Chaos**: This is a key practice in understanding the core design of Chaos Mesh and involves writing custom controllers and defining new CRDs. Through this process, students learn the use of scaffolding tools such as `kubebuilder` and understand the Operator mode.
+3. **Fix "Good First Issue"**: Start with simple tasks marked by the community and become familiar with the project's code specifications, testing process, and pull request (PR) collaboration model.
+
+### AWS Chaos contribution process
+
+The contribution process reflects the typical collaboration model of open source projects:
+1. **Goal Evolution**: The initial goal was to implement a single AWS fault type, but during the research, the existing tool `awsssmchaosrunner` was discovered, and the final goal evolved to integrate it into Chaos Mesh.
+2. **Architecture Design**: The integration solution is divided into two parts:
+    - **Runner component**: A command line tool written in Kotlin that encapsulates the interaction logic with `awsssmchaosrunner` and is packaged as a Docker image.
+    - **Controller Component**: Chaos Mesh controller written in Go. It listens to the `AWSChaos` CRD. When an `AWSChaos` resource is created, the controller schedules a Pod containing the above Runner image and sends it specific AWS fault instructions via environment variables or command line parameters.
+3. **Collaboration and Iteration**: During the implementation process, participants learned to submit RFCs (Request for Comments) for design discussions, avoiding work reversal due to conflicts with project planning (such as early attempts at multi-container support).
+
+## SRE Key Points
+
+### Relevance to Reliability Engineering
+Chaos engineering is a proactive means to improve system reliability in SRE practice. By participating in projects like Chaos Mesh, contributors can not only learn the fault injection technology itself, but also gain a deep understanding of how to elegantly implement controllable faults in Kubernetes from an implementation level, thereby enhancing their understanding and design capabilities of system resilience in production environments.
+
+### Best Practices and Community Collaboration
+- **Start with basic tasks**: Following the "Good First Issue" guidelines is the best way for newcomers to safely integrate into a large code base.
+- **Pre-communication**: Before starting large-scale functional development, aligning the plan with the mentor and core community members through RFC or design documents can effectively avoid duplication of labor and communication costs caused by direction deviation in the later period.
+- **Embrace feedback and iteration**: Treat the failure of the first attempt (such as multi-container support) as a learning opportunity, and understand the overall planning and version release rhythm of the project.
+
+### Related indicators (SLI/SLO/SLA)
+In the development of chaos engineering tools, reliability indicators are directly related to the quality of the tool itself:
+- **SLI**: For example, "AWS Chaos experiment startup success rate" or "Fault injection command execution success rate".
+- **SLO**: Teams can set goals such as "99.5% of AWS Chaos experiments should start executing within 60 seconds of startup."
+- **Ensure Tool Reliability**: The stability (SLA) of the chaos tool itself is critical, as it needs to operate reliably when the system is under stress and should not become an additional point of failure.

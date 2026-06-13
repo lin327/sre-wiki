@@ -1,0 +1,51 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[release-12.2.9] Datasources: return 400 when payload UID does not match"
+category: "故障排查"
+confidence: medium
+---
+
+## Overview
+
+In the practice of Site Reliability Engineering (SRE), building robust and predictable APIs is the cornerstone of maintaining system reliability. A common anti-pattern is for inconsistent or invalid input requests to penetrate deeper into the system, ultimately leading to more severe and difficult-to-debug internal server errors (such as HTTP 500s). This document analyzes a specific repair case in the Grafana project. This case adds early verification to the `PUT /api/datasources/uid/:uid` interface for the inconsistency of the data source UID in the request body (Payload) and the path parameter (URL UID), and directly returns `400 Bad Request`. This improvement embodies the core SRE principles of "Fail Fast" and **Explicit Error Promotion**.
+
+## Core concepts
+
+The key to understanding this fix lies in the following concepts:
+
+1. **UID consistency verification**: For RESTful APIs that address resources based on unique identifiers (UIDs), ensuring that the identifiers provided by the client are consistent in different parts of the request (such as path parameters, request bodies) is a basic requirement for maintaining data integrity. Inconsistencies usually mean that the client has a logic error or is using outdated information.
+2. **Fail Fast**: In system design, detecting and handling errors as early as possible is a best practice. Compared with allowing an invalid request to continue execution to a database query or a more complex business logic layer (which may generate `500 Internal Server Error`), rejecting it immediately at the API entry layer (returning `400 Bad Request`) can feedback the problem to the client faster, save system resources, and make the fault easier to locate and handle.
+3. **Error Escalation**: Packaging and elevating low-level errors (such as database constraint violations) into higher-level, easier-to-understand HTTP status codes (such as `400`) can simplify client error handling logic and avoid exposing unnecessary internal implementation details. In the original code, the mismatched UID caused the resource lookup to fail at the service layer, throwing an unhandled exception that eventually became a `500` error.
+
+## Practice
+
+The specific implementation of this fix is in Grafana’s `pkg/api/datasources.go` file.
+
+**Behavior before fix**:
+When a client makes a `PUT /api/datasources/uid/my-ds-uid` request, but the `uid` field value in the JSON request body is `another-ds-uid`, the system ignores this inconsistency. It will try to use `my-ds-uid` in the URL to find and update the data source. Since secondary verification of UID or dependency processing may occur in subsequent logic, such contradictory input may eventually cause the service layer to throw an exception and the API to return `500 Internal Server Error`.
+
+**Fixed Behavior**:
+The system now explicitly compares the URL parameter `:uid` with the `uid` field in the request body before looking up the data source.
+1. **Verification**: If the two do not match, the API will immediately abort processing.
+2. **Response**: Return a clear `400 Bad Request` response to inform the client that there is a conflict in the request parameters. This response can contain a descriptive error message indicating the specific discrepancy.
+3. **Log**: This event can be logged as a client error to facilitate monitoring and troubleshooting integration issues, rather than classifying it as a server-side failure.
+
+This change comes with a new unit test `TestUpdateDataSourceByUID_UIDMismatch` (located in `pkg/api/datasources_test.go`), ensuring coverage of the fix logic and stability of subsequent regression tests. This provides operations and development teams with a verifiable expected behavior.
+
+## SRE Key Points
+
+* **Association with reliability, observability, incident response**:
+    * **Reliability**: This fix directly improves the reliability of the API. By preventing invalid states from entering the core logic of the system, the risk of service interruptions caused by internal state inconsistencies is reduced (and potential 500 errors avoided). This is in line with the core idea of ​​SRE to improve reliability by eliminating known failure modes.
+    * **Observability**: Improved system observability by downgrading `500` errors to `400` errors. In monitoring systems, a large number of `500` errors are usually considered critical events and trigger alerts, while `400` errors are usually classified as client problems. This distinction allows operations teams to more accurately distinguish between platform issues (`5xx`) and client integration issues (`4xx`), allowing them to focus on real reliability threats.
+    * **Incident response**: In troubleshooting, locating the "UID mismatch" message from the `400` error log is much more efficient than tracing back to the source of the problem from a bunch of `500` errors and complex stack traces. It reduces mean time to repair (MTTR).
+
+* **Best Practices and Common Anti-Patterns**:
+    * **Best Practice**: Always perform adequate input validation at API boundaries. For endpoints that use identifiers for resource operations, verifying the consistency of the identifier across all delivery paths is an important defensive programming practice.
+    * **Common anti-pattern**: Assume that the client always sends the correct request, or push the responsibility for validation entirely to the downstream service. This causes errors to propagate and amplify within the system, eventually revealing themselves in a worse form.
+
+* **Related indicators (SLI/SLO/SLA)**:
+    * **SLI**: Can track `API request success rate (non-5xx)` and `4xx error rate`. After the fix, `5xx` errors due to UID mismatch are converted into `4xx` errors, which affects both SLIs mentioned above.
+    * **SLO**: The team may set the SLO to be "99.9% of data source update API requests complete successfully (no 5xx errors)". This fix helps avoid consuming that SLO's Error Budget due to client errors, making the SLO more realistically reflective of the health of the service itself.
+    * **SLA**: While individual API error handling changes typically do not directly impact external SLAs, clearer error codes can help enforce the terms of the SLA regarding error notification and problem resolution processes.
+
+Understanding and applying such early verification logic is an important part of building a resilient distributed system. For more best practices in API design and error handling, please refer to [[api-design-and-versioning]] and [[error-budget-and-reliability]].

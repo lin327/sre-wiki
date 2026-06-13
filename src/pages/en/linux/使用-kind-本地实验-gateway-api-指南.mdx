@@ -1,0 +1,227 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Experimenting with Gateway API using kind - Kubernetes Blog"
+category: "Kubernetes与云原生"
+confidence: medium
+---
+
+## Overview
+
+The Gateway API is a new generation standard for managing north-south and east-west traffic in Kubernetes, providing a more powerful and flexible programming interface for service mesh and ingress control. It is critical for SREs and platform engineers to understand and experiment with core concepts in a local environment before going into production. This document provides a complete guide to setting up a temporary experimental environment locally using `kind` (Kubernetes in Docker) and `cloud-provider-kind`, which is specifically designed to learn how the Gateway API works without touching on the complexity and high availability requirements of a production environment.
+
+## Core concepts
+
+Before diving into practice, you need to understand several key resources in the Gateway API:
+
+- **GatewayClass**: defines the implementation of a class of gateway. Similar to `StorageClass` for `PersistentVolumeClaim`, `GatewayClass` is provided by the infrastructure administrator or cloud provider to indicate which controller to use to handle `Gateway` resources. In the experiment of this article, `cloud-provider-kind` will automatically create a `GatewayClass` named `cloud-provider-kind`.
+- **Gateway**: Based on `GatewayClass`, a network endpoint instance used to carry traffic is defined. It specifies listeners, such as protocols, ports, and hostname patterns, to receive external traffic.
+- **HTTPRoute**: Defines how to route traffic matching specific rules (such as host name, path) to the backend service (Service). It is attached to a `Gateway`.
+
+Understanding the separation of concerns design of these three (`GatewayClass` is managed by the infrastructure team, `Gateway` is managed by the cluster operations team, and `HTTPRoute` is managed by the application development team) is the key to grasping the value of the Gateway API.
+
+## Practice
+
+This section will guide you to build a complete local Gateway API experimental environment from scratch.
+
+### 1. Environment preparation
+
+Make sure your local machine has the following tools installed:
+- **Docker**: used to run kind and cloud-provider-kind containers.
+- **kubectl**: Command line tool for interacting with Kubernetes clusters.
+- **kind**: Tools for running Kubernetes in Docker.
+- **curl**: used to test whether the route is effective.
+
+### 2. Create kind cluster
+
+Create a single-node local Kubernetes cluster using the following command:
+```shell
+kind create cluster
+```
+
+### 3. Deploy cloud-provider-kind
+
+`cloud-provider-kind` is a controller that simulates a cloud environment and provides two core functions: assigning addresses to `LoadBalancer` type Services and implementing Gateway API controllers. It also automatically installs the CRDs required by the Gateway API in the cluster.
+
+On the same host, run `cloud-provider-kind` through Docker:
+```shell
+VERSION="$(basename $(curl -s -L -o /dev/null -w '%{url_effective}' https://github.com/kubernetes-sigs/cloud-provider-kind/releases/latest))"
+docker run -d --name cloud-provider-kind --rm --network host -v /var/run/docker.sock:/var/run/docker.sock registry.k8s.io/cloud-provider-kind/cloud-controller-manager:${VERSION}
+```
+&gt; **Note**: On some operating systems, you may need administrator rights to access the Docker socket.
+
+Verify that the container is running:
+```shell
+docker ps --filter name=cloud-provider-kind
+```
+
+### 4. Create Gateway
+
+Next, create a `Gateway` resource. The following list will:
+- Create a namespace called `gateway-infra`.
+- Define a `Gateway` that listens on port 80 and accepts HTTP traffic matching hostnames in the `*.exampledomain.example` pattern.
+- Allow `HTTPRoute` in **all namespaces** to attach to this `Gateway` (in a production environment, `Same` or `Selector` should be used to limit the attachment scope).
+
+```yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway-infra
+---
+apiVersion: gateway.networking.k8s.io/v1
+Kind: Gateway
+metadata:
+  name: gateway
+  namespace: gateway-infra
+spec:
+  gatewayClassName: cloud-provider-kind
+  listeners:
+  - name: default
+    hostname: "*.exampledomain.example"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+```
+
+Apply configuration and verify status:
+```shell
+kubectl get gateway -n gateway-infra gateway
+```
+Expect to see the `PROGRAMMED` status as `True` and the `ADDRESS` field assigned an IP address (e.g. `172.18.0.3`).
+
+### 5. Deploy the sample application
+
+Deploy a simple echo application that returns details of received requests to facilitate routing testing.
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: v1
+Kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: echo
+  name: echo
+  namespace: demo
+spec:
+  ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app.kubernetes.io/name: echo
+  type:ClusterIP
+---
+apiVersion: apps/v1
+Kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: echo
+  name: echo
+  namespace: demo
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: echo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: echo
+    spec:
+      containers:
+      -env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: registry.k8s.io/gateway-api/echo-basic:v20251204-v1.4.1
+        name: echo-basic
+```
+
+### 6. Create HTTPRoute
+
+Now, create an `HTTPRoute` to route traffic destined for `some.exampledomain.example` to the echo application deployed above.
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind:HTTPRoute
+metadata:
+  name: echo
+  namespace: demo
+spec:
+  parentRefs:
+  - name: gateway
+    namespace: gateway-infra
+  hostnames: ["some.exampledomain.example"]
+  rules:
+  - matches:
+    -path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: echo
+      port: 3000
+```
+
+### 7. Test routing
+
+Finally, use `curl` to send the test request. The `--resolve` parameter will resolve the simulated domain name to the IP address of the Gateway.
+
+```shell
+GW_ADDR=$(kubectl get gateway -n gateway-infra gateway -o jsonpath='{.status.addresses[0].value}')
+curl --resolve some.exampledomain.example:80:${GW_ADDR} http://some.exampledomain.example
+```
+If configured correctly, you will receive a JSON response containing the request path, hostname, method, and the name of the Pod that handled the request.
+
+### 8. Troubleshooting
+
+If the test fails, follow these steps to troubleshoot:
+- **Check Gateway status**: `kubectl get gateway -n gateway-infra gateway -o yaml`, check whether `status.conditions` contains `Accepted: True` and `Programmed: True`.
+- **Check HTTPRoute status**: `kubectl get httproute -n demo echo -o yaml`, pay attention to the conditions in `status.parents`. Common error causes include `BackendNotFound` (the backend service does not exist or has the wrong name) or `Accepted: False` (namespace permissions or hostname mismatch).
+- **View controller logs**: Check the logs of the `cloud-provider-kind` container for detailed error information:
+  ```shell
+  docker logs -f cloud-provider-kind
+  ```
+
+### 9. Clean up resources
+
+After the experiment, please clean up all resources in order to release local resources:
+```shell
+# Delete Kubernetes resources (namespace and all resources within it)
+kubectl delete namespace gateway-infra
+kubectl delete namespace demo
+
+# Stop and remove cloud-provider-kind container
+docker stop cloud-provider-kind
+
+# Delete kind cluster
+kind delete cluster
+```
+
+## SRE Key Points
+
+- **Association with Reliability**: Gateway API allows different teams to operate independently by separating traffic management (gateway) from application routing (HTTPRoute), which helps improve the reliability and change efficiency of the overall system. The SRE can focus on ensuring high availability and performance of the Gateway infrastructure, while the development team can independently manage their own routing rules.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: In production environments, always choose a well-tested [Gateway API Implementation](https://gateway-api.sigs.k8s.io/implementations/) that has good community support. When configuring `allowedRoutes`, use `Same` or `Selector` instead of `All` to implement the principle of least privilege and enhance security.
+    - **Anti-Pattern**: Use the experimental environment (`cloud-provider-kind`) in this guide for production traffic. This component lacks performance, high availability, security, and scalability features necessary for production.
+- **Related Metrics (SLI/SLO)**: Although this document does not directly define SLO, when using the Gateway API, the corresponding SLO should be set for its SLI, for example:
+    - **Availability**: The percentage of requests successfully processed by the Gateway listener.
+    - **Delay**: P99 delay in Gateway forwarding requests to backend services.
+    - **Error Rate**: The proportion of 5xx error responses generated by the Gateway.
+
+---
+**Next step**:
+- Learn about production-level solutions: Check out the [Gateway API Implementation List](https://gateway-api.sigs.k8s.io/implementations/).
+- Dive into Gateway API functionality: Explore advanced usages such as TLS termination, Traffic Splitting, and more.

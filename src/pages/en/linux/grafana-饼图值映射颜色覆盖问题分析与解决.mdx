@@ -1,0 +1,66 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issue"
+category: "bug"
+confidence: medium
+---
+
+## Overview
+
+In the practice of Grafana as the core observability platform for SRE, accurate and intuitive data visualization is critical to quickly identify system status, respond to events, and generate reports. Pie charts are often used to display proportional data, and the Value Mapping feature allows SRE engineers to convert raw data values ​​(such as `Approved`/`Not_Approved`) into more readable text and specific colors. However, in Grafana OSS version 11.6.0, a known flaw has been discovered: the value mapping function of the pie chart is able to overwrite the text of the data label, but not its color. This directly affects the monitoring efficiency of quickly distinguishing key states (such as errors and warnings) through color, and is a reliability and visualization issue that needs attention and avoidance.
+
+## Core concepts
+
+- **Value Mapping**: A data conversion function provided by Grafana that allows users to replace the original value (Value) of a data point with a custom display text (Text) based on predefined rules (such as "when the value is equal to `Not_Approved`), and can also specify the specific color (Color) of the data point in the chart.
+- **Pie Chart Plugin**: A chart type built into Grafana or provided through community plug-ins, used to display the proportion of different categories of data to the whole.
+- **Essence of the Problem**: In this specific version of the pie chart implementation, the `color` attribute in the value mapping rules is not correctly applied to the rendering layer, causing the chart to always use the color allocation rules in the Default Palette.
+
+## Practice
+
+### Problem reproduction and verification
+
+To confirm whether this issue affects your Grafana environment, you can follow these steps:
+
+1. **Prepare the data source**: Use a supported SQL data source (such as PostgreSQL) to execute a query that returns categorical data. For example:
+    ```sql
+    SELECT
+      CASE WHEN approved THEN 'Approved' ELSE 'Not_Approved' END AS status,
+      count(*) as count
+    FROM ami
+    WHERE
+      ami in ($AMI) AND instance_id in ($Instance)
+    GROUP BY status
+    ```
+2. **Create Pie Chart Panel**: Add a pie chart panel to the dashboard and select the above query as the data source.
+3. **Configure Value Mapping**: Enter the "Transform" or "Fields" tab of the panel and find the "Value Mapping" setting.
+4. **Add mapping rules**:
+    - Add a "Value" mapping: map the value `Not_Approved` to the text `Not Approved` and try specifying **red** in the color picker.
+5. **Observation**: The sector representing `Not Approved` in the pie chart should appear red, but actual observation will reveal that it still uses a color from the default palette (such as blue or orange) instead of the specified red. Text labels are correctly displayed as `Not Approved`.
+
+### Workarounds and Best Practices
+
+Before this flaw is officially fixed, the following temporary solutions can be used to ensure the effectiveness of monitoring visualization:
+
+1. **Use other chart types**: Consider using **Bar Chart** or **Bar Gauge** instead of pie charts to display these categorical data. These chart types generally perform more consistently in terms of color coverage.
+2. **Use the `Overrides` feature**: As an alternative, try using the panel's Overrides feature to set the color. The steps are as follows:
+    - In the panel editor, under the Overrides tab, click Add field override.
+    - In Choose Field, select By name and enter the name of the data series you want to change the color (e.g. `Not_Approved`).
+    - In the Properties section, add the Color property and specify the color you want.
+3. **Upgrade or wait for fix**: Pay close attention to Grafana’s official release notes and the progress of the above-mentioned GitHub Issue. This issue may have been fixed in subsequent releases (such as patch releases of 11.6.x or later). Upgrading to a stable version in time is the fundamental solution.
+
+## SRE Key Points
+
+### Association with reliability
+This problem directly affects the reliability of the monitoring system. Color is a key visual cue for SREs to quickly obtain information during incident response. If "Not Approved" or "Error" status is not highlighted in eye-catching red, it may delay the discovery and diagnosis of the problem, thereby affecting the overall availability metrics of the system (such as [[sli-slo-sla]]).
+
+### Best Practices and Anti-Patterns
+- **Best Practice**: After implementing changes in key monitoring panels, conduct **visual regression testing** to ensure all data points, including text and colors, are rendering as expected. Save and compare screenshots of important dashboards as a gold standard for configuration.
+- **Common anti-pattern**: Over-reliance on a single chart type (e.g. using only pie charts) to present key data. A mix of chart types should be used based on data characteristics and reading scenarios (e.g., reports, real-time alerts) to increase the robustness of the visualization.
+
+### Related indicators (SLI/SLO/SLA)
+While this is a visualization tool issue, it indirectly affects the visibility of the following metrics:
+- **SLI**: Such as "request success rate", "error request ratio", etc. If these proportions are displayed in a pie chart and the colors fail, the SRE may not be able to intuitively perceive whether the SLI deviates from expectations.
+- **Error Budget**: When the Error Budget is depleted too quickly, a color alert on the dashboard (e.g. red) is a key signal for the team to pay attention. This defect may make this signal less obvious.
+
+## Recommendations and follow-up actions
+For SRE teams encountering this issue, it is recommended to immediately review all key dashboards that use pie charts and value mapping and make adjustments based on the above mentioned workarounds. At the same time, record this issue in the internal "Known Issues" knowledge base and track Grafana version updates. In the [[incident-response]] process, known visual flaws that may exist in the monitoring panel should be clearly recorded to avoid misjudgments in incident analysis.

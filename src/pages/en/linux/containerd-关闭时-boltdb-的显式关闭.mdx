@@ -1,0 +1,41 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'fix: close boltdb on metadata and mount plugin close'"
+category: "插件与扩展"
+confidence: medium
+---
+
+## Overview
+
+In SRE practice, ensuring that service components (core runtimes such as containerd) can gracefully shut down (Graceful Shutdown) is the basis for ensuring system reliability and predictability. A graceful shutdown process ensures that resources are released correctly, states are persisted, and services can be restarted quickly, thereby minimizing the service interruption window. containerd's PR #13348 fixes a directly related issue: when containerd stops, its metadata and mount plugins fail to explicitly close the underlying BoltDB database file, but instead rely on the underlying operating system to clean up the lock file, which may cause unpredictable delays and affect scenarios that require a quick reset. This fix is ​​critical to improving containerd shutdown determinism.
+
+## Core concepts
+
+### BoltDB and lock files
+
+BoltDB is an embedded, persistent key-value database that containerd uses to store key information such as metadata. To ensure data consistency, BoltDB creates a lock file next to the database file to prevent simultaneous access by multiple processes or threads. Explicitly closing the BoltDB database will actively remove this lock file, while relying on OS cleanup may cause delays.
+
+### Graceful Shutdown
+
+Graceful shutdown refers to the process in which an application can complete the current work in an orderly manner, release external resources (such as database connections, file handles, lock files), and finally exit after receiving a termination signal. Compared with forced termination (such as `SIGKILL`), graceful shutdown can ensure the consistency of the system state and the timely release of resources.
+
+## Practice
+
+The core practice of this repair is to add explicit shutdown operations for the BoltDB database held by metadata and mounted plug-ins in the server shutdown path of containerd.
+
+The specific implementation points are as follows:
+1. **Modify the shutdown process**: In the `Stop()` method of the server, traverse and call the `Close()` method of the plug-in that needs to be closed. Metadata and mount plugins were added to this list.
+2. **Close order considerations**: The shutdown of the metadata database is scheduled after acquiring the read-write lock. This is to ensure that when the database is closed, there are no garbage collection (GC) cycles in progress. After closing, any subsequent database transactions will immediately fail with `ErrDatabaseNotOpen`. This is considered acceptable because the associated resources can be scheduled for recycling the next time containerd starts.
+3. **Garbage Collection (GC) plug-in processing**: Since the current GC plug-in does not implement the `Close` interface, it will be skipped during this server shutdown process and the shutdown operation will not be performed.
+4. **Verification and Testing**:
+    * Updated existing unit tests to close plugins via the plugin/manager instead of directly manipulating the original Bolt handle.
+    * Added a new test case to verify that the underlying Bolt database has indeed been successfully closed by asserting that a new transaction returns `ErrDatabaseNotOpen`.
+
+## SRE Key Points
+
+* **Relationship to Reliability**: Explicitly closing resources is the cornerstone of building deterministic systems. This fix eliminates an uncertain wait time when shutting down containerd (waiting for the OS to clean up the lock file), making automated operations processes that rely on quickly restarting containerd to restore service more reliable. This directly improves the **availability** of the container runtime layer.
+* **Best Practices and Anti-Patterns**:
+    * **Best Practice**: The lifecycle of critical resources (e.g. database connections, lock files), including their creation, use and closure, should always be managed explicitly in the application. This is consistent with the "explicit is better than implicit" principle.
+    * **Common anti-pattern**: Relying on the operating system or external processes to clean up resources created by the application (such as temporary files, lock files), which introduces uncertainty, makes behavior vary depending on the environment, and is difficult to test and verify at the code level.
+* **Related Metrics (SLI/SLO/SLA)**: While this fix itself does not directly define a new SLI, it is the basis for a more precise SLI. For example, the accuracy of an SLI measurement of "containerd restart time from receiving a stop signal to being fully ready" relies on the determinism of the shutdown process. Ensuring graceful shutdown is a prerequisite for achieving such service level objectives (SLOs).
+* **Observability Tip**: In complex distributed systems, improper release of resources may lead to hidden failures (such as "port occupied", "file locked"). Ensuring the correct release of resources through code review and unit testing (such as the new tests in this fix) is an important means to prevent such failures.

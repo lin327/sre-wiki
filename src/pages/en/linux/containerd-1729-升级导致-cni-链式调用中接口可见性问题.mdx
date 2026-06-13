@@ -1,0 +1,60 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Bond CNI fails with"
+category: "容器网络与运行时"
+confidence: high
+---
+
+## Overview
+
+In Kubernetes clusters, orchestrating multiple CNI plugins (known as "chaining") through meta-plugins such as Multus is a common practice for implementing complex network topologies (such as bonded interfaces, SR-IOV high-performance networking). This knowledge entry documents a critical regression issue originating from the container runtime layer (Containerd): after upgrading Containerd to version 1.7.29, subsequent plugins in a chained CNI call may not be able to observe network interfaces (such as virtual functions, VF) created by the preceding plugin within the Pod network namespace, causing the entire network configuration chain to break. For SREs and platform teams that rely on such advanced networking capabilities, this is a compatibility trap that must be wary of.
+
+## Core concepts
+
+- **SR-IOV CNI**: A CNI plugin for attaching PCI passthrough devices (such as SR-IOV virtual functions) directly to the Pod's network namespace to provide high-performance, low-latency network access.
+- **Bond CNI**: A CNI plug-in used to bond multiple network interfaces (such as two SR-IOV VFs) into a logical interface to achieve link aggregation, high availability or higher bandwidth.
+- **Multus CNI**: A meta-plugin that allows attaching multiple network interfaces on Kubernetes Pods. It does this via a chain of sequential calls to other CNI plugins (e.g. SR-IOV, Bond).
+- **Container Network Namespace (netns)**: Linux kernel feature that creates an isolated network stack for each Pod. The goal of all CNI plugins is to configure network interfaces and routes in this namespace.
+- **Chained CNI calls**: refers to calling multiple CNI plug-ins in a specific order. The output of the previous plug-in (especially the configured network interface) is the basis for the work of subsequent plug-ins. The visibility of the interface must be consistent across the chain.
+- **chrootExec mode**: An execution mode for the Multus thick plugin that executes CNI plugins by chrooting into the container's filesystem view, which may interact with certain implementation details of the container's runtime.
+
+## Practice
+
+### Problem discovery and confirmation
+
+Problems are usually exposed in the following scenarios:
+1. The cluster uses the `chrootExec` mode of the Multus thick plug-in.
+2. `NetworkAttachmentDefinition` defines a CNI call chain, usually: `SR-IOV CNI` -&gt; `Bond CNI`.
+3. After upgrading Containerd to 1.7.29 or later (such as 1.7.31), Bond CNI will report an error similar to `"Link not found"` when newly created or rebuilt Pods apply for the network.
+
+The logs will clearly show that Bond CNI cannot find the VF interface just created by SR-IOV CNI in the Pod's network namespace. The key differentiating point is: **Just changing the CNI plugin version will not solve the problem, the problem is rooted in the version of Containerd**. The issue is confirmed as a regression bug and affects the version window starting from `containerd 1.7.29` until the version before the fix.
+
+### Analysis and root causes
+
+According to the information in the Issue, the root cause of the issue is that certain changes introduced in Containerd 1.7.29 affect the interaction between the container runtime (containerd-shim) and the CNI plug-in (especially when called through the Multus thick plug-in), specifically breaking the guarantee of device visibility within the network namespace. In chained CNI calls, although the preceding plug-in (SR-IOV) and the subsequent plug-in (Bond) are logically executed serially, they may access the same network namespace through different process contexts. Changes in Containerd 1.7.29 appear to have changed this context, causing subsequent plugins to "not see" devices created by preamble plugins.
+
+### Solutions and avoidance
+
+1. **Preferred Solution - Version Selection**:
+    * **Downgrade**: Downgrade Containerd on the cluster nodes to the last version known to be available (such as `1.7.27` or `1.7.28`).
+    * **Upgrade**: Upgrade to a version that already contains the fix. According to the issue tracker, this issue is fixed in `containerd 1.7.32`. **STRONGLY RECOMMENDED** Check the official release notes to confirm the fix status before upgrading.
+
+2. **Temporary workaround**:
+    * **Use CNI Mirror Mode**: If feasible, change the execution mode of the Multus thick plugin from `chrootExec` to `cniImage` mode. This mode uses a containerized CNI plugin whose execution context may not be affected by the regression, thus circumventing the issue. But this can introduce other operational complexities.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: This problem is a typical **functionality degradation** caused by platform component upgrades. It directly destroys the reliability of the network configuration, causing the Pod to be unable to obtain expected network functions, thereby affecting the service availability of the applications hosted on it. This highlights the importance of **comprehensive integration testing** of the container runtime, CNI plug-in, and its orchestration layer.
+
+- **Observability and Incident Response**:
+    * **Warning**: Pods should be monitored for `NetworkNotReady` status and specific error patterns (such as `"Link not found"`) in kubelet/CNI related logs.
+    * **Diagnosis**: When an event occurs, the SRE needs to quickly check the Containerd, Multus and related CNI plugin versions of the affected node and compare it with a list of known regressions. Quickly determining whether the issue is with Containerd or the CNI plugin itself is key.
+    * **Event review**: Use this event as a case to complete the compatibility matrix list before cluster upgrade and clarify the known dependencies between Containerd, CNI plug-in, and Multus versions.
+
+- **Best Practices and Anti-Patterns**:
+    * **Best Practice**: Before upgrading core components such as Containerd in the production environment, key network function chains (such as SR-IOV + Bond) must be verified in a pre-release cluster that is consistent with the production environment. Establish and maintain a **component version compatibility matrix**.
+    * **Anti-Pattern**: Only testing simple, single CNI plugin network configuration; ignoring the potential impact of container runtime changes on CNI execution context; performing large-scale node upgrades without adequate testing.
+
+- **Related Indicators (SLI/SLO)**:
+    * **SLI**: Definable as "the percentage of Pods that successfully completed chained CNI configuration".
+    * **SLO**: The availability of such core network functions should set extremely high targets (such as 99.99%), because any failure will directly cause the Pod to fail to start or function abnormally. This bug is a direct threat to achieving this SLO.

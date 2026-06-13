@@ -1,0 +1,54 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Issue"
+category: "可观测性工具"
+confidence: medium
+---
+
+## Overview
+
+Grafana's time picker is one of the core components for users to interact with monitoring data. It determines the time range of data displayed in the dashboard. In SRE practice, ensuring the accuracy and availability of time pickers is critical because it is directly related to the timeliness of troubleshooting, performance analysis, and trend observation capabilities. This document is based on a specific user report analyzing an issue where manually entering a date and time may cause the time picker to fail to parse and display an "invalid date" error when an administrator customizes the system date format in the Grafana configuration file (`config.ini`) and enables browser localization (`use_browser_locale`). Understanding this issue can help avoid barriers to observability tool access caused by improper configuration.
+
+## Core concepts
+
+**TimePicker:** The control at the top of the Grafana interface allows users to select a preset time range (such as "past 1 hour") or customize absolute start and end times. Its backend logic needs to reliably parse user-entered strings into timestamps.
+
+**Date formatting and parsing:** Grafana relies on specific format strings (such as `full_date = DD-MM-YYYY HH:mm:ss`) to display and parse times. When the configured format is too complex or non-standard, or `use_browser_locale = true` is enabled, the parser may not correctly handle date strings manually entered by users that do not strictly follow the format, resulting in errors.
+
+**Browser Localization (`use_browser_locale`):** An experimental feature that allows Grafana to use the browser's locale settings to format and display date, time, and other information. Enabling this feature may cause the date format displayed on the front end to be inconsistent with the format configured in `config.ini`, which increases the difficulty of format matching when users enter.
+
+## Practice
+
+### Problem Reproduction and Diagnosis
+
+According to the report, the issue reappears under the following conditions:
+1. Set a custom date format in Grafana's `config.ini` file, for example `full_date = DD-MM-YYYY HH:mm:ss`.
+2. Enabled experimental feature `use_browser_locale = true`.
+3. The user attempts to manually enter a date and time in the time picker of the Grafana UI.
+
+**Recurrence phenomenon:** After manual input, the time selector input box displays an "Invalid date" error and the time range cannot be applied.
+
+### Solutions and configuration suggestions
+
+1. **Review and simplify date format configuration:** Check date-related settings in `config.ini`. Prefer using the widely supported ISO 8601 format (such as `YYYY-MM-DD HH:mm:ss`) as the value of `full_date`, which minimizes parsing ambiguity. Avoid using formats whose order may change in different locales (such as `DD-MM-YYYY` versus `MM-DD-YYYY`).
+
+2. **Use `use_browser_locale` with caution:** Since this is an experimental feature and may conflict with custom date formats, in production environments or scenarios with high stability requirements, it is recommended to set it to `false` or fully verify its compatibility with custom formats in a test environment before enabling it.
+
+3. **User Instructions:** If a custom format must be used, it should be made clear to team members that the format and delimiters defined in `config.ini` must be strictly followed when entering dates. For example, if `full_date` is `DD-MM-YYYY HH:mm:ss`, then entering `2024-10-08 11:30:00` will be invalid and `08-10-2024 11:30:00` must be entered.
+
+### Architectural Impact
+
+This issue mainly affects Grafana’s front-end interaction layer. The root cause is a mismatch in the interaction between the front-end date parsing library (such as Moment.js or subsequent alternatives) and the back-end configuration and browser environment. In an SRE architecture, this type of problem may be considered an availability risk because it prevents operations personnel from quickly querying and diagnosing system status.
+
+## SRE Key Points
+
+- **Relevance to Reliability and Observability:** When the time selector fails, the SRE cannot quickly adjust the monitoring view to focus on a specific failure window, which directly delays **Mean Time to Identify (MTTI)** and **Mean Time to Resolve (MTTR)**. Ensuring the robustness of core toolchains such as Grafana is fundamental to maintaining system observability.
+- **Best Practices and Common Anti-Patterns:**
+    - **Best Practice:** Before making configuration changes to monitoring tools, including UI related configurations, fully validate in a **pre-release or test environment**. Standardize the date/time format used by the team. Monitor the usability of the dashboard itself (e.g. detect whether key UI components are interactive via synthetic monitoring).
+    - **Anti-Pattern:** Relying on poorly tested experimental features (such as `use_browser_locale`) to alter default behavior in production. Use a non-standard, confusing date format as the toolchain's default configuration.
+- **Related Metrics (SLI/SLO/SLA):** Although not directly mapped to Infrastructure SLI, this issue can affect **Toolchain SLI**, for example:
+    - `grafana_timepicker_parse_success_ratio`: The proportion of times the time picker successfully parses user input.
+    - `grafana_dashboard_query_latency_p95`: Contains the end-to-end latency from the time range selected by the user to the completion of the query execution (the user may add latency due to error retries).
+    Ensuring the stability of these indicators helps maintain the efficient operation and maintenance capabilities of the SRE team.
+
+[[grafana-configuration]] [[slo-management]] [[incident-response]]

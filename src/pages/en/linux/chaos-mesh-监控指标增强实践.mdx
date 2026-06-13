@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Experience as an LFX Mentee for Chaos Mesh"
+category: "混沌工程与可观测性"
+confidence: medium
+---
+
+## Overview
+
+In SRE practice, system observability (Observability) is the cornerstone of ensuring reliability. A robust system not only needs to be able to withstand failures, but it also needs to have deep insights to quickly locate problems when they occur. The chaos engineering platform Chaos Mesh itself is a tool to improve system resilience, and its own observability is also crucial. This article is based on the real experience of a CNCF LFX Mentorship student participating in the Chaos Mesh project. It records in detail how to design and implement monitoring indicators for the platform, and summarizes the valuable experience gained in open source community collaboration, technical design communication, and SRE practice.
+
+## Core concepts
+
+Before in-depth practice, we first understand several key concepts involved in the article:
+
+* **CRD (Custom Resource Definition)**: Custom resource definition in Kubernetes. Chaos Mesh abstracts chaos experiments into Kubernetes native resources through CRDs, allowing users to create and manage fault injection in a declarative manner.
+* **The Three Pillars of Observability**: usually refers to logs (Logs), indicators (Metrics) and link tracing (Traces). The work of this article mainly focuses on the collection and visualization of **indicators**.
+* **Prometheus and Grafana**: The standard technology stack for cloud native observability. Prometheus is used to collect and store time series indicator data, and Grafana is used to visualize and alert indicators. The main goal of enhancing monitoring indicators for Chaos Mesh is to enable them to be collected by Prometheus and displayed through Grafana Dashboard.
+* **BPM related indicators**: The specific indicator types mentioned in the article may be related to the workflow or business process management module within Chaos Mesh, reflecting the need for in-depth monitoring of the internal status of the platform.
+
+## Practice
+
+The core practice of this project is to design and implement a complete monitoring indicator system for Chaos Mesh to improve its runtime transparency. The following is a summary of the key stages of the project:
+
+### 1. Project startup and technical preparation
+
+The initial focus of the project (the first four weeks) is to become familiar with Chaos Mesh's business processes and code base. On this basis, start writing design documents and systematically sort out all the indicators that need to be collected and their collection methods. This process includes:
+* **Research indicator design guidelines**: Ensure that the design conforms to Prometheus' naming and type specifications (such as Counter, Gauge, Histogram).
+* **Align design with instructor**: clarify the boundaries, granularity and collection strategies of indicators, and understand the relevant code logic.
+
+### 2. Indicator design and technical challenges
+
+Most metrics collection is relatively straightforward, such as querying database object status, Kubernetes resource status, or simple counters. However, some indicators pose significant technical challenges and reflect the need for a deep understanding of the underlying system and container runtime:
+* **Network namespace execution**: You need to execute commands in the network namespace of a specific container to collect network-related indicators.
+* **Multi-container runtime support**: It is necessary to collect data of all containers under Daemon management through various container runtime interfaces such as Docker, containerd, CRI-O, etc.
+* **gRPC communication monitoring**: Collect quality indicators (such as latency, error rate) of gRPC communication between Chaos Mesh client and server.
+
+By overcoming these challenges, a detailed RFC (Request for Comments) design document was finally produced, and a tracking issue was created on GitHub to disclose the project progress.
+
+### 3. Coding, feedback and iteration
+
+After entering the coding stage, the core of practice shifts from "design" to "collaboration and implementation":
+* **Use of critical thinking**: When proposing indicator solutions, you need to repeatedly ask yourself: "Are these indicators necessary? Are there better ready-made solutions?" For example, some indicators are already provided by the `controller-runtime` library to avoid reinventing the wheel. This lesson highlights the importance of deeply investigating the existing ecology early in the design process.
+* **Effective Communication Strategies**: When asking for help from a mentor or community, a best practice is to "offer options rather than directly asking for answers." That is, come up with your own thinking and possible solutions (even if imperfect) first, and then ask for advice. This shows initiative and contribution to the discussion.
+* **Follow open source workflow**: All communication, design and code are conducted through public platforms such as GitHub Issues and Pull Requests. This requires **documentation** and **transparency** of work results to reduce the cost of understanding for others. Compared with within the enterprise, the code review (Code Review) in the open source community may be more extensive and take longer, requiring a stronger sense of patience and collaboration.
+
+## SRE Key Points
+
+From this Chaos Mesh indicator enhancement practice, we can extract experiences that are extremely valuable to SRE work:
+
+* **Observability drives reliability**: Building complete monitoring indicators for the chaos engineering platform itself is a key step in realizing the closed loop of "using chaos engineering to improve system reliability". Only by clearly observing the behavior, experimental status, and resource overhead of the chaos controller can fault injection be performed safely and effectively. This is directly related to [[observability-principles]].
+* **Automated Testing and Quality Gating**: CI/CD pipelines for open source projects (such as Chaos Mesh) are typically more rigorous than many commercial on-premises systems, integrating unit testing, integration testing, end-to-end testing, license checks, etc. This ensures the quality and security of the code base and is an important practice for SREs to pursue "reliability with every change".
+* **Reduce communication overhead**: In a distributed team (whether it is an open source community or a remote SRE team), choosing a unified collaboration platform (such as GitHub) for all asynchronous communication and status synchronization can greatly reduce communication costs and understanding deviations caused by information dispersion.
+* **Continuous Learning and Humility**: Technical practice (especially involving complex areas such as Kubernetes, container runtime, gRPC, etc.) will always have knowledge blind spots. Keeping an open mind and seeking help from mentors and community experts is an effective way to accelerate growth and solve problems.
+* **SLO/SLI correlation**: Although not directly mentioned in the article, these runtime indicators designed for Chaos Mesh can be converted into **SLI** (service level indicators) to evaluate the availability and performance of the Chaos Mesh service itself, such as "average delay of chaos controller startup experiment", "gRPC request success rate", etc., thereby providing data support for its **SLO** (service level objective).

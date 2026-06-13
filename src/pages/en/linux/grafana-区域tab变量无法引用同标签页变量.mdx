@@ -1,0 +1,65 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Section (tab) variables cannot reference other section variables in the same"
+category: "Grafana"
+confidence: medium
+---
+
+## Overview
+
+When building complex observability dashboards, dynamic linking and dependencies of variables are the core of implementing interactive, filterable views. Grafana 13 introduces the "Section-level variables" feature (enabled through the `dashboardSectionVariables` feature switch), which aims to limit the scope of variables to specific tabs (Tabs) to achieve a more modular dashboard design. However, this feature currently has an important limitation: **Variables defined in the same tab cannot reference another variable in that tab**. This directly affects the ability of SRE teams to build modular dashboards with chained dependencies such as "namespace -&gt; service name".
+
+## Core concepts
+
+- **Section/Tab variables**: A variable scope mechanism that allows variables to be visible and effective only within the tab to which they belong. It is designed to reduce variable conflicts and improve organization and performance of large dashboards.
+- **Dashboard Template Variable**: Grafana's traditional variable type, the scope is the entire dashboard. They are widely used to achieve uniform screening across panels.
+- **Variable Chaining**: A common dashboard design pattern in which a query or option for one variable (downstream variable) depends on the current value of another variable (upstream variable). For example, the list of services (`serviceName`) depends on the selected namespace (`namespace`).
+- **Variable Resolution (Resolution)**: Refers to the process in which the Grafana engine replaces the `${variableName}` syntax with the currently selected variable value when using it in a variable query or panel query.
+
+## Practice
+
+### Problem description
+In Grafana 13.0.0 with the `dashboardSectionVariables` feature enabled, when two variables (such as `namespace` and `serviceName`) are defined in the same tab and the query for `serviceName` contains a reference to `${namespace}`, the reference is not resolved correctly. This resulted in the `serviceName` variable not refreshing its options based on `namespace` changes. However, using `${namespace}` directly in a panel query within the same tag works fine.
+
+### Reproduction steps
+1. Enable the feature switch: `dashboardSectionVariables` in the Grafana configuration.
+2. Create a dashboard with at least one tab.
+3. In this tab, create the variable **A** (`namespace`):
+   ```sql
+   SELECT DISTINCT namespace FROM your_table
+   ```
+4. In **the same tab**, create variable **B** (`serviceName`), whose query depends on variable A:
+   ```sql
+   SELECT DISTINCT serviceName
+   FROM your_table
+   WHERE namespace = '${namespace}'
+   ```
+5. Create a panel in the same tab whose query also uses variable A:
+   ```sql
+   SELECT *
+   FROM your_table
+   WHERE namespace = '${namespace}'
+   ```
+6. Change the value of `namespace` in the variable selector at the top of the dashboard.
+
+### Observation results
+- Panel data updates correctly to reflect the new `namespace` selection.
+- The option list for variable `serviceName` is not updated and `${namespace}` in its query is not replaced with the actual value, causing the variable dependency to be broken.
+
+### Known workarounds or workarounds
+As of the time this issue was filed, this issue has not yet been fixed. SRE engineers can consider the following workarounds:
+1. **Use dashboard-level variables**: Abandon the scope isolation of area variables and redefine dependent variables (such as `namespace` and `serviceName`) as regular dashboard template variables. This is the most direct approach but loses the benefits of modular design.
+2. **Move dependent variables to different tabs**: Although counter-intuitive, try to get around this limitation by placing upstream and downstream variables in different tabs. However, this usually goes against logic and UI design principles.
+3. **Follow official updates**: Continue to track this Grafana issue (`#122553`) and related PRs (such as `#119572`), wait for the official fix and upgrade to a version containing the fix.
+
+## SRE Key Points
+
+### Association with reliability and observability
+This limitation directly affects the maintainability and reliability of the dashboard. Modular dashboards (implemented through zone variables) are a key practice in managing large, multi-team shared observability systems. A broken variable dependency chain forces the SRE to adopt a more redundant and difficult-to-maintain configuration (such as making all variables global), which increases the risk of configuration errors and slows down dashboard operations during incident response.
+
+### Best practices and common anti-patterns
+- **Best Practice**: When adopting the new Grafana zone variable feature, **conduct adequate integration testing** in advance, especially testing of variable dependencies. When building new modular dashboard templates, verify that `${variable}` references work correctly in all expected contexts (variable queries, panel queries).
+- **Common anti-pattern**: Assume that newly released features (especially those enabled through Feature Flags) are exactly as expected and have no restrictions. Its core use cases must be validated in non-production environments before being enabled and rolled out at scale.
+
+### Related indicators (SLI/SLO/SLA)
+While this issue itself does not directly affect the SLI of backend services, it affects the availability and effectiveness of dashboards used to monitor and analyze these services. The "availability" of a misconfigured, non-functioning dashboard can be considered part of an internal SLO. For example, the SRE team could define: “Core variable interaction capabilities for critical monitoring dashboards are available 99% of the time”. This bug causes the failure of this internal SLO.

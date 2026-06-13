@@ -1,0 +1,115 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Mermaid 图表"
+description: "SRE Atlas 中的 Mermaid 图表渲染示例"
+---
+
+import Mermaid from '../../components/react/Mermaid.tsx';
+
+# Mermaid 图表
+
+SRE Atlas 支持 Mermaid 图表渲染。以下是常见图表类型示例。
+
+## 流程图
+
+<Mermaid client:visible code={`graph TD
+    A[Pod 启动] --> B{健康检查?}
+    B -->|通过| C[Running]
+    B -->|失败| D[重启计数+1]
+    D --> E{超过阈值?}
+    E -->|否| A
+    E -->|是| F[CrashLoopBackOff]
+    F --> G[kubectl describe pod]
+    G --> H[查看日志]
+    H --> I{根因定位}
+    I -->|OOM| J[调整内存限制]
+    I -->|配置错误| K[检查 ConfigMap]
+    I -->|依赖缺失| L[检查 Service]
+`} />
+
+## 时序图
+
+<Mermaid client:visible code={`sequenceDiagram
+    participant U as 用户
+    participant K as kubectl
+    participant API as API Server
+    participant S as Scheduler
+    participant Kubelet as Kubelet
+    participant C as Container
+
+    U->>K: kubectl apply -f deploy.yaml
+    K->>API: POST /apis/apps/v1/deployments
+    API->>S: 调度 Pod
+    S->>Kubelet: 绑定到节点
+    Kubelet->>C: 拉取镜像 + 启动容器
+    C-->>Kubelet: 健康检查通过
+    Kubelet-->>API: Pod Running
+    API-->>K: 状态更新
+    K-->>U: deployment.apps/my-app created
+`} />
+
+## 类图
+
+<Mermaid client:visible code={`classDiagram
+    class Pod {
+        +String name
+        +String namespace
+        +PodPhase phase
+        +Container[] containers
+        +start()
+        +stop()
+        +restart()
+    }
+    class Container {
+        +String name
+        +String image
+        +ResourceSpec resources
+        +Probe livenessProbe
+        +Probe readinessProbe
+        +run()
+        +stop()
+    }
+    class Node {
+        +String name
+        +String ip
+        +Resource capacity
+        +Pod[] pods
+        +schedule()
+        +evict()
+    }
+    Pod "1" *-- "1..*" Container
+    Node "1" -- "*" Pod
+`} />
+
+## 状态图
+
+<Mermaid client:visible code={`stateDiagram-v2
+    [*] --> Pending
+    Pending --> Running: 调度成功
+    Pending --> Failed: 调度失败
+    Running --> Succeeded: 容器退出(0)
+    Running --> Failed: 容器退出(非0)
+    Running --> Unknown: 节点失联
+    Failed --> Running: 重启策略=Always
+    Succeeded --> [*]
+    Failed --> [*]
+`} />
+
+## 甘特图
+
+<Mermaid client:visible code={`gantt
+    title SRE Atlas 部署计划
+    dateFormat  YYYY-MM-DD
+    section Phase 1
+    项目初始化       :done, p1a, 2026-06-01, 3d
+    设计系统         :done, p1b, after p1a, 2d
+    内容迁移         :done, p1c, after p1b, 5d
+    section Phase 2
+    Agent 采集       :done, p2a, after p1c, 3d
+    LLM 生成         :done, p2b, after p2a, 2d
+    section Phase 3
+    k3s 部署         :active, p3a, 2026-06-12, 2d
+    DNS 配置         :p3b, after p3a, 1d
+    HTTPS            :p3c, after p3b, 1d
+    监控集成          :p3d, after p3c, 2d
+`} />

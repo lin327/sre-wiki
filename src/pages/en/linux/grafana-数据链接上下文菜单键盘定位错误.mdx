@@ -1,0 +1,42 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'BarGauge / Gauge / Stat: multi-link context menu mispositioned when opened"
+category: "可观测性工具"
+confidence: medium
+---
+
+## Overview
+
+This document describes a known flaw in the Grafana monitoring platform that affects key interactions in SRE workflows. When the user is working with a BarGauge, Gauge or Stat type panel and the panel is configured with multiple Data Links, the context menu triggered via the keyboard (Enter or Spacebar after Tab navigation) is incorrectly positioned outside the panel boundaries. This issue not only disrupts user expectations, but also reduces operational efficiency and accessibility in troubleshooting scenarios that require quick navigation, evaluation, and jumps to associated resources such as runbooks, logs, or specific queries. In SRE practices that emphasize keyboard operations to improve efficiency and respond to emergencies, the reliability of such interface interactions is critical.
+
+## Core concepts
+
+- **Data Links**: A powerful feature in Grafana that allows users to jump directly from a dashboard's visual data points to relevant external resources, such as Prometheus queries, dashboards, documentation pages, or custom URLs. In SRE incident response, data links are often used to quickly correlate metrics with root cause analysis logs, troubleshooting manuals, or dashboards of related services.
+- **Context Menu**: In the Grafana panel, when there are multiple data links, a single click or keyboard operation will not navigate directly, but a menu will pop up for the user to select a specific link target.
+- **Keyboard Navigation**: The user uses the Tab key to move focus between interface elements, and the Enter or Space bar to activate the currently focused element. This is a core requirement for accessibility and is also the preferred way for many advanced users to improve operation speed.
+
+## Practice
+
+**Steps to Reproduce**:
+1. Create a BarGauge, Gauge or Stat panel in Grafana.
+2. Edit the panel to add **two or more** data links for a field (or default field).
+3. Save the dashboard and return to view mode.
+4. Use the `Tab` key to cycle through the page elements until the entire panel has focus (a clear focus ring will appear around the panel).
+5. Press the `Enter` or `Space` key.
+6. At this time, the context menu does not appear near the panel, but is incorrectly displayed in the upper left corner of the screen or away from the panel.
+
+**Temporary solution**:
+- **Operation using mouse**: The context menu triggered by mouse click on the panel is positioned normally.
+- **Adjust panel size**: Try dragging the panel to the upper left corner of the dashboard, which may make the menu within the screen, but this is not a fundamental solution.
+- **Simplify Data Links**: If possible, merge multiple links into one or reduce the number of links to avoid conditions that trigger this bug. But this usually does not meet the needs of information association.
+
+## SRE Key Points
+
+- **Relevance to Reliability and Incident Response**: This bug directly affects the workflow of SREs that use keyboards for efficient navigation. In an emergency, every second counts. When an SRE needs to rely on the keyboard to quickly jump between metrics, logs, and documents, a misplaced menu can cause unnecessary frustration and lost time. Accessibility deficiencies can become “friction points” on the incident response path.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: When designing and testing monitoring dashboards, include keyboard navigation test cases to ensure critical action paths (such as triggering data links) are reliable for all interaction methods. For panels configured with complex data links, its behavior under different triggering methods needs to be verified.
+    - **Common anti-pattern**: Functional testing only for mouse click interactions, while ignoring the usage scenarios of assistive technologies such as keyboards and screen readers. When building "operations-friendly" dashboards, only consider visual layout and ignore interaction reliability.
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI**: Definable as "Percentage of sessions in which the context menu was successfully and accurately positioned via the keyboard in a Grafana panel configured with multiple data links". This is a metric about user interaction quality (UIQ).
+    - **SLO**: Goals can be set for core monitoring dashboards, such as "99% of keyboard navigation actions should correctly trigger UI elements in the expected location." This bug directly leads to the default of this SLO.
+    - **SLA**: For Grafana platform services provided to internal SRE teams, the timeliness of fixing this bug can be an evaluation item in the internal SLA because it affects the ease of use and efficiency promises of the monitoring platform.

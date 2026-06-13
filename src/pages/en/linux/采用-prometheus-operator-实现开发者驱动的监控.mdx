@@ -1,0 +1,55 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Blog - Interview with Datawire"
+category: "Prometheus 与监控"
+confidence: medium
+---
+
+## Overview
+
+Datawire is an open source company focused on improving the Kubernetes developer tool experience. Its products include Telepresence (a natively developed Kubernetes service), Ambassador (a Kubernetes native API gateway based on Envoy), and Forge (a build/deployment system). To support its core open source projects, Datawire runs several key cloud services in Kubernetes clusters on AWS. As its development model evolves into a highly decentralized microservices architecture, traditional centralized monitoring solutions such as AWS CloudWatch gradually show bottlenecks. This article explores how Datawire migrated from CloudWatch to the Prometheus ecosystem, and used the Prometheus Operator to give developers the ability to manage monitoring on their own, thus greatly improving the observability and reliability of services. This migration is a classic example of building a culture of distributed reliability.
+
+## Core concepts
+
+### Prometheus Operator and self-service monitoring
+
+The Prometheus Operator is a key component in the Kubernetes ecosystem, simplifying the complex process of deploying and managing Prometheus in a Kubernetes cluster. The core idea is to convert monitoring configurations into Kubernetes native resources (such as CRD). For teams like Datawire that adopt a highly decentralized development model, this means that each development team or service engineer can create and manage a dedicated Prometheus instance according to their own needs, without relying on a central operations team for cumbersome configuration and deployment. This model eliminates the bottleneck of monitoring resource requests and enables engineers to quickly obtain the required service visibility. It is an important technical support for realizing the concept of "developers own operation and maintenance".
+
+### Decentralized development model and monitoring flexibility
+
+Datawire's development model emphasizes complete engineer autonomy over its services, including operations and monitoring. Before adopting Prometheus, using AWS CloudWatch, although simple, did not meet the team's needs for flexible customization of monitoring strategies. One of the main drivers for migrating to Prometheus was precisely to gain control and visibility. Prometheus' powerful ecosystem, including a consistent data model, powerful query language PromQL, and rich client libraries, provides each service team with the ability to customize monitoring metrics and dashboards according to their own characteristics without waiting for the intervention of a central team. This flexibility is the foundation for building a high-reliability, high-agility engineering culture.
+
+## Practice
+
+### Implementation path for migrating to Prometheus
+
+Datawire's migration strategy takes a progressive path starting from its core component, the API gateway Ambassador.
+
+1. **Initial Integration**: Start by configuring monitoring for the Ambassador gateway running the Envoy proxy. Envoy exposes metrics via the statsd protocol by default.
+2. **Deploy Prometheus Operator**: Install Prometheus Operator in the Kubernetes cluster and use it to manage the life cycle of Prometheus instances.
+3. **Configuring indicator collection**: Configure Prometheus Operator to collect indicator data exposed by Envoy through statsd. This typically involves deploying a statsd-exporter to convert the statsd protocol into Prometheus format.
+4. **Build visualization**: Build a Grafana dashboard and use the collected Envoy L7 layer (application layer) traffic data to provide the team with an intuitive view of key performance indicators such as request rate, latency, and success rate.
+
+### Prometheus Operator configuration example
+
+While the specific configuration varies by service, the core idea is to declaratively define monitoring requirements through a Kubernetes manifest file (YAML). A team may only need to deploy a simple `ServiceMonitor` resource to tell the Prometheus Operator to grab the `/metrics` endpoint of its service Pod, without having to understand the underlying complex Prometheus configuration details. This abstraction layer greatly reduces the barriers to use for developers.
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+
+Datawire's case is a vivid practice of **observability drives reliability**. By migrating to Prometheus, they gained deep insights into L7 traffic. This not only improves the visibility of daily operations, but more importantly, they can use this data to provide quantitative comparison basis for canary deployments. Engineers can clearly compare the differences in latency and throughput between the old and new versions of the service, thereby having greater confidence in the performance regression risks of the new version and significantly reducing the reliability risks caused by release changes.
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    * **Empower developers**: Allowing and encouraging developers to create and manage monitoring resources on their own is an effective means to improve overall system reliability.
+    * **Leveraging cloud native toolchain**: Using Kubernetes native tools such as Prometheus Operator, it can be seamlessly integrated into existing Infrastructure as Code (IaC) practices.
+    * **Focus on the ecosystem**: Choose open source projects with strong communities and documentation (such as Prometheus, CNCF projects) to get ongoing technical support and best practice guidance.
+* **Common anti-patterns**:
+    * **Centralized Monitoring Bottleneck**: Requires all monitoring changes to be approved by the central operation and maintenance team, which will seriously slow down development and fault response.
+    * **Ignoring indicator definition**: Merely collecting indicators without establishing meaningful SLI/SLO will cause the monitoring data to become a formality and fail to effectively guide reliability work.
+
+### Related indicators (SLI/SLO/SLA)
+
+Although the interviews did not mention SLO directly, Datawire's practices are closely tied to core concepts in SRE theory. The L7 traffic metrics they get through Prometheus (such as request latency, error rates, throughput) are an excellent data source to define **Service Level Indicators (SLI)**. For example, they might define the SLI as "P99 latency" and set an SLO based on that, such as "99% of requests have P99 latency less than 200ms." During canary deployment, monitoring these SLI changes essentially ensures that the changes do not erode the existing Error Budget. Prometheus provides powerful capabilities for calculating and monitoring these metrics, allowing Datawire to quantify and integrate reliability goals into daily development processes.

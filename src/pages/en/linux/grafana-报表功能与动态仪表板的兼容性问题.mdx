@@ -1,0 +1,45 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana Issue #114846: Reports do not support dynamic dashboard features'"
+category: "reporting"
+confidence: high
+---
+
+## Overview
+
+In the Grafana ecosystem, reporting capabilities are critical for Site Reliability Engineers (SREs) to generate periodic system health reports, compliance documents, and status summaries. It allows the conversion of well-designed dashboard snapshots into schedulable, distributable PDF or static HTML documents. However, there is currently a key limitation to this feature: it does not fully support the dynamic dashboard feature. This means that when the SRE team uses newer layout systems (such as fluid layout) or conditional rendering logic, the content output through the reporting function may not accurately reflect the true state of the dashboard in the interactive view, thus affecting the accuracy and reliability of the report.
+
+## Core concepts
+
+* **Dynamic Dashboard Features**: Refers to features in Grafana that go beyond the default static grid (Grid) layout. This mainly includes:
+    * **New Layout System**: Allows panels to overlap, drag freely, and adjust their size adaptively, providing a more flexible view.
+    * **Conditional Rendering**: Allows the panel to dynamically display, hide or resize based on the value of a variable (Variable) or data query results. This is a key feature for enabling on-demand visibility and simplifying complex dashboards.
+* **V1 Format (Dashboard Model)**: An internal data format defined by Grafana dashboards. Historically, this referred to a format centered around a fixed grid layout. To ensure compatibility, reporting functionality currently prefers to obtain and process dashboard definitions in this V1 format because of its stable structure and predictable layout behavior.
+* **Essence of the Problem**: The rendering logic of the report engine is built based on the assumptions of the V1 format. When it encounters new format dashboards that contain dynamic features, it may not be able to correctly parse and render non-grid layouts or conditional logic, resulting in incorrect or incomplete report content.
+
+## Practice
+
+Currently, in order to ensure the stability of the report generation process, the system adopts a conservative strategy by default: when a report needs to obtain dashboard data, it will request the definition of **V1 format**. This is a compatibility measure to avoid possible crashes or errors when dealing with unknown layouts. For SRE users, this means:
+
+1. **Use the old layout**: If you need to generate periodic reports for a key dashboard, and the report must contain the latest data from all panels, then the safest approach is to ensure that the dashboard mainly uses the **default grid layout** and avoid relying on new dynamic features.
+2. **Manual adjustment**: Before generating a report, you may need to manually check or temporarily adjust the dashboard, set the panels that rely on conditional rendering to always be visible, or arrange the panels in the fluid layout back to grid form.
+3. **Follow updates**: To fully enable the support of dynamic dashboard features in reports, Grafana needs to implement parsing and support for the **new layout system** and **conditional rendering logic** in its report rendering engine. This is a clear feature gap, and related progress can be paid attention to the official GitHub repository (such as this issue #114846).
+
+**Future Path to Enable Dynamic Features**: To achieve full support, report pages must upgrade their internal parsers to understand and handle coordinate systems for non-grid layouts, as well as integrate logic that evaluates conditional expressions to determine which panels should be rendered at a specific "moment" when the report is generated.
+
+## SRE Key Points
+
+* **Relationship with Reliability**: Reports are a formal communication tool for SREs to demonstrate system reliability to stakeholders (e.g., management, customers). If the report does not accurately reflect the monitoring view (for example, a key alarm panel is hidden due to conditional rendering, or a data panel is missing due to a new layout), it will directly damage the credibility of the communication and even cover up potential reliability risks.
+* **Best Practice**:
+    * **Design dashboards for reports**: For key monitoring views that require automatic report generation on a regular basis, a broadly compatible layout (grid layout) should be preferred and conditional rendering used with caution.
+    * **Test Report Output**: After configuring a scheduled report task, be sure to manually trigger it once and check the resulting PDF/HTML to ensure that all expected panels and data are rendered correctly.
+    * **Monitor Rendering Performance**: As report complexity increases (number of panels increases), rendering times may increase, which itself can be used as an SLI to monitor the performance of the reporting system.
+* **Common anti-patterns**:
+    * **Blind reliance on dynamic layout**: Designed a highly dynamic and beautiful interactive dashboard, but did not consider its compatibility as a static report output, resulting in a lack of generated report information.
+    * **Ignore report verification**: After setting up the automatic report, the output content is not verified for a long time until an error in the report is discovered, which has caused a communication accident.
+* **Related indicators (SLI/SLO)**:
+    * **SLI**: Report generation success rate (the generated report is completely consistent with the content of the dashboard view), report generation time.
+    * **SLO**: Ensure that after all key operational reports are generated, their content maintains 99.9% consistency in data integrity with the interactive view of the source dashboard (can be achieved through regular manual or automated sampling comparisons).
+    * The feature gap itself can be linked to an internal **usability issue** where the reporting functionality fails to meet user expectations for the core functionality of a fully rendered dashboard.
+
+Related pages: [[grafana-dynamic-layouts]], [[grafana-reporting]], [[sli-for-monitoring-systems]]

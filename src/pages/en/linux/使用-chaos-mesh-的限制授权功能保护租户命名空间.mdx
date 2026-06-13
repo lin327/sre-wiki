@@ -1,0 +1,59 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Securing tenant namespaces using restrict authorization feature in Chaos"
+category: "混沌工程"
+confidence: medium
+---
+
+## Overview
+
+Chaos Mesh is a powerful cloud-native chaos engineering platform for orchestrating fault injection experiments in Kubernetes environments to test system resiliency and resilience. In a production environment, especially a multi-tenant Kubernetes cluster, it is critical to ensure that each tenant (user or team)’s chaos experimentation activities are strictly limited to its own resources. One security vulnerability is that even if tenants have RBAC permissions on their own namespace, they may still be able to impact resources in other namespaces by configuring chaos experiments. The **Restricted Authorization** feature introduced by Chaos Mesh in version 1.1.3 is designed to solve this security problem. It enforces namespace isolation through an admission control mechanism and is a key component in building a secure chaos engineering practice.
+
+## Core concepts
+
+**Multi-tenant and namespace isolation**: In Kubernetes, a multi-tenant cluster is shared by multiple users or workloads. Best practice is to isolate each tenant and its resources into a separate **namespace**. This provides logical boundaries and is the base layer for resource isolation.
+
+**RBAC and potential security gaps**: Role-based access control (RBAC) can grant tenants permissions to operate only within their namespace. However, a potential risk is that while RBAC may restrict the namespace in which a user creates a resource, the resource definition itself (such as a Chaos Experiment's YAML file) may reference other namespaces. For example, a user creates a PodChaos experiment in the `team-a-ns` namespace, but the experiment's `selector` field points to `team-b-ns`. Without additional constraints, this could lead to unauthorized cross-namespace effects.
+
+**Chaos Mesh restricted authorization function**: This is a built-in security feature of Chaos Mesh. It works through an **Admission Controller** webhook that checks the resource definition when a user (via the Chaos Mesh Controller) creates, updates, or deletes a Chaos Experiment resource (such as PodChaos, NetworkChaos, etc.). If it discovers that the target of an experiment (for example, a Pod selected via `selector`) is in a namespace that is inconsistent with the namespace created by the experimental resource itself, and the user does not have sufficient permissions in the target namespace, the admission request will be denied, preventing unauthorized operations across namespaces.
+
+## Practice
+
+In a multi-tenant Kubernetes cluster with Chaos Mesh deployed, assume that tenant `user-A` is granted permission to manage chaos experiments in the namespace `chaos-mesh`, but does not have any permissions on the business namespace `tidb-cluster-demo`. An unsafe practice is that `user-A` creates the following YAML file with the intention of killing Pods in the `tidb-cluster-demo` namespace:
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill
+  namespace: chaos-mesh #The resource is created in the namespace that the user has permission to
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - tidb-cluster-demo # Target points to a namespace that does not have access rights
+    labelSelectors:
+      'app.kubernetes.io/component': 'tikv'
+  scheduler:
+    cron: '@every 1m'
+```
+
+With the restricted authorization function enabled (enabled by default in Chaos Mesh 1.1.3+), when this YAML file is applied, the system will intercept and return the following error:
+```
+Error when creating "pod/pod-kill.yaml": admission webhook "vauth.kb.io" denied the request: ... is forbidden on namespace tidb-cluster-demo
+```
+This effectively prevents `user-A` from having unauthorized influence on the `tidb-cluster-demo` namespace. The correct workflow is that `user-A` should define and create the chaos experiment in a business namespace to which he has full permissions (such as `my-service-ns`).
+
+To enforce stricter policies and ensure that chaos experiments are completely unable to cross namespace boundaries, external policy engines such as the Open Policy Agent (OPA) can be used in conjunction. OPA can provide more flexible and fine-grained policy control than Chaos Mesh's built-in capabilities, such as verifying that all `selector` fields in an experiment definition are restricted to the current namespace.
+
+## SRE Key Points
+
+- **Link to Reliability**: In a multi-tenant SRE environment, chaos engineering security is the cornerstone of system reliability. If a chaos experiment accidentally affects non-target tenants or services, it may trigger cascading failures and unplanned outages, directly eroding the Error Budget of the SLO. The restricted authorization function protects the overall cluster stability and inter-tenant service level agreements by ensuring the accuracy of fault injection.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: Follow the principle of least privilege and configure each tenant service with RBAC permissions that only operate within its business namespace. Enable and trust Chaos Mesh's restricted authorization feature as a basic safety net. For scenarios with extremely high security requirements, the OPA policy is superimposed for secondary verification.
+    - **Common anti-pattern**: Incorrectly granting users cluster-level chaos experiment permissions, or creating experiments in the tenant's namespace that point to the core infrastructure namespace, which can cause widespread service disruption.
+- **Related indicators**:
+    - **SLI**: The execution success rate of chaos experiments (the experiments took effect within the target range as expected), and the interception rate of the security policy (the number of times unauthorized experiments were blocked).
+    - **SLO**: "Chaos experiment security and isolation in a multi-tenant environment" can be defined as an internal SLO to ensure that the isolation function continues to be effective and avoid unplanned cross-tenant impacts.
+- **Related pages**: [[chaos-mesh]], [[kubernetes-multi-tenancy]].

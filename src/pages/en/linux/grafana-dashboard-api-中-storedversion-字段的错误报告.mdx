@@ -1,0 +1,69 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'Dashboards: API response always reports storedVersion: v0alpha1 regardless"
+category: "dashboard"
+confidence: medium
+---
+
+## Overview
+
+In Grafana's Dashboard API, the `status.conversion.storedVersion` field is an important metadata that is used to identify the actual encoded version of the resource in Unified Storage. However, the current implementation has a significant flaw: no matter what version the dashboard is stored in (e.g. `v1`, `v2beta1`), this field in the API response is always hard-coded to return `v0alpha1`. This problem not only violates the contract of the Kubernetes style API, but also seriously weakens the SRE team's **observability** of the storage version migration status, making it impossible to conduct key operation and maintenance activities such as verifying the Schema V2 upgrade progress.
+
+## Core concepts
+
+- **storedVersion**: This is part of the Kubernetes API resource `status.conversion` sub-object and is used to indicate the encoded version of this resource object in the storage layer (etcd or other unified storage backend). It is three different concepts from the requested API version (`requestedVersion`) and the actual decoded version (`decodedVersion`).
+- **Storage version migration**: When a system's API version evolves (e.g. from `v1` to `v2`), old version objects in storage often need to be converted to the new version, or converted on the fly when read. The `storedVersion` field is critical for tracking the progress and consistency of migrations.
+- **Conversion on Read**: A mode in which the storage layer saves a specific version of bytes. When the client requests a different version of the API, the API server converts the object format in real time after reading. This flaw occurs precisely in the "reading" phase, where the converted source version fails to be marked correctly.
+
+## Practice
+
+### Problem recurrence and impact
+
+The steps to reproduce this issue clearly demonstrate the behavior of the defect:
+1. Enable the Grafana dashboard API for unified storage.
+2. Write a dashboard via `v2beta1` or any non-`v0alpha1` version.
+3. Re-fetch the dashboard using the same version (`v2beta1`).
+4. In the `status.conversion` of the API response, the value of `storedVersion` is still `"v0alpha1"`.
+5. This problem will recur in multiple versions such as `v1`, `v2alpha1`, `v2`, etc.
+
+Its direct impacts include:
+- **API Correctness**: The public API documentation promises that this field should reflect the stored version, the current behavior is inconsistent with the documentation.
+- **Operation and Maintenance Debugging**: Operation and maintenance personnel cannot determine the disk format of the dashboard through the API, resulting in storage version migration and rolling updates unable to be verified.
+- **Monitoring indicator failure**: Use this field in the code as the label of the `fallbackCounter` indicator and the basis for client version selection. Since the value is constant, the indicator loses meaning and the fallback logic always selects the same client.
+
+### Repair direction
+
+The fix is divided into two levels. The core is to correctly calculate the value on the read path:
+
+1. **Storage Layer (Major Fix)**: In the `pkg/storage/unified/apistore/store.go` file, after calling `s.codec.Decode(...)`, the version should be extracted from the GVK (GroupVersionKind) of the decoded object and populated into the `storedVersion` field. This ensures that all read paths (including `Get`, `List` and `dto` subresources) get consistently correct values.
+2. **DTO closure (defense in depth)**: In the `newDTOFunc` closure of `pkg/registry/apis/dashboard/register.go`, as a supplementary check, if `Status.Conversion.StoredVersion` is empty, it is also filled from the GVK of the decoded object. This layer of restoration provides additional assurance.
+
+**Key Principle**: The value of this field must be derived from the GVK decoded by the codec (codec), or determined by the storage version scheme (scheme) configured by GroupResource, and must not be a hard-coded constant.
+
+## SRE Key Points
+
+### Association with reliability
+
+- **Version Migration Verification**: When planning or performing an upgrade (GA) of a dashboard schema from `v1` to `v2`, the SRE needs to have accurate statistics on how many dashboards have actually been stored as the new version. The `storedVersion` field is the cornerstone of this **observability**, and a current flaw makes this statistic impossible.
+- **Incident Response and Diagnostics**: When strange issues arise related to dashboard serialization/deserialization (such as missing fields unique to a specific version), the correct `storedVersion` can quickly direct investigation to the storage format, greatly reducing **MTTR (Mean Time to Recovery)**.
+- **API Contract and Reliability**: Following clear API specifications is a reflection of system reliability. This issue is fixed to restore the promised behavior of the API and avoid misleading clients or operational scripts that rely on this field.
+
+### Best practices and common anti-patterns
+
+- **Best Practices**:
+  - When implementing APIs involving version conversions, metadata should be properly populated at the unified exit of the read path.
+  - Write explicit unit tests for fields such as `storedVersion` that reflect internal status, covering multiple scenarios such as same-version reading and cross-version reading, as described in the acceptance criteria.
+  - Build an observability dashboard with the correct `storedVersion` to monitor the distribution and conversion frequency of different stored version resources.
+- **Common anti-patterns**:
+  - Hardcode version string as default value deep in the code.
+  - Only handle version status on the write path, ignoring metadata filling for the read path.
+  - Failure to correctly associate API contract fields with the underlying encoding and decoding logic, resulting in data disjoint.
+
+### Related indicators
+
+- **fallbackCounter**: Before fix, this metric was meaningless due to constant label value. After the fix, its counts bucketed by `storedVersion` can clearly reflect the access patterns of different versions of resources.
+- **Custom indicators**: Based on the repaired `storedVersion` field, key operation and maintenance indicators can be derived, such as:
+  - Count of `{group="dashboard.grafana.app", resource="dashboards", stored_version="v1"}`, used to track the inventory of old version resources.
+  - After performing version migration, monitor whether the count of the version decreases to verify the migration effect.
+
+[[api-versioning]] [[storage-version-migration]] [[kubernetes-api-conventions]]

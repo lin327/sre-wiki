@@ -1,0 +1,50 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with Europace (Prometheus Blog)"
+category: "监控与可观测性"
+confidence: high
+---
+
+## Overview
+
+Europace AG operates Germany's largest online financial trading platform, connecting around 400 banks, insurance companies and financial product distributors and processing tens of thousands of transactions per month with a total value of up to €4 billion. As the number of services grows and higher requirements for flexibility arise, traditional centralized monitoring solutions (such as Nagios/Icinga) encounter bottlenecks in scalability and team collaboration. In order to build a monitoring system that matches the DevOps culture and supports team autonomy, Europace chose Prometheus and successfully modernized the monitoring stack. This case details their migration process, architectural considerations, and key benefits achieved.
+
+## Core concepts
+
+- **Prometheus pull model**: Different from Nagios/Icinga that pushes traditional alarms, Prometheus adopts a pull model to actively pull indicators from the endpoints exposed by the target service. This makes service discovery and management of dynamic environments (such as Docker containers) easier and more consistent with the concept of microservice architecture.
+- **Labels**: A core feature of Prometheus that allows attaching key-value pairs to indicators (such as `job="api-server"`, `instance="host1:9090"`). This greatly enhances the flexibility and query capabilities of the data model, allowing aggregation and alerting based on different dimensions (such as service, environment, version).
+- **Alertmanager**: Responsible for receiving alerts from Prometheus, grouping, deduplication, routing and sending notifications (such as email, Slack). Its **High Availability (High Availability) mode** is a key improvement in Europace's monitoring infrastructure, significantly improving the reliability of the alarm system.
+- **Exporter**: Adapter for converting metrics from third-party systems (such as Docker container metrics, database status) into a format recognized by Prometheus. Europace extends monitoring scope by adding multiple exporters.
+- **Grafana**: An open source data visualization and dashboard platform that integrates with data sources such as Prometheus to create intuitive monitoring views. Europace was already using Grafana before the migration and therefore used it as a unifying visualization layer.
+
+## Practice
+
+### Migration strategies and steps
+
+Europace adopts an incremental migration strategy rather than a “blanket-fits-all” replacement. This reduces risk and allows teams to gradually adapt to new tools.
+
+1. **Pilot introduction**: First deploy Prometheus in a new project to verify its feasibility.
+2. **Parallel operation**: Other teams began to deploy Prometheus in parallel alongside the existing monitoring solution (Icinga). This "run-and-migrate" approach ensures continuity of monitoring.
+3. **Gradual switching**: Use a custom exporter and temporary service to collect indicators of historical monitoring items, and gradually migrate the alarm rules from Icinga to the `alert.rules` file of Prometheus.
+4. **Unified Visualization**: Since Grafana is already widely used, the migration process only requires switching its data source from other systems to Prometheus, maintaining the continuity of the dashboard.
+
+### Architecture improvements
+
+After migrating to the Prometheus stack, Europace's monitoring architecture underwent key evolutions:
+
+- **Decoupled monitoring responsibilities**: From centralized maintenance by the infrastructure team to each project and team having its own monitoring configuration and alarm rules, it truly realizes shared responsibilities under the DevOps concept.
+- **High Availability Alert**: The high availability mode of Prometheus Alertmanager is deployed (may be based on shared storage or clustering), eliminating the single point of failure of the alert channel.
+- **Extended monitoring scope**: Gain deep visibility into your containerized environment by integrating tools such as Docker exporter, and leverage Grafana to create rich dashboards (such as the Docker Registry monitoring panel).
+
+## SRE Key Points
+
+- **Reliability connection**: The Europace case highlights the importance of the reliability of the monitoring system itself. Through the high-availability deployment of Alertmanager, they ensured that the alarm system as the "monitoring nerve center" has the reliability commensurate with the business system. This directly supports the achievement of SLO (service level objective), because the timeliness and accuracy of alerts are key to maintaining the Error Budget from being quickly consumed.
+- **Team Autonomy and Observability**: Delegating monitoring configuration and alerting responsibilities to each project team is a core practice for cultivating a "You build it, you run it" culture. This requires teams to be responsible not only for feature development, but also for the observability of their services. Prometheus's flexible tag-based data model provides the technical foundation for this autonomy, allowing teams to define SLIs (Service Level Indicators) that meet their own needs.
+- **Best Practices**:
+    - **Adopt progressive migration**: Parallel operation and step-by-step migration are effective methods to reduce the risk of large-scale system transformation.
+    - **Embracing the pull model**: Prometheus' pull model has more advantages in cloud native and dynamic infrastructure, facilitating unified service discovery and metric collection.
+    - **Build a unified visualization layer**: Keeping visualization tools such as Grafana unchanged during the migration process can reduce learning costs and ensure a smooth transition of monitoring views.
+- **Common anti-pattern avoidance**:
+    - **Avoid monitoring centralized bottlenecks**: Europace learned from the scalability issues encountered by centralized Icinga and moved to a Prometheus model that supports distributed ownership, preventing a single team from becoming an operation and maintenance bottleneck.
+    - **Do not ignore the reliability of monitoring itself**: Deploy high-availability Alertmanager to avoid the catastrophic situation of "monitoring system crash leading to alarm blindness".
+- **Related Metrics**: This practice indirectly impacts multiple SRE-related metrics, including improved **alert accuracy and arrival rates** (thanks to Alertmanager's reliability and flexibility), reduced **Mean Time to Resolution (MTTR)** (thanks to more granular metrics and faster team response), and enhanced **system availability** (through more timely fault detection and remediation).

@@ -1,0 +1,91 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana GitHub Issue"
+category: "数据源配置"
+confidence: medium
+---
+
+## Overview
+
+When building an observability platform based on [[prometheus]], [[elasticsearch]] or a relational database, ensuring time zone consistency of all component timestamps is a key prerequisite to ensure monitoring data accuracy and troubleshooting efficiency. This case analyzes a typical time zone display problem: when users query data through the Grafana MySQL plug-in, the timestamp is displayed 5 hours and 30 minutes (IST+5:30) ahead of the database itself (UTC). This is a "hidden time zone" glitch that does not cause data errors, but can severely impact the correct interpretation of logs, events, and performance metrics timelines, potentially delaying [[incident-response]].
+
+## Core concepts
+
+To solve such problems, you need to understand the following key concepts:
+
+1. **Storage and representation of timestamps**:
+    * **Storage Time Zone**: In which time zone the data is stored in the database. Generally, best practice is to store all timestamps uniformly in UTC to avoid issues such as daylight saving time transitions.
+    * **Representation/Display Time Zone**: How the data is interpreted and displayed when presented to the user on the client side (e.g. Grafana UI).
+
+2. **Time zone configuration point in the link**:
+    Time zone inconsistencies can occur at any point in the data link:
+    * **Database Server**: `time_zone` system variable setting.
+    * **Database client session**: After the connection is established, the `SESSION time_zone` set by the client.
+    * **Application/Plugin**: How the Grafana MySQL plugin handles timestamps when executing queries and processing result sets.
+    * **Front-end display**: Time zone setting for the panel in the Grafana dashboard (usually in the global settings in the upper right corner).
+
+3. **MySQL time zone processing**:
+    MySQL manages time zones through `@@session.time_zone` and `@@global.time_zone`. When using `NOW()` or storing a `TIMESTAMP` type column, the behavior depends on the current session time zone. `DATETIME` is not affected by the session time zone.
+
+## Practice
+
+For the problem described in this case of "MySQL client displays correctly, Grafana displays offset", the troubleshooting and solution steps are as follows:
+
+1. **Confirm the original time zone and data of the database**:
+    Connect to an RDS MySQL instance to check the global time zone and specific data.
+    ```sql
+    -- View global time zone settings
+    SELECT @@global.time_zone, @@system_time_zone;
+    -- Assume that the value of the timestamp field `ts` of a record is '2025-04-25 12:00:00'
+    SELECT ts FROM your_table LIMIT 1;
+    ```
+    The purpose of this step is to confirm that the database itself is working in the expected time zone (such as UTC) and that the data values stored are correct.
+
+2. **Check the system time zone of Grafana server/process**:
+    The operating system time zone in which the Grafana service is running is a common "invisible" influencing factor. You need to log in to the Grafana server to check.
+    ```bash
+    timedatectl # or date -R
+    ```
+    Make sure the server time zone is set appropriately (it is recommended to set it to UTC), or at least record the time zone so that you can analyze the offset later.
+
+3. **Explicitly set the time zone in the Grafana data source configuration**:
+    This is a **critical configuration step** to resolve this type of issue.
+    * Navigate to Grafana -&gt; Configuration -&gt; Data Sources and select your MySQL data source.
+    * In the "**JSON Data**" section, find or add the `timeField` configuration item to explicitly specify the field name representing the timestamp in the database (such as `ts`).
+    * In "**Custom Query Details**" or **Query Editor**, ensure that the time field type returned by the query is correctly recognized by Grafana.
+    * **More importantly**, in the **"**JSON Data**"** section of the data source, you can try setting the following parameters to force Grafana to parse or return a timestamp in a specified time zone:
+        ```json
+        {
+          "timeField": "ts",
+          "timeFieldType": "TIMESTAMP",
+          "serverTimezone": "UTC"
+        }
+        ```
+        Parameter names may vary depending on the plug-in version, it is necessary to consult the corresponding plug-in documentation. The `serverTimezone` parameter is designed to tell the plug-in the original time zone of the timestamp returned from the database.
+
+4. **Dynamic correction using Grafana template variables (temporary solution)**:
+    If the plug-in configuration does not resolve this directly, you can manually convert the time zone in the SQL query to convert UTC time to the user's desired local time.
+    ```sql
+    SELECT
+      CONVERT_TZ(ts, 'UTC', '$your_tz_variable') as time,
+      metric_value
+    FROM your_table
+    WHERE $__timeFilter(ts)
+    ```
+    Where `$your_tz_variable` can be a Grafana template variable, such as `Asia/Kolkata`. This approach is flexible, but requires modification of all relevant queries and may introduce additional performance overhead.
+
+5. **Verification**:
+    After modifying the configuration, reload Grafana (or clear the browser cache) and query again. Compare the values ​​displayed in the MySQL client and Grafana at the same point in time to ensure that the time zone offset is corrected correctly.
+
+## SRE Key Points
+
+* **Association with reliability and observability**: Time zone issues are a significant risk affecting **data accuracy** and **observability**. In [[incident-response]], incorrect time correlation will lead to the inability to accurately locate the sequence of events, and even misjudgment of the root cause. Ensuring that the Grafana dashboard time is accurate is the basis for providing reliable monitoring information, which directly serves the achievement of SLO and the calculation of Error Budget.
+* **Best Practice**:
+    1. **Full-link UTC principle**: Use UTC to store and transmit timestamps uniformly in databases, applications, and middleware as much as possible, and only convert according to preferences at the end user interface layer.
+    2. **Explicit configuration is better than implicit inference**: In data source configuration, always explicitly specify the time field name (`timeField`) and data type (`timeFieldType`) to avoid relying on automatic detection by plug-ins.
+    3. **Documentation**: Record the verified data source time zone configuration in operation and maintenance documents to facilitate team collaboration and troubleshooting.
+* **Common anti-patterns**:
+    * Rely on the operating system or the user's personal "local time" for storage or computation.
+    * Feel free to use `NOW()` in queries or perform time zone conversions without understanding the time zone mechanism of each component.
+    * Ignore the Grafana server's own time zone setting and treat it as configuration independent.
+* **Related indicators (SLI/SLO/SLA)**: Although this issue does not directly affect the service request success rate, it can affect the **monitoring data credibility SLI**. For example, you can set up an SLO of "the deviation between the dashboard time and the authoritative time source is less than 1 second" to measure the reliability of the observation platform itself.

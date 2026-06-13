@@ -1,0 +1,79 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "SCIM in HashiCorp Vault standardizes provisioning in platforms"
+category: "平台与集成"
+confidence: medium
+---
+
+## Overview
+
+In an identity-centric security architecture, managing identities and access permissions consistently across systems is critical. System-to-system cross-domain identity management (SCIM) support introduced in HashiCorp Vault (Enterprise and Cloud Dedicated editions) provides a standardized, interoperable way to manage the identity lifecycle. This is significant for SREs and platform teams because it integrates the reliability, automation, and auditability of identity management directly into the core Secrets management platform, reducing configuration drift and security risks that come with manual configuration.
+
+## Core concepts
+
+**SCIM (System for Cross-domain Identity Management)** is a standardized open protocol designed to simplify the automated exchange of user identities and groups between enterprise systems (such as identity providers, HR systems) and service providers (such as SaaS applications, in this case Vault). It defines a standard set of REST API operations (such as create, read, update, delete users and groups), allowing identity information to be synchronized between different systems without the need for custom integration.
+
+In the context of Vault, SCIM addresses the following key issues:
+1. **Identity lifecycle automation**: Automatically execute the "onboarding, transfer, and resignation" workflow to ensure that the identity status in the Vault is consistent with the authoritative identity source (IdP).
+2. **Standardized Integration**: Replaces the need to write custom integration scripts or processes for each identity provider (e.g. Okta, SailPoint).
+3. **Least Permission Enforcement**: Automatically manage permissions through group mapping to ensure that users only have the access permissions required for the current role and reduce the risk of over-authorization.
+
+## Practice
+
+Vault exposes SCIM functionality through its **Identity Key Engine**. The current beta version supports mapping SCIM users to Vault entities and SCIM groups to internal identity groups.
+
+### Configuration and Enablement
+
+1. **Version Requirements**: Requires Vault version 2.0.1 or higher.
+2. **Activate Feature**: Activate SCIM feature in Vault UI, or configure it through API/CLI. For detailed steps, please refer to [Vault Developer Documentation](https://developer.hashicorp.com/vault/docs/v2.x/enterprise/scim-overview?product_intent=vault).
+3. **Create SCIM clients**: One independent SCIM client for each external identity provider (IdP) or configuration system (such as Okta). Configuration is done through the `/identity/scim/client` path.
+    * **Key configuration parameters**:
+        * `client_name`: The identification name of the SCIM client.
+        * `access_grant_principal`: The principal allowed to access.
+        * `alias_mount_accessor`: Mount accessor for specifying the authentication method, used to create new SCIM client entities and bind the configuration workflow to a specific authentication path.
+
+    ```hcl
+    # Example: Create a SCIM client using the Vault API (conceptual example)
+    vault write identity/scim/client \
+        client_name="okta-production" \
+        access_grant_principal="user_idp_connector" \
+        alias_mount_accessor="auth_oidc_abc123"
+    ```
+
+    This model establishes a clear trust boundary for each external system: a SCIM client can only view and manage users and groups created by it.
+
+### Supported operations
+
+Beta version supports standard SCIM operations:
+* **User**: create, read, list, replace, patch and delete.
+* **Groups**: Create, Read, List, Replace, Patch and Delete.
+* Vault returns responses in `application/scim+json` format to facilitate integration with standard SCIM clients.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+
+* **Reliability and Configuration Drift**: SCIM eliminates configuration drift that may be caused by manual identity management (such as naming inconsistencies, omitted deletion of users) through automated configuration. This directly improves the configuration consistency and state predictability of the Vault environment, which is an important part of achieving **reliability**.
+* **Observability**: All identity operations through SCIM pass through Vault's identity engine, which means they can be captured by Vault's audit logs. Combined with standard logging pipelines, SRE teams can monitor **observability** of identity provisioning activities and quickly identify abnormal patterns (such as large user deletions).
+* **Incident response**: When a security incident occurs or emergency permission revocation is required, standard SCIM deactivation/deletion operations can quickly and reliably trigger permission revocation of the corresponding identity in the Vault. This standardizes and automates incident response processes, such as disabling compromised accounts, reducing delays in manual operations during critical time windows.
+
+### Best practices and common anti-patterns
+
+**Best Practice**:
+1. **Isolate clients**: Create independent SCIM clients for different environments (development, testing, production) or different IdPs, following the principles of least privilege and scope.
+2. **Preliminary planning**: Before enabling, plan `alias_mount_accessor` (associated authentication method) and token life cycle strategy.
+3. **Verify operations**: In non-production environments, fully verify your identity provider (SCIM client)'s specific implementation of Vault-supported operations (such as patches) to ensure compatibility.
+4. **Policy Management**: Remember that SCIM manages **Identity Objects** (entities and groups) rather than directly managing Vault **Policies**. Permission assignment still needs to be done on the Vault side through policy and identity group association.
+
+**Common anti-patterns**:
+* **Single Point of Integration**: Avoid using one "one-size-fits-all" SCIM client to manage identities across all environments, which breaks trust boundaries and increases the blast radius.
+* **Ignore Audit**: After configuring SCIM, forget to monitor the relevant audit logs, resulting in the inability to detect configuration abnormalities or attack behaviors.
+* **Hybrid Management**: Using both SCIM and manual methods to manage the identities of the same users, which can lead to chaotic status and unpredictable behavior.
+
+### Related indicators (SLI/SLO/SLA)
+
+* **SLI (Service Level Indicator)**: Can monitor the ratio of "number of user/group operations successfully configured through SCIM" to "number of failed SCIM operations/errors" to reflect the health of the integration.
+* **SLO (Service Level Objective)**: For example, set an SLO for "Identity creation/deletion operations via SCIM, from IdP initiation to Vault audit log appearance, end-to-end latency less than 5 seconds."
+* **Relevance**: The availability and performance of SCIM directly affects the **reliability** and **speed of deployment** of services that rely on it for identity automation. SCIM integration failure can become a SPOF (single point of failure) for identity lifecycle management.
+
+Related concepts: [[iam-identity-and-access-management]], [[least-privilege-principle]], [[audit-logging]]

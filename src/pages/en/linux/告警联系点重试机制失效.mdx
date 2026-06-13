@@ -1,0 +1,52 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[Grafana Issue #106261] Contact Point doesn''t try to resend alerts'"
+category: "告警与通知"
+confidence: medium
+---
+
+## Overview
+
+In SRE practice, alarm notifications are the key link between the monitoring system and the operation and maintenance personnel response team, and their reliability directly determines the speed of fault discovery and processing. A robust alarm system must include a retry mechanism to cope with temporary failures such as temporary network jitters and temporary service unavailability. This page analyzes an alarm contact point (Contact Point) functional flaw discovered in Grafana 12.0.0 version: when the receiving server rejects the connection due to "connection reset by peer", Grafana will not retry sending as expected, resulting in the permanent loss of alarm notifications. This failure destroyed the resiliency of the alerting pipeline, posing a direct risk to SRE processes that require highly reliable notifications.
+
+## Core concepts
+
+- **Alerting Contact Point**: In the Grafana alert system, the destination and method of sending alert messages are defined, such as specific Slack channels, Webhook endpoints, email addresses, etc. It is the final executor of alarm notification routing.
+- **Retry Mechanism**: The process in which the alarm system attempts to send again according to a predefined policy (such as backoff interval, maximum number of retries) after the first attempt to send fails. This is the core design to improve notification success rate and ensure alarm reliability.
+- **`connection reset by peer`**: A common network error, which means that the remote server (in this scenario, the server that receives the alarm) actively sends an RST packet to terminate the connection after the TCP connection is established. This usually occurs when the target service is temporarily overloaded, under maintenance, or the network is misconfigured. A healthy system should treat this as a recoverable transient error and trigger a retry.
+- **Known Regression**: refers to defects introduced in new versions of software that did not exist in previous versions. According to reports, this issue appears to have been introduced in Grafana version 12.0.0 and was not present in earlier versions.
+
+## Practice
+
+### Fault recurrence and impact
+
+According to the provided Issue information, although the steps to reproduce the problem are not listed in detail, the phenomenon is clear: when Grafana attempts to send an alarm through a contact point and the target server returns a "connection reset" error, Grafana's alarm engine will abandon the sending and **not** make subsequent attempts based on the configured retry policy. This will result in the complete loss of alert notifications that rely on this contact point unless manual intervention or the rule is retriggered.
+
+This fault occurs in Grafana version 12.0.0, and the running environment is Linux Ubuntu. This indicates that the regression may exist in this specific version of the alert sending logic code.
+
+### Countermeasures and Mitigation Plans
+
+Faced with such software defects on the critical path, SRE needs to adopt a hierarchical response strategy:
+
+1. **Real-time monitoring and confirmation**: Check the alarm log immediately, filter entries related to failure to send contact points (especially `connection reset` errors), and confirm the scope of impact.
+2. **Temporary downgrade or rollback**: If the issue severely affects production alerts, the most immediate mitigation solution is to downgrade Grafana to a previous version that is confirmed to be stable and working (such as 11.x). This is the fastest way to ensure the reliability of notifications until an official fix is ​​released.
+3. **Temporary alternative**: For critical alert channels, consider setting up a parallel backup contact point (such as sending to another webhook or mailing list at the same time) to provide some redundancy.
+4. **Track official fixes**: Continue to follow the progress of this GitHub Issue, and promptly test and apply patches or new versions containing official fixes.
+
+## SRE Key Points
+
+### Reliability and incident response
+
+This issue directly compromises the monitoring system's core SLO of **Notification Reliability**. Any single point of failure in the alert pipeline can result in delayed or missed incident response. In the incident response process, timely delivery of notifications is the prerequisite for initiating all subsequent actions (such as creating fault work orders and initiating emergency response). The failure of the retry mechanism means that the system's fault tolerance to instantaneous failures in the underlying network and target services is reduced, which violates the SRE principle of Design for Failure.
+
+### Best Practices and Anti-Patterns
+
+- **Best Practice**: Perform end-to-end resiliency testing of all critical alarm channels. Periodically simulate network outages (e.g., firewall rules, service restarts) to verify that the notification system retries and recovers as expected.
+- **Anti-Pattern**: Over-reliance on a single alert path without validating its retry behavior. After upgrading a monitoring component (such as Grafana), it is necessary to regression test the alerting process, not just the rule triggering itself.
+- **Observability**: The health status of the alarm system itself must be monitored. Indicators such as "alarm sending success/failure rate" and "distribution of retry times" should be tracked to detect such silent failures in a timely manner.
+
+### Related indicators
+
+- **SLI**: End-to-end success rate of alarm notification. It is defined as the percentage of the number of successfully delivered alarm notifications to the total number that should be sent within the specified time window. Failure of the retry mechanism will directly cause this SLI to drop.
+- **SLO**: You can set goals such as "The successful delivery rate of alarm notifications is greater than 99.9% within X minutes after being triggered." Such retry flaws can lead to SLO violations.
+- **Critical Alerts**: The alert rules used to monitor this SLI itself (e.g. "Grafana fails to send alerts more than 1%") should be set with low latency and high retry guarantees to ensure its own reliability.

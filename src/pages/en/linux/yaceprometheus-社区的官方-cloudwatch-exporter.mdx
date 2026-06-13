@@ -1,0 +1,62 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Blog - YACE is joining Prometheus Community"
+category: "生态与集成"
+confidence: high
+---
+
+## Overview
+
+Yet Another Cloudwatch Exporter (YACE) is an open source tool for retrieving metrics from AWS CloudWatch and converting them into a format that Prometheus can crawl. It has become a key component for collecting monitoring data from AWS environments. Recently, the YACE project has officially joined the Prometheus community and become its official Amazon CloudWatch exporter. This move significantly improves the project's accessibility, maintenance quality, and community engagement, making it an integral part of SRE teams building a unified observability platform.
+
+## Core concepts
+
+- **YACE (Yet Another Cloudwatch Exporter)**: A configuration-driven exporter responsible for "translating" metrics exposed by the AWS CloudWatch API into Prometheus' metric format. Its core advantage is that it supports automatic discovery and can dynamically detect AWS resources (such as EC2, RDS, ELB, etc.) without having to manually update the configuration every time the infrastructure changes.
+- **CloudWatch**: AWS's native monitoring and management service for collecting performance metrics, logs, and event data. It is the de facto source of monitoring data in AWS environments.
+- **Prometheus Ecosystem**: Time series data collection, storage and alarm tool chain with Prometheus as the core. Bringing YACE into the community means it will be more directly maintained, more tightly integrated, and officially recommended for use with Prometheus monitoring AWS environments.
+- **Auto-discovery**: A key feature of YACE. It automatically identifies services and resources that need to be monitored through AWS APIs or tags, which is crucial for managing dynamic, elastically scalable cloud infrastructure and avoiding configuration drift and monitoring blind spots.
+
+## Practice
+
+According to official guidelines, using YACE is mainly divided into two steps: installation and configuration.
+
+### Installation
+
+You can find detailed deployment instructions in the installation guide from its [official GitHub repository](https://github.com/prometheus-community/yet-another-cloudwatch-exporter). It is usually recommended to use the officially provided Docker image or binary file for deployment. Ensure that the IAM role running YACE has `cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`, and the appropriate `Describe*` permissions for EC2, RDS, etc. on the target AWS resources.
+
+### Configuration
+
+The behavior of YACE is defined through a YAML configuration file. The main part of the configuration is `discovery`, which defines the auto-discovery rules. The following is a simplified configuration snippet for discovering and monitoring CPU usage of all EC2 instances with a specific tag:
+
+```yaml
+discovery:
+  jobs:
+    - type: AWS/EC2
+      period: 60
+      length: 60
+      metrics:
+        - name: CPUUtilization
+          statistics: [Average]
+          period: 60
+      regions:
+        -us-east-1
+      searchTags:
+        - key: Environment
+          value: production
+```
+
+More configuration examples (e.g. monitoring RDS, ALB) can be found in the `examples` directory of the repository. After the configuration is completed, start the YACE process, and Prometheus can obtain data through the configured crawling endpoint.
+
+## SRE Key Points
+
+- **Association with Reliability**: YACE is the bridge between the AWS environment and the Prometheus monitoring stack. By unifying CloudWatch metrics to Prometheus, SRE teams can build a cross-cloud SLI/SLO system based on the same tool chain (such as PromQL, Grafana, Alertmanager). For example, you can combine CloudWatch's `HealthyHostCount` with Prometheus' internal metrics to fully assess the reliability of your load balancer.
+- **Observability improvements**: YACE greatly enhances observability of AWS managed services. Its automatic discovery capability ensures continuous monitoring of dynamically expanding resources (such as instances in an Auto Scaling Group) and avoids monitoring gaps caused by resource changes, which is the basis for ensuring system reliability.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practices**: Make full use of the auto-discovery feature and reduce manual configuration; set a reasonable crawl interval (such as 60s) for YACE's crawl endpoint to balance data freshness and CloudWatch API cost/limit; use `searchTags` and `include`/`exclude` tags for fine-grained control.
+    - **Anti-Pattern**: Hardcoding monitoring configurations for each resource, which results in configuration bloat and difficulty in maintenance; ignoring rate limits and costs of the CloudWatch API, configuring too many metrics or too short a period; deploying YACE and Prometheus in different VPCs without configuring appropriate network routing.
+- **Relevant Metrics (SLI/SLO)**: While YACE itself does not define business SLOs, it is a pipeline for obtaining key data used to define AWS-related SLIs. For example:
+    - **SLI**: `avg_over_time(CloudWatch_aws_ec2_cpu_utilization[5m])` as the average CPU utilization of the EC2 instance.
+    - **SLO**: For a core service, you can define the SLO that the RDS instance it depends on has a query latency of less than 100ms 95% of the time. This data is obtained from CloudWatch through YACE.
+    - Metrics that monitor the health of YACE itself (such as `yace_cloudwatch_api_calls_total`) are critical to ensuring the reliability of the monitoring pipeline.
+
+For more information about Prometheus observability practices, see the [[prometheus]] and [[sre-principles]] pages.

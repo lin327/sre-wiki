@@ -1,0 +1,45 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'[release-13.0.2] Logs Panel: Fix interactions between custom displayed fields"
+category: "日志分析"
+confidence: medium
+---
+
+## Overview
+
+In the daily operation, maintenance and troubleshooting of SRE, log analysis is a crucial link. As a powerful visualization and analysis platform, Grafana's Logs Panel is widely used to centrally view and filter application and infrastructure logs. OpenTelemetry (OTel) is a cloud-native observability standard whose log attributes provide rich, structured metadata for log entries.
+
+This fix targets a key bug in Grafana version 13.0.2: when the user customizes the displayed fields (Custom Displayed Fields) in the log panel, and if the OpenTelemetry log attribute function is enabled at the same time, the panel fails to correctly handle the interaction between the two, causing the configuration of the custom fields to become invalid. This bug will directly affect the SRE team's ability to quickly locate problems because they cannot view logs in the preset, most relevant information format.
+
+## Core concepts
+
+- **OpenTelemetry (OTel) Log Properties**: This is a core part of the OTel log data model. In addition to standard log messages (`Body`), OTel logs can carry a set of key-value pairs (`Attributes`) for recording business or technical context information such as `http.method`, `db.system`, `trace.id`, etc. Enabling this feature in Grafana means that the panel can recognize and display these structured fields.
+- **Custom display fields**: This is an advanced configuration item provided by the Grafana log panel. Users can use it to specify which fields are displayed in the log stream and the order in which they are arranged. This allows users to filter out irrelevant information and focus on the fields most critical to the current troubleshooting task, greatly improving the efficiency of information acquisition.
+
+## Practice
+
+This fix is included in a backport of Grafana v13.0.2, which mainly solves a defect in the front-end interaction logic.
+
+### Verification steps
+After upgrading to a version that contains this fix, SRE engineers can verify that the issue has been resolved by following these steps:
+
+1. **Configure custom display fields**: In Grafana's log panel, set the specific fields you want to display through the configuration interface (for example, only display `level`, `message`, `timestamp`).
+2. **Toggle OTel attribute support**: In the panel settings, turn on or off the "OpenTelemetry log attribute" option.
+3. **Observe Behavior**:
+    - Regardless of whether the OTel attribute option is on or off, the custom field list set in step 1 should be strictly adhered to.
+    - The display of log entries in the panel should completely match your custom configuration, and no fields will be lost, redundant fields will be displayed, or the order will be out of order due to changes in the OTel property switch.
+
+### Architecture and Impact
+This fix falls under the scope of the Grafana log panel front-end component (UI). It ensures that the user-configured "show field" directive, which has a higher priority, is correctly applied and rendered before any backend data processing logic (such as OTel property parsing). This is a logical correction regarding feature prioritization and user intent override.
+
+## SRE Key Points
+
+- **Link to Observability**: This fix directly enhances the usability and flexibility of Grafana log analysis. SRE teams can more confidently leverage custom fields to standardize log viewing views across the team while seamlessly using emerging OTel standards for richer context, no longer in conflict.
+- **Best Practices**:
+    1. **Upgrade and Test**: For teams that rely on the Grafana log panel for critical monitoring, it is recommended to verify this fix in the test environment and upgrade in the production environment.
+    2. **Documented view configuration**: SRE can create and share panel custom field configuration templates for different failure scenarios (such as network problems, database delays) to improve response speed.
+    3. **Combined with OTel**: Actively embrace OTel log attributes, which provide structured "clues" for fault location. Used in conjunction with custom display fields, comprehensive and focused log analysis can be achieved.
+- **Common anti-pattern**: Ignoring such front-end interaction bugs may cause team members to spend a lot of time debugging why the well-designed log view "does not take effect", thus misdiagnosing it as a data source problem or query statement problem, and falling into troubleshooting misunderstandings.
+- **Relevant Metrics (SLI/SLO)**: This fix does not directly affect the SLI/SLO of the infrastructure, but greatly improves **troubleshooting efficiency** and **monitoring system availability**. A properly working log panel is an important tool to ensure the key operation and maintenance indicator MTTR (Mean Time to Recovery).
+
+**Related pages**: [[opentelemetry-logs]] [[grafana-logs-panel]]

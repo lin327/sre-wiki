@@ -1,0 +1,65 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Introducing HCP Terraform powered by Infragraph - now in public preview"
+category: "可观测性与可见性"
+confidence: medium
+---
+
+## Overview
+
+As enterprises adopt hybrid and multi-cloud strategies, infrastructure complexity increases exponentially. The traditional static and isolated management method leads to information fragmentation, making it difficult for the platform team to obtain a unified "real view", which directly affects operation and maintenance efficiency, security response and cost control. The Infragraph feature launched by HCP Terraform aims to solve this core pain point by building a centralized, event-driven infrastructure knowledge graph. For SREs, obtaining a timely and accurate global view of the infrastructure is fundamental to achieving reliability, rapid incident response, and cost optimization.
+
+## Core concepts
+
+**Infragraph** is a dynamically updated knowledge graph that obtains real-time asset data from various cloud providers (AWS, Azure, GCP) and on-premises environments through direct connections. Its core goal is to transform originally dispersed, static infrastructure data into a unified, queryable and dynamic model.
+
+1. **Centralized and event-driven**: As a "single source of truth", Infragraph continuously monitors events from various environments and updates its internal status in real time. This replaces the traditional approach of relying on outdated snapshots, ensuring platform teams are always making decisions based on the latest data.
+2. **Break Data Silos**: In organizations that use an average of more than five cloud management services, Infragraph solves the problem of information fragmentation by aggregating data from disparate ecosystems, workflows, and applications. It focuses specifically on revealing ownership relationships and connection status of resources, which is critical in security audits and cost attribution.
+3. **Empowering platform teams and AI**: The structured and linked data provided by Infragraph is the basis for the platform team to conduct natural language query and analysis. More importantly, it is positioned as a reliable knowledge base to support AI automated workflows (such as automatic repair of security vulnerabilities, automatic handling of cost exceptions) in the future.
+
+## Practice
+
+Existing HCP Terraform customers can start experiencing Infragraph as a public preview feature. The following is the basic setup and usage process:
+
+1. **Access and Configuration**:
+    * Log in to your HCP organization portal.
+    * Find and click the “Infragraph” tile to enter the configuration interface.
+    * **Add Connection**: First, establish connections to key platforms, such as:
+        * **AWS**: View cloud resources.
+        * **HCP Terraform**: Associated Infrastructure as Code (IaC) configuration.
+        * **HCP Packer**: Associated image building information.
+    * These connections will allow Infragraph to begin collecting data and building relationships between resources.
+
+2. **Query and Analysis**:
+    * After the configuration is complete, you can directly use natural language or build queries to analyze the aggregated data. For example:
+        * Identify **unmanaged resources** (i.e. resources that are not managed by Terraform).
+        * View a list of all **managed resources** and their status.
+        * Check which resources are using **older versions of Terraform** so you can plan for upgrades.
+    * Through connected queries, you can gain insight into the complete path from code to deployment, such as "a certain image version (Packer) is used by which workloads (created through Terraform)".
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+
+* **Enhanced Observability**: Infragraph itself is an advanced form of a **Configuration Management Database (CMDB)** and **Service Catalog**, but it is dynamic and automated. It provides SREs with global context about "what is what" which is key for troubleshooting and impact analysis.
+* **Proactive Reliability Engineering**: By continuously monitoring infrastructure status, SREs can detect earlier potential risks such as configuration drift, unauthorized changes, or unclear resource ownership that could lead to failures.
+* **Accelerated Incident Response**: When an incident occurs, SRE teams can leverage Infragraph to quickly locate affected services, their dependent infrastructure components, and the responsible team, thereby reducing mean time to recovery (MTTR).
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    * **Build data connections early**: Connect all major cloud providers and IaC tools to Infragraph to maximize their value.
+    * **Integrate Infragraph query into the operation and maintenance process**: For example, add the Infragraph query step during regular inspections, cost reviews or security scans.
+    * **Utilize it as an automation base**: Start thinking about which manual, repetitive operational tasks (such as compliance checks, identification of idle resources) can be automated based on the data provided by Infragraph.
+* **Common anti-patterns**:
+    * **Just think of it as another dashboard**: The core value of Infragraph lies in the **dynamic knowledge graph** and **associated query capabilities** behind it, not just static visualizations.
+    * **Ignore Data Governance**: Although Infragraph aggregates data, it is still necessary to ensure the quality and naming convention of source data, otherwise it will fall into the dilemma of "garbage in, garbage out".
+
+### Related indicators (SLI/SLO/SLA)
+
+Although Infragraph itself does not directly define SLI, it provides a data basis for measuring and ensuring reliability goals at the infrastructure level:
+
+* **SLI Potential Applications**:
+    * **Infrastructure Accuracy**: The percentage difference between the number of resources recorded by the Infragraph and the actual number of resources in the cloud console.
+    * **Data Freshness**: The average delay between the resource status in the Infragraph and the actual status of the cloud environment.
+* **Support for SLOs**: An accurate infrastructure view is a prerequisite for defining and implementing application layer SLOs (such as "Core services are available 99.9% of the time") because it helps understand the complete infrastructure path supporting the service.

@@ -1,0 +1,75 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'GitHub Issue #115935: Auth/JWT: org_mapping with org name is inconsistent"
+category: "SRE实践"
+confidence: high
+---
+
+## Overview
+
+In single sign-on integration based on JWT (JSON Web Token), ensuring that users are accurately and consistently mapped to the correct organization is the basis for ensuring system availability and user experience. As the core observability platform, the stability of Grafana's certification and organizational mapping is directly related to the achievement of SLO (service level objectives). This document provides an in-depth analysis of a critical issue in Grafana 12.0.2: when using JWT authentication and configuring `org_mapping`, mapping with organization names instead of numeric IDs can lead to inconsistent user organization assignment behavior and validation failures. This issue poses a serious threat to environments that rely on multi-organizational architectures and dynamic identifiers, and understanding its causes and implementing workarounds is an essential SRE practice.
+
+## Core concepts
+
+### JWT authentication and organization mapping
+In Grafana's JWT authentication process, the `org_mapping` configuration item is used to define how to map the information in JWT claims to Grafana's internal organization. Its format is `<org_claim_value>:<org_name_or_id>:<role>` and is designed to enable dynamic organization allocation based on tokens.
+
+### Organization Identifier: Name vs. ID
+- **Organization ID**: A numeric identifier that usually does not change after creation, but is environment-specific. In different environments (development, test, production), the ID of the same logical organization may be different, which is not conducive to configuration portability.
+- **Organization Name**: String identifier, more readable and context-independent. The documentation indicates that it should be supported to allow writing configurations that are decoupled from the specific environment.
+
+### Role mapping
+`role_attribute_path` and the `:Editor` part in the configuration are responsible for mapping the role information in JWT to Grafana internal roles (such as Admin, Editor, Viewer) and controlling the user's operation permissions.
+
+## Practice
+
+### Problem recurrence
+The issue is reproducible reliably under certain configurations, with multiple API requests for the same JWT token returning different organizational contexts.
+
+1. **Configuration Example**: Enable JWT authentication in the Grafana configuration file (`grafana.ini` or environment variables) and use the organization name for mapping.
+    ```ini
+    [auth.jwt]
+    enabled = true
+    header_name = X-Grafana-JWT
+    jwk_set_url = https://<keycloak>/realms/<realm>/protocol/openid-connect/certs
+    org_attribute_path = realm_access.roles
+    org_mapping = testOrg1:testOrg1:Editor # Note: The organization name "testOrg1" is used here
+    role_attribute_path = contains(realm_access.roles[*], 'admin') && 'Admin' || contains(realm_access.roles[*], 'editor') && 'Editor' || 'Viewer'
+    sub_claim = preferred_username
+    ```
+
+2. **Authentication Behavior**: Multiple calls to Grafana's User Organization and Current Organization APIs using valid JWT tokens obtained from Keycloak.
+    ```bash
+    curl -H "X-Grafana-JWT: $ACCESS_TOKEN" https://<grafana>/api/user/orgs
+    curl -H "X-Grafana-JWT: $ACCESS_TOKEN" https://<grafana>/api/org
+    ```
+3. **Observation phenomena**:
+    - Users are assigned to alternate between the home organization (orgId=1) and the target organization (testOrg1).
+    - Warning in Grafana log: `logger=orgrole.mapper level=warn msg="Could not fetch organization. Skipping." err="strconv.Atoi: parsing \"testOrg1\": invalid syntax" org=testOrg1`. This error clearly states that the code incorrectly attempts to parse a string organization name into an integer.
+
+### Avoidance plan
+The current most direct workaround is to abandon the use of organization names and instead use numeric organization IDs for mapping.
+
+1. Modify the `org_mapping` configuration to use the numeric ID of the target organization (for example, assume that `testOrg1` has an ID of `2`).
+    ```ini
+    org_mapping = testOrg1:2:Editor
+    ```
+2. Restart the Grafana service to make the configuration take effect.
+3. Re-authenticate and the user should be stably assigned to the organization with ID 2 and have the Editor role.
+
+**Important**: This workaround sacrifices configuration portability because the organization ID is environment-specific. When deploying a new environment, the organization ID needs to be reconfirmed and updated.
+
+## SRE Key Points
+
+- **Impact on Reliability**: This bug directly breaks the determinism of the authentication process, causing users to be routed to the wrong organization context after logging in. For users who rely on specific organizational dashboards or data sources, this can result in being unable to access required content or seeing incorrect data, severely impacting user experience and productivity, and posing a service degradation issue that needs to be fixed as a priority.
+- **Observability Correlation**: SRE needs to monitor for such configuration errors. In addition to paying attention to `strconv.Atoi` parsing warnings in Grafana logs, you should also establish synthetic monitoring for the consistency of user organization allocations. For example, test tokens are regularly used to verify whether the organization they belong to meets expectations, and if not, an alarm is triggered.
+- **Incident Response and Root Cause Analysis**: When you receive a report that "users are unable to access their dashboards" or "they see the wrong data source after logging in," this known issue should be put on the troubleshooting list first. Checking whether the organization name is used in the `org_mapping` section of the `auth.jwt` section of the Grafana configuration is an effective first step in quickly locating such incidents.
+- **Best Practices and Anti-Patterns**:
+    - **Practice**: Prioritize stability and environment independence when configuring mappings that rely on external system identifiers. In the current version, for reliability, numeric IDs should be used.
+    - **Practice**: After changing authentication or organization mapping configurations, perform comprehensive regression testing, including verifying organization assignments and permissions for users in different roles.
+    - **Anti-Pattern**: Features described in documentation should not be blindly trusted, especially on core paths involving security and authentication. Must be verified in real environment.
+    - **Anti-Pattern**: Avoid hardcoding dynamic values ​​(such as IDs) that may change in the configuration unless there is a strict version control and deployment process. This is a trade-off that must be accepted until this bug is fixed.
+- **Related Metrics (SLI/SLO)**: The core SLIs affected by this issue are **Authentication Success Rate** and **Success Rate of Users Reaching the Correct Context after Login**. One possible SLO is "99.9% of JWT authentication requests should assign the user to the correct organization specified by their JWT claim". This bug directly prevents this SLO from being achieved.
+
+---
+**Related pages**: [[grafana-jwt-auth]], [[org-mapping]], [[identity-and-access-management]]

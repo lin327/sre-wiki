@@ -1,0 +1,59 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'GitHub Issue #96929: Alerting: Inconsistent time range in Rule Edit and"
+category: "alerting"
+confidence: high
+---
+
+## Overview
+
+In Grafana's Alerting module, the creation and editing of Alert Rules is a key operation. When users define a query, they usually specify a clear time range (such as `now-10m to now`). However, a known interface (UI) inconsistency problem is that the query time range set on the **Edit page** does not match the time range displayed on the **View page**. The time range in the view page was incorrectly bound to the "Pending Interval" instead of the time defined by the query itself. Although this problem is not a core function failure, it may confuse the true intention of the alarm configuration and cause trouble in rule maintenance, auditing, and troubleshooting.
+
+## Core concepts
+
+1. **Query Time Range**: refers to the time window used to retrieve data clearly defined in the data query statement. For example, `now-10m` means pushing back 10 minutes from the current time. This is the **basic data range** for data analysis and alarm condition evaluation.
+2. **Pending Interval**: This is a concept in the alarm rule evaluation process, indicating the duration from when the alarm condition is first met to when the "Pending" state is actually triggered. It is used to prevent short-term alarms due to instantaneous data fluctuations and improve the stability of alarms.
+3. **UI consistency**: Refers to the information displayed on the same configuration item (such as time range) in different interfaces or contexts of the system should be consistent. Inconsistent UI will destroy the user's mental model, leading to configuration misunderstandings and operational errors. Consistency is particularly important for critical operation and maintenance configurations like alarm rules.
+
+## Practice
+
+This problem is manifested in the fact that when the Grafana interface displays the same alarm rule, the information on different pages is different.
+
+**Problem performance:**
+1. **Edit Page**: Users define and modify alarm rules on this page. The query part shows a clear, specific time range, such as `Range: now-10m to now`. This is a direct reflection of the intent of the rule creator.
+2. **View Page**: used to review saved rule details. The time range information shown here is different and is incorrectly linked to the rule's `Pending Interval` setting rather than the query's time range. This results in the viewer not being able to directly and accurately understand the data window that the rule actually queries.
+
+**Temporary Solutions and Countermeasures:**
+Since this is a reported software defect (Bug), the most fundamental solution is to wait for Grafana to officially release a fixed version. During this time, SREs and configuration staff can take the following actions:
+* **Subject to the editing page**: When you need to confirm or debug the actual data query range of the alarm rule, always enter the editing mode to view it.
+* **Enhance documentation**: In the description field of the alarm rule or in the external configuration management system, clearly indicate the correct query time range as an authoritative reference.
+* **Use API/Configuration as Code (CaC)**: Manage alert rules through Grafana API or Provisioning to avoid direct reliance on potentially inconsistent UI information. This is more reliable and auditable way.
+* **Follow community updates**: Subscribe to the relevant GitHub Issue ([#96929](https://github.com/grafana/grafana/issues/96929)) to get fix progress.
+
+## SRE 覂点
+
+### Relevance to Reliability Engineering
+* **Configuration Management Risk**: Alarm rules are the cornerstone of monitoring system reliability. Inconsistent UI information may cause operation and maintenance personnel to adjust rules based on misunderstandings (for example, mistakenly believing that the query range is the length of the `pending interval`), thereby introducing configuration drift or logic errors, ultimately affecting the effectiveness of alarms (such as missed or false positives).
+* **Incident Response Impact**: When troubleshooting an alarm storm or evaluating the effectiveness of a specific alarm, it is critical to quickly and accurately understand the scope of data queried by a rule. Inconsistent UI increases the cognitive load and time cost of investigations.
+* **Observability Transparency**: A clear view of your configuration is part of building trust in observability. Inconsistencies in the interface can reduce the visibility and confidence that operations teams have in the configuration status of the monitoring system itself.
+
+### Best practices and common anti-patterns
+* **Best Practice**:
+    1. **Verify driver configuration**: After configuring the rules through the UI, the correctness of the configuration should be cross-verified through API export or log query.
+    2. **Versioning and Auditing**: Incorporate alarm rule configuration into the version control system (such as Git), and any changes will go through the code review process to reduce dependence on volatile UI.
+    3. **Focus on upstream issues**: Actively track the official issue library of the monitoring tool used, and keep abreast of known defects and their repair status.
+* **Common anti-patterns**:
+    1. **Over-reliance on a single source of information from the UI**: Assume that all displayed configuration information is accurate and consistent.
+    2. **Ignoring version differences**: When migrating or upgrading between different Grafana versions, it is not verified whether the display and actual behavior of key configurations change.
+
+### Related indicators (SLI/SLO)
+Although this problem itself does not directly produce performance SLI, it indirectly affects the reliability SLI of the alarm system.
+* **Relevance**: This flaw could result in rules being deployed based on a misunderstood configuration, impacting the following metrics:
+    * **Alert Accuracy**: Incorrect configuration may lead to false positives (False Positive) or false negatives (False Negative).
+    * **MTTA (Mean Time To Acknowledge)**: Configuration obfuscation may extend the time required for alarm investigation and acknowledgment.
+    * **Configuration change failure rate**: The number of incorrect modifications due to misleading UI when trying to fix the alarm logic.
+
+**Related page references:**
+* `[[alerting-best-practices]]`
+* `[[grafana-provisioning]]`
+* `[[effective-error-budgets]]`

@@ -1,0 +1,89 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'containerd issue #9648: Incorrect scope when using ghcr.io as a registry"
+category: "容器运行时"
+confidence: medium
+---
+
+
+## 概述
+
+镜像仓库镜像是提升容器镜像拉取可靠性、速度和合规性的关键技术，尤其在 Kubernetes 集群和多云环境中。一个配置正确的镜像镜像能够有效分担上游仓库（如 Docker Hub）的负载，减少因网络或服务故障导致的镜像拉取失败。然而，镜像镜像本身也可能引入新的故障点，例如认证问题。本文档详细阐述了一个在 containerd 容器运行时中，当使用 GitHub Container Registry (ghcr.io) 作为 Docker Hub 的镜像时，由于 **错误的 OAuth 2.0 scope 参数** 导致认证失败的具体问题及其解决方案。正确配置和理解镜像仓库的认证机制，对于维护容器化应用的部署流水线可靠性至关重要。
+
+## 核心概念
+
+### 镜像仓库镜像 (Registry Mirror)
+镜像仓库镜像是一个缓存或代理仓库，用于存储和分发来自上游（源）仓库的镜像副本。当客户端请求一个镜像时，如果本地或配置的镜像镜像中存在，客户端将直接从镜像镜像拉取，从而提升速度并降低对上游仓库的依赖。在 containerd 中，通过配置 `[host."https://mirror-registry.com/v2"]` 块来定义镜像行为。
+
+### OAuth 2.0 Scope 参数
+在容器镜像仓库的认证过程中，通常使用 OAuth 2.0 协议。客户端在向仓库请求受保护的资源（如 manifest 或 blob）时，如果收到 `401 Unauthorized` 响应，其中包含 `WWW-Authenticate` 头，该头会指明授权服务器的 URL 和所需的 **scope**。Scope 定义了请求所需的具体权限（例如 `repository:user/repo:pull`）。客户端在向授权服务器获取访问令牌时，必须正确传递这个 scope。
+
+### Containerd 镜像镜像配置中的 `override_path`
+在 containerd 配置中，为镜像镜像设置 `override_path = true` 会告诉 containerd 使用配置的 `host` 路径作为完整的仓库路径进行操作，而不是自动将原始镜像的路径附加到镜像镜像 URL 后。这在镜像镜像的路径结构与原始仓库不同时（例如，镜像存储在不同的命名空间下）非常有用。
+
+## 实践
+
+### 问题复现与诊断
+1.  **场景描述**：将 Docker Hub 上的镜像 `docker.io/calico/node:v3.27.0` 同步或镜像到 `ghcr.io/<username>/docker.io/calico/node:v3.27.0`。
+2.  **containerd 配置**：在 containerd 配置文件（通常是 `/etc/containerd/config.toml`）中，为 `docker.io` 添加以下镜像主机配置。
+    ```toml
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+      endpoint = ["https://ghcr.io/v2/<username>/docker.io"]
+    ```
+    或者在更新的配置结构中：
+    ```toml
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+    ```
+    然后在 `/etc/containerd/certs.d/docker.io/hosts.toml` 文件中添加：
+    ```toml
+    [host."https://ghcr.io/v2/<username>/docker.io"]
+      capabilities = ["pull", "resolve"]
+      skip_verify = false
+      override_path = true
+    ```
+3.  **尝试拉取镜像**：执行 `crictl pull docker.io/calico/node:v3.27.0`。
+4.  **观察到的失败日志**：containerd 日志显示它尝试从 `ghcr.io` 获取令牌，但请求失败，返回 `403 Forbidden`。日志中的关键信息是请求的 token URL 包含了**两个** scope 参数：
+    ```
+    https://ghcr.io/token?scope=repository%3Acalico%2Fnode%3Apull&scope=repository%3Astackhpc%2Fdocker.io%2Fcalico%2Fnode%3Apull&service=ghcr.io
+    ```
+    其中 `repository:stackhpc/docker.io/calico/node:pull` 是 **正确且必需的**，而 `repository:calico/node:pull` 是 **容器运行时错误添加的原始仓库 scope**。
+
+### 问题根因与修复
+这是一个 containerd 的缺陷（[Issue #9648](https://github.com/containerd/containerd/issues/9648)）。当通过镜像镜像拉取镜像时，containerd 在构造 OAuth 令牌请求时，会错误地将原始仓库的 scope 与镜像镜像的 scope 一并发送。对于像 `ghcr.io` 这样严格校验 scope 的仓库，这会导致认证失败。
+
+**验证修复**：手动使用正确的单个 scope 去获取令牌是成功的：
+```bash
+curl 'https://ghcr.io/token?scope=repository%3Astackhpc%2Fdocker.io%2Fcalico%2Fnode%3Apull&service=ghcr.io'
+# 返回有效的 JSON 令牌
+```
+
+### 解决方案与变通方法
+1.  **升级 containerd**：最直接的解决方案是升级到已修复此 bug 的 containerd 版本。请关注官方发布的安全和补丁版本。
+2.  **临时变通**：在官方修复发布前，如果遇到此问题，可以考虑以下变通方法：
+    *   **使用其他兼容性更好的镜像仓库**：评估使用 Harbor、AWS ECR、Google Artifact Registry 等作为镜像镜像，看它们是否对请求的 scope 有不同的处理方式。
+    *   **确保上游仓库与镜像仓库路径一致**：如果条件允许，在镜像仓库中保持与原始仓库完全相同的路径结构（例如，镜像 `ghcr.io/calico/node`），可以避免因路径重映射导致的 scope 问题。但这会削弱使用镜像仓库作为独立命名空间的能力。
+
+## SRE 要点
+
+### 与可靠性的关联
+此 bug 直接影响了 **镜像分发的可靠性**。当配置的镜像镜像因认证问题不可用时，containerd 会回退到上游仓库（如 Docker Hub）。这虽然保证了镜像最终能被拉取，但带来了两个可靠性风险：
+1.  **增加延迟与不确定性**：回退机制引入了额外的重试和网络跳转，增加了镜像拉取时间。
+2.  **上游依赖**：回退行为重新建立了对上游仓库的直接依赖，这违背了使用镜像仓库进行解耦和冗余的初衷。在上游仓库发生大规模故障（如 Docker Hub 历史上的中断事件）时，依赖回退的集群将无法正常工作。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    *   **定期验证镜像镜像健康状态**：不应仅配置后就认为万事大吉。应使用监控脚本或工具定期（例如每 5 分钟）从目标集群尝试拉取一个“哨兵镜像”，确保整个认证和拉取路径畅通。
+    *   **监控镜像拉取源**：通过 containerd 的 metrics（如 `containerd_image_pulls_total`）或分析拉取日志，监控哪些镜像实际是从镜像镜像拉取的，哪些回退到了上游。这能帮助发现配置错误或兼容性问题。
+    *   **分阶段 rollout 镜像镜像配置**：在生产环境全面启用新的镜像镜像前，先在测试环境或部分节点上启用并验证，特别是对于使用不同镜像仓库实现的场景。
+*   **常见反模式**：
+    *   **假设所有镜像仓库行为一致**：不同的容器镜像仓库（Docker Hub, ghcr.io, Quay.io, 私有 Harbor 等）在实现认证协议（如 OAuth scope 解析）和错误处理上可能存在细微但关键的差别。不能认为在一个仓库上验证过的配置在另一个仓库上也同样有效。
+    *   **忽视容器运行时版本**：容器运行时（如 containerd）本身也可能存在 bug。在规划使用高级特性（如复杂的镜像镜像配置、跨仓库复制）时，应检查当前版本的已知问题和兼容性列表。
+
+### Related Indicators (SLI/SLO/SLA)
+* **SLI (Service Level Indicator)**:
+    * `Image pull success rate (broken down by source)`: distinguishes the proportion of images successfully pulled from the image and the proportion of successfully pulled from the upstream warehouse.
+    * `Image Pull Latency (Breakdown by Source)`: Measures the P99 latency of pulling an image from an image compared to the latency of pulling from upstream.
+    * `Number of authentication failures`: Monitors the number of image pull authentication failures caused by scope errors, token expiration, etc.
+* **SLO (Service Level Objective)**: You can set goals for image pulls for critical applications, such as "For images of key applications in the production environment, 99.9% of pulls should be completed within 10 seconds, and 99.5% of pulls should be completed through the configured image mirror (not rolled back)".
+* **Fault Response**: When monitoring a large number of authentication failures or image pulls falling back to upstream, the SRE team should have a set of runbooks to quickly diagnose and check the image warehouse configuration, containerd version and network policy.

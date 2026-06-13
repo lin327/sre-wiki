@@ -1,0 +1,74 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "'release-20260520.0: runsc gofer fails rootfs self-bind when bundle path"
+category: "容器运行时"
+confidence: medium
+---
+
+## Overview
+
+This document details a specific regression affecting gVisor (`runsc`) and the containerd integration environment. After the containerd and gVisor versions are upgraded, Kubernetes Pod fails during the sandbox creation phase due to inconsistent handling of symbolic link paths. This issue highlights the complexity of normalizing and validating file system paths in distributed systems and container runtimes, and is a typical example of what SREs need to pay attention to when managing container platform reliability and handling upgrade-related events.
+
+## Core concepts
+
+1. **Symbolic links and path resolution**: In the operating system, a symbolic link (Symlink) is a reference to another file or directory. When a program accesses that link, the operating system typically resolves (or follows) the path to its destination. For example, `/var/run` is a symbolic link to `/run` on many Linux distributions. A key SRE consideration is that different programs or system calls may handle paths differently (resolved or not), which may lead to unexpected inconsistencies.
+
+2. **gVisor and Gofer process**: gVisor is a kernel agent for containerized applications that provides a security sandbox through the user space process (Gofer) and Sentry. Gofer is responsible for handling operations such as file system mounting and access before the sandbox is started. In this issue, gVisor performed a new "self-bind mount" operation when setting up the root file system (rootfs) for the create container hooks (`createContainer` hooks).
+
+3. **Secure mount check**: gVisor introduces a security check mechanism to prevent potential attacks or configuration errors. This mechanism compares the original path passed in by the program with the resolved path obtained through the `open()` system call before executing the bind mount. Only when the two match, the operation is deemed safe and continues. This problem stems from the failure of this check logic in the `/var/run` -&gt; `/run` symbolic link scenario.
+
+## Practice
+
+### Problem diagnosis process
+
+After the Kubernetes cluster is upgraded to containerd `v2.2.2` and gVisor `release-20260520.0`, if you find that pods supported by `runsc` continue to fail to start, you can diagnose by following the following steps:
+
+1. **Check events and logs**: In Kubernetes events and container runtime logs, look for error messages similar to `failed to create sandbox`, `OCI runtime create failed`, `waiting for sandbox to start: EOF`.
+2. **Enable Gofer debug log**: Enable detailed logging in gVisor's runtime configuration (such as containerd's `config.toml`):
+    ```toml
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+      runtime_type = "io.containerd.runsc.v1"
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
+        TypeUrl = "io.containerd.runsc.v1.options"
+        ConfigPath = "/etc/containerd/runsc.toml"
+    ```
+    Configure in `/etc/containerd/runsc.toml`:
+    ```toml
+    debug=true
+    debug-log = "/tmp/runsc-debug/%ID%/%COMMAND%.log"
+    debug-command = "gofer,boot"
+    ```
+3. **Analyze Gofer log**: View the generated `gofer.log` file. The key error message is in the form:
+    ```
+    FATAL ERROR: Error setting up root FS: self-bind-mounting rootfs "/var/run/.../rootfs" for hooks:
+    failed to safely mount: expected to open /var/run/.../rootfs, but found /run/.../rootfs
+    ```
+    This error clearly states that gVisor expected the path to be `/var/run/...`, but actually opened and parsed it and got `/run/...`, causing the security check to fail.
+
+### Root Cause and Verification
+
+The root cause of this issue is the new code path introduced in gVisor `release-20260520.0` to support the creation of container hooks in the CDI specification. The path did not preparse the symbolic link or compare the normalized path when performing the `safeMount` check. This mismatch is triggered when the `--bundle` argument passed to `runsc` by containerd contains `/var/run`.
+
+This can be verified by:
+* **Rollback version**: Roll back gVisor to `release-20260511.0` to confirm that the problem no longer recurs.
+* **Path unification**: Try configuring containerd to always use `/run/docker/containerd/...` instead of `/var/run/docker/containerd/...` as the working directory, but this may be subject to the upstream Kubernetes configuration.
+
+## SRE Key Points
+
+### Association with reliability
+This issue directly affects the key SLI (Service Level Indicator) of **Pod startup success rate**. An environment that was supposed to be working experienced widespread startup failures after the upgrade, which was a serious reliability event and triggered the consumption of the SRE's error budget. It reveals that adequate integration testing must be performed when upgrading dependent components, especially when it comes to underlying behaviors such as symbolic links and path handling.
+
+### Best Practices and Anti-Patterns
+* **Best Practice - Path Normalization**: When passing file paths between systems, especially when security checks or permission verification are involved, you should **always** use absolute, resolved paths. Programs should not assume that a symbolic link does not exist for a specific path.
+* **Best Practice - Sandbox Testing Before Upgrade**: For upgrades of core components such as container runtimes, complete functional and stress testing should be conducted in a pre-release environment that is highly consistent with the production environment, covering edge scenarios including symbolic links.
+* **Anti-Pattern - Strict Comparison of Path Strings**: Relying on direct comparison of raw path strings as the basis for security checks is fragile. A more robust approach is to first obtain and compare the final parsed real path through system calls such as `realpath()`.
+
+### Related indicators (SLI/SLO/SLA)
+* **SLI**: `pod_sandbox_creation_success_rate` (sandbox creation success rate).
+* **SLO**: Within a period of time (such as 1 hour) after the core component is upgraded, the SLI should not be lower than the preset target (such as 99.9%).
+* **Correlation**: Such issues can directly cause SLI degradation and can quickly deplete the monthly error budget.
+
+### Avoidance and incident response
+* **IMMEDIATE**: Roll back gVisor version to `release-20260511.0`.
+* **Long-term solution**: The upstream gVisor project needs to fix the path comparison logic (for example, normalize paths before comparison), or the container platform operator adjusts the working directory configuration to avoid the problem. In incident response, other path configurations (such as log paths, mount point paths) that may be affected by similar symbolic links should be checked.
+* **Monitoring**: Enhance monitoring and alerting of sandbox creation failure logs to quickly detect such regression issues.

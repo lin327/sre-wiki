@@ -1,0 +1,133 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Practical Anomaly Detection - Prometheus Blog"
+category: "Prometheus"
+confidence: medium
+---
+
+
+## 概述
+
+在站点可靠性工程（SRE）实践中，基于时间序列数据的异常检测是保障系统可靠性的关键环节。正如 John Allspaw 所指出的，完美地自动检测所有异常并保持正确的时机是几乎不可能实现的。数据中的噪音和现实系统的复杂性使得全自动诊断极具挑战。然而，这并不意味着我们应放弃。一个务实的工程方法是：专注于构建针对那些**常见的、可模式化的异常**的检测规则，通过精心设计查询语言（如 Prometheus 的 PromQL）来最大化信号的准确性并最小化误报，从而提升运维效率。
+
+## 核心概念
+
+- **异常检测**：识别时间序列数据中不符合预期模式（如正常范围、季节性趋势或历史基线）的数据点或模式。在 SRE 中，它用于提前发现性能下降、服务故障或容量瓶颈。
+- **误报**：系统错误地将正常状态标记为异常。高误报率会迅速消耗运维团队的信任和精力，是异常检测系统需要首要避免的问题。
+- **标准差与均值**：统计方法中，均值代表数据的平均水平，标准差衡量数据的离散程度。将数据点与“均值 ± n倍标准差”的阈值进行比较，是判断其是否偏离“正常”范围的常用统计学方法。
+- **PromQL**：Prometheus 强大的查询语言，用于实时查询和聚合时序数据。它是构建复杂、高信噪比检测规则的核心工具。
+- **Alertmanager**：Prometheus 生态中的警报管理组件，负责接收、去重、分组、路由和发送警报通知。它支持通过通用 Webhook 触发自动化操作。
+- **通用 Webhook (Generic Webhook)**：Alertmanager 的一个通知集成点，允许将警报以 HTTP POST 请求的形式发送到任意自定义端点，是实现自动化修复（如重启服务、替换机器）的桥梁。
+
+## 实践
+
+本实践源自 Prometheus 官方博客，展示了一个从简单到稳健的 PromQL 规则构建过程，用于检测服务实例中的延迟异常。
+
+**目标**：检测某个服务中，少数实例的平均查询延迟显著高于该服务整体水平的情况。
+
+我们假设有指标 `instance:latency_seconds:mean5m`（通过录制规则从 Summary 指标计算得出）。
+
+### 步骤1：基础异常查询
+
+最初想法是找出延迟值超过该服务（Job）整体平均值两倍标准差的实例。查询如下：
+
+```promql
+instance:latency_seconds:mean5m
+> on (job) group_left()
+  (
+      avg by (job)(instance:latency_seconds:mean5m)
+    + on (job)
+      2 * stddev by (job)(instance:latency_seconds:mean5m)
+  )
+```
+
+**问题**：在延迟值非常集中的服务中，即使微小的、无害的波动也可能触发警报，产生误报。
+
+### 步骤2：添加相对偏差条件
+
+为增加判断的鲁棒性，我们要求实例的延迟不仅要超过统计阈值，还必须比服务平均值高出至少20%。这可以过滤掉因数据分布本身极窄而产生的“统计学上异常但实际无影响”的警报。
+
+```promql
+  (
+      instance:latency_seconds:mean5m
+    > on (job) group_left()
+      (
+          avg by (job)(instance:latency_seconds:mean5m)
+        + on (job)
+          2 * stddev by (job)(instance:latency_seconds:mean5m)
+      )
+  )
+> on (job) group_left()
+  1.2 * avg by (job)(instance:latency_seconds:mean5m)
+```
+
+### 步骤3：添加流量最小值约束
+
+进一步发现，在低流量时，样本量少会导致统计波动变大，容易产生误报。因此，我们增加一个条件：要求该实例的查询流量（QPS）必须大于1，以确保统计结果有足够的样本基础。
+
+最终，我们得到了一个综合性的告警规则：
+
+```yaml
+groups:
+- name: Practical Anomaly Detection
+  rules:
+  - alert: InstanceLatencyOutlier
+    expr: >
+      (
+            (
+                instance:latency_seconds:mean5m
+              > on (job) group_left()
+                (
+                    avg by (job)(instance:latency_seconds:mean5m)
+                  + on (job)
+                    2 * stddev by (job)(instance:latency_seconds:mean5m)
+                )
+            )
+          > on (job) group_left()
+            1.2 * avg by (job)(instance:latency_seconds:mean5m)
+        and on (job)
+            avg by (job)(instance:latency_seconds_count:rate5m)
+          >
+            1
+      )
+    for: 30m
+```
+
+### 自动化操作集成
+
+当此类告警被稳定地触发后，运维团队可能发现，最常见且有效的解决措施是自动重启问题实例或将其从负载均衡器中摘除。与其让值班工程师重复执行这些脚本化操作，不如将其自动化。
+
+通过配置 Alertmanager 的通用 Webhook，可以将 `InstanceLatencyOutlier` 告警路由到一个内部运维服务。该服务在接收到告警后，会执行预设的、带有节流和安全检查的自动化修复动作。
+
+一个简单的 Alertmanager 配置示例：
+
+```yaml
+receivers:
+- name: restart_webhook
+  webhook_configs:
+    url: "http://example.org/my/hook"
+
+route:
+  receiver: restart_webhook
+```
+
+## SRE 要点
+
+- **与可靠性的关联**：通过高信噪比的异常检测，SRE 团队能够更快地识别并介入真正影响用户服务的性能问题，直接维护和提升服务的可靠性水平。
+- **与事件响应的关联**：将告警直接链接到自动化修复（通过 Webhook），缩短了从检测到缓解（MTTA/MTTR）的时间，减少了事件响应中的人为干预和等待时间，让工程师能专注于处理更复杂的异常。
+- **最佳实践**：
+    - **避免“完美检测”陷阱**：承认全自动诊断的局限性，专注于构建针对已知常见故障模式的可靠规则。
+    - **利用统计方法结合业务逻辑**：像示例中那样，结合标准差统计和固定比例阈值，可以有效过滤统计噪音。
+    - **考虑数据质量**：在规则中加入最小流量等约束条件，确保用于判断的数据具有统计意义。
+    - **渐进式改进**：从简单规则开始，在实际运行中观察误报情况并迭代优化查询条件。
+    - **自动化闭环**：对于重复性高、风险可控的修复动作，应考虑通过 [[alertmanager]] 等工具实现自动化，这是提升运维效率的关键。
+- **常见反模式**：
+    - 设置过多、过于敏感的静态阈值告警，导致告警风暴，团队逐渐麻木。
+    - 忽视低流量场景，导致规则在服务启动或流量波谷时产生大量误报。
+    - 告警规则只有检测，没有关联到明确的修复行动手册或自动化脚本。
+- **相关指标（SLI/SLO）**：
+    - **SLI（服务级别指标）**：示例中的 `instance:latency_seconds:mean5m` 本身就是一个关键的延迟 SLI。
+    - **SLO（服务级别目标）**：此异常检测规则旨在确保所有实例的延迟都接近 SLO 范围。当实例严重偏离并触发告警时，意味着该实例对服务整体 SLO 构成了风险。
+    - **Error Budget**：此类针对异常实例的修复，本质上是在保护服务的错误预算，防止因少数“坏实例”消耗掉用于创新的预算。
+
+更多关于告警设计的指导，请参阅 [[prometheus-alerting-best-practices]]。

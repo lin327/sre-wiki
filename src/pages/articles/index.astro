@@ -1,7 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 
-// Use import.meta.glob for Astro 6
 const articleModules = import.meta.glob('./*.mdx', { eager: true });
 
 interface Article {
@@ -9,7 +8,35 @@ interface Article {
   href: string;
   category: string;
   confidence: string;
+  slug: string;
 }
+
+const categoryMap: Record<string, string> = {
+  '混沌工程': 'chaos', 'Chaos Engineering': 'chaos', '混沌工程与可观测性': 'chaos', '混沌工程与故障注入': 'chaos', '故障注入': 'chaos',
+  '监控与可观测性': 'observability', '可观测性': 'observability', '可观测性与监控': 'observability', '可观测性实践': 'observability', '可观测性工具': 'observability', '可观测性与工具': 'observability', '可观测性与基础设施': 'observability', '可观测性与数据分析': 'observability', '监控与告警': 'observability', '监控与警报': 'observability', 'Prometheus': 'observability', 'Prometheus 监控': 'observability', 'Prometheus实践': 'observability', 'Prometheus 与监控': 'observability', 'prometheus': 'observability', '可观察性工具': 'observability',
+  '安全与合规': 'security', '安全': 'security', '容器安全': 'security', 'security': 'security', '安全与访问控制': 'security', '安全与漏洞管理': 'security', '容器与沙箱安全': 'security', '容器与运行时安全': 'security', '漏洞缓解': 'security', '机密管理': 'security', '认证与访问管理': 'security', '身份与访问管理': 'security',
+  'SRE实践': 'sre', 'SRE 实践': 'sre', 'SRE实践案例': 'sre', 'SRE实践与治理': 'sre', 'SRE最佳实践': 'sre', 'SRE 工具与实践': 'sre', 'SRE文化与实践': 'sre', 'SRE文化与可持续性': 'sre', 'SRE 会议与社区': 'sre', 'SRE架构与设计': 'sre', 'SRE核心概念': 'sre', 'SRE 核心概念': 'sre', 'SRE知识库': 'sre',
+  'Kubernetes': 'k8s', 'Kubernetes 网络': 'k8s', 'Kubernetes 工具与生态': 'k8s', 'Kubernetes 核心特性': 'k8s', 'Kubernetes & 容器编排': 'k8s', 'Kubernetes与云原生': 'k8s', 'Kubernetes 客户端开发': 'k8s', '容器编排': 'k8s', '容器与编排': 'k8s', '容器化与编排': 'k8s', '容器编排与平台': 'k8s', '网络与负载均衡': 'k8s', '服务与网络': 'k8s', 'API 与流量管理': 'k8s', '存储与卷': 'k8s', '存储与文件系统': 'k8s', '存储与数据管理': 'k8s', 'storage': 'k8s', '集群管理': 'k8s', '集群安全与治理': 'k8s', '集群扩展与性能优化': 'k8s', '调度与编排': 'k8s', 'workload-scheduling': 'k8s', 'workload-management': 'k8s', 'DRA': 'k8s', 'Scheduling': 'k8s', '渐进式交付': 'k8s',
+  '构建与部署工具': 'devops', 'CI/CD 安全': 'devops', 'CI/CD安全与供应链': 'devops', '平台与基础设施': 'devops', '平台架构与工程': 'devops', '环境与配置管理': 'devops', 'Software Packaging': 'devops', '云原生架构': 'devops', 'multi-account-strategy': 'devops', 'AWS Architecture': 'devops',
+  'AI/ML 运维': 'ai', 'AI Infrastructure': 'ai', 'sagemaker-hyperpod': 'ai',
+  '治理与流程': 'governance', '性能测试与可靠性': 'governance', '系统优化': 'governance', '性能与优化': 'governance', '可靠性架构': 'governance', '系统设计': 'governance',
+  '操作系统内核': 'linux',
+  '事件响应与维护': 'incidents', '事件与事故': 'incidents', '事件响应与故障管理': 'incidents', 'case-study': 'incidents',
+};
+
+const categoryLabels: Record<string, string> = {
+  'observability': '可观测性',
+  'k8s': 'Kubernetes',
+  'security': '安全',
+  'sre': 'SRE 实践',
+  'chaos': '混沌工程',
+  'devops': 'DevOps',
+  'governance': '治理与流程',
+  'incidents': '事件响应',
+  'ai': 'AI/ML',
+  'linux': 'Linux',
+  'other': '其他',
+};
 
 const articles: Article[] = [];
 
@@ -17,25 +44,26 @@ for (const [path, mod] of Object.entries(articleModules)) {
   const fm = (mod as any)?.frontmatter;
   if (!fm) continue;
   const slug = path.replace('./', '').replace('.mdx', '');
+  const rawCat = fm.category || 'other';
   articles.push({
     title: fm.title || slug,
     href: `/articles/${slug}`,
-    category: fm.category || 'uncategorized',
+    category: categoryMap[rawCat] || 'other',
     confidence: fm.confidence || 'medium',
+    slug,
   });
 }
 
 articles.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
 
-// Group by category
+// Group by normalized category
 const grouped: Record<string, Article[]> = {};
 for (const article of articles) {
-  const cat = article.category || 'uncategorized';
-  if (!grouped[cat]) grouped[cat] = [];
-  grouped[cat].push(article);
+  if (!grouped[article.category]) grouped[article.category] = [];
+  grouped[article.category].push(article);
 }
 
-const categories = Object.keys(grouped).sort();
+const categories = Object.keys(grouped).sort((a, b) => grouped[b].length - grouped[a].length);
 ---
 
 <BaseLayout title="Articles" description="Agent 采集的 SRE 知识文章">
@@ -53,8 +81,11 @@ const categories = Object.keys(grouped).sort();
   </div>
 
   {categories.map((cat) => (
-    <section class="articles-category">
-      <h2 class="articles-category__title">{cat} <span class="articles-category__count">{grouped[cat].length}</span></h2>
+    <section class="articles-category" id={cat}>
+      <h2 class="articles-category__title">
+        {categoryLabels[cat] || cat}
+        <span class="articles-category__count">{grouped[cat].length}</span>
+      </h2>
       <ul class="articles-list">
         {grouped[cat].map((article) => (
           <li class="articles-item">
@@ -75,20 +106,17 @@ const categories = Object.keys(grouped).sort();
     border-bottom: 1px solid var(--color-border);
     margin-bottom: 16px;
   }
-
   .articles-title {
     font-size: 24px;
     font-weight: 600;
     color: var(--color-ink);
     margin: 0 0 8px;
   }
-
   .articles-desc {
     font-size: 14px;
     color: var(--color-muted);
     margin: 0;
   }
-
   .articles-stats {
     display: flex;
     align-items: center;
@@ -98,15 +126,8 @@ const categories = Object.keys(grouped).sort();
     font-size: 12px;
     color: var(--color-dim);
   }
-
-  .articles-stats__sep {
-    color: var(--color-border);
-  }
-
-  .articles-category {
-    margin-bottom: 28px;
-  }
-
+  .articles-stats__sep { color: var(--color-border); }
+  .articles-category { margin-bottom: 28px; }
   .articles-category__title {
     font-size: 14px;
     font-weight: 600;
@@ -118,7 +139,6 @@ const categories = Object.keys(grouped).sort();
     align-items: center;
     gap: 8px;
   }
-
   .articles-category__count {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -128,20 +148,9 @@ const categories = Object.keys(grouped).sort();
     padding: 1px 6px;
     border-radius: 10px;
   }
-
-  .articles-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .articles-item {
-    border-bottom: 1px solid var(--color-border);
-  }
-  .articles-item:last-child {
-    border-bottom: none;
-  }
-
+  .articles-list { list-style: none; margin: 0; padding: 0; }
+  .articles-item { border-bottom: 1px solid var(--color-border); }
+  .articles-item:last-child { border-bottom: none; }
   .articles-link {
     display: flex;
     align-items: center;
@@ -152,11 +161,7 @@ const categories = Object.keys(grouped).sort();
     color: inherit;
     transition: background 100ms ease;
   }
-  .articles-link:hover {
-    background: var(--color-surface-2);
-    text-decoration: none;
-  }
-
+  .articles-link:hover { background: var(--color-surface-2); text-decoration: none; }
   .articles-link__title {
     font-size: 13px;
     color: var(--color-ink);
@@ -166,10 +171,7 @@ const categories = Object.keys(grouped).sort();
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .articles-link:hover .articles-link__title {
-    color: var(--color-primary);
-  }
-
+  .articles-link:hover .articles-link__title { color: var(--color-primary); }
   .articles-link__confidence {
     flex-shrink: 0;
     font-family: var(--font-mono);

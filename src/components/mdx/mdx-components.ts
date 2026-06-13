@@ -20,7 +20,9 @@
  */
 
 import CodeBlock from "./CodeBlock.astro";
+import Mermaid from "../react/Mermaid.tsx";
 
 export default {
   pre: CodeBlock,
+  Mermaid,
 };

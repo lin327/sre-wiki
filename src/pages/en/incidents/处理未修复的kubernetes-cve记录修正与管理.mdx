@@ -1,0 +1,65 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Handling Unfixed Kubernetes CVEs: Record Correction and Management"
+category: "Security and Compliance"
+confidence: low
+---
+
+# Handling Unfixed Kubernetes CVEs: Record Correction and Management
+
+## Overview
+
+When maintaining large-scale, highly available cloud-native systems, honest and precise security documentation is a cornerstone of SRE practice. Kubernetes, as infrastructure core, has critical security transparency. In May 2026, the Kubernetes Security Response Committee (SRC) announced it would correct three historical CVE records (CVE-2020-8561, CVE-2020-8562, CVE-2021-25740) because they incorrectly contained a "fixed version" field. This action profoundly reflects a mature security perspective evolving from "only focusing on patching" to comprehensively managing "architectural technical debt," requiring platform engineers and SRE teams to update their risk assessment and vulnerability management processes.
+
+## Core Concepts
+
+**CVE and Unfixed Vulnerabilities**: CVE (Common Vulnerabilities and Exposures) is the standard identifier for public vulnerabilities. Not all security issues can be resolved by releasing patches. Some vulnerabilities stem from **architectural trade-offs** in the system -- fixing them would break core functionality or widely relied-upon legitimate behavior. For such "unfixed" vulnerabilities, the only viable management approach is risk mitigation through configuration hardening and process controls.
+
+**Architectural Trade-offs**: This is key to understanding this update. For example, restricting kube-apiserver's webhook redirect behavior could break existing integrations; fixing DNS resolution to avoid TOCTOU races would harm dynamic DNS environment flexibility. Therefore, the Kubernetes project chose not to fix these underlying designs, instead providing clear documentation and mitigation guidelines.
+
+**Automated Fidelity**: Modern vulnerability scanners heavily rely on version range information in CVE metadata. Inaccurate `fixed version` fields cause scanners to produce **false negatives**, failing to report actually existing vulnerabilities and giving users a false sense of security. Correcting records is a necessary step to ensure security automation tool outputs are trustworthy.
+
+## Practice
+
+### Vulnerability Details and Mitigation
+
+Below are the technical details of the three affected vulnerabilities and corresponding mitigation strategies. These measures constitute the core practice of "security through configuration."
+
+1. **CVE-2020-8561: Webhook Redirect in kube-apiserver**
+    - **Problem**: kube-apiserver follows HTTP redirects when calling admission webhooks. An attacker who can configure an AdmissionWebhookConfiguration can redirect API Server requests to internal private networks, creating SSRF risk.
+    - **Why Not Fixed**: Blocking this behavior would break standard HTTP client behavior, affecting many legitimate integrations.
+    - **SRE Mitigation**:
+        - Set API Server log level (`--v`) below 10 to prevent recording response bodies.
+        - Disable dynamic profiling (`--profiling=false`) to prevent unauthorized log level changes.
+
+2. **CVE-2020-8562: DNS TOCTOU Proxy Bypass**
+    - **Problem**: A TOCTOU race condition exists in the API Server proxy functionality. The system performs DNS resolution once when verifying an IP but may perform it again when establishing the connection. Attackers can exploit this gap to bypass IP restrictions.
+    - **Why Not Fixed**: Fixing requires pinning resolved IPs, which would break complex split-horizon DNS or dynamic IP environments.
+    - **SRE Mitigation**:
+        - Deploy local DNS caching services (like dnsmasq) on control plane nodes for the API Server.
+        - Configure `min-cache-ttl` parameter to force DNS responses to remain consistent between verification and connection phases.
+
+3. **CVE-2021-25740: Cross-Namespace Forwarding via Endpoints**
+    - **Problem**: Endpoints and EndpointSlice API objects allow users to manually specify IP addresses. Attackers can exploit this to direct LoadBalancer or Ingress traffic to backend services in other namespaces.
+    - **Why Not Fixed**: This is a fundamental feature of the Endpoints API, relied upon by numerous networking tools and operators.
+    - **SRE Mitigation**:
+        - Strictly restrict write permissions to `endpoints` (legacy) and `endpointslices` resources.
+        - For clusters created with v1.22 and later, this restriction is enabled by default. For clusters upgraded from older versions, administrators must manually audit and fix the `system:aggregate-to-edit` ClusterRole using `kubectl auth reconcile`.
+
+**Important**: All configuration changes should be thoroughly tested in non-production environments, evaluating their impact on your own architecture and threat model.
+
+## SRE Essentials
+
+This event profoundly reflects SRE's core responsibilities in security operations:
+
+- **Observability and Incident Response**: Vulnerability scanners are an important component of system observability. Inaccurate CVE data directly undermines their effectiveness, causing incident response processes to fail to trigger correctly. SRE teams must understand the reliability of security data sources (such as OSV, CVE Feed) and monitor their accuracy.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: Adopt an "assume vulnerability exists" mindset to manage architectural risks. Rely on proven mitigation measures (such as RBAC permission minimization, configuration hardening) as the primary defense line, rather than placing all hope on future patches.
+    - **Anti-Pattern**: Ignoring CVE record changes; assuming the system is secure because vulnerability scanners don't alert; taking no compensating controls for unfixed risks.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: Consider "compliance rate of critical security configuration items (such as API Server `--v` parameter, EndPoints RBAC)."
+    - **SLO**: Set targets such as "complete mitigation verification for all affected clusters within 48 hours of CVE record updates."
+    - **SLA**: Internal commitment to security operations teams, such as "response time for high-severity security advisories not exceeding 24 hours."
+
+By correcting CVE records, the Kubernetes project drives the security ecosystem toward greater maturity -- accurately recording and managing technical debt rather than concealing it. This requires SRE teams to formally incorporate such "known but unfixable" risks into operational manuals and risk management frameworks.

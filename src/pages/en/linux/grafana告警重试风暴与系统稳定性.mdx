@@ -1,68 +1,70 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Grafana alerting retries crash instance with a webhook failure"
 category: "Alerting"
-confidence: medium
+confidence: high
 ---
 
+# Grafana alerting retries crash instance with a webhook failure
 
-## 概述
+## Overview
 
-在SRE实践中，告警系统（Alerting System）是保障系统可靠性的关键基础设施，其自身必须具备高度的健壮性和稳定性。然而，一个设计或配置不当的告警通知渠道（Notification Channel）可能反成为不稳定因素的根源。本文基于一个真实的生产案例（[[grafana-alerting]]），深入剖析了因外部Webhook（如Microsoft Teams）间歇性故障，触发Grafana告警管理器进入激进的重试循环，最终因资源耗尽导致整个Grafana实例崩溃的过程。此案例生动地诠释了故障级联（Cascading Failure）的危害，并强调了对告警系统自身实施可观测性和保护策略的必要性。
+In SRE practice, the alerting system is critical infrastructure for ensuring system reliability, and it must itself possess a high degree of robustness and stability. However, a poorly designed or configured notification channel can itself become a source of instability. Based on a real production case ([[grafana-alerting]]), this article provides an in-depth analysis of how intermittent failures in an external webhook (such as Microsoft Teams) triggered Grafana's alert manager to enter an aggressive retry loop, ultimately exhausting resources and causing the entire Grafana instance to crash. This case vividly illustrates the dangers of cascading failures and emphasizes the necessity of implementing observability and protection strategies for the alerting system itself.
 
-## 核心概念
+## Core Concepts
 
-### 1. 重试风暴（Retry Storm）
-重试风暴是一种常见的故障模式，指系统在遇到间歇性错误或依赖服务不可用时，遵循预设的重试策略进行大量重复尝试。如果重试机制缺乏有效的退避（Backoff）、限流（Rate Limiting）或熔断（Circuit Breaking）机制，海量的重试请求（及其关联的网络连接、线程、内存资源消耗）会迅速耗尽本地或远端系统的资源，导致服务雪崩。在本案例中，Grafana Alertmanager组件在向Teams Webhook发送通知失败后，持续进行重试，形成了“风暴”。
+### 1. Retry Storm
+A retry storm is a common failure pattern where a system, upon encountering intermittent errors or unavailability of dependent services, follows a preset retry strategy to make a large number of repeated attempts. If the retry mechanism lacks effective backoff, rate limiting, or circuit breaking mechanisms, the massive retry requests (and their associated network connections, threads, and memory resource consumption) will quickly exhaust local or remote system resources, leading to service avalanche. In this case, the Grafana Alertmanager component continuously retried after failing to send notifications to the Teams webhook, forming a "storm."
 
-### 2. 系统稳定性崩溃（System Instability via Resource Exhaustion）
-系统的可用性往往受限于最稀缺的资源，如CPU、内存或文件描述符（File Descriptors）。本案的关键日志 `dial udp 127.0.0.53:53: socket: too many open files` 明确指出，无限制的重试尝试消耗了操作系统的文件描述符配额，导致后续所有新的网络连接尝试均失败。这使得Grafana实例无法处理任何新请求（包括API调用、仪表盘访问），最终对用户表现为“不可访问”。这是一个典型的由特定功能（告警通知）的故障引发的全系统级联失效。
+### 2. System Instability via Resource Exhaustion
+System availability is often limited by the scarcest resource, such as CPU, memory, or file descriptors. The key log in this case, `dial udp 127.0.0.53:53: socket: too many open files`, clearly indicates that unlimited retry attempts consumed the operating system's file descriptor quota, causing all subsequent new network connection attempts to fail. This rendered the Grafana instance unable to handle any new requests (including API calls, dashboard access), ultimately appearing "inaccessible" to users. This is a typical cascading system-wide failure triggered by a specific feature (alert notification) malfunction.
 
-## 实践
+## Practice
 
-根据事件描述，其根本原因在于Grafana告警通知器在面对特定错误（如HTTP 429限流、网络解析失败）时，其重试策略可能过于激进或缺乏对下游错误的充分识别。虽然原始报告中未给出修复配置，但我们可以基于SRE最佳实践，总结出以下防护与诊断步骤：
+According to the incident description, the root cause lies in Grafana's alert notifier potentially having an overly aggressive retry strategy or insufficient recognition of downstream errors when facing specific errors (such as HTTP 429 rate limiting, network resolution failures). Although the original report did not provide a fix configuration, we can summarize the following protection and diagnosis steps based on SRE best practices:
 
-**1. 配置健壮的重试与通知策略**
-   - **识别不可恢复错误**：确保系统能正确识别如 `4xx` 客户端错误（特别是 `429 Too Many Requests`）为无需立即重试的错误。日志显示系统已将其标记为“unrecoverable”，但重试行为仍然发生，这提示可能存在配置或逻辑缺陷。
-   - **实施指数退避与抖动（Jitter）**：为所有通知渠道配置带有最大重试次数和初始延迟的指数退避策略，避免在固定时间间隔内发起高频重试。
-   - **设置全局与通道级限流**：在Grafana或底层Alertmanager配置中，设置全局的并发通知发送上限和单个通道的发送速率限制，防止单个故障通道占用所有资源。
+**1. Configure Robust Retry and Notification Strategies**
+   - **Identify Unrecoverable Errors**: Ensure the system can correctly identify errors like `4xx` client errors (especially `429 Too Many Requests`) as errors that do not require immediate retry. Logs show the system has marked them as "unrecoverable," but retry behavior still occurs, suggesting a potential configuration or logic defect.
+   - **Implement Exponential Backoff with Jitter**: Configure all notification channels with exponential backoff strategies that have maximum retry counts and initial delays, avoiding high-frequency retries at fixed intervals.
+   - **Set Global and Per-Channel Rate Limits**: In Grafana or underlying Alertmanager configuration, set global concurrent notification sending limits and per-channel sending rate limits to prevent a single faulty channel from consuming all resources.
 
-**2. 使用“死信队列”与告警降级**
-   - **配置备用通知渠道**：不要依赖单一通知方式。在Teams Webhook不可靠时，应能自动或手动切换至备选渠道（如邮件、其他Webhook）。
-   - **审查失败通知**：将多次重试失败的告警通知移入专门的“失败队列”或仪表盘，便于后续分析，而不是让其无限期占用活跃资源。
+**2. Use Dead Letter Queues and Alert Degradation**
+   - **Configure Backup Notification Channels**: Do not rely on a single notification method. When the Teams webhook is unreliable, it should be possible to automatically or manually switch to alternative channels (such as email, other webhooks).
+   - **Review Failed Notifications**: Move repeatedly failed alert notifications into a dedicated "failure queue" or dashboard for subsequent analysis, rather than letting them indefinitely occupy active resources.
 
-**3. 加强Grafana实例的自身监控**
-   - **监控关键进程资源**：为Grafana进程本身设置监控，重点关注：
-     - `fd_used` / `fd_limit`（文件描述符使用率）
-     - `net_connections`（网络连接数）
+**3. Strengthen Grafana Instance Self-Monitoring**
+   - **Monitor Key Process Resources**: Set up monitoring for the Grafana process itself, focusing on:
+     - `fd_used` / `fd_limit` (file descriptor usage)
+     - `net_connections` (network connections)
      - `process_resident_memory_bytes`
-   - **告警其自身健康**：当上述指标达到阈值（如文件描述符使用率超过80%）时，触发对Grafana实例自身的告警，实现监控自监控。
+   - **Alert on Its Own Health**: When the above metrics reach thresholds (e.g., file descriptor usage exceeds 80%), trigger alerts for the Grafana instance itself, achieving monitoring of the monitoring system.
 
-## SRE 要点
+## SRE Key Points
 
-### 与可靠性、可观测性、事件响应的关联
-- **可靠性**：本次事件直接违反了服务等级目标（SLO）。Grafana作为可观测性平台，其自身可用性是更高层次服务可靠性的基石。一个外部通知源的故障不应导致监控平台整体宕机，这暴露了Grafana在故障隔离（Fault Isolation）设计上的不足。
-- **可观测性**：此案例凸显了对告警系统进行深度可观测的重要性。不仅要监控告警规则触发的数量，还需监控告警通知的**投递成功率**、**投递延迟**以及**重试队列长度**等元数据指标（[[observability-fundamentals]]）。
-- **事件响应**：此类事件的响应流程应包括：1）快速识别是告警系统自身问题，而非被监控目标问题；2）临时禁用或限流故障的通知渠道；3）评估并重启被耗尽的Grafana实例；4）事后进行故障模式分析（FMEA），优化重试策略。
+### Reliability, Observability, and Incident Response Association
+- **Reliability**: This incident directly violated the Service Level Objective (SLO). As an observability platform, Grafana's own availability is the cornerstone of higher-level service reliability. A failure in an external notification source should not cause the entire monitoring platform to go down, which exposes Grafana's insufficient fault isolation design.
+- **Observability**: This case highlights the importance of deep observability for the alerting system. Not only should the number of alert rule triggers be monitored, but also the **delivery success rate**, **delivery latency**, and **retry queue length** of alert notifications—these meta-metrics ([[observability-fundamentals]]).
+- **Incident Response**: The response process for such incidents should include: 1) Quickly identify that it is an alerting system issue rather than a monitored target issue; 2) Temporarily disable or rate-limit the faulty notification channel; 3) Assess and restart the exhausted Grafana instance; 4) Conduct post-incident Failure Mode Analysis (FMEA) to optimize retry strategies.
 
-### 最佳实践与常见反模式
-- **最佳实践**：
-  - **为外部依赖配置熔断器**：对关键外部服务（如Teams API）的调用应实现熔断模式，在连续失败后快速失败，避免重试。
-  - **实施分层降级**：告警通知应有多级降级路径。
-  - **定期演练故障**：通过Chaos Engineering手段，模拟Webhook失败场景，验证重试策略和系统弹性。
-- **常见反模式**：
-  - **无限制重试**：对所有错误类型使用相同且激进的重试策略。
-  - **忽略系统健康**：只关注告警业务功能，忽视告警系统自身的资源消耗。
-  - **单一故障点**：整个组织的告警通知依赖单一外部渠道。
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+  - **Configure Circuit Breakers for External Dependencies**: Calls to critical external services (such as Teams API) should implement circuit breaker patterns, failing fast after consecutive failures to avoid retries.
+  - **Implement Layered Degradation**: Alert notifications should have multi-level degradation paths.
+  - **Regularly Conduct Failure Drills**: Through Chaos Engineering methods, simulate webhook failure scenarios to verify retry strategies and system resilience.
+- **Common Anti-Patterns**:
+  - **Unlimited Retries**: Using the same aggressive retry strategy for all error types.
+  - **Ignoring System Health**: Only focusing on alerting business functionality while ignoring the resource consumption of the alerting system itself.
+  - **Single Point of Failure**: The entire organization's alert notifications depend on a single external channel.
 
-### 相关指标（SLI/SLO/SLA）
-- **服务等级指标（SLI）**：
-  - `alert_notification_success_rate`：成功发送的通知比例。
-  - `alert_notification_delivery_latency`：通知从触发到成功送达的延迟。
-  - `grafana_process_file_descriptors_usage_ratio`：Grafana进程文件描述符使用率（系统健康SLI）。
-- **服务等级目标（SLO）**：
-  - 监控平台自身可用性SLO（如每月不高于99.9%的时间内不可访问）。
-  - 关键告警通知的投递成功率SLO（如99.5%的通知能在5分钟内送达）。
-- **错误预算（Error Budget）**：本次事件消耗了大量监控平台可用性的错误预算，触发了修复此问题的优先级提升。
+### Related Metrics (SLI/SLO/SLA)
+- **Service Level Indicator (SLI)**:
+  - `alert_notification_success_rate`: The proportion of successfully sent notifications.
+  - `alert_notification_delivery_latency`: The latency from alert trigger to successful delivery.
+  - `grafana_process_file_descriptors_usage_ratio`: Grafana process file descriptor usage ratio (system health SLI).
+- **Service Level Objective (SLO)**:
+  - Monitoring platform self-availability SLO (e.g., no more than 99.9% accessible time per month).
+  - Critical alert notification delivery success rate SLO (e.g., 99.5% of notifications delivered within 5 minutes).
+- **Error Budget**: This incident consumed a significant amount of the monitoring platform's availability error budget, triggering a priority escalation for fixing this issue.
 
-**相关页面**：[[alerting-routing]]， [[error-budget]]， [[observability-fundamentals]]
+**Related Pages**: [[alerting-routing]], [[error-budget]], [[observability-fundamentals]]

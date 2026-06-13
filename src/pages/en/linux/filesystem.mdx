@@ -1,0 +1,99 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Linux Filesystem and Storage"
+---
+
+# Linux Filesystem and Storage
+
+Linux unifies the interfaces of different filesystems through the **VFS (Virtual File System)** abstraction layer, allowing userspace programs to access underlying implementations such as ext4, XFS, and NFS using the same set of `read`/`write`/`open` system calls.
+
+## VFS Core Objects
+
+- **superblock** -- Describes a mounted filesystem (block size, state, mount options)
+- **inode** -- File metadata (permissions, owner, timestamps, data block pointers), does not contain the filename
+- **dentry** -- Filename to inode mapping, maintains the directory tree structure
+- **file** -- A file instance opened by a process, containing read/write offset and access mode
+
+## inode Structure
+
+Each file corresponds to an inode, storing permission bits (rwx/SUID/SGID/sticky), UID/GID, three timestamps (`atime`/`mtime`/`ctime`), and data block pointers. When inodes are exhausted, new files cannot be created even if disk space is available -- this is a common SRE failure scenario.
+
+## Common Filesystems
+
+| Filesystem | Characteristics | Typical Use Cases |
+|-----------|----------------|-------------------|
+| **ext4** | Mature, stable, journaling | General Linux system disks |
+| **XFS** | High-performance parallel I/O, excels with large files | Databases, log storage |
+| **btrfs** | Snapshots, compression, checksums, subvolumes | Container image layers, scenarios requiring snapshots |
+| **tmpfs** | Memory-based | `/tmp`, `/run`, temporary directories in containers |
+
+## Mounting and /etc/fstab
+
+```bash
+mount -t xfs /dev/sdb1 /data          # Manual mount
+mount | grep sda                       # View mounts
+lsblk -f                               # List block devices and filesystems
+blkid /dev/sdb1                        # View UUID
+findmnt --target /data                 # Tree display of mount relationships
+```
+
+`/etc/fstab` format: `<device>  <mount point>  <type>  <options>  <dump>  <fsck order>`
+
+```fstab
+UUID=xxx  /data  xfs  defaults,noatime  0  2
+```
+
+`noatime` reduces writes and improves performance; `noexec` prevents executing binaries on the mount point.
+
+## I/O Schedulers
+
+| Scheduler | Strategy | Use Cases |
+|-----------|----------|-----------|
+| **mq-deadline** | Sort by deadline | General purpose, databases |
+| **bfq** | Fair I/O allocation per process | Desktop, interactive workloads |
+| **none** | No scheduling, direct dispatch | NVMe and other low-latency devices |
+
+```bash
+cat /sys/block/sda/queue/scheduler             # View current scheduler
+echo mq-deadline > /sys/block/sda/queue/scheduler  # Temporarily switch
+```
+
+## SRE Key Practices
+
+### Disk Space Monitoring
+
+```bash
+df -hT                                       # Filesystem usage overview
+du -sh /var/log/* | sort -rh | head -20      # Space by directory
+find / -xdev -type f -size +500M -ls         # Find large files
+```
+
+Alert thresholds: 80% warning, 90% critical.
+
+### inode Exhaustion Troubleshooting
+
+```bash
+df -i                                        # inode usage
+for d in /*; do echo "$(find "$d" -xdev 2>/dev/null | wc -l) $d"; done | sort -rn | head -10
+```
+
+Common causes: large numbers of small files (mail queues, session files, cache directories).
+
+### Filesystem Repair
+
+```bash
+umount /dev/sdb1                             # Must unmount first
+fsck.ext4 -y /dev/sdb1                      # ext4
+xfs_repair /dev/sdb1                         # XFS (must use dedicated tool)
+```
+
+XFS cannot use the generic `fsck`. It is recommended to take a snapshot backup before operations.
+
+### Read-Only Recovery
+
+```bash
+dmesg | grep -i "error\|readonly"            # Confirm the cause
+mount -o remount,rw /                        # Attempt remount
+```
+
+If this fails, fsck in maintenance mode is required.

@@ -1,63 +1,65 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "What is Software Supply Chain Security? | Docker Blog"
-category: "安全"
+category: "Security"
 confidence: high
 ---
 
+# What is Software Supply Chain Security? | Docker Blog
 
-## 概述
+## Overview
 
-软件供应链安全是 SRE 实践中保障系统可靠性与安全性的核心环节。它超越了传统的应用安全范畴，关注软件交付全生命周期——从源代码、第三方依赖、构建系统、容器镜像仓库到生产环境部署——中所有组件和过程的安全。在现代基于微服务和容器的架构中，软件往往由海量开源组件组装而成，任何一个环节的妥协都可能引发大规模的安全事件，直接影响服务的可用性与数据的完整性。因此，将其视为一项关键的基础设施实践，而非合规性检查，对于构建有弹性的交付流水线至关重要。
+Software supply chain security is a core element in SRE practice for ensuring system reliability and security. It goes beyond traditional application security, focusing on the security of all components and processes throughout the entire software delivery lifecycle — from source code, third-party dependencies, build systems, container image registries, to production environment deployment. In modern microservice and container-based architectures, software is often assembled from a vast number of open-source components. A compromise at any point can trigger a large-scale security incident, directly affecting service availability and data integrity. Therefore, treating it as a critical infrastructure practice rather than a compliance check is essential for building resilient delivery pipelines.
 
-## 核心概念
+## Core Concepts
 
-软件供应链安全的核心在于对**信任链**的显式管理与验证。与应用安全主要聚焦于团队自研代码的漏洞不同，供应链安全关注的是代码的**所有依赖项**以及在其通往生产环境路径上**接触的所有系统**。这在容器化环境中尤为突出，一个容器镜像包含了应用代码、操作系统依赖、运行时环境和配置，镜像中的每一层漏洞都可能被带入生产。
+The core of software supply chain security lies in the explicit management and verification of the **chain of trust**. Unlike application security, which primarily focuses on vulnerabilities in team-developed code, supply chain security concerns **all dependencies** of the code and **all systems** it comes into contact with on its path to production. This is particularly prominent in containerized environments, where a container image contains application code, operating system dependencies, runtime environment, and configuration — vulnerabilities in any layer of the image can be brought into production.
 
-**攻击面的扩展**：由于现代软件是组装而非从头编写，开发者在引入一个包时，本质上是在进行一系列**隐式信任决策**——信任该包的功能、维护者身份、注册表的完整性以及其持续的安全更新能力。攻击者利用这些隐式的信任关系，通过依赖混淆、拼写错误劫持、维护者账户接管等方式发起攻击。此外，CI/CD 管道因其拥有部署凭证和生产环境访问权限，也成为高价值目标。
+**Expanded Attack Surface**: Since modern software is assembled rather than written from scratch, when developers introduce a package, they are essentially making a series of **implicit trust decisions** — trusting the package's functionality, the maintainer's identity, the registry's integrity, and its ability to provide continuous security updates. Attackers exploit these implicit trust relationships through methods such as dependency confusion, typosquatting, and maintainer account takeover. Additionally, CI/CD pipelines have become high-value targets due to their possession of deployment credentials and production environment access.
 
-**透明性是关键**：实现供应链安全需要依赖透明性工具。**软件物料清单（SBOM）** 是关键组件，它是一份机器可读的清单，列出了软件制品中的所有组件、版本、许可证及其关系。自动生成的 SBOM 使得组织能够在新的漏洞披露时，迅速回答“我们是否受影响？影响何处？”的问题，这是快速响应事件的基础。与之相关的**来源证明（Provenance）** 则提供了关于制品如何、由谁、从何处构建的可验证信息。
+**Transparency is Key**: Achieving supply chain security relies on transparency tools. The **Software Bill of Materials (SBOM)** is a key component — it is a machine-readable inventory listing all components, versions, licenses, and their relationships within a software artifact. Automatically generated SBOMs enable organizations to quickly answer the question "Are we affected? Where?" when new vulnerabilities are disclosed, which is the foundation for rapid incident response. Related to this is **Provenance**, which provides verifiable information about how, by whom, and from where an artifact was built.
 
-## 实践
+## Practice
 
-构建软件供应链安全是一个分层、渐进的过程，需要在软件交付流水线的每个阶段实施具体的控制措施。
+Building software supply chain security is a layered, incremental process that requires implementing specific controls at every stage of the software delivery pipeline.
 
-### 1. 源代码与依赖项安全
-在代码提交阶段即开始建立安全基础。实施严格的仓库访问控制、提交签名（如 GPG 或 SSH 签名）以及分支保护规则，确保只有授权变更才能合入代码库。对于依赖项管理，远不止于保持更新，还应：
-- 使用锁文件和哈希校验来固定依赖版本。
-- 验证包来源是否可信，并使用私有注册表或策展包源来控制进入依赖树的内容。
-- 对传递依赖（依赖的依赖）进行信任评估。
+### 1. Source Code and Dependency Security
+Begin establishing the security foundation at the code commit stage. Implement strict repository access controls, commit signing (such as GPG or SSH signatures), and branch protection rules to ensure only authorized changes can be merged into the codebase. For dependency management, it goes far beyond just keeping things updated:
+- Use lock files and hash verification to pin dependency versions.
+- Verify that package sources are trustworthy, and use private registries or curated package sources to control what enters the dependency tree.
+- Perform trust assessments on transitive dependencies (dependencies of dependencies).
 
-### 2. 构建过程安全
-构建系统是将源代码转换为可部署制品的场所，其被妥协将导致所有产物被污染。
-- **构建环境隔离**：在每次构建时都从干净的、临时的、隔离的环境中运行构建。
-- **生成透明性制品**：自动记录构建过程（来源证明），并生成 SBOM。
-- **采用 SLSA 框架**：遵循**软件工件的供应链级别（SLSA）** 框架，目标是达到 **SLSA Build Level 3**，这意味着构建在加固的平台上运行，来源证明不可伪造，且构建环境被隔离以防止跨次构建的篡改。
+### 2. Build Process Security
+The build system is where source code is transformed into deployable artifacts — its compromise would result in all outputs being tainted.
+- **Build Environment Isolation**: Run builds in clean, temporary, isolated environments for each build.
+- **Generate Transparency Artifacts**: Automatically record the build process (provenance) and generate SBOMs.
+- **Adopt the SLSA Framework**: Follow the **Supply-chain Levels for Software Artifacts (SLSA)** framework, targeting **SLSA Build Level 3**, which means builds run on hardened platforms, provenance is non-falsifiable, and build environments are isolated to prevent cross-build tampering.
 
-### 3. 容器镜像与仓库安全
-容器镜像是现代供应链的主要交付制品。
-- **采用可信基础镜像**：使用最小化、定期基于上游安全修复重建、并附带 SBOM、漏洞扫描结果和密码学签名的基础镜像。透明性是关键——真正的可信镜像会展示所有漏洞，包括未修补的，以便团队做出明智决策。
-- **仓库治理**：实施镜像签名和验证策略（例如，使用 Notation 或 Cosign），控制谁可以推送/拉取镜像，启用仓库交互的审计日志。将仓库视为“可信的事实来源”，而非制品的堆放场。
-- **流水线集成扫描**：在镜像构建后、推送时以及生产部署前进行持续的漏洞扫描，尽早发现和修复问题。
+### 3. Container Image and Registry Security
+Container images are the primary delivery artifact in modern supply chains.
+- **Use Trusted Base Images**: Use minimal base images that are regularly rebuilt based on upstream security fixes and come with SBOMs, vulnerability scan results, and cryptographic signatures. Transparency is key — truly trustworthy images will display all vulnerabilities, including unpatched ones, so teams can make informed decisions.
+- **Registry Governance**: Implement image signing and verification policies (for example, using Notation or Cosign), control who can push/pull images, and enable audit logs for registry interactions. Treat the registry as a "trusted source of truth," not just an artifact dumping ground.
+- **Pipeline-Integrated Scanning**: Perform continuous vulnerability scanning after image build, at push time, and before production deployment to discover and fix issues early.
 
-### 4. 部署与运行时安全
-这是供应链的最后一道防线。
-- **部署策略执行**：使用准入控制器（如 Kubernetes Admission Webhooks）或部署策略，仅允许拉取来自可信仓库、已签名且通过策略检查（如漏洞阈值）的镜像。
-- **运行时防护**：部署运行时安全监控，检测异常行为（如异常网络连接、文件访问），以发现可能穿透了前置防线的已妥协组件。使用沙箱执行环境来限制爆炸半径。
+### 4. Deployment and Runtime Security
+This is the last line of defense in the supply chain.
+- **Deployment Policy Enforcement**: Use admission controllers (such as Kubernetes Admission Webhooks) or deployment policies to only allow pulling images from trusted registries that are signed and pass policy checks (such as vulnerability thresholds).
+- **Runtime Protection**: Deploy runtime security monitoring to detect anomalous behavior (such as unusual network connections, file access) to discover compromised components that may have bypassed pre-deployment defenses. Use sandboxed execution environments to limit the blast radius.
 
-## SRE 要点
+## SRE Key Points
 
-软件供应链安全与 SRE 的核心职责——保障系统可靠性——紧密相连。一个安全的供应链是可靠交付流水线的前提。
+Software supply chain security is closely linked to the core SRE responsibility — ensuring system reliability. A secure supply chain is a prerequisite for a reliable delivery pipeline.
 
-- **与可靠性的关联**：供应链攻击（如恶意依赖注入、基础镜像后门）会导致服务宕机、数据泄露或性能异常，直接冲击 SLO。建立验证机制（如镜像签名验证、SBOM 检查）是预防此类故障的**主动防御**措施。当新的漏洞（CVE）披露时，拥有准确的 SBOM 和部署清单能极大缩短**平均恢复时间（MTTR）**，因为团队能迅速定位受影响的服务和环境。
-- **可观测性**：供应链安全活动本身需要被观测。应将 SBOM 生成、镜像签名验证失败、漏洞扫描发现的高级别漏洞、部署策略阻止的拉取尝试等事件，集成到现有的监控和告警系统中，使其成为**可观测性**数据的一部分。
-- **事件响应整合**：供应链安全事件应纳入标准的**事件响应**流程。预案需要包括：当受信任的依赖或基础镜像被破坏时，如何隔离受影响的服务、如何快速验证修复后的制品、如何回滚到已知的干净状态。
-- **最佳实践与反模式**：
-    - **实践**：将供应链安全策略作为**基础设施即代码（IaC）** 的一部分进行强制执行，而非依赖流程文档。假设部分组件终将被妥协，通过**最小权限原则**、构建环境隔离和运行时沙箱来设计**最小爆炸半径**的系统。
-    - **反模式**：将供应链安全视为上线前的**一次性合规性检查**。忽略自动化，依赖手动审核。隐藏漏洞扫描结果以使报告“更好看”。允许从任意公共源拉取基础镜像。
-- **相关指标（SLI/SLO/SLA）**：
-    - **SLI**：可追踪的指标包括：已签名镜像部署比例、SBOM 覆盖率、流水线中漏洞扫描执行率、高危漏洞从发现到修复的平均时长。
-    - **SLO**：可以制定内部目标，例如“100% 生产环境容器使用经签名验证的基础镜像”、“关键服务的基础镜像 SBOM 覆盖率达到 100%”。
-    - **SLA**：虽然供应链安全本身通常不直接定义在对外 SLA 中，但其失败（如因供应链攻击导致的服务中断）会影响**可用性** SLA 的达成。维护供应链安全是履行可用性承诺的基础能力。
+- **Connection to Reliability**: Supply chain attacks (such as malicious dependency injection, base image backdoors) can lead to service outages, data breaches, or performance anomalies, directly impacting SLOs. Establishing verification mechanisms (such as image signature verification, SBOM checks) is **proactive defense** against such failures. When new vulnerabilities (CVEs) are disclosed, having accurate SBOMs and deployment inventories can greatly reduce **Mean Time To Recovery (MTTR)**, as teams can quickly locate affected services and environments.
+- **Observability**: Supply chain security activities themselves need to be observed. Events such as SBOM generation, image signature verification failures, high-severity vulnerabilities discovered by scanning, and pull attempts blocked by deployment policies should be integrated into existing monitoring and alerting systems, making them part of **observability** data.
+- **Incident Response Integration**: Supply chain security incidents should be incorporated into standard **incident response** processes. Plans need to include: how to isolate affected services when trusted dependencies or base images are compromised, how to quickly verify remediated artifacts, and how to roll back to a known clean state.
+- **Best Practices and Anti-patterns**:
+    - **Practice**: Enforce supply chain security policies as part of **Infrastructure as Code (IaC)**, rather than relying on process documentation. Assume some components will eventually be compromised, and design systems with **minimal blast radius** through the **principle of least privilege**, build environment isolation, and runtime sandboxes.
+    - **Anti-pattern**: Treating supply chain security as a **one-time compliance check** before going live. Ignoring automation and relying on manual reviews. Hiding vulnerability scan results to make reports "look better." Allowing base images to be pulled from arbitrary public sources.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: Trackable metrics include: proportion of signed image deployments, SBOM coverage rate, vulnerability scan execution rate in pipelines, average time from discovery to remediation of high-severity vulnerabilities.
+    - **SLO**: Internal targets can be set, such as "100% of production containers use signed and verified base images," "100% SBOM coverage for critical service base images."
+    - **SLA**: While supply chain security itself is typically not directly defined in external SLAs, its failure (such as service disruption due to supply chain attacks) will affect **availability** SLA achievement. Maintaining supply chain security is a foundational capability for fulfilling availability commitments.
 
 [[container-security]] [[sbom]] [[slsa]] [[incident-response]] [[least-privilege]]

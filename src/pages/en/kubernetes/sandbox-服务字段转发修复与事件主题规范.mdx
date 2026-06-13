@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
-title: "'[release/2.1] backport: sandbox: forward Create fields, fix event topics'"
+title: "[release/2.1] backport: sandbox: forward Create fields, fix event topics"
 category: "容器运行时"
 confidence: medium
 ---
+
+# [release/2.1] backport: sandbox: forward Create fields, fix event topics
 
 ## Overview
 In the container runtime ecosystem, containerd's Sandbox function provides a unified management interface for runtime sandboxes (such as Kata Containers, gVisor). This fix targets two key flaws in the Sandbox service: the gRPC proxy controller silently loses configuration fields when creating a sandbox, and the topic format does not comply with the convention when publishing events, causing failure. These problems directly affect the correct configuration acquisition of clients that rely on the gRPC proxy path and the event observability of the system, which are typical reliability and functional integrity risks.

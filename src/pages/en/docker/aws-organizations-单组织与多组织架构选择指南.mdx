@@ -1,0 +1,75 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "AWS Organizations: Single vs. Multiple Organization Architecture Guide"
+category: "multi-account-strategy"
+confidence: low
+---
+
+# AWS Organizations: Single vs. Multiple Organization Architecture Guide
+
+## Overview
+
+When building an enterprise-grade AWS cloud environment, a core architectural decision is whether to adopt a **single AWS Organization** or establish **multiple independent AWS Organizations**. This decision is not merely a technical choice -- it directly impacts an enterprise's security isolation, compliance capabilities, cost efficiency, and long-term operational efficiency. As enterprises expand through organic growth, mergers, and reorganizations, understanding these two models of `[[aws-organizations]]` is critical to ensuring the reliability, security, and manageability of the cloud environment.
+
+## Core Concepts
+
+- **AWS Organizations**: A service for centrally managing and governing multiple AWS accounts. It provides policy creation, account grouping, resource sharing, and consolidated billing capabilities.
+- **Service Control Policies (SCPs)**: Think of these as "permission boundaries" for AWS accounts. SCPs do not grant permissions themselves; instead, they control which AWS services and API operations member accounts (and the IAM users and roles within them) can use. They are a key tool for implementing centralized governance.
+- **Organizational Units (OUs)**: Used to logically group accounts within an AWS Organization (e.g., by workload, environment, or team), with SCP policies applied at the OU level for batch management.
+- **Single Organization Model**: The entire enterprise maintains one root AWS Organization, with all accounts belonging to different OUs under it. This is a centralized governance model.
+- **Multiple Organization Model**: Two or more completely independent AWS Organizations exist within the enterprise, each with its own management account, SCPs, billing, and policies. This is a decentralized governance model.
+
+## Practice
+
+Choosing between a single and multiple organizations is fundamentally a trade-off between **operational efficiency and risk isolation**. Below is a detailed comparison and analysis of both models.
+
+### When to Choose a Single Organization
+
+The single organization model suits the vast majority of scenarios that require **centralized governance**. Its core advantage lies in providing a consistent control plane and unified operational perspective.
+
+- **Core Advantages**:
+    - **Centralized Governance and Visibility**: Security and compliance policies can be uniformly enforced across the organization through SCPs, `[[aws-config]]`, and `[[aws-security-hub]]`.
+    - **Cost Optimization**: Consolidated billing enables easy utilization of cross-account volume tier discounts, optimizing overall spending.
+    - **Simplified Resource Sharing**: Resources such as VPCs and directory services can be conveniently shared within the organization via `[[aws-resource-access-manager]]`.
+    - **Reduced Operational Complexity**: Policies, logs (e.g., CloudTrail), audits, and identity management (through centralized IAM roles) can all be configured in one place, reducing duplication and management burden.
+- **Example Use Case**:
+    - A global retailer with regional teams and application owners, where all teams create accounts under a central IT governance framework, with a core team responsible for establishing and implementing global security and compliance standards.
+
+### When to Consider Multiple Organizations
+
+The multiple organization model suits scenarios where organizational structure is **highly independent** or where **strong compliance isolation requirements** exist. It provides the strongest boundary isolation, at the cost of some centralized management convenience.
+
+- **Core Advantages**:
+    - **Strong Isolation**: Security incidents, misconfigurations, or policy changes within one organization do not affect others; risks are strictly contained within boundaries.
+    - **Governance Flexibility**: Each organization can tailor completely different policies and processes to its specific business needs and industry regulatory requirements (e.g., financial, healthcare).
+    - **Supports Organizational Autonomy**: Ideal for subsidiaries or business units with independent legal entities, leadership teams, and security requirements.
+- **Example Use Case**:
+    - **M&A Integration**: When a company acquires another, the acquired entity can maintain its existing AWS environment and organizational structure independently, integrating gradually.
+    - **Strict Compliance Environments**: For example, a multinational financial services company whose retail banking, investment banking, and insurance businesses fall under different regulatory bodies, each requiring an independent governance environment.
+    - **Sandbox Environments**: A global software company might create an independent "sandbox" organization for developing and testing new SCPs or policies before applying them to production organizations.
+
+The following comparison table summarizes the differences across key dimensions:
+
+| Dimension | Single Organization | Multiple Organizations |
+| :--- | :--- | :--- |
+| **Billing** | Consolidated billing with cross-account discounts | Independent billing per organization, no cross-org discounts |
+| **Governance** | Centralized SCPs and policies | Each organization defines its own governance policies |
+| **Security Isolation** | Shared security boundary, SCPs apply globally | Strong isolation between organizations |
+| **Access Management** | Centralized IAM roles and cross-account access | No built-in cross-org access; IAM fully independent |
+| **Resource Sharing** | Easy sharing of VPCs, AMIs, etc. within org | No built-in cross-org resource sharing |
+| **Operational Overhead** | Lower, centralized governance reduces duplication | Higher, governance, security, and ops must be repeated per org |
+| **Risk Isolation** | Misconfigurations may affect other accounts | Misconfigurations are contained within a single organization |
+
+## SRE Essentials
+
+From a Site Reliability Engineering perspective, this decision directly impacts the **reliability, observability, and incident response** capabilities of the cloud environment.
+
+- **Relationship to Reliability**: The single organization model helps establish a unified, predictable reliability baseline through centralized policies and resource monitoring. The multiple organization model improves fault locality by isolating blast radius, preventing "avalanche effects." SRE teams must weigh the **standardization advantages** of centralized governance against the **fault containment advantages** of strong isolation.
+- **Observability and Incident Response**: In a single organization, deploying cross-account centralized log aggregation, monitoring, and alerting systems (e.g., via `[[aws-cloudwatch]]` or third-party tools) for global visibility is relatively straightforward. In multiple organizations, each must independently build its observability platform, and incident response processes may need to be customized and isolated for each organization, increasing operational complexity.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: **Start with a single organization**. For the vast majority of enterprises, especially those with a centralized IT strategy, the single organization model provides the best balance. Only consider multiple organizations when isolation requirements clearly outweigh centralized benefits.
+    - **Anti-Pattern**: Easily creating new organizations for every independent team or project. This leads to "governance islands," lost cost optimization opportunities, and significantly increased management burden. Prefer using **OUs** within a single organization for logical isolation and policy differentiation.
+- **Related Metrics and Controls**:
+    - **SLI/SLO**: For overall cloud environment availability and security, SRE teams can define unified service level indicators (SLIs) across all accounts, such as "unauthorized API call success rate should be below X%," and ensure and measure objectives (SLOs) through organization-level SCPs and services like AWS Security Hub.
+    - **Compliance Auditing**: The single organization model allows centralized compliance auditing and logging using `[[aws-cloudtrail]]` and `[[aws-config]]`, which is critical for meeting SRE-related audit requirements. The multiple organization model requires establishing independent audit trails for each organization, increasing the complexity of compliance verification.

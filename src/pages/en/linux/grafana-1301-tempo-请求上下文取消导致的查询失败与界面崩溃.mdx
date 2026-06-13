@@ -1,0 +1,85 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana 13.0.1: Tempo Request Context Cancellation Causing Query Failures and UI Crashes"
+category: "Observability Troubleshooting"
+confidence: high
+---
+
+# Grafana 13.0.1: Tempo Request Context Cancellation Causing Query Failures and UI Crashes
+
+## Overview
+
+In Grafana version 13.0.1, a severe regression defect was introduced when querying the Tempo data source through the Explore Traces (Drilldown / Breakdown / Service Structure) application. This defect causes the Grafana front-end to report a request failure due to "context cancellation" to the upper layer, even though the backend (Tempo) has successfully returned an HTTP 200 response. This results in the `/api/ds/query` endpoint returning a 400 error. The end result is intermittent data loading failures, JavaScript runtime errors, and UI state-dependent functional anomalies. For SRE teams relying on Grafana and Tempo for distributed trace analysis, this issue severely disrupts incident investigation workflows.
+
+## Core Concepts
+
+To understand this issue, several core concepts need to be clarified:
+
+*   **Context Canceled**: In Go and Grafana's plugin architecture, each request is associated with a `context` object. When a `context` is canceled (e.g., the user initiates a new request in the UI, a component unmounts, or a timeout occurs), all downstream network requests initiated based on this context should theoretically be aborted to avoid resource waste. However, this case demonstrates a **mismatch** between front-end and back-end lifecycle management for the same request.
+*   **Lifecycle Mismatch**: This is the fundamental characteristic of this issue. Specifically:
+    *   **Backend (Tempo)**: Successfully processed the query and returned a valid `HTTP 200` response.
+    *   **Frontend (Grafana)**: Within the context of that request, Grafana's plugin or framework code marks it as "canceled" and therefore returns a `400` status code to the upstream Explore Traces UI, despite the actual backend communication being successful.
+*   **State-Dependent Behavior**: The defect's manifestation is closely related to the UI's internal state (such as the currently selected view, loaded data cache). The same query may succeed on initial execution but fail on subsequent refreshes; or temporarily recover by switching to another view and back. This strongly points to a defect in front-end state management or request queue management.
+
+## Practice
+
+### Symptom Identification and Verification
+
+When suspecting this issue, confirm through the following combined symptoms:
+
+1. **User Interface (UI) Symptoms**:
+    *   The Explore Traces page (especially Breakdown or Service Structure views) displays `An unexpected error happened`.
+    *   The browser developer console shows a `TypeError: Cannot read properties of undefined (reading '0')` error.
+    *   Functionality is unstable: data sometimes loads, sometimes fails; refreshing the page or switching views may temporarily restore normal behavior.
+
+2. **Backend Log Symptoms**:
+    *   **Grafana Logs**: In Grafana server logs, error messages related to Tempo queries will clearly appear, with the key characteristic being `error="... context canceled"` and the corresponding HTTP status code being `400`.
+        *   Example log pattern: `logger=tsdb.tempo ... error="Get '...': context canceled" ... status=400`
+    *   **Tempo/Proxy Backend Logs**: In Tempo's or its front proxy's access logs, **at the same time or slightly earlier**, the corresponding query API (e.g., `/api/metrics/query_range`) returns `status=200`. This proves the backend successfully processed the request.
+
+### Reproduction and Confirmation
+
+According to the issue report, reliable reproduction steps are:
+
+1. Open Grafana's **Explore Traces (Drilldown)** feature.
+2. Select a Trace and open one of the views: **Service Structure** or **Breakdown**.
+3. **Without navigating away from the page**, manually re-execute or refresh the query multiple times.
+4. Observe: The query initially returns data normally, but after multiple refreshes, the interface enters an error state as described above.
+5. At this point, switching to another view (such as the "Trace" tab) and then switching back to the original Breakdown view often causes data to load normally again.
+
+### Temporary Mitigation
+
+Since this issue is closely related to UI state management, an immediately actionable temporary mitigation is:
+*   When the Explore Traces interface shows an error, **click to switch to a different view or tab, then switch back**. This effectively resets the component's state and often allows data to display normally again.
+
+### Root Cause Analysis
+
+*   **Direct Cause**: Grafana front-end code (possibly in the `grafana-exploretraces-app` plugin or core query framework) incorrectly cancels the context of a valid backend request that is still in progress or has already successfully returned, or does not correctly handle the difference between a "context canceled" error and an actual successful response.
+*   **Scope**: This issue is confirmed as a regression defect specific to Grafana version **13.0.1**. The reporter confirmed it worked correctly in earlier versions (such as v13.2.0). It follows the same pattern as a similar historical issue (#121890), indicating that the related fix may not have fully covered all scenarios or has regressed.
+*   **Not a Backend Issue**: The Tempo backend or compatible API is explicitly ruled out, as the backend consistently returns valid `200 OK` responses.
+
+## SRE Takeaways
+
+### Relationship to Reliability and Observability
+
+*   **Reliability**: This defect directly undermines Grafana's reliability as a core observability platform. During critical troubleshooting moments, tool failures severely hinder SRE's ability to identify root causes.
+*   **Observability**: This issue affects the querying and visualization of distributed system tracing (Traces) data, constituting a functional disruption in the observability stack (especially in the APM domain).
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    *   **Version Management and Upgrade Testing**: Before performing major version upgrades on core monitoring tools, thoroughly test critical workflows (such as Trace queries, troubleshooting paths) in pre-production environments.
+    *   **Monitor Tool Health**: Monitor Grafana itself and its core APIs (such as `/api/ds/query`) for error rates, not just the business systems it monitors.
+    *   **Clear Log Correlation**: When front-end errors occur, simultaneously check front-end network requests, Grafana backend logs, and the target data source's access logs to establish a complete fault chain.
+*   **Common Anti-Patterns**:
+    *   **Ignoring Front-End State Management Issues**: When backend logs show normal but the front-end reports errors, it's easy to misdiagnose as a network or configuration issue, overlooking complex front-end state management defects.
+    *   **Hasty Upgrades**: Deploying to production without sufficiently testing the stability of critical features in the new version.
+
+### Related Metrics
+
+While this issue does not directly relate to traditional SLO/SLIs (such as error rates, latency), it highlights the importance of monitoring **context cancellation** events. In Grafana operations, consider:
+*   Error counts with `status=400` in the Grafana API layer, particularly those related to the `/api/ds/query` path.
+*   The number of error logs containing the `context canceled` keyword in Grafana logs.
+
+These can serve as metrics for "observability tool reliability itself."

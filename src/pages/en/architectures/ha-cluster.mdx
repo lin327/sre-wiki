@@ -1,0 +1,116 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "High Availability Cluster Architecture"
+category: ""
+confidence: high
+---
+
+# High Availability Cluster Architecture
+
+The goal of a High Availability (HA) cluster is to eliminate single points of failure, ensuring the system continues to serve requests even when components fail. For SRE, HA architecture is the infrastructure foundation for meeting SLO targets.
+
+## Active-Passive vs Active-Active
+
+### Active-Passive
+
+One node actively serves traffic (active), while another node remains on standby (passive). When the active node fails, traffic is switched to the passive node.
+
+- **Pros**: Simple to implement, data consistency is easier to guarantee
+- **Cons**: Low resource utilization (standby node sits idle), brief unavailability during failover
+- **Typical scenarios**: Traditional database primary-standby setups, disaster recovery deployment for monolithic applications
+
+### Active-Active
+
+Multiple nodes serve traffic simultaneously, with a load balancer distributing requests across all active nodes.
+
+- **Pros**: High resource utilization, no failover delay
+- **Cons**: Requires solving data synchronization and conflict resolution, higher architectural complexity
+- **Typical scenarios**: Stateless application layers, multi-region global services
+
+## Leader Election and Quorum
+
+### Leader Election
+
+In distributed systems, a leader node is elected to coordinate critical operations. Common algorithms include Raft and Paxos.
+
+- The leader handles write requests and replicates logs to followers
+- When the leader fails, remaining nodes elect a new leader
+- The cluster is briefly non-writable during elections (typically completes in seconds)
+
+### Quorum
+
+A cluster requires more than half of its nodes to be alive to function properly. For a cluster of N nodes, the quorum is `(N/2) + 1`.
+
+- A 3-node cluster tolerates 1 node failure
+- A 5-node cluster tolerates 2 node failures
+- Production environments recommend odd node counts (3 or 5) to avoid tied elections caused by even numbers
+
+## Split-Brain Prevention
+
+When a network partition causes the cluster to split into multiple subgroups, each believing it is the only legitimate cluster, split-brain occurs. Prevention mechanisms:
+
+- **Quorum mechanism**: Only the subgroup that obtains a majority vote can continue operating
+- **Fencing**: STONITH (Shoot The Other Node In The Head) forcibly shuts down nodes that cannot communicate
+- **Lease mechanism**: The leader holds a lease with an expiration time, automatically relinquishing leadership when it expires
+- **Witness node**: Introduces an arbitration node that does not carry workloads but participates in voting
+
+## Health Check Strategies
+
+Effective health checks are a prerequisite for fast failover:
+
+| Check Type | Description | Example |
+|-----------|-------------|---------|
+| Liveness | Is the process alive | HTTP 200, TCP port reachable |
+| Readiness | Can it handle requests | Dependent service connections OK, cache warmed up |
+| Startup | Is startup complete | Data migration finished, configuration loaded |
+
+Check intervals and timeouts need tuning based on business tolerance: too long delays failure detection, too short causes false positives.
+
+## Kubernetes HA Control Plane
+
+### etcd Cluster
+
+etcd is Kubernetes' data store layer, typically deployed as a 3 or 5-node cluster:
+
+- Uses the Raft protocol for leader election and log replication
+- All data changes are committed through the leader and replicated to quorum nodes
+- SSD disks are recommended, as write latency directly impacts API Server response time
+
+### Multi-Master Deployment
+
+Production environments should deploy at least 3 API Server instances, exposed through a load balancer:
+
+```
+Load Balancer
+    ├── API Server 1  -->  etcd Node 1
+    ├── API Server 2  -->  etcd Node 2
+    └── API Server 3  -->  etcd Node 3
+```
+
+- Controller Manager and Scheduler use leader election to ensure only one active instance
+- Each API Server can connect to all etcd nodes (client-side load balancing)
+
+## SRE Connections
+
+### SLO Definitions
+
+HA architecture directly supports SLO availability targets:
+
+- 99.9% (three nines): Allows ~8.76 hours of annual downtime
+- 99.99% (four nines): Allows ~52.6 minutes of annual downtime
+- Architecture choices must align with SLO targets to avoid over- or under-engineering
+
+### Capacity Planning
+
+- N+1 redundancy: Designed to handle N nodes of load, with N+1 nodes actually deployed
+- Capacity assessment under failure scenarios: Can remaining nodes handle full traffic after a single node failure
+- Regular Chaos Engineering exercises should be conducted to validate failover capabilities
+
+### Disaster Recovery
+
+| Metric | Meaning |
+|--------|---------|
+| RTO (Recovery Time Objective) | Target time from failure to service recovery |
+| RPO (Recovery Point Objective) | Maximum acceptable data loss time window |
+
+HA architecture reduces RTO, while backup strategies protect RPO. Together they form the core of a DR plan.

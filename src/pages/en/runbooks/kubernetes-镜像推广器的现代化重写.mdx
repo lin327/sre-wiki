@@ -1,0 +1,92 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Modernizing the Kubernetes Image Promoter"
+description: "Description of how kpromo, the core Kubernetes image promotion tool, was completely rewritten without service interruption to improve performance, reliability, and maintainability."
+category: SRE Practices
+order: 0
+lastUpdated: 2025-10-16
+confidence: high
+---
+
+# Modernizing the Kubernetes Image Promoter
+
+## Overview
+
+Kubernetes official container images (pulled from `registry.k8s.io`) rely on an automated tool called `kpromo` (also known as the image promoter) for their release. It is responsible for copying images from staging to production, signing them, replicating signatures across regions, and generating provenance attestations. As a critical infrastructure component for the Kubernetes release process, its stability and performance directly affect the reliability of the entire ecosystem. In 2026, the Kubernetes community conducted a thorough, user-transparent modernization rewrite of this tool's core, aiming to address accumulated technical debt and significantly improve its performance and robustness.
+
+## Core Concepts
+
+- **kpromo (Image Promoter)**: The core tool maintained by Kubernetes SIG Release, used to securely push container images from staging registries to production registries. It is a critical **supply chain security** component.
+- **k8s.gcr.io / registry.k8s.io**: The historical and current production registries used for distributing Kubernetes official container images.
+- **GitOps workflow**: The promotion process is based on YAML manifest files in Git repositories (declaring desired images), reviewed and merged through Pull Requests. Automated tools execute operations based on these manifests.
+- **SLSA (Supply chain Levels for Software Artifacts)**: A framework for ensuring software supply chain integrity. `kpromo` generates SLSA provenance attestations during promotion to enhance release auditability and security.
+- **Cosign**: A tool based on the Sigstore project for keyless signing and verification of container images, part of Kubernetes' supply chain security strategy.
+- **Phased rewrite**: A strategy that breaks a large refactoring into multiple small steps that can be independently released, verified, and rolled back, aiming to minimize risk.
+
+## Practice
+
+### Rewrite Background and Goals
+Before the rewrite, promotion jobs frequently took over 30 minutes and failed due to rate limiting. The core promotion logic had evolved into a "big ball of mud" that was difficult to scale and test. The community's goal was a "stealth" rewrite: completely changing the internal architecture while maintaining 100% backward compatibility for external users (using the `kpromo` command and YAML manifests).
+
+### Phased Rewrite Process
+The entire rewrite was broken down into nine independent phases, each delivered through separate Pull Requests and release versions, ensuring a smooth transition:
+
+1.  **Phase 1: Rate Limiting** - Rewrote rate limiting logic to implement adaptive backoff.
+2.  **Phase 2: Interface Abstraction** - Placed registry operations and authentication logic behind clear interfaces for easy testing and replacement.
+3.  **Phase 3: Pipeline Engine** - Built a new pipeline engine to decompose the promotion process into distinct stages.
+4.  **Phase 4: Provenance Verification** - Added SLSA provenance verification for staging images.
+5.  **Phase 5: Scanning and SBOM** - Integrated vulnerability scanning and Software Bill of Materials (SBOM) support. Released `v4.2.0` at this point, with the new pipeline engine enabled by default and validated in production.
+6.  **Phase 6: Separate Signing and Copying** - Separated image signing from signature copying into independent pipeline stages, resolving the major rate limiting contention issue causing production failures.
+7.  **Phase 7: Remove Old Pipeline** - Completely removed the old code paths.
+8.  **Phase 8: Remove Legacy Dependencies** - Removed the audit subsystem, deprecated tools, and end-to-end test infrastructure.
+9.  **Phase 9: Delete the Big Ball of Mud** - Removed the old monolithic core and its supporting packages. This phase was released in `v4.3.0`, completely clearing legacy code.
+
+### New Pipeline Architecture
+The rewritten promotion pipeline consists of seven clearly separated sequential stages:
+
+| Stage | Function Description |
+| :--- | :--- |
+| **Setup** | Validates parameters, warms up TUF cache. |
+| **Plan** | Parses manifests, reads registries, calculates images to promote. |
+| **Provenance** | Verifies SLSA attestations on staging images. |
+| **Validate** | Checks cosign signatures; terminates here for dry-run mode. |
+| **Promote** | Copies images server-side, preserving digests. |
+| **Sign** | Signs promoted images using keyless cosign. |
+| **Attest** | Generates promotion provenance attestations using a dedicated in-toto predicate type. |
+
+### Performance Optimization
+Building on the new architecture, a series of optimizations achieved order-of-magnitude performance improvements:
+- **Parallelized registry reads**: Reduced the planning phase (`Plan`) time from approximately 20 minutes to about 2 minutes.
+- **Two-phase tag listing**: First only checks the source repository, skipping many unsigned legacy images, halving API call counts.
+- **Source-first checking**: Before copying signatures to all images, first checks whether the primary registry exists, reducing steady-state work time from approximately 17 hours to about 15 minutes.
+- **Timeouts and retries**: Set independent timeouts for each network operation and automatically retry transient failures to prevent pipeline hangs.
+- **Connection reuse**: Reuse HTTP connections and authentication state across operations, reducing redundant token negotiations.
+
+## SRE Key Points
+
+### Relationship with Reliability and Observability
+- **Reliability**: This rewrite itself was a large-scale reliability engineering effort. By addressing performance bottlenecks (rate limiting, slow I/O) and adding robustness (timeouts, retries), it significantly reduced the failure rate of release jobs and ensured the continuity of Kubernetes core release processes.
+- **Observability**: Although not detailed in the text, the pipeline's staged approach makes monitoring and fault localization for each step of the promotion process much clearer. The separate signature copying job (Prow Job) also enhances observability of this process.
+- **Incident response**: The phased release and default configuration switch (`v4.2.0` -> `v4.3.0`) provided the team with clear rollback paths. Two production regression issues were quickly discovered and fixed after releasing `v4.2.0`, demonstrating the importance of implementing "canary releases" or "progressive delivery" for critical infrastructure.
+
+### Best Practices and Common Anti-Patterns
+**Best practices:**
+1.  **Phased, backward-compatible refactoring**: For critical path components, use the "strangler pattern" or similar strategies to gradually replace the old system while maintaining stable interfaces, avoiding the high risk of "big bang" rewrites.
+2.  **Invest in performance and robustness**: Proactively identify and resolve known performance bottlenecks (such as I/O contention, connection establishment overhead) and stability issues (such as lack of timeouts, retries), which is key to improving SRE performance.
+3.  **Automation and GitOps**: Adhere to using declarative manifests and automated pipelines to manage critical operations (such as image promotion), ensuring auditability and repeatability.
+4.  **Community-driven and transparent**: Publicly tracking the entire rewrite process through issues, PRs, and project boards helps build consensus, attract contributions, and manage expectations.
+
+**Common anti-patterns:**
+1.  **Technical debt accumulation**: Allowing the codebase to remain bloated due to historical reasons, ultimately leading to surging maintenance costs and hindering new feature development and stability improvements.
+2.  **Opaque large-scale changes to infrastructure components**: Aggressive changes lacking phased verification and rollback strategies can easily trigger major production incidents.
+3.  **Ignoring performance optimization**: In scaled production environments, inefficient code directly translates to higher costs and lower reliability (such as timeout failures).
+
+### Related Metrics
+This rewrite significantly improved the following potential **SLIs (Service Level Indicators)**, thereby helping achieve stricter **SLOs (Service Level Objectives)**:
+- **Promotion job success rate**: Improved through more robust error handling and rate limiting.
+- **Promotion job execution time**: Significantly reduced through parallelization, optimization, and connection reuse.
+- **End-to-end latency from staging to production availability**: Including total time for all steps such as verification, copying, and signing.
+- **Production Kubernetes release cycle time**: As an underlying tool, its reliability directly affects the efficiency of the upper-layer release process.
+
+This case study is an excellent example of how SREs can continuously invest in reliability, performance, and maintainability through engineering means when maintaining critical infrastructure. It demonstrates that even for "invisible" underlying tools, a thoughtful rewrite can bring profound positive impacts to the entire system. Related architecture and principles can be referenced in [[kubernetes-image-promotion]] and [[sre-reliability-engineering]].

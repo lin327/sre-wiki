@@ -1,0 +1,64 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Subpath Deployment: Metrics Drilldown Explore Link Failure"
+description: "In Grafana deployments configured with a subpath, clicking Explore from Metrics Drilldown loses the path prefix, causing navigation failure."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-05-21
+confidence: medium
+---
+
+# Grafana Subpath Deployment: Metrics Drilldown Explore Link Failure
+
+## Overview
+
+In SRE practice，确保监控平台的导航和集成路径正确无误是保障可观测性工作流顺畅的关键。本文档描述了在Grafana监控平台中，当使用反向代理配置子路径（例如 `/grafana`）进行部署时，从`Metrics Drilldown`界面发起`在Explore中打开`操作时存在的一个前端路由缺陷。该缺陷会导致新窗口打开的Explore页面URL丢失必要的子路径前缀，使得用户无法正确导航到目标页面，破坏了监控与诊断流程的连贯性。
+
+## 核心概念
+
+### 子路径 (Subpath) 部署
+在企业环境中，为了统一入口或安全策略，常通过反向代理（如Nginx, Traefik）将Grafana部署在域名的特定子路径下（例如 `https://monitoring.example.com/grafana`）。Grafana服务自身需要被配置为知晓其运行在 `/grafana` 路径下，以便正确生成内部链接和静态资源引用。
+
+### Metrics Drilldown
+Metrics Drilldown是Grafana中用于快速探索和导航到特定指标（Metric）的界面。它通常提供从指标概览直接跳转到交互式查询（Explore）视图的快捷入口。
+
+### Explore 功能
+Explore是Grafana中用于交互式查询、日志关联和临时性故障排查的核心工具。从Drilldown或仪表板面板正确跳转到Explore是SRE进行根本原因分析（RCA）的常用操作路径。
+
+## 实践
+
+### 问题现象与影响
+当Grafana部署在子路径下时，从`Metrics Drilldown`界面点击以下按钮：
+1.  指标图表右侧的“在Explore中打开”图标按钮。
+2.  指标图表上下文菜单中的“Explore”选项。
+
+浏览器新窗口打开的Explore页面URL将缺失子路径前缀。例如，正确的URL应为 `https://monitoring.example.com/grafana/explore?...`，但实际生成的URL可能是 `https://monitoring.example.com/explore?...`，导致请求被反向代理拦截或返回404错误，使得Explore页面无法加载。
+
+### 复现条件与步骤
+1.  **部署配置**：将Grafana配置为在子路径下服务。通常在`grafana.ini`中设置`[server] root_url = %(protocol)s://%(domain)s/grafana`，并在反向代理中设置相应的路径重写规则。
+2.  **数据准备**：向Grafana中导入或创建包含至少一个时间序列指标的数据源和面板。
+3.  **操作触发**：导航至`Metrics Drilldown`界面，定位到目标指标，并点击上述“Explore”链接。
+4.  **结果验证**：观察浏览器新打开的Explore页面URL，确认其是否包含配置的子路径前缀。
+
+### 根本原因分析
+这是一个典型的**前端路由构建缺陷**。在构建用于新窗口打开的Explore URL时，`Metrics Drilldown`组件可能直接使用了硬编码的路径（如 `/explore`），而没有动态地从Grafana的全局配置（如`appUrl`或`subUrl`）中获取基础路径。这导致了URL在非默认路径部署下生成错误。
+
+## SRE要点
+
+### 与可靠性的关联
+此问题直接影响监控工具的**可用性**和**用户体验**。对于依赖Metrics Drilldown进行快速指标钻取的SRE团队，一个失效的Explore链接会中断故障排查的关键工作流，增加MTTR（平均恢复时间）。这属于**内部工具链可靠性**的范畴，即使不影响被监控的核心业务系统，但会影响团队自身的运维效率。
+
+### 最佳实践与预防措施
+1.  **集成测试覆盖**：在CI/CD流水线中，增加对前端路由的自动化测试，特别是涉及不同部署路径配置（根路径、子路径）的场景。确保所有“跳转到...”类功能在不同配置下都能生成正确的URL。
+2.  **前端可观测性**：考虑在前端应用中收集导航错误事件。当大量用户触发“Explore跳转失败”时，可以通过前端监控工具（如Sentry）及时报警。
+3.  **配置一致性检查**：在部署或升级Grafana时，除了验证`root_url`配置，还应手动抽检几个关键的前端跳转功能，形成部署检查清单的一部分。
+
+### 相关指标 (SLI/SLO)
+虽然这是一个前端缺陷，但可以从用户体验角度定义SLI：
+-   **SLI**: 从Metrics Drilldown发起Explore跳转的成功率（`跳转成功率 = 成功加载Explore页面的次数 / 点击Explore链接的总次数`）。
+-   **SLO**: 可设定该跳转成功率 &gt; 99.9%（排除网络等外部因素）。
+
+监控此SLI有助于量化该类缺陷对团队工作效率的实际影响，并为修复工作提供优先级依据。
+
+&gt; **注意**：此问题被报告于 Grafana 12.0.0 版本。在后续版本中可能已被修复。SRE在实施上述最佳实践时，应确认当前运行的Grafana版本是否包含相关补丁。更多关于Grafana部署配置的通用知识，请参考 [[grafana-deployment-configurations]]。

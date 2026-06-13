@@ -1,0 +1,62 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Git-sync Permission Issue: Dashboard Creator Cannot Access Own Dashboard"
+description: "In Grafana instances with global Git-sync enabled, Editor role users creating dashboards receive 403 errors, contradicting expected automatic Admin permission granting behavior."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-11-13
+confidence: high
+---
+
+# Git-sync Permission Issue: Dashboard Creator Cannot Access Own Dashboard
+
+## Overview
+
+Enabling Git-based configuration management (Git-sync) in Grafana is an important approach to practicing Configuration as Code, ensuring version control and auditability of dashboards and folder configurations. However, in specific Git-sync scenarios, there is a serious permission assignment defect. This page details the discovery, root cause, temporary workarounds, and implications for Site Reliability Engineering (SRE) practices of this issue. The problem breaks the expected behavior of Grafana's permission model, directly affecting user workflows and trust in the system, and represents a reliability risk that SRE teams must address when implementing Git-sync.
+
+## Core Concepts
+
+- **Git-sync**: A Grafana feature that allows synchronizing instance configurations such as dashboards and folders with a Git repository. When enabled, changes made through the Grafana UI or API can be automatically pushed to a specified Git repository. This provides version history, code review, and disaster recovery capabilities for configurations.
+- **Expected Permission Model**: According to Grafana's official documentation, when users create dashboards or folders, they should automatically be granted **Admin permission** for that resource. This means creators have full control over their created resources without additional permission assignment steps.
+- **Problem Behavior**: In instances with **global Git-sync** enabled, the above permission granting mechanism fails. Users who create dashboards through the UI (for example, users with the Editor role) are immediately unable to access the dashboard after creation, with the API returning **403 Forbidden** errors. This indicates an integration defect between the permission system and the Git-sync workflow.
+
+## Practices
+
+### Problem Diagnosis
+
+1.  **Reproduction Path**:
+    *   In a Grafana instance (test environment was version 12.4.0), configure Git-sync for the entire instance.
+    *   Log in as a user with the "Editor" role (not an organization administrator).
+    *   Create a new dashboard within a folder managed by Git-sync.
+    *   After the creation operation completes, try to navigate to the newly created dashboard URL.
+2.  **Key Error Information**: The browser console or network panel will show a GET request to `apis/dashboard.grafana.app/v1beta/namespaces/default/dashboards/<dashboard-id>/dto` returning a **403** status code. This confirms a permission check failure rather than the dashboard not existing (404).
+
+### Temporary Workarounds
+
+Before an official fix is released, administrators or users with organization administrator privileges can use the following methods as temporary solutions:
+
+1.  **Manual Permission Granting**: After dashboard creation, have an administrator (or folder Admin) immediately enter the dashboard's **Permissions** settings page.
+2.  **Add Creator User**: Add the user who created the dashboard to the permission list and assign them the **"Admin"** role (or at least **"Can Edit"** role if editing permissions are needed).
+3.  **Automated Workaround (Optional)**: For scenarios with frequent dashboard creation, consider writing a simple automation script (using the Grafana API) that, upon detecting a new dashboard created via Git-sync, automatically queries its creator and grants appropriate permissions. This increases operational complexity and is only a temporary measure.
+
+### Official Status and Tracking
+
+This issue has been submitted in Grafana's official repository as Issue [#113829](https://github.com/grafana/grafana/issues/113829). The issue status shows it has been confirmed (official member replied "reproduction confirmed") as a Bug. The fix is expected in a subsequent Grafana version. SRE teams should monitor this Issue's progress to promptly update instances after the official patch is released.
+
+## SRE Key Points
+
+- **Connection to Reliability**: This defect directly undermines the reliability of the **Self-Service** model. Users expect to be able to create and immediately manage their resources, but the introduction of Git-sync unexpectedly blocks this core functionality, causing user workflow interruptions and reducing platform availability and user experience.
+- **Observability and Incident Response**: Early detection of such issues depends on good **observability**. User-reported 403 error logs are key signals. SRE teams should monitor the failure rate of first access after dashboard creation (which can be considered a custom SLI) and set alerts to respond promptly before the issue's impact scope expands.
+- **Best Practices and Anti-Patterns**:
+    *   **Best Practices**: Before upgrading Grafana or enabling new features (such as global Git-sync), perform comprehensive testing in a **pre-production environment**, especially end-to-end tests covering **permission models** and **user workflows**.
+    *   **Common Anti-Patterns**: Assuming all components (Git-sync, permission system) work independently and integrate perfectly. In complex systems, cross-module integration testing is critical.
+- **Related Metrics (SLI/SLO)**:
+    *   **SLI**: `Percentage of users who successfully create and access dashboards` or `403 error rate within one minute of dashboard creation`.
+    *   **SLO**: Commit that after configuration changes (such as enabling Git-sync), user self-service functionality (such as resource creation) maintains a 99.9% success rate, with downtime counted against the Error Budget.
+- **SRE Action Checklist**:
+    1.  **Assess Impact**: Check whether global Git-sync is enabled in production and evaluate affected dashboards and users.
+    2.  **Implement Workarounds**: Based on the above temporary solutions, manually fix permissions for affected users.
+    3.  **Configuration Management**: Document this known issue and workaround steps in a Runbook.
+    4.  **Upgrade Monitoring**: Monitor the official Issue and plan to upgrade the Grafana version in the next maintenance window to obtain the official fix.
+    5.  **Process Improvement**: In future Configuration as Code (CaC) practices, add "permission verification" to the deployment checklist.

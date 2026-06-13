@@ -1,0 +1,96 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.36 Pod-Level Resource Managers (Alpha)"
+description: "Introduction to Kubernetes v1.36's Pod-Level Resource Managers Alpha feature, enabling Pod-centric allocation of compute and memory resources for performance-sensitive workloads."
+category: workload-management
+order: 0
+lastUpdated: 2024-10-30
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/01/kubernetes-v1-36-feature-pod-level-resource-managers-alpha/
+    title: "Kubernetes v1.36: Pod-Level Resource Managers (Alpha)"
+tags: [kubernetes, sre, performance, resources, alpha]
+---
+
+# Kubernetes v1.36 Pod-Level Resource Managers (Alpha)
+
+## Overview
+Kubernetes v1.36 introduces **Pod-Level Resource Managers** as an Alpha feature. It extends kubelet's Topology Manager, CPU Manager, and Memory Manager to support defining resource requests and limits at the Pod level (`.spec.resources`). This enhancement evolves the resource allocation model from a strict "per-container" model to a Pod-centric model, providing more flexible and efficient resource management for performance-sensitive workloads (machine learning training, high-frequency trading, low-latency databases).
+
+## Core Concepts
+### Pod-Level Resource Specification
+This feature allows declaring compute and memory resources directly in the Pod spec (`.spec.resources`) as the entire Pod's resource "budget." This changes the previous model where resources were entirely independently allocated per container.
+
+### Mixed Resource Allocation Model
+When enabled, kubelet can create a mixed allocation model. Based on [[topology-manager]] configuration, it can:
+1.  **Provide exclusive, NUMA-aligned resources for critical containers**: Ensuring predictable high performance for primary application containers.
+2.  **Create Pod shared pools**: Remaining resources from the Pod budget form a pool for auxiliary containers (like sidecars) within the Pod. These containers are strictly isolated from critical containers and other workloads on the node.
+3.  **Maintain Pod-level resource boundaries**: The entire Pod's resource consumption remains constrained by its Pod-level budget.
+
+### CPU Quota (CFS) and Isolation
+In the mixed workload model:
+- **Exclusive containers**: Containers receiving exclusive CPU slices disable container-level CPU CFS quota to avoid Linux scheduler throttling for optimal performance.
+- **Pod shared pool containers**: Containers running in the Pod shared pool have CPU CFS quota enforced at the **Pod level**, ensuring they don't exceed the Pod's remaining budget.
+
+## Practice
+### Enable Pod-Level Resource Managers
+1.  Enable Feature Gates `PodLevelResources` and `PodLevelResourceManagers`.
+2.  Configure [[topology-manager]] policy to non-`none` (e.g., `best-effort`, `restricted`, `single-numa-node`).
+3.  Set topology manager scope to `pod` or `container` in `KubeletConfiguration`.
+4.  Configure [[cpu-manager-policies]] to `static`.
+5.  Configure [[memory-manager-policies]] to `Static`.
+
+### Application Example: Tightly Coupled Database
+A latency-sensitive Pod with main database container, metrics exporter, and backup agent sidecar:
+- Pod-level resources set total budget (8 CPU, 16Gi memory).
+- Main database requests exclusive resources (6 CPU, 12Gi memory) with NUMA-aligned exclusive slices.
+- Remaining resources (2 CPU, 4Gi memory) form the **Pod shared pool** for exporters and backup agents.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tightly-coupled-database
+spec:
+  resources:
+    requests:
+      cpu: "8"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+  containers:
+  - name: database
+    image: database:v1
+    resources:
+      requests:
+        cpu: "6"
+        memory: "12Gi"
+      limits:
+        cpu: "6"
+        memory: "12Gi"
+  initContainers:
+  - name: metrics-exporter
+    image: metrics-exporter:v1
+    restartPolicy: Always
+  - name: backup-agent
+    image: backup-agent:v1
+    restartPolicy: Always
+```
+
+## SRE Essentials
+### Reliability, Observability, and Incident Response
+- **Performance assurance**: Providing exclusive, NUMA-aligned resources for critical-path containers reduces unpredictable performance jitter, directly improving service availability and response time.
+- **Observability**: New kubelet metrics introduced:
+    - `resource_manager_allocations_total`: Total allocation count, distinguished by `source` label.
+    - `resource_manager_allocation_errors_total`: Allocation error count.
+    - `resource_manager_container_assignments`: Tracks container allocation type (`node_exclusive`, `pod_exclusive`, `pod_shared`).
+- **Incident response**: When troubleshooting performance issues, these metrics help determine if critical containers received expected exclusive resources.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**: Use for Pods requiring predictable performance; plan Pod-level resource budgets carefully; monitor resource allocation health with new metrics.
+- **Anti-Patterns**: Requesting exclusive resources for all containers; placing too many sidecars in shared pools; adopting Alpha features in production without thorough testing.
+
+### Related Metrics
+The feature helps safeguard latency and throughput SLIs through finer resource control. New kubelet metrics serve as auxiliary SLIs for **resource allocation effectiveness**.

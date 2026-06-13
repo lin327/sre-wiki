@@ -1,0 +1,89 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Chaos Engineering Practice: Chaos Mesh Principles and Control Plane Development"
+category: "Chaos Engineering"
+confidence: high
+---
+
+# Kubernetes Chaos Engineering Practice: Chaos Mesh Principles and Control Plane Development
+
+## Overview
+
+Chaos Engineering is a key means in SRE practice for proactively discovering system vulnerabilities and improving system resilience. In cloud-native and Kubernetes (K8s) environments, Chaos Mesh is an open-source, CRD-based chaos engineering platform that provides powerful fault injection and scenario orchestration capabilities. It allows developers to conveniently inject various anomalies in development, testing, and production environments, thereby proactively discovering potential issues and improving system reliability and resilience. Understanding its underlying principles and control plane development patterns is critical for SREs building custom or enhanced chaos engineering platforms.
+
+## Core Concepts
+
+Chaos Mesh's design revolves around Kubernetes' declarative API model. Its core architecture is primarily composed of three collaborating components:
+
+1.  **Chaos Controller Manager**: This is the core of the control plane, responsible for receiving user-defined chaos experiment CRDs (such as `PodChaos`, `NetworkChaos`), performing validation and rule calculations, and distributing specific fault injection instructions to the Chaos Daemon on the corresponding node. It interacts with the cluster through the Kubernetes API Server and manages the lifecycle of chaos experiments.
+2.  **Chaos Daemon**: Runs on each cluster node as a `DaemonSet`, a privileged container with special permissions. It receives gRPC instructions from the Controller Manager and executes actual fault injection operations on the local node, such as killing Pods, configuring network rules, and running stress tests. Its privileged mode allows it to access the host's network namespace, execute system calls, etc.
+3.  **Dashboard (Optional)**: Provides a Web UI for users to conveniently create, view, and manage chaos experiments.
+
+Chaos Mesh's workflow follows the typical Kubernetes Operator pattern: User submits CRD -> Controller Manager processes -> Notifies/calls Daemon -> Daemon executes fault -> Status reported.
+
+## Practice
+
+Chaos Mesh implements various fault injections through privileged containers (Chaos Daemon) running on Kubernetes nodes. Its core lies in leveraging Linux kernel capabilities and toolchains.
+
+### Privileged Mode and Security Context
+
+The Chaos Daemon Pod is deployed as a `DaemonSet` and has necessary Linux capabilities configured in the container's `securityContext`. In non-privileged mode, it requires `SYS_PTRACE`, `NET_ADMIN`, `MKNOD`, `SYS_ADMIN`, and other permissions to operate on networks, processes, and the file system. Since version v1.1.0, `privileged: true` mode is enabled by default to more directly obtain the required permissions.
+
+```yaml
+# Chaos Daemon DaemonSet partial configuration snippet
+containers:
+  - name: chaos-daemon
+    securityContext:
+      privileged: true
+      capabilities:
+        add:
+          - SYS_PTRACE
+          # Other capabilities in non-privileged mode
+```
+
+### PodChaos Fault Injection Mechanism
+
+The `PodChaos` category includes `PodKill`, `PodFailure`, and `ContainerKill`, each with different execution paths:
+
+-   **PodKill**: Directly deletes the target Pod via the Kubernetes API Server. The code obtains the Pod object through `client.Get`, then calls `client.Delete` to delete it. `GracePeriodSeconds` can be specified to control graceful termination time.
+-   **PodFailure**: Patches the Pod object via the Kubernetes API Server, replacing the container image with a specific failure image (default is `gcr.io/google-containers/pause:latest`). This operation modifies parts outside the Pod's immutable fields, causing it to fail to start.
+-   **ContainerKill**: Executed via Chaos Daemon. The Controller Manager builds a gRPC client corresponding to the node where the target Pod resides and calls the Daemon's `ContainerKill` interface. The Daemon terminates the specified container on the node through the Container Runtime Interface (CRI) or by directly operating on processes.
+
+### Network Fault Injection
+
+`NetworkChaos` is implemented by Chaos Daemon operating on the host's network stack. After receiving instructions, the Daemon uses Go's `vishvananda/netlink` library to configure `netem` (Network Emulator) queueing rules within the target Pod's network namespace, simulating network faults such as latency, packet loss, and bandwidth limits. This depends on the Daemon's access to the host's network namespace.
+
+### Stress Testing (StressChaos)
+
+`StressChaos` is executed by Chaos Daemon within the context of the target Pod. The Controller Manager converts CPU and memory pressure parameters into `stress-ng` command arguments, then calls the Daemon via gRPC. The Daemon obtains the target container's PID and uses the `os/exec` package to execute the `stress-ng` command within the corresponding namespace, consuming CPU or memory resources.
+
+### I/O Fault Injection (IOChaos)
+
+`IOChaos` has a more complex implementation. It does not directly modify Pod resources but instead creates a `PodIoChaos` resource for each selected Pod. Its core is starting a Rust-written FUSE (Filesystem in Userspace) program called `toda` on the node through `runc`'s low-level namespace switching capabilities (such as `nsexec`). This program mounts on the target volume and injects I/O latency, errors, and other faults by intercepting and modifying file system calls. The control plane communicates with `toda` using the JSON-RPC 2.0 protocol.
+
+## SRE Essentials
+
+-   **Connection to Reliability Engineering**: Chaos Mesh is a key tool for practicing "chaos experiments in production environments." By simulating real failures, SRE teams can verify the system's fault tolerance, the effectiveness of monitoring alerts, and fault recovery processes (such as Pod self-healing, traffic switching). It directly serves the goals of improving system **reliability** and achieving **SLOs**.
+-   **Best Practices and Anti-Patterns**:
+    -   **Practices**:
+        -   Start in non-production environments and gradually expand the blast radius.
+        -   Set clear experiment hypotheses and "blast radius" controls (such as selector `mode: one`).
+        -   Automate chaos experiments, integrating them into CI/CD or regular drill processes.
+        -   Ensure experiments are recoverable and have clear termination conditions.
+        -   Combine full-stack monitoring (such as Prometheus) to observe system behavior and verify SLI/SLO.
+    -   **Anti-Patterns**:
+        -   Conducting large-scale experiments directly on core production services without adequate preparation.
+        -   Only injecting faults without verifying system response and recovery processes.
+        -   Neglecting security hardening and least-privilege configuration of Chaos Daemon itself.
+-   **Related Metrics (SLI/SLO/SLA)**:
+    -   **SLI (Service Level Indicator)**: Key metrics to monitor during chaos experiments, such as: request success rate, P99 latency, Pod availability, network connectivity, etc.
+    -   **SLO (Service Level Objective)**: Defined reliability targets (such as `99.95%` of requests succeeding within 200ms). Chaos experiments can be used to verify whether SLOs can still be achieved under partial failure conditions.
+    -   **Error Budget**: The "error budget" consumed by chaos engineering should be within controllable limits. The experiment itself should not become the cause of SLO violations.
+    -   **Blast Radius**: The proportion of components or traffic directly affected by the chaos experiment, a key metric for measuring experiment risk.
+-   **Control Plane Development**: Building a user-facing chaos engineering platform core involves using the Kubernetes API and `controller-runtime` library to interact with Chaos Mesh's CRDs. Developers need to implement:
+    1.  **Experiment Creation**: Convert user configurations into corresponding `PodChaos`, `NetworkChaos`, and other CRD objects, and submit them via the Kubernetes API.
+    2.  **Experiment Query and Management**: Use `client.Get` and `client.List` to retrieve experiment status from the API Server or cache and provide it to the user interface. Pagination and caching mechanisms should be noted to avoid placing excessive pressure on the API Server.
+    3.  **Experiment Orchestration**: Use Chaos Mesh's `Schedule` (timed) and `Workflow` (workflow) CRDs to implement more complex experiment scenarios.
+
+By understanding these principles and practices of Chaos Mesh, SRE teams can more effectively use it to enhance system resilience or build chaos engineering platforms that meet their own needs.

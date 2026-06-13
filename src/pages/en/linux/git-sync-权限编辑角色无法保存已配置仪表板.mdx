@@ -1,0 +1,56 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Git Sync Permissions: Editor Role Cannot Save Provisioned Dashboards"
+category: "Git Sync"
+confidence: medium
+---
+
+# Git Sync Permissions: Editor Role Cannot Save Provisioned Dashboards
+
+## Overview
+
+In Grafana's Git Sync feature, team collaboration and permissions management are critical for SRE and operations teams to ensure observability configuration consistency and reliability. This issue reveals a permissions model vulnerability affecting team collaboration: even when a user has the highest-level folder permissions (`Admin (4)`) on the repository root folder, their built-in `Editor` organization role still cannot complete saving changes to dashboards provisioned through the Git pipeline. This can interrupt the dashboard update workflow, affect monitoring configuration iteration efficiency, and违背 the flexible collaboration model based on folder permissions that Git Sync documentation promises.
+
+## Core Concepts
+
+- **Git Sync**: A Grafana feature that allows users to synchronize dashboard configurations (JSON Models) with Git repositories, enabling configuration version control and GitOps workflows.
+- **Dashboard Provisioning**: Grafana supports automatic dashboard configuration through files (such as YAML/JSON) or Git repositories. Dashboards modified through the Git Sync workflow have their changes fed back to the source Git repository.
+- **Roles and Permissions Model**:
+    - **Organization Role**: Built-in global roles such as `Viewer`, `Editor`, `Admin` that define a user's basic capabilities at the organization level.
+    - **Folder/Dashboard Permission**: On top of organization roles, more granular access control can be granted to specific folders or dashboards, such as `View (1)`, `Edit (2)`, `Admin (4)`.
+- **Permissions Conflict**: The core of this case. When validating Git Sync save operations, the system may **over-rely on or incorrectly prioritize the organization role (requiring `Admin`)**, ignoring the equivalent operation permissions (`Admin (4)`) the user has already obtained through folder permissions, resulting in authorization failure.
+
+## Practice
+
+### Problem Reproduction Steps
+1.  Configure a provisioned repository synchronized through a Git repository (e.g., GitHub).
+2.  Under the repository root folder, grant specific users, teams, or the `Editor` role explicit **folder `Admin (4)` permissions**, ensuring permissions are directly assigned rather than inherited.
+3.  Log in to Grafana as a user with the built-in `Editor` organization role (not organization `Admin`).
+4.  Navigate to a dashboard in the provisioned folder or its subfolders.
+5.  Edit the dashboard.
+6.  Trigger the "Provisioned dashboard" save workflow.
+7.  In the Git Sync dialog, select/create a branch, target folder, and filename.
+8.  Execute the save operation.
+9.  **Expected Result**: Operation succeeds, changes committed to the specified Git repository branch.
+10. **Actual Result**: Operation fails with a permissions error: `dashboards.dashboard.grafana.app "<uid>" is forbidden: admin role is required`.
+
+### Solutions and Recommendations
+- **Official Fix**: This issue (related to Issue #124550) indicates a defect in Grafana's permission validation logic. Monitor Grafana's official updates for a fix to this permission check logic that would correctly recognize folder `Admin` permissions.
+- **Temporary Workarounds**:
+    1.  **Elevate Organization Role**: Temporarily or permanently elevate the user needing to perform this operation to organization `Admin`. This is the most direct approach but may not align with the principle of least privilege.
+    2.  **Use Alternative Workflows**: Before the fix, for changes requiring Git Sync saves, have a user with the organization `Admin` role perform the operation, or modify dashboard files in the Git repository through other CI/CD pipelines.
+- **Permissions Model Verification**: Before implementing any changes, verify the user's actual effective permissions through the Grafana API or UI to ensure folder permission settings are active and as expected.
+
+## SRE Takeaways
+
+- **Reliability Impact**: This issue directly affects **configuration management reliability**. When engineers responsible for dashboard maintenance (typically with the `Editor` role) cannot save tested changes to the Git repository due to permission issues, it hinders configuration standardization and versioning, potentially causing inconsistencies between production monitoring configurations and development/test environments, introducing latent risks.
+- **Best Practices and Anti-patterns**:
+    - **Best Practice**: Follow the principle of least privilege. Understand the interaction between Grafana organization roles and resource (folder, dashboard) permissions. Before using advanced features like Git Sync, verify and document the required permissions model.
+    - **Common Anti-patterns**: 1) Assuming folder permissions are sufficient to cover all operations while ignoring that specific features (like Git Sync) may have additional permission requirements. 2) Relying on UI prompts for operations without verifying permissions in advance, causing mid-workflow failures.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: "Git Sync dashboard save operation success rate" can be defined as a Service Level Indicator. This bug directly causes decreased success rates under specific permission combinations.
+    - **SLO**: For teams relying on Git Sync, a target could be "99% success rate for Git Sync save operations initiated by engineers with folder edit permissions." This issue threatens achieving that SLO.
+    - **SLA**: Internal team service agreements may promise Git Sync workflow availability under specific permissions. This issue may violate related terms.
+
+See [[git-sync]], [[rbac]] for more related information.

@@ -1,71 +1,73 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Grafana Issue"
-category: "数据源与监控"
-confidence: medium
+category: "Data Sources & Monitoring"
+confidence: high
 ---
 
+# Grafana Issue
 
-## 概述
-在使用 Grafana 监控运行于 Azure 主权云（例如 US Government 或 China）上的资源时，管理员可能遇到一个看似奇怪的问题：在 Azure Monitor 数据源的资源选择器中会弹出关于“区域不可用”的错误提示。这个问题源于 Grafana 对 Azure 区域列表的硬编码实现，它与公共 Azure 云的区域不匹配，导致在主权云环境下产生非致命但影响用户体验的错误。理解其根本原因和潜在解决方案对于维护监控系统的可用性和用户体验至关重要。
+## Overview
+When using Grafana to monitor resources running on Azure Sovereign Clouds (such as US Government or China), administrators may encounter a seemingly strange issue: an error prompt about "region not available" appears in the Azure Monitor data source's resource selector. This issue stems from Grafana's hardcoded implementation of the Azure region list, which does not match the regions available in the public Azure cloud, causing non-fatal but user-experience-impacting errors in sovereign cloud environments. Understanding its root cause and potential solutions is critical for maintaining monitoring system availability and user experience.
 
-## 核心概念
-### Azure 主权云
-Azure 主权云（Sovereign Clouds）是 Microsoft 为满足特定地区或政府合规要求而运营的独立 Azure 实例，主要包括 **Azure 政府云（Azure Government）** 和 **Azure 中国云（Azure China 21Vianet）**。这些云拥有独立的管理平面、区域和服务终结点，其可用的资源、服务和命名空间与全球公共 Azure 云（Azure Public Cloud）存在差异。
+## Core Concepts
+### Azure Sovereign Clouds
+Azure Sovereign Clouds are independent Azure instances operated by Microsoft to meet specific regional or government compliance requirements, primarily including **Azure Government** and **Azure China (21Vianet)**. These clouds have independent management planes, regions, and service endpoints, and their available resources, services, and namespaces differ from the global Azure Public Cloud.
 
-### Grafana Azure Monitor 数据源的区域发现机制
-根据提供的资料，Grafana 在实现 Azure Monitor 资源选择器时，为了加快资源命名空间的加载速度，采用了一种优化策略。它内部维护了一个预定义的 Azure 区域列表（例如 `eastus`, `westeurope` 等）。当用户选择资源时，Grafana 可能会首先尝试从这个固定列表中关联的区域获取可用的命名空间。如果当前 Grafana 连接的 Azure 环境（主权云）中不存在这些区域，就会触发 `region is not available` 的错误。
+### Grafana Azure Monitor Data Source Region Discovery Mechanism
+According to the provided material, when implementing the Azure Monitor resource selector, Grafana adopted an optimization strategy to speed up resource namespace loading. It internally maintains a predefined list of Azure regions (for example, `eastus`, `westeurope`, etc.). When a user selects a resource, Grafana may first attempt to fetch available namespaces from the regions associated with this fixed list. If the Azure environment (sovereign cloud) that Grafana is currently connected to does not have these regions, the `region is not available` error is triggered.
 
-### 错误性质分析
-该错误被报告为功能性上的“非致命错误”。尽管出现了错误提示，但用户仍然能够搜索和选择目标资源。这表明错误发生在**元数据获取**或**预加载**阶段，而不是核心的数据查询流程。然而，这降低了界面的整洁性和用户体验，并可能让用户对监控系统的健康状况产生不必要的担忧。
+### Error Nature Analysis
+The error is reported as a "non-fatal" error in terms of functionality. Despite the error prompt appearing, users can still search for and select target resources. This indicates the error occurs during the **metadata fetching** or **preloading** phase, not the core data query process. However, this reduces interface cleanliness and user experience, and may cause users unnecessary concern about the monitoring system's health.
 
-## 实践
-### 问题复现与定位
-1.  **环境准备**：确保 Grafana 实例部署在或连接至一个 Azure 主权云环境（如 Azure 政府云 `usgovvirginia` 区域，或中国云 `chinanorth3` 区域）。
-2.  **配置数据源**：在 Grafana 中配置 Azure Monitor 数据源，并使用主权云中的服务主体或托管标识进行认证。
-3.  **触发错误**：创建一个使用 Azure Monitor 指标服务的新面板，在资源选择器中尝试选择资源。
-4.  **观察现象**：控制台或界面上将显示数个（根据资料中图片提示为3个）关于特定区域（如 `eastus`）不可用的错误提示。
+## Practice
+### Problem Reproduction and Localization
+1.  **Environment Preparation**: Ensure the Grafana instance is deployed in or connected to an Azure Sovereign Cloud environment (such as Azure Government `usgovvirginia` region, or China Cloud `chinanorth3` region).
+2.  **Configure Data Source**: Configure the Azure Monitor data source in Grafana, using a service principal or managed identity from the sovereign cloud for authentication.
+3.  **Trigger Error**: Create a new panel using the Azure Monitor metrics service, and attempt to select a resource in the resource selector.
+4.  **Observe Symptoms**: The console or interface will display several (according to the material's image, approximately 3) error prompts about specific regions (such as `eastus`) being unavailable.
 
-### 潜在解决方案与缓解措施
-问题的根本原因在于 Grafana 代码中硬编码的区域列表未考虑主权云的差异。根据讨论，有几种可行的应对思路：
+### Potential Solutions and Mitigations
+The root cause of the issue is that the hardcoded region list in Grafana's code does not account for sovereign cloud differences. Based on the discussion, there are several viable approaches:
 
-1.  **扩展区域列表以包含主权云核心区域**：
-    - 这是问题报告中提出的一种直接思路。建议在 Grafana 内部的区域列表中增加每个主权云至少一个代表性区域，例如美国政府云的 `usgovvirginia` 和中国云的 `chinanorth3`。
-    - **优点**：能从根本上解决元数据获取错误，确保资源选择器在主权云中能正确预加载命名空间。
-    - **实施方**：此修改需要由 Grafana 开发团队在代码仓库中完成并发布新版本。
+1.  **Extend Region List to Include Sovereign Cloud Core Regions**:
+    - This is a direct approach proposed in the issue report. It suggests adding at least one representative region for each sovereign cloud to Grafana's internal region list, such as `usgovvirginia` for US Government Cloud and `chinanorth3` for China Cloud.
+    - **Pros**: Fundamentally resolves the metadata fetching error, ensuring the resource selector can correctly preload namespaces in sovereign clouds.
+    - **Implementation**: This modification needs to be completed by the Grafana development team in the code repository and released in a new version.
 
-2.  **抑制非关键错误并优雅回退**：
-    - 在 Grafana 的错误处理逻辑中，识别此类与区域发现相关的错误，并将它们降级为前端的提示信息（如 `i` 图标），而非红色的错误弹窗。
-    - 确保即使预定义区域查询失败，也能正确回退到使用代码中已定义的 `metricNamespaces` 列表来提供功能，正如当前行为所展示的那样。
-    - **优点**：可以作为临时的用户体验修复，减少用户困惑，而无需等待完整功能更新。
+2.  **Suppress Non-critical Errors and Gracefully Fallback**:
+    - In Grafana's error handling logic, identify such region discovery-related errors and downgrade them to frontend hints (such as an `i` icon) rather than red error popups.
+    - Ensure that even if predefined region queries fail, the system correctly falls back to using the `metricNamespaces` list already defined in the code to provide functionality, as the current behavior demonstrates.
+    - **Pros**: Can serve as a temporary user experience fix, reducing user confusion without waiting for a complete feature update.
 
-3.  **动态获取可用区域**：
-    - 从技术上看，一个更健壮的长期方案是让 Grafana 通过 Azure 资源管理器 API 动态获取当前订阅或租户下实际可用的区域列表，而非使用硬编码列表。但这可能会引入额外的 API 调用和复杂性。
+3.  **Dynamically Fetch Available Regions**:
+    - From a technical perspective, a more robust long-term solution would be to have Grafana dynamically fetch the actual available region list for the current subscription or tenant through the Azure Resource Manager API, rather than using a hardcoded list. However, this may introduce additional API calls and complexity.
 
-### 官方进展与验证
-- 该问题已在 Grafana GitHub 上被跟踪（Issue #124864）。
-- 相关讨论可追溯至更早的 Issue #92887 和 Pull Request #93127，这表明 Grafana 团队在持续优化此区域发现机制。
-- 对于运维人员，最直接的验证方式是升级到已包含相关修复的 Grafana 版本（例如在修复发布后），或向 Grafana 社区贡献上述解决方案之一。
+### Official Progress and Verification
+- This issue has been tracked on Grafana GitHub (Issue #124864).
+- Related discussions trace back to earlier Issue #92887 and Pull Request #93127, indicating that the Grafana team is continuously optimizing this region discovery mechanism.
+- For operations personnel, the most direct verification method is to upgrade to a Grafana version that already includes the relevant fix (for example, after the fix is released), or to contribute one of the above solutions to the Grafana community.
 
-## SRE 覃点
-### 与可靠性、可观测性、事件响应的关联
-- **可靠性与用户体验**：此类 UI 错误虽然不直接影响核心监控数据的采集（SLI），但会损害用户对监控平台可靠性的信任，影响运维团队的工作效率。一个“健康”的监控系统界面本身也应该是清晰、无干扰的。
-- **可观测性**：这个问题本身就是一个可观测性案例。错误的可见性（弹窗）高于其实际影响，误导了对系统健康状态的判断。理想的可观测性系统应能准确区分“警告”和“严重错误”。
-- **事件响应**：在事件调查中，运维人员可能首先被 Grafana 界面上的这些错误分散注意力，误以为是更广泛的 Azure 连接问题。快速识别并确认这是已知的、良性的 UI 问题，对于高效事件响应至关重要。
+## SRE Key Points
+### Connection to Reliability, Observability, and Incident Response
+- **Reliability and User Experience**: Although such UI errors do not directly affect core monitoring data collection (SLI), they damage users' trust in the monitoring platform's reliability and affect the operational team's work efficiency. A "healthy" monitoring system interface should itself be clean and free of distractions.
+- **Observability**: This issue itself is an observability case study. The visibility of the error (popup) is higher than its actual impact, misleading judgment about system health. An ideal observability system should accurately distinguish between "warnings" and "critical errors."
+- **Incident Response**: During incident investigation, operations personnel may first be distracted by these errors on the Grafana interface, mistaking them for broader Azure connection issues. Quickly identifying and confirming this as a known, benign UI issue is critical for efficient incident response.
 
-### 最佳实践与常见反模式
-- **最佳实践**：
-    1.  **监控工具链本身的监控**：将 Grafana 界面关键功能的可用性（如资源选择器无错误）作为内部 SLI 进行监控。
-    2.  **版本管理与更新**：及时关注并测试 Grafana 及数据源插件的更新，以获取对新环境（如主权云）的兼容性修复。
-    3.  **用户沟通**：在已知存在此类 UI 问题时，通过运维文档或公告提前告知团队，减少不必要的告警和咨询。
-- **常见反模式**：
-    1.  **忽视用户界面错误**：认为“只要数据能查就行”，从而忽略 UI/UX 问题，导致用户不满和误报。
-    2.  **在非主权云环境中测试**：所有监控相关的配置和更新都应在与生产环境一致（包括云类型）的 staging 环境中进行充分测试。
+### Best Practices and Common Anti-patterns
+- **Best Practices**:
+    1.  **Monitor the Monitoring Toolchain**: Monitor the availability of critical Grafana interface features (such as error-free resource selector) as an internal SLI.
+    2.  **Version Management and Updates**: Stay informed about and test updates to Grafana and data source plugins in a timely manner to obtain compatibility fixes for new environments (such as sovereign clouds).
+    3.  **User Communication**: When such UI issues are known to exist, proactively inform the team through operations documentation or announcements to reduce unnecessary alerts and inquiries.
+- **Common Anti-patterns**:
+    1.  **Ignoring User Interface Errors**: Believing "as long as data can be queried, it's fine," thereby ignoring UI/UX issues, leading to user dissatisfaction and false reports.
+    2.  **Testing in Non-Sovereign Cloud Environments**: All monitoring-related configurations and updates should be thoroughly tested in a staging environment consistent with the production environment (including cloud type).
 
-### 相关指标（SLI/SLO/SLA）
-虽然此问题不直接涉及核心数据查询，但可从监控平台自身健康度的角度设定相关指标：
-- **SLI（示例）**：资源选择器加载成功率（无“区域不可用”错误弹窗的会话百分比）。
-- **SLO（示例）**：资源选择器 99% 的操作应无用户感知错误。
-- **SLA**：作为内部工具，通常不涉及外部 SLA，但此 SLO 的达成可确保运维团队对 Grafana 平台的使用满意度。
+### Related Metrics (SLI/SLO/SLA)
+Although this issue does not directly involve core data queries, relevant metrics can be set from the perspective of the monitoring platform's own health:
+- **SLI (Example)**: Resource selector load success rate (percentage of sessions without "region not available" error popups).
+- **SLO (Example)**: 99% of resource selector operations should be free of user-perceived errors.
+- **SLA**: As an internal tool, external SLAs typically do not apply, but achieving this SLO can ensure the operations team's satisfaction with the Grafana platform.
 
-相关页面：[[azure-monitor-datasource-configuration]], [[observability-fundamentals]]
+Related pages: [[azure-monitor-datasource-configuration]], [[observability-fundamentals]]

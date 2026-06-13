@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana 13.0.1 升级后 Elasticsearch 数据源在气隙环境中失效"
 description: "在升级到 Grafana 13.0.1 后，已安装的 Elasticsearch 插件在气隙环境中变得不可用，导致数据源查询失败。"
@@ -11,6 +12,8 @@ sources:
     title: "GitHub Issue #123110: Elasticsearch datasources broken after upgrade to grafana 13.0.1"
 tags: [Elasticsearch, Grafana, 气隙环境, 数据源, 升级, 配置漂移]
 ---
+
+# Grafana 13.0.1 升级后 Elasticsearch 数据源在气隙环境中失效
 
 ## 概述
 在 Grafana 等可观测性平台的运维中，升级操作是保持系统安全和功能新颖的必要步骤，但也伴随着引入新风险的可能。本文描述了一个典型的升级后配置漂移与环境依赖问题：在升级到 Grafana 13.0.1 后，预配置的 Elasticsearch 数据源在无法访问外部互联网的气隙环境中完全失效。此问题揭示了 Grafana 插件生命周期管理在特定部署架构下的一个重要缺陷，直接影响生产环境的可观测性，是 SRE 团队在规划升级、处理事件和保障服务可靠性时需要高度警惕的场景。

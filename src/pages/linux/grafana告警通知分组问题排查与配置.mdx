@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana告警通知分组问题排查与配置"
 description: "解决Grafana Alerting 中通过通知策略配置 `not_grouping` 无法分隔告警通知的问题，确保告警信息能按预期分组或拆分发送。"
@@ -11,6 +12,8 @@ sources:
     title: "Can't split notifications"
 tags: [grafana, alerting, notification-policy, group-by, sre]
 ---
+
+# Grafana告警通知分组问题排查与配置
 
 ## 概述
 在 SRE 实践中，清晰、及时且可操作的告警通知是有效事件响应的基础。Grafana Alerting 提供了强大的通知策略（Notification Policy）机制，用于控制告警如何被分组、路由和发送。一个常见的需求是将具有不同标签（例如不同 `cluster`）的告警拆分成独立的通知消息，以避免单条通知包含过多告警（如“32 firing alerts”），从而便于快速定位问题。然而，根据提供的案例，即使正确配置了 `not_grouping` 参数，告警通知仍可能被意外地聚合在一起，这会严重影响运维人员的判断和处理效率。

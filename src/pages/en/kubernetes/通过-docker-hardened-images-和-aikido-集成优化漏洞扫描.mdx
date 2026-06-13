@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Optimizing Vulnerability Scanning with Docker Hardened Images and Aikido Integration"
+description: "Aikido integrates with Docker Hardened Images, using built-in VEX declarations to automatically filter verified non-exploitable vulnerabilities, significantly reducing vulnerability triage noise for development and security teams."
+category: Container Security
+order: 0
+lastUpdated: 2025-07-04
+confidence: medium
+sources:
+  - url: https://www.docker.com/blog/docker-hardened-images-enhanced-vulnerability-scanning-with-docker-and-aikido/
+    title: "Docker Blog: Docker Hardened Images enhanced vulnerability scanning with Docker and Aikido"
+tags: [docker, hardened-images, vulnerability-scanning, vex, sre, container-security, sbom]
+---
+
+# Optimizing Vulnerability Scanning with Docker Hardened Images and Aikido Integration
+
+## Overview
+
+Container security scanning is critical for application supply chain reliability. However, massive CVE false positives and irrelevant findings from scanning tools severely consume development and security team time. Docker Hardened Images (DHI) with Aikido security platform integration, through native VEX (Vulnerability Exploitability eXchange) support, automates vulnerability finding triage and filtering. This directly relates to SRE practices of **reducing incident noise and improving remediation efficiency**.
+
+## Core Concepts
+
+**Docker Hardened Images (DHI)**: Docker's security-hardened base images. Typically distroless-based, containing only workload-necessary software. Faster patching than upstream. Each image includes signed SBOM and OpenVEX declarations.
+
+**VEX**: Standardized data format for communicating vulnerability exploitability status. Allows image publishers (Docker) to declare known CVEs as "unaffected" or "fixed" with rationale.
+
+**OpenVEX**: Open, lightweight VEX implementation. Docker publishes OpenVEX in DHI; Aikido parses these signed declarations for vulnerability mitigation.
+
+**Integration Workflow**: Aikido scans DHI, identifies images, pulls official SBOM and VEX, matches vulnerabilities, applies VEX to filter findings Docker determined as "unaffected" or "fixed."
+
+## Practice
+
+### Prerequisites
+1.  Valid [Aikido account](https://www.aikido.dev/).
+2.  Access to [Docker Hardened Images](https://docs.docker.com/dhi/get-started/).
+3.  Read-only [Docker Hub personal access token](https://docs.docker.com/security/access-tokens/).
+
+### Connect Docker Hub to Aikido
+1.  Log in to Aikido platform.
+2.  Navigate to **Settings > Containers**.
+3.  Click **Connect Registry**, select **Docker Hub**.
+4.  Enter organization namespace, username, and personal access token.
+
+### Understanding VEX Statuses
+
+| VEX Status | Meaning | Aikido Handling |
+|------------|---------|-----------------|
+| **Fixed** | Vulnerability patched in this image. | Filtered from active queue. |
+| **Not Affected** | Docker verified CVE is false positive or non-exploitable. | Suppressed by default. |
+| **Under Investigation** | Impact still being evaluated. | Typically retained for manual attention. |
+| **Affected** | Vulnerability applicable, fix not yet available. | Highlighted in queue, priority handling. |
+
+## SRE Essentials
+
+- **Reliability, Observability, Incident Response**: Directly improves security operations reliability by reducing ineffective incident responses from false positives. Clearer vulnerability queues improve security observability signal-to-noise ratio.
+- **Best Practices**: Prioritize Docker Hardened Images; ensure scanning tools integrate VEX; incorporate VEX into vulnerability management and compliance auditing.
+- **Anti-Patterns**: Ignoring VEX information; using traditional scanners unable to parse VEX; treating all findings uniformly without distinguishing actual exploitability.
+- **Related Metrics**:
+    - **MTTR for vulnerability triage**: Expected significant decrease.
+    - **Security scan precision**: False positive rate reduction.
+    - **Developer time on security alerts**: Expected reduction.
+    - Internal SLOs based on exploitability (VEX-affected vs non-VEX-degraded high-severity vulnerabilities).

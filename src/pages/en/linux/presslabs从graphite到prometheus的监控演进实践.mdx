@@ -1,65 +1,67 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Prometheus Blog - Interview with Presslabs"
-category: "监控与可观测性"
-confidence: medium
+category: "Monitoring and Observability"
+confidence: high
 ---
 
+# Prometheus Blog - Interview with Presslabs
 
-## 概述
+## Overview
 
-Presslabs 是一个高性能的托管 WordPress 平台，服务于出版商、企业品牌和数字代理机构，每月支持高达 20 亿次页面浏览。随着业务规模和技术栈的演进，尤其是向 Kubernetes 的迁移，其监控系统也经历了从传统工具到现代云原生方案的重大转变。本文基于 Presslabs 与 Prometheus 社区的访谈，梳理了其监控体系的演进历程、从 Graphite 迁移到 Prometheus 的实践经验，以及在大型规模、高可用基础设施上运行可观测性的关键考量。这一案例为 SRE 团队在规划监控系统现代化、尤其是在 Kubernetes 环境中构建可观测性支柱时提供了宝贵的参考。
+Presslabs is a high-performance managed WordPress platform serving publishers, enterprise brands, and digital agencies, supporting up to 2 billion page views per month. As the business scale and technology stack evolved, especially with the migration to Kubernetes, its monitoring system also underwent a major transformation from traditional tools to modern cloud-native solutions. This article is based on Presslabs's interview with the Prometheus community, outlining the evolution of its monitoring system, the practical experience of migrating from Graphite to Prometheus, and key considerations for running observability on large-scale, high-availability infrastructure. This case study provides valuable reference for SRE teams planning monitoring system modernization, especially when building observability pillars in Kubernetes environments.
 
-## 核心概念
+## Core Concepts
 
-Presslabs 的监控演进历程体现了几个核心概念的转变：
+Presslabs's monitoring evolution reflects several core concept shifts:
 
-1.  **监控系统的代际演进**：从以 Munin 和 Graphite 为代表的传统时间序列数据库（TSDB），演进到以 Prometheus 为核心的云原生监控方案。这不仅是工具的更迭，更是数据模型（从基于轮询的 pull 模型到更灵活的服务发现和 pull 模型）和架构（从集中式收集到去中心化、联邦式架构）的深刻变革。
-2.  **可观测性与业务价值的结合**：Presslabs 不仅将监控用于基础设施健康检查，更将其与业务指标（如页面浏览量）和“问题到部署”的快速反馈循环相结合，通过“WordPress Business Intelligence”仪表盘驱动持续改进。这体现了 SRE 实践中将技术指标与业务成果对齐的理念。
-3.  **迁移策略与风险管理**：Presslabs 采取了并行运行的平滑过渡策略，而非激进的“一刀切”替换。这种方法允许团队逐步验证新系统，学习新技术，并最小化迁移过程中的业务风险。
-4.  **Kubernetes 原生集成**：Prometheus 与 Kubernetes 的天然集成（通过 Service Discovery）是 Presslabs 迁移的重要驱动力。它简化了动态、弹性环境下的指标发现和采集，这对于管理大型 WordPress 集群至关重要。
+1.  **Generational evolution of monitoring systems**: Evolved from traditional time-series databases (TSDB) represented by Munin and Graphite to cloud-native monitoring solutions centered on Prometheus. This is not just a tool change but a profound transformation in data model (from poll-based pull model to more flexible service discovery and pull model) and architecture (from centralized collection to decentralized, federated architecture).
+2.  **Combining observability with business value**: Presslabs not only uses monitoring for infrastructure health checks but also combines it with business metrics (such as page views) and rapid "problem to deployment" feedback loops, driving continuous improvement through the "WordPress Business Intelligence" dashboard. This embodies the SRE practice of aligning technical metrics with business outcomes.
+3.  **Migration strategy and risk management**: Presslabs adopted a smooth parallel-run transition strategy rather than an aggressive "big bang" replacement. This approach allows the team to gradually validate the new system, learn new technologies, and minimize business risk during migration.
+4.  **Kubernetes-native integration**: Prometheus's natural integration with Kubernetes (through Service Discovery) was a key driver for Presslabs's migration. It simplifies metric discovery and collection in dynamic, elastic environments, which is critical for managing large WordPress clusters.
 
-## 实践
+## Practice
 
-Presslabs 的监控体系演进与迁移实践可以总结为以下几个关键阶段和行动：
+Presslabs's monitoring system evolution and migration practices can be summarized in the following key stages and actions:
 
-**第一阶段：早期监控栈 (2009年起)**
-- **工具链**：Munin -&gt; Graphite + collectd。
-- **挑战**：Munin 的采集（1分钟）和聚合（5分钟）频率对于分析平台事件而言过于缓慢，无法满足实时性需求。Graphite 解决了时间粒度问题。
-- **自建组件**：开发了名为 Viz 的 JavaScript/Python 工具用于可视化和告警，后因维护成本过高而被 Grafana 取代。
+**Stage 1: Early monitoring stack (from 2009)**
+- **Toolchain**: Munin -> Graphite + collectd.
+- **Challenges**: Munin's collection (1 minute) and aggregation (5 minute) frequencies were too slow for analyzing platform events, unable to meet real-time requirements. Graphite solved the time granularity problem.
+- **Self-built components**: Developed a JavaScript/Python tool called Viz for visualization and alerting, later replaced by Grafana due to high maintenance costs.
 
-**第二阶段：引入 Prometheus (2014年起)**
-- **决策动因**：在 2014 年 Velocity Europe 大会上，Soundcloud 团队分享的 Prometheus 实践具有说服力。
-- **主要优势**：与 Kubernetes 的无缝集成、显著的资源使用减少、易于安装部署。
-- **并行运行架构**：在迁移过渡期，形成了混合架构：
-  - **核心服务与客户仪表盘**：使用 Prometheus 进行监控。
-  - **客户网站**：仍使用 Graphite-collectd 组合。
-  - **统一可视化**：在两者之上使用 Grafana 提供统一的视图。
+**Stage 2: Introducing Prometheus (from 2014)**
+- **Decision driver**: At the 2014 Velocity Europe conference, SoundCloud's team shared compelling Prometheus practices.
+- **Key advantages**: Seamless integration with Kubernetes, significant reduction in resource usage, easy installation and deployment.
+- **Parallel run architecture**: During the migration transition, a hybrid architecture formed:
+  - **Core services and customer dashboards**: Monitored using Prometheus.
+  - **Customer websites**: Still using Graphite-collectd combination.
+  - **Unified visualization**: Using Grafana above both to provide a unified view.
 
-**第三阶段：未来规划与深化**
-- **基础设施升级**：计划用 Prometheus Operator 替代当前的 Prometheus Helm Chart，以实现更精细的平台管理和资源隔离，例如为特定网站集合分配专用的 Prometheus 服务器。
-- **指标格式标准化**：致力于将 WordPress 业务指标以 Prometheus 格式暴露，进一步统一技术指标与业务指标的采集路径。
-- **持续探索**：面临 Prometheus 原生长期存储的挑战（需存储业务指标长达一年），正在评估和测试社区中的长期存储解决方案（如 Thanos， Cortex 等）。
+**Stage 3: Future planning and deepening**
+- **Infrastructure upgrade**: Plans to replace the current Prometheus Helm Chart with Prometheus Operator for more fine-grained platform management and resource isolation, such as assigning dedicated Prometheus servers for specific website sets.
+- **Metric format standardization**: Working to expose WordPress business metrics in Prometheus format, further unifying the collection path for technical and business metrics.
+- **Continuous exploration**: Facing the challenge of Prometheus native long-term storage (needing to store business metrics for up to a year), actively evaluating and testing community long-term storage solutions (such as Thanos, Cortex, etc.).
 
-**迁移经验与资源**
-- **文档与社区**：迁移过程中主要依赖 Prometheus 官方文档、GitHub Issues、源代码以及 Stack Overflow 进行问题排查和学习。
+**Migration experience and resources**
+- **Documentation and community**: The migration primarily relied on Prometheus official documentation, GitHub Issues, source code, and Stack Overflow for troubleshooting and learning.
 
-## SRE 要点
+## SRE Key Points
 
-- **与可靠性的关联**：Presslabs 的实践展示了可观测性如何直接支撑 SLO 的定义与管理。他们能够监控从底层基础设施（Kubernetes 节点）到应用层（WordPress）再到业务指标（页面浏览量）的全链路，为设定和实现“100% 的时间为网站访问者提供无缝体验”这一高可用性目标提供了数据基础。迁移的核心目标之一是构建一个“高性能监控系统”，这本身就是支撑可靠系统的基石。
-- **最佳实践与反模式**：
-  - **最佳实践**：
-    1.  **渐进式迁移**：并行运行新旧系统，是控制风险、平稳过渡的有效策略。
-    2.  **拥抱云原生集成**：充分利用 Prometheus 与 Kubernetes 的原生集成能力，简化动态环境的监控。
-    3.  **可视化与告警解耦**：使用 Grafana 作为独立的可视化层，与后端监控系统（Graphite 或 Prometheus）解耦，提升了灵活性。
-    4.  **监控驱动开发**：将指标暴露和监控系统设计纳入平台开发（如“Kubernetizing WordPress”），而非事后补充。
-  - **常见反模式/挑战**：
-    1.  **长期存储的复杂性**：原始 Prometheus 在长期存储方面的局限性是一个已知挑战，需要引入额外的组件来解决，增加了系统复杂性。
-    2.  **监控栈碎片化**：过渡期并行运行多套监控系统会带来数据口径、告警规则和运维知识的分散，增加了长期维护成本。
-- **相关指标 (SLI/SLO/SLA)**：
-  - **基础设施 SLI**：CPU、内存、网络、磁盘 I/O 利用率；Kubernetes Pod 状态、API 服务器延迟与错误率。
-  - **应用 SLI**：WordPress PHP 错误率、请求延迟、数据库查询性能。
-  - **业务 SLI**：页面浏览量（PV）、页面加载时间、转化率。Presslabs 已将 PV 指标作为其业务智能的核心部分，并计划将其与 Prometheus 生态进一步整合。
-  - **监控系统自身 SLI**：Prometheus 数据采集的延迟与丢失率、查询延迟、长期数据的可用性。这些是评估监控系统是否可靠的关键。
+- **Relationship with reliability**: Presslabs's practice demonstrates how observability directly supports SLO definition and management. They can monitor the full chain from underlying infrastructure (Kubernetes nodes) to application layer (WordPress) to business metrics (page views), providing the data foundation for setting and achieving the high-availability goal of "100% seamless experience for website visitors." One of the core migration objectives was building a "high-performance monitoring system," which itself is a cornerstone for supporting reliable systems.
+- **Best practices and anti-patterns**:
+  - **Best practices**:
+    1.  **Gradual migration**: Running new and old systems in parallel is an effective strategy for controlling risk and ensuring smooth transition.
+    2.  **Embrace cloud-native integration**: Fully leverage Prometheus's native integration capabilities with Kubernetes to simplify monitoring in dynamic environments.
+    3.  **Decouple visualization and alerting**: Use Grafana as an independent visualization layer, decoupled from the backend monitoring system (Graphite or Prometheus), enhancing flexibility.
+    4.  **Monitoring-driven development**: Incorporate metric exposure and monitoring system design into platform development (such as "Kubernetizing WordPress") rather than adding it as an afterthought.
+  - **Common anti-patterns/challenges**:
+    1.  **Long-term storage complexity**: Native Prometheus's limitations in long-term storage is a known challenge, requiring additional components to solve, increasing system complexity.
+    2.  **Monitoring stack fragmentation**: Running multiple monitoring systems in parallel during the transition period brings fragmentation of data caliber, alert rules, and operational knowledge, increasing long-term maintenance costs.
+- **Related metrics (SLI/SLO/SLA)**:
+  - **Infrastructure SLI**: CPU, memory, network, disk I/O utilization; Kubernetes Pod status, API server latency and error rate.
+  - **Application SLI**: WordPress PHP error rate, request latency, database query performance.
+  - **Business SLI**: Page views (PV), page load time, conversion rate. Presslabs has already incorporated PV metrics as a core part of its business intelligence and plans to further integrate them with the Prometheus ecosystem.
+  - **Monitoring system self-SLI**: Prometheus data collection latency and loss rate, query latency, long-term data availability. These are key indicators for evaluating whether the monitoring system is reliable.
 
-Presslabs 的案例清晰地表明，一个现代化的、与云原生架构深度集成的监控系统，不仅是问题发生后的“事后诸葛亮”，更是驱动平台可靠性、性能和业务持续改进的核心基础设施。其从传统监控到 Prometheus 的演进路径，为许多正在进行类似转型的团队提供了实用的路线图和避坑指南。
+Presslabs's case clearly demonstrates that a modern monitoring system deeply integrated with cloud-native architecture is not just "hindsight" after problems occur, but a core infrastructure driving platform reliability, performance, and continuous business improvement. Its evolution path from traditional monitoring to Prometheus provides a practical roadmap and pitfalls guide for many teams undergoing similar transformations.

@@ -1,0 +1,55 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Library Panel Title Synchronization Failure Issue"
+category: "Visualization and Monitoring"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/104023
+    title: "Library Panel: Panel titles are no longer synchronized"
+tags: [grafana, library-panel, bug, sre]
+---
+
+# Library Panel Title Synchronization Failure Issue
+
+## Overview
+
+Library Panels are a feature in Grafana for sharing and reusing configured panels across multiple dashboards, crucial for maintaining monitoring view consistency and reducing configuration redundancy. In SRE practice, ensuring the accuracy and consistency of dashboard definitions is fundamental to achieving reliable observability. This document records a regression defect found in Grafana 11.5.2, where modifications to library panel titles fail to automatically synchronize to all dashboards referencing that panel, undermining this core mechanism and potentially causing confusion among operations personnel and loss of monitoring context.
+
+## Core Concepts
+
+To understand this issue, the following core concepts must be clarified:
+
+*   **Library Panel**: This is a reusable panel template created from the Grafana library. Dashboards can reference library panels rather than independently saving panel configurations. The advantage is that any modifications to the library panel source (e.g., data queries, visualization settings, title, etc.) should theoretically propagate automatically to all dashboards referencing it.
+*   **Dashboard**: A view composed of one or more panels for visualizing and monitoring metrics of a specific system or service. Dashboards can contain independent panels or references to library panels.
+*   **Synchronization**: The process of maintaining configuration state consistency between a library panel and all its reference instances. The core of this issue is that the synchronization mechanism for the "title" attribute has failed.
+
+## Practice
+
+According to the official issue description, the reproduction steps and impact are as follows:
+
+1.  **Reproduction Steps**:
+    *   Prerequisite: Have an already-created library panel that is referenced by multiple dashboards.
+    *   Step 1: Modify the library panel's "Panel title".
+    *   Step 2: Check any other dashboards using that library panel.
+    *   Result: The library panel titles in these dashboards **have not been updated** and still display the old title.
+
+2.  **Version Impact**:
+    *   **Confirmed Affected Version**: Grafana 11.5.2.
+    *   **Working Version**: Grafana 11.2.0. This indicates the issue is a regression bug introduced between 11.2.0 and 11.5.2.
+
+3.  **Temporary Workarounds**:
+    *   **Manual Update**: Currently, operations personnel may need to manually enter each dashboard referencing the library panel, open and re-save the panel to force a title refresh. This method is inefficient when there are many panel references.
+    *   **Version Rollback**: For critical dashboards with significant impact, consider temporarily rolling Grafana back to a known stable version (e.g., 11.2.0), but this introduces other potential risks and management costs.
+    *   **Monitor Official Fix**: The fundamental solution is to wait for Grafana to officially fix this regression in a subsequent version. SRE teams should monitor the progress of this issue.
+
+## SRE Key Points
+
+*   **Relation to Reliability and Observability**: Library panel synchronization failure directly undermines the "Single Source of Truth" for monitoring configuration. When critical metadata such as panel titles is not synchronized, different operations personnel will see inconsistent monitoring contexts across different dashboards, potentially misdirecting troubleshooting efforts, increasing mean time to recovery (MTTR), and essentially representing **observability debt**.
+*   **Best Practices and Common Anti-Patterns**:
+    *   **Best Practice**: Establish and follow strict change management processes ([[change-management]]). Any modifications to production monitoring configuration (such as library panels) should be tested (e.g., validated in a staging environment). Incorporating critical dashboard configurations into version control ([[dashboard-as-code]]) helps track changes and enable rollbacks.
+    *   **Anti-Pattern**: Directly upgrading core monitoring platforms (like Grafana) without fully understanding or testing the impact of new versions. In this case, upgrading from 11.2.0 to 11.5.2 introduced an unforeseen regression. SRE should always validate upgrade plans in non-production environments.
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   This issue affects **monitoring panel configuration consistency**. While not directly corresponding to a standard SLI, it can be treated as an internal **configuration management health** metric.
+    *   For example, a **Configuration Consistency SLI** can be defined: `Successfully synchronized library panel attribute modifications / Total attempted modifications`. This bug would cause this metric to decrease.
+    *   The corresponding **SLO** could be: During non-maintenance windows, the synchronization success rate of core library panel attributes (such as title) should remain above 99.9%. The occurrence of this bug means the SLO is violated.

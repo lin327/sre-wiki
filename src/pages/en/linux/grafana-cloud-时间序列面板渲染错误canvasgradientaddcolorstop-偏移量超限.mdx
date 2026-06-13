@@ -1,73 +1,75 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "'[Grafana Issue #93162] DOMException: CanvasGradient.addColorStop: Offset"
-category: "可观测性与可视化工具"
-confidence: medium
+category: "Observability & Visualization Tools"
+confidence: high
 ---
 
+# 
 
-## 概述
+## Overview
 
-本文档分析了一个在 Grafana Cloud 环境下发生的时间序列（Time Series）面板渲染故障。当用户配置了基于查询结果的多个阈值（Thresholds），并将显示模式设置为“作为填充区域和线条”或任何包含“填充区域”的选项时，整个面板会变成空白，浏览器控制台抛出 `DOMException: CanvasGradient.addColorStop: Offset out of 0-1.0 range` 错误。虽然此问题表面是一个前端渲染 Bug，但对于依赖实时仪表板进行系统监控和事件响应的 SRE 团队而言，它直接导致关键数据的可视化能力丧失，属于需要关注的可用性事件。理解其根本原因和应对策略，对于维护监控系统的可靠性至关重要。
+This document analyzes a rendering failure in a Time Series panel that occurred in a Grafana Cloud environment. When a user configures multiple thresholds based on query results and sets the display mode to "As fill and line" or any option containing "filled region," the entire panel becomes blank, and the browser console throws the error `DOMException: CanvasGradient.addColorStop: Offset out of 0-1.0 range`. While this issue appears to be a frontend rendering bug, for SRE teams relying on real-time dashboards for system monitoring and incident response, it directly causes the loss of critical data visualization capability, making it an availability event that warrants attention. Understanding its root cause and response strategies is critical for maintaining monitoring system reliability.
 
-## 核心概念
+## Core Concepts
 
-1.  **Canvas API 与 `CanvasGradient`**: Grafana 的许多可视化面板（如时序图）在浏览器中使用 HTML5 Canvas 元素进行高性能渲染。`CanvasGradient` 是 Canvas API 的一部分，用于创建颜色渐变（如线性渐变、径向渐变）。`addColorStop(offset, color)` 方法用于在渐变线上定义特定位置的颜色，其中 `offset` 参数必须是一个介于 0.0 和 1.0 之间的浮点数，表示渐变线上的相对位置。
-2.  **阈值（Thresholds）与填充区域（Filled Regions）**: 在 Grafana 面板中，阈值用于根据数据值划分不同的颜色区间，以直观地反映数据状态（如健康、警告、危险）。当显示模式设置为“填充区域”时，Grafana 会尝试在数据线与阈值线之间或不同阈值线之间绘制半透明的填充色块。这些填充区域的渲染很可能依赖于创建 `CanvasGradient` 对象。
-3.  **故障本质**: 该错误 `Offset out of 0-1.0 range` 明确指出，程序尝试向渐变添加一个位置值小于 0 或大于 1 的颜色停止点。这通常是由于计算 `offset` 的逻辑出现了异常，例如，基于阈值配置和数据范围计算出的归一化位置值超出了预期的 [0, 1] 区间。这可能是由于特定的阈值值、查询结果或浏览器渲染状态共同触发的边界条件错误。
+1.  **Canvas API and `CanvasGradient`**: Many of Grafana's visualization panels (such as time series charts) use HTML5 Canvas elements for high-performance rendering in the browser. `CanvasGradient` is part of the Canvas API, used to create color gradients (such as linear gradients, radial gradients). The `addColorStop(offset, color)` method defines a color at a specific position on the gradient line, where the `offset` parameter must be a floating-point number between 0.0 and 1.0, representing the relative position on the gradient line.
+2.  **Thresholds and Filled Regions**: In Grafana panels, thresholds are used to divide different color zones based on data values, visually reflecting data state (such as healthy, warning, critical). When the display mode is set to "filled region," Grafana attempts to draw semi-transparent filled color blocks between the data line and threshold lines or between different threshold lines. The rendering of these filled regions likely depends on creating `CanvasGradient` objects.
+3.  **Nature of the Failure**: The error `Offset out of 0-1.0 range` clearly indicates that the program attempted to add a color stop to a gradient with a position value less than 0 or greater than 1. This is typically caused by abnormal logic for calculating `offset`—for example, a normalized position value calculated from threshold configuration and data range exceeding the expected [0, 1] range. This may be a boundary condition error triggered by the interaction of specific threshold values, query results, and browser rendering state.
 
-## 实践
+## Practice
 
-### 问题表现与诊断
+### Problem Manifestation and Diagnosis
 
-当触发此问题时，现象非常明确：
--   **视觉现象**: 配置了特定阈值显示模式的时间序列面板，在刷新或加载时整个绘图区域变为空白。
--   **控制台错误**: 浏览器开发者工具控制台会输出关键错误信息 `DOMException: CanvasGradient.addColorStop: Offset out of 0-1.0 range`，并关联到 Grafana 的前端 JavaScript 代码（如 `chunk.1234.js`）。
--   **临时规避**: 将阈值显示模式更改为“作为线条”可以立即恢复图表渲染，因为此模式不依赖于创建涉及复杂偏移计算的渐变填充。
+When this problem is triggered, the symptoms are very clear:
+-   **Visual Symptom**: A time series panel configured with specific threshold display modes becomes entirely blank upon refresh or load.
+-   **Console Error**: The browser developer tools console outputs the key error message `DOMException: CanvasGradient.addColorStop: Offset out of 0-1.0 range`, associated with Grafana's frontend JavaScript code (e.g., `chunk.1234.js`).
+-   **Temporary Workaround**: Changing the threshold display mode to "As line" immediately restores chart rendering, as this mode does not depend on creating gradient fills involving complex offset calculations.
 
-### 问题复现步骤
+### Problem Reproduction Steps
 
-根据原始报告，可稳定复现的步骤如下：
-1.  创建一个时间序列面板，其数据源为带有时间戳和数值的查询结果。
-2.  使用“根据查询结果配置”（`Config from Query results`）转换，将另一个查询的结果配置为面板的阈值。
-3.  为每一个阈值设置不同的颜色。
-4.  将面板设置中的“显示阈值”（`Show Thresholds`）选项设置为“作为填充区域和线条”或任何包含“填充区域”的选项。
-5.  保存并刷新仪表板，观察面板是否变为空白并出现控制台错误。
+According to the original report, the stably reproducible steps are as follows:
+1.  Create a time series panel with a data source returning query results with timestamps and numeric values.
+2.  Use the "Config from Query results" transformation to configure another query's results as the panel's thresholds.
+3.  Set different colors for each threshold.
+4.  Set the panel's "Show Thresholds" option to "As fill and line" or any option containing "filled region."
+5.  Save and refresh the dashboard, observing whether the panel becomes blank and a console error appears.
 
-### 根因分析与状态
+### Root Cause Analysis and Status
 
-根据 Grafana Issue #93162 的讨论，此问题被确认为 Grafana 前端代码中的一个 Bug。根本原因在于计算填充区域渐变颜色停止点位置（`offset`）的逻辑在特定条件下产生了超出 0-1 范围的值。该 Bug 可能与面板的渲染逻辑、数据值的分布以及阈值配置的相互作用有关。截至资料发布日期（2024年9月），该问题处于已确认并寻求修复的状态。
+According to the discussion in Grafana Issue #93162, this problem has been confirmed as a bug in Grafana's frontend code. The root cause is that the logic for calculating the position (`offset`) of gradient color stops for filled regions produces values outside the 0-1 range under specific conditions. This bug may be related to the interaction of panel rendering logic, data value distribution, and threshold configuration. As of the publication date (September 2024), the issue has been confirmed and is seeking a fix.
 
-## SRE 要点
+## SRE Key Points
 
-### 与 SRE 实践的关联
+### Association with SRE Practice
 
-*   **可观测性受损**: 仪表板是 SRE 观测系统行为、理解服务健康状况（尤其是业务级 SLO 状态）的核心工具。此故障直接导致关键时间序列数据无法可视化，使得“观察-定向-决策-行动”循环中的第一步无法完成，严重削弱了团队的态势感知能力。
-*   **事件响应干扰**: 在事故响应期间，SRE 需要快速切换和检查相关仪表板。如果核心仪表板因前端错误而失效，将拖慢诊断速度，可能延长事件持续时间（MTTR）。
-*   **基础设施即代码（IaC）验证的局限性**: 此问题提示，即使仪表板配置（JSON Model）是版本化的，其最终渲染效果仍受 Grafana 应用本身版本和浏览器运行时的影响。需要在部署流程中纳入可视化的回归测试。
+*   **Impaired Observability**: Dashboards are the core tool for SRE to observe system behavior and understand service health (especially business-level SLO status). This failure directly prevents critical time-series data from being visualized, making the first step in the "Observe-Orient-Decide-Act" loop impossible to complete, severely undermining the team's situational awareness.
+*   **Incident Response Interference**: During incident response, SRE needs to quickly switch between and inspect relevant dashboards. If core dashboards fail due to frontend errors, it will slow diagnosis and potentially extend incident duration (MTTR).
+*   **Limitations of Infrastructure as Code (IaC) Validation**: This issue indicates that even if dashboard configuration (JSON Model) is versioned, its final rendering is still affected by the Grafana application version itself and the browser runtime. Visual regression testing needs to be incorporated into the deployment process.
 
-### 最佳实践与反模式
+### Best Practices and Anti-Patterns
 
-*   **最佳实践**:
-    1.  **升级与测试**: 在 Grafana 版本升级后，应对关键仪表板的各主要功能（包括不同的阈值显示模式、不同的变量选择）进行快速冒烟测试，确保可视化功能正常。
-    2.  **建立 SLO 覆盖**: 对于依赖关键仪表板的监控能力，可以考虑将其可用性作为一个内部 SLO 进行跟踪。虽然不必过于严格，但能促使团队关注此类影响用户体验的问题。
-    3.  **问题上报与跟踪**: 当在官方渠道（如 Grafana GitHub）发现已知 Bug 时，及时关联到内部监控系统的待办事项中，评估其对自身环境的影响并跟踪修复进度。
-    4.  **建立备选视图**: 对于最核心的监控指标，考虑维护一个使用更简单图表类型（如纯线条、不显示阈值填充）的备用仪表板，作为主面板故障时的应急之选。
+*   **Best Practices**:
+    1.  **Upgrade and Testing**: After Grafana version upgrades, perform quick smoke tests on key dashboards' major features (including different threshold display modes, different variable selections) to ensure visualization functionality works correctly.
+    2.  **Establish SLO Coverage**: For monitoring capabilities that depend on critical dashboards, consider tracking their availability as an internal SLO. While it does not need to be overly strict, it encourages the team to pay attention to such user experience issues.
+    3.  **Issue Reporting and Tracking**: When known bugs are found through official channels (such as Grafana GitHub), promptly link them to the internal monitoring system's backlog, assess their impact on your own environment, and track fix progress.
+    4.  **Establish Backup Views**: For the most critical monitoring metrics, consider maintaining a backup dashboard using simpler chart types (such as plain lines, no threshold fills) as an emergency option when the main panel fails.
 
-*   **常见反模式**:
-    1.  **忽视前端错误**: 将控制台错误仅视为“前端问题”而不予重视，忽略了其对可观测性系统的直接影响。
-    2.  **配置过于复杂**: 在单个面板上叠加过多、过复杂的阈值和显示模式，增加了触发此类边界条件 Bug 的概率。
-    3.  **缺乏仪表板测试流程**: 假设仪表板配置在更新后始终如预期工作，没有进行任何渲染验证。
+*   **Common Anti-Patterns**:
+    1.  **Ignoring Frontend Errors**: Treating console errors merely as "frontend problems" without giving them attention, ignoring their direct impact on the observability system.
+    2.  **Overly Complex Configuration**: Stacking too many, too complex thresholds and display modes on a single panel increases the probability of triggering such boundary condition bugs.
+    3.  **Lack of Dashboard Testing Process**: Assuming dashboard configuration always works as expected after updates without performing any rendering verification.
 
-### 相关指标（SLI/SLO/SLA）
+### Related Metrics (SLI/SLO/SLA)
 
 *   **SLI (Service Level Indicator)**:
-    *   `grafana_dashboard_load_success_rate`: 成功加载（无 JS 错误）的仪表板请求数 / 总请求数。
-    *   `grafana_panel_render_error_rate`: 面板渲染过程中出现 `DOMException` 等错误的次数 / 总渲染次数（可通过浏览器端错误监控收集）。
-*   **SLO (Service Level Objective)**: 对内部监控平台自身，可以设定 `grafana_dashboard_load_success_rate &gt; 99.9%` 或 `grafana_panel_render_error_rate < 0.1%`。
-*   **SLA (Service Level Agreement)**: 如果 Grafana 云服务提供了正式的 SLA，应关注其关于仪表板可用性的条款。对于自建 Grafana，则由 SRE 团队承担保障仪表板可用性的内部责任。
+    *   `grafana_dashboard_load_success_rate`: Number of dashboard requests that load successfully (without JS errors) / total number of requests.
+    *   `grafana_panel_render_error_rate`: Number of `DOMException` and other errors occurring during panel rendering / total rendering count (collectible through browser-side error monitoring).
+*   **SLO (Service Level Objective)**: For the internal monitoring platform itself, can set `grafana_dashboard_load_success_rate > 99.9%` or `grafana_panel_render_error_rate < 0.1%`.
+*   **SLA (Service Level Agreement)**: If Grafana Cloud provides a formal SLA, pay attention to its terms regarding dashboard availability. For self-hosted Grafana, the SRE team bears internal responsibility for ensuring dashboard availability.
 
-### 相关页面
+### Related Pages
 
 - [[monitoring-stack-overview]]
 - [[slo-error-budget]]

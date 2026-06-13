@@ -1,0 +1,155 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Gateway API v1.5: Promoting Experimental Features to Stable"
+description: "Kubernetes Gateway API v1.5 released, marking six popular experimental features promoted to Standard (Stable) channel, providing standardized, reliable solutions for multi-tenant environments and traffic management."
+category: API & Traffic Management
+order: 0
+lastUpdated: 2026-04-21
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/04/21/gateway-api-v1-5/
+    title: "Kubernetes Blog - Gateway API v1.5: Moving features to Stable"
+tags: [gateway-api, kubernetes, sre, networking, traffic-management, standardization]
+---
+
+# Gateway API v1.5: Promoting Experimental Features to Stable
+
+## Overview
+
+Gateway API is an extensible, role-based API in Kubernetes for managing ingress and mesh traffic. Its goal is to replace Ingress and provide native support for more complex use cases such as multi-tenancy and advanced traffic routing. Gateway API v1.5 is a significant milestone, promoting six popular experimental features to the Standard (Stable) channel. For SRE teams, this means these features have entered production-ready status, following GA API contracts, providing more stable long-term support and helping build reliable, predictable infrastructure.
+
+## Core Concepts
+
+### Gateway API Evolution and Release Channels
+
+Gateway API uses different release channels to manage feature maturity. The **Standard Channel** is equivalent to GA, meaning the API is stable and will not have breaking changes. The **Experimental Channel** contains new features under development. v1.5's core is "graduating" experimental features to the standard channel, indicating they are ready for widespread production use.
+
+### New Release Process: Release Train Model
+
+Starting from v1.5, the Gateway API project adopts a "release train" release model similar to Kubernetes itself. This means the project releases on fixed "feature freeze" dates, and all ready features (including both experimental and standard) are included in that release. Documentation completeness is also a key prerequisite for features being "ready." This model aims to provide more predictable, reliable release cadences. The project also introduces Release Manager and Release Shadow roles to coordinate this process.
+
+### Standardized New Features
+
+v1.5 promotes the following six features to the standard channel:
+
+1.  **ListenerSet**: Allows defining listeners as independent resources, then attaching them to target Gateways. This solves coordination difficulties and ownership division issues in multi-tenant or team collaboration scenarios where all listeners must be directly defined on the Gateway object, and supports more than 64 listeners on a single Gateway.
+2.  **TLSRoute**: Allows routing requests based on the Server Name Indication (SNI) presented in the client TLS handshake. Supports both `Passthrough` (end-to-end encryption) and `Terminate` (Gateway terminates TLS and forwards plaintext) modes, providing flexible choices for different security needs.
+3.  **HTTPRoute CORS Filter**: Provides Cross-Origin Resource Sharing (CORS) configuration on HTTPRoute resources. Allows declarative management of HTTP headers like `Access-Control-Allow-Origin` and `Allow-Methods`, a critical capability for protecting Web API security.
+4.  **Client Certificate Validation (mTLS)**: Enables client certificate validation on the Gateway (frontend mTLS). Through `frontendValidation` configuration, trusted CA certificate stores and validation modes (like `AllowValidOnly` or `AllowInsecureFallback`) can be specified, enhancing connection security in zero-trust architectures.
+5.  **Certificate Selection for Gateway TLS Origination**: Allows the Gateway to present a client certificate when establishing connections with upstream backends (backend mTLS). Configured through `tls.backend.clientCertificateRef` field, ensuring backend services only accept connections from authorized Gateways.
+6.  **ReferenceGrant**: This resource's version is promoted to v1, officially entering the standard channel. It is used to control cross-namespace resource reference permissions, a foundation for implementing secure, flexible multi-team environments.
+
+## Practice
+
+### Trying and Upgrading
+
+Gateway API v1.5 can be used without upgrading the Kubernetes cluster version, provided Kubernetes 1.30 or higher is running. Installation and trial can proceed via the official [Getting Started Guide](https://gateway-api.sigs.k8s.io/guides/). Multiple implementations currently fully conform to v1.5 standards, including NGINX Gateway Fabric, Traefik Proxy, GKE Gateway, etc.
+
+### Configuration Example: Multi-Team Listener Sharing with ListenerSet
+
+The following example demonstrates how a centralized infrastructure team and two application teams collaborate. The infrastructure team defines a Gateway with a default HTTP listener and allows other namespaces to attach listeners. Each team creates ListenerSets in their own namespaces, adding HTTPS listeners for their domains (`a.example.com`, `b.example.com`).
+
+```yaml
+# Gateway defined by infrastructure team
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+  namespace: infra
+spec:
+  gatewayClassName: example-gateway-class
+  allowedListeners:
+    namespaces:
+      from: All
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+---
+# Team A's ListenerSet
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+  name: team-a-listeners
+  namespace: team-a
+spec:
+  parentRef:
+    name: example-gateway
+    namespace: infra
+  listeners:
+    - name: https-a
+      protocol: HTTPS
+      port: 443
+      hostname: a.example.com
+      tls:
+        certificateRefs:
+          - name: a-cert
+---
+# Team B's ListenerSet (similar structure)
+```
+
+### Configuration Example: SNI Routing with TLSRoute
+
+```yaml
+# Define Gateway listener enabling Passthrough mode
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+spec:
+  gatewayClassName: example-gateway-class
+  listeners:
+    - name: tls-passthrough
+      protocol: TLS
+      port: 8443
+      tls:
+        mode: Passthrough
+---
+# Define TLSRoute matching SNI
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: foo-route
+spec:
+  parentRefs:
+    - name: example-gateway
+      sectionName: tls-passthrough
+  hostnames:
+    - "foo.example.com"
+  rules:
+    - backendRefs:
+        - name: foo-svc
+          port: 8443
+```
+
+## SRE Essentials
+
+### Reliability, Observability, and Incident Response
+
+- **Reliability**: Feature standardization means API stability and consistent behavior, reducing the risk of production failures from version changes or implementation differences. The Release Train model makes release cycles predictable, facilitating SRE team planning for upgrades and maintenance windows.
+- **Observability**: Standard resources (like ListenerSet, TLSRoute) provide clear, auditable declarations for traffic paths. Combined with Kubernetes metrics and logs, SRE teams can more precisely monitor traffic, connection status, and errors for each team or service.
+- **Incident Response**: When routing or security issues arise, standardized APIs make the diagnosis process more structured. Multi-team ListenerSet configurations help isolate and locate changes introduced by specific teams.
+
+### Best Practices and Common Anti-Patterns
+
+**Best Practices:**
+1.  **Gradual adoption**: Start piloting new features with non-critical services, then gradually expand.
+2.  **Clear ownership**: Use ListenerSet and ReferenceGrant to clearly delineate permissions between infrastructure platform teams and application teams.
+3.  **Security first**: When enabling client certificate validation (mTLS), **default to `AllowValidOnly` mode**.
+4.  **Standardize TLS policy**: Uniformly choose `Passthrough` or `Terminate` mode based on backend security needs.
+
+**Common Anti-Patterns:**
+1.  **"Wildcard" CORS configuration**: Widely using `allowOrigins: ["*"]` in production. Always restrict to specific trusted origins.
+2.  **Ignoring version migration**: Not noticing resource API version changes when upgrading from experimental versions.
+3.  **Abusing `AllowInsecureFallback`**: Using it as default fallback disables mTLS protection.
+
+### Related Metrics (SLI/SLO/SLA)
+
+- **SLI**: Request success rate, TLS handshake success rate, connection count per SNI.
+- **SLO**: Availability targets for critical services (e.g., 99.95% successful request rate), TLS handshake latency SLO for critical services.
+- **Relevance**: Gateway listener configuration directly affects connection establishment and failure modes, impacting SLI calculations.
+
+### Related Links
+- [[gateway-api]]
+- [[kubernetes-sig-network]]

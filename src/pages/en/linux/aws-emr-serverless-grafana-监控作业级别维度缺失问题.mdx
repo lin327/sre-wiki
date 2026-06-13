@@ -1,0 +1,79 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "AWS EMR Serverless Grafana Monitoring: Job Level Dimension Missing Issue"
+category: "Monitoring and Observability"
+confidence: medium
+---
+
+# AWS EMR Serverless Grafana Monitoring: Job Level Dimension Missing Issue
+
+## Overview
+
+In modern data platform architectures, AWS EMR Serverless is widely adopted for its pay-per-use and maintenance-free characteristics. To ensure the performance and cost efficiency of ETL or data processing jobs running on it, fine-grained monitoring is an essential practice for SRE (Site Reliability Engineering) teams. However, when building monitoring views using Grafana connected to the CloudWatch data source, a critical feature deficiency hinders deep observability into job-level performance: the `grafana/grafana` CloudWatch plugin cannot correctly return and auto-populate dimension key-value pairs for job-level and worker-level metrics under the `AWS/EMRServerless` namespace, directly impacting the dynamism and usability of monitoring dashboards.
+
+## Core Concepts
+
+To understand this issue, you first need to understand the monitoring dimension hierarchy provided by AWS EMR Serverless:
+
+1.  **Application Level**: Monitors the overall metrics of an entire EMR Serverless application (e.g., a long-running Spark application). The primary dimension is `ApplicationId`.
+2.  **Job Level**: Monitors metrics for individual jobs submitted to the application. The key dimension is `JobId`, which uniquely identifies a job.
+3.  **Job Worker Level**: Monitors the resource usage of each worker executing actual tasks within a job, such as CPU, memory, and disk I/O. Its dimensions include `WorkerType`, `CapacityAllocationType`, and the parent-level `ApplicationId` and `JobId`.
+
+**The Core Issue**: Grafana's CloudWatch plugin can only discover and populate application-level dimensions (such as `ApplicationId`, `WorkerType`, `CapacityAllocationType`) when querying dimensions, but cannot discover the job-level-specific `JobId` dimension. This prevents users from selecting from dropdown menus when building dynamic charts or dashboard variables that depend on `JobId` (e.g., first select an application, then select a job under that application), forcing them to manually input known dimension key-value pairs and breaking dashboard explorability.
+
+## Practice
+
+According to user reports, this issue reproduces in the following scenarios and causes workflow disruptions:
+
+### Problem Reproduction Steps
+
+1.  **Chart Query Scenario**:
+    - In the Grafana panel query builder, select the `AWS/EMRServerless` namespace.
+    - Attempt to add `JobId` as a dimension `Key`, but this option will not appear in the dropdown menu. Users can only see the application-level dimension list.
+    - Manually typing `JobId` as the dimension key and manually entering a specific job ID value allows the query to execute successfully. This proves that the metric itself exists and is queryable, but the plugin's metadata query functionality is defective.
+
+2.  **Dashboard Variable Scenario**:
+    - Create a variable for selecting `JobId`, with the data source query type set to "Dimension Values".
+    - Specify the namespace as `AWS/EMRServerless`; the metric name (e.g., `WorkerCpuUsed`) and dimension key (`JobId`) must both be manually entered because the auto-completion functionality is broken.
+    - The variable query can return a `JobId` list.
+    - **Critical Defect**: When the parent `ApplicationId` variable value changes, this `JobId` variable cannot automatically re-query and update its list based on the new `ApplicationId`. Users must manually refresh or modify the query to obtain the job list corresponding to the new application.
+
+### Expected Solution
+
+- The Grafana CloudWatch plugin should automatically discover and populate metric dimension keys and their corresponding values at **all levels** (including job level and worker level) in the `AWS/EMRServerless` namespace.
+- Dashboard variables should correctly establish cascading relationships (e.g., `ApplicationId` -> `JobId`), enabling dynamic, interactive monitoring interfaces.
+
+### Current Workaround
+
+Due to this feature limitation, users are forced to abandon building complete EMR Serverless monitoring views in Grafana and instead use the native CloudWatch dashboards in the AWS console. This increases context-switching costs and undermines Grafana's value as a unified observability platform.
+
+## SRE Takeaways
+
+### Impact on Reliability, Observability, and Incident Response
+
+This issue directly undermines the three pillars of SRE practice on the EMR Serverless platform:
+
+- **Observability**: The inability to conveniently monitor job-level performance (such as `WorkCpuAllocated`, `WorkerCpuUsed`) makes it difficult to pinpoint specific slow jobs or resource contention issues. Deep observability requires the ability to quickly drill down from an application-wide view to individual tasks.
+- **Reliability Management**: Without job-level metrics, it is difficult to define SLI-based SLOs (e.g., "99% of batch jobs have resource allocation below threshold") or calculate the associated Error Budget. Lack of fine-grained metrics makes reliability target setting and tracking superficial.
+- **Incident Response**: When alerts trigger (e.g., a job's resource utilization spikes), SREs need to quickly correlate to the specific `JobId` and related workers. A dynamic dashboard supporting `JobId` is a critical tool for incident diagnosis, and this deficiency severely slows down MTTR (Mean Time To Repair).
+
+### Best Practices and Common Anti-patterns
+
+- **Best Practices**:
+    - **Layered Monitoring**: Define a complete monitoring chain from application to job to worker for critical business jobs.
+    - **Dynamic Dashboards**: Building interactive, filterable dashboards using Grafana variables is the core pattern for improving monitoring efficiency.
+    - **Timely Feedback on Toolchain Issues**: When feature defects are discovered in monitoring tools (such as data source plugins), promptly report them through official channels (such as GitHub Issues). This is itself an operational practice that ensures internal platform reliability.
+- **Common Anti-patterns**:
+    - **Hardcoding Dimension Values**: Hardcoding `JobId` to bypass plugin defects leads to rigid dashboards that cannot be reused for different jobs, with high maintenance costs.
+    - **Fragmenting Monitoring Tools**: Abandoning a unified platform in favor of multiple consoles due to a single toolchain defect increases cognitive load and operational complexity.
+
+### Related Metrics (SLI/SLO/SLA)
+
+Examples of SLIs affected by this issue:
+
+- **Job-level SLI**: The ratio of `WorkerCpuUsed` (average) / `WorkerCpuAllocated` (total allocated), used to measure CPU resource utilization efficiency for individual jobs.
+- **Job-level SLI**: Job `JobDuration`, or memory overflow detection based on `WorkerMemoryUsed`.
+- **Application-level SLI**: Average `WorkerCpuUsed` across all jobs in the application, reflecting overall resource consumption levels.
+
+A corresponding SLO might be defined as: "For P0-priority batch jobs, the proportion of runtime where average CPU utilization exceeds 90% shall not exceed 5% (i.e., the Error Budget)." Without the ability to conveniently query and visualize job-level `WorkerCpuUsed` data in Grafana, such SLOs will be difficult to effectively implement and audit.

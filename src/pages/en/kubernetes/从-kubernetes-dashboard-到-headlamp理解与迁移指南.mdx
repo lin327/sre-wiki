@@ -1,0 +1,47 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "From Kubernetes Dashboard to Headlamp: Understanding and Migration Guide"
+description: "Introduction to Headlamp as the successor to the archived Kubernetes Dashboard, covering core features, advantages, and migration preparation."
+category: Kubernetes Tools & Ecosystem
+order: 0
+lastUpdated: 2026-06-06
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/06/01/dashboard-to-headlamp/
+    title: "From Kubernetes Dashboard to Headlamp: Understanding the Transition"
+tags: [kubernetes, dashboard, headlamp, migration, sre, multi-cluster, gitops]
+---
+
+# From Kubernetes Dashboard to Headlamp: Understanding and Migration Guide
+
+## Overview
+
+Kubernetes Dashboard has long served as the official cluster visualization interface, helping countless users and teams graphically understand and operate clusters. As the ecosystem evolves and usage patterns complexify, its functional limitations became apparent. The Kubernetes Dashboard project has been officially archived, and **Headlamp** serves as its modernized successor, providing a more powerful and flexible visual management experience. For SREs, understanding this transition and planning migration is critical -- an efficient UI tool can greatly improve daily operations, troubleshooting, and resource management efficiency.
+
+## Core Concepts
+
+**Kubernetes Dashboard**: A web-based Kubernetes UI providing basic cluster resource viewing, operations (scaling, deletion), and log viewing. Designed for simple single-cluster overviews.
+
+**Headlamp**: Not a simple replacement but a comprehensive enhancement for modern Kubernetes scenarios:
+
+1.  **Multi-cluster Visibility**: Native support for managing and switching multiple Kubernetes clusters from a single interface.
+2.  **Application-Centric Views (Projects)**: UI-level organizational concept allowing grouping related Deployments, Services, ConfigMaps by application logic.
+3.  **Extensible Plugin Architecture**: Plugin system allowing community/team to integrate specific workflows (GitOps, AI assistance) directly into the UI.
+4.  **Flexible Deployment Modes**: In-cluster application (team sharing) or desktop application (local developer use via kubeconfig).
+
+## Practice
+
+### Migration Preparation Steps
+
+1.  **Inventory current usage**: Record clusters, namespaces, authentication methods, and core workflows used via Dashboard.
+2.  **Evaluate Headlamp enhancements**: Multi-cluster management, application context (Projects), plugin exploration.
+3.  **Choose deployment mode**: In-cluster for centralized management; desktop for individual development. Both can coexist.
+
+## SRE Essentials
+
+*   **Operational efficiency and reliability**: Headlamp's richer context (multi-cluster, project views, resource relationship graphs) enables faster problem location and impact scope understanding, shortening MTTR. Plugin capabilities can integrate monitoring (Prometheus), logs into unified operational interfaces.
+*   **Standardization and extensibility**: Plugin architecture allows SRE teams to integrate internal operational processes and tools into the UI, promoting standardization and automation.
+*   **Best Practices**: Follow progressive strategy. Start with desktop version for partial team trials, collect feedback, then promote in-cluster deployment. Leverage RBAC integration for strict permission consistency.
+*   **Anti-Patterns**: Treating Headlamp merely as a Dashboard replacement without actively adopting multi-cluster, application context capabilities.
+*   **Related Metrics**: "Average time to complete fault diagnosis via UI" as operational efficiency metric. Headlamp stability and response speed for daily SRE work.

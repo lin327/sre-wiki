@@ -1,0 +1,120 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Extended Toleration Operators (Numeric Comparison)"
+description: "Kubernetes v1.35 introduces Gt/Lt operators for threshold-based Pod scheduling, enabling SLA-aware, cost-optimized, and performance-guaranteed deployments."
+category: Scheduling & Orchestration
+order: 0
+lastUpdated: 2026-01-06
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/01/05/kubernetes-v1-35-numeric-toleration-operators/
+    title: "Kubernetes v1.35: Extended Toleration Operators to Support Numeric Comparisons (Alpha)"
+tags: [kubernetes, scheduling, taints, tolerations, SLA, alpha-feature]
+---
+
+# Kubernetes Extended Toleration Operators (Numeric Comparison)
+
+## Overview
+
+In Kubernetes v1.35, an Alpha feature called "Extended Toleration Operators" introduces numeric comparison support. Building on existing `Equal` and `Exists` operators, it adds `Gt` (greater than) and `Lt` (less than) operators, enabling Pod toleration declarations to perform threshold comparisons with node numeric taint values.
+
+For SRE teams, this enhancement is critical. It directly addresses a common production pain point: how to implement policy-based, safe, and flexible Pod scheduling in clusters mixing different SLAs (on-demand vs Spot/preemptible nodes) and performance tiers (different GPU models). It enables precise matching of workload reliability requirements, performance needs, or cost constraints with underlying node dynamic attributes.
+
+## Core Concepts
+
+### Limitations of Traditional Toleration Operations
+Previously, Kubernetes taints and tolerations only supported two operators:
+- `Equal`: Exact match of taint key and value.
+- `Exists`: Only matches taint key existence, ignoring value.
+
+These operators work for categorical scenarios (like `spot=true`) but cannot handle continuous numeric comparisons like "schedule only to nodes with failure rate below 5%."
+
+### Gt and Lt Operators
+v1.35's new operators extend matching logic:
+- **`Gt` (greater than)**: Matches only when node taint value is **greater than** the Pod toleration's specified value.
+- **`Lt` (less than)**: Matches only when node taint value is **less than** the Pod toleration's specified value.
+
+A common misconception is the semantic direction. A toleration with `operator: Lt, value: 5` means "I tolerate nodes whose taint value is **less than 5**." Since tolerations allow scheduling to matching nodes, this Pod will be scheduled to all nodes with values below 5.
+
+**Important limitation**: `Gt` and `Lt` require taint and toleration values to be **positive 64-bit integers** with **no leading zeros**. `"100"` is valid; `"0100"` and `"0"` are invalid. These operators work with all taint effects (`NoSchedule`, `NoExecute`, `PreferNoSchedule`).
+
+## Practice
+
+### 1. Enable Feature Gate
+```bash
+--feature-gates=TaintTolerationComparisonOperators=true
+```
+
+### 2. Apply Numeric Taints to Nodes
+```bash
+# Mark Spot node with 15% failure probability
+kubectl taint nodes spot-node-1 failure-probability=15:NoExecute
+
+# Mark high-performance GPU node
+kubectl taint nodes gpu-node-a100 gpu-compute-score=1000:NoSchedule
+
+# Mark node hourly cost
+kubectl taint nodes node-1 cost-per-hour=50:NoSchedule
+```
+
+### 3. Use New Operators in Pod Specs
+
+#### SLA Protection (Critical Business)
+```yaml
+tolerations:
+- key: "failure-probability"
+  operator: "Lt"
+  value: "5"
+  effect: "NoExecute"
+  tolerationSeconds: 30
+```
+
+#### Cost Optimization (Batch Jobs)
+```yaml
+tolerations:
+- key: "cost-per-hour"
+  operator: "Lt"
+  value: "100"
+  effect: "NoSchedule"
+```
+
+#### Performance Tiering (AI Training vs Inference)
+```yaml
+# High-performance training
+tolerations:
+- key: "gpu-compute-score"
+  operator: "Gt"
+  value: "800"
+  effect: "NoSchedule"
+
+# Inference (lower requirements)
+tolerations:
+- key: "gpu-compute-score"
+  operator: "Gt"
+  value: "400"
+  effect: "NoSchedule"
+```
+
+## SRE Essentials
+
+### Relationship with Reliability Management
+Extended toleration operators directly connect SRE's **Error Budget** concept with cluster scheduling. Operations teams can convert SLIs (like node availability) into numeric node taints, while workloads declare acceptable Error Budget thresholds through `Lt` operators.
+
+### Best Practices and Anti-Patterns
+**Best Practices**:
+1.  **Policy first**: Define clear node tier policies before enabling.
+2.  **Progressive enablement**: As Alpha feature, validate in non-production first.
+3.  **Node automation integration**: Integrate taint values with cloud provider auto-scaling and instance lifecycle events.
+
+**Common Anti-Patterns**:
+1.  **Value format errors**: Using `"0"`, `"010"` etc. invalid values.
+2.  **Misunderstanding operator direction**: `Lt` "allows" scheduling to low-value nodes (tolerations are "permit" rules, not "reject" rules).
+3.  **Ignoring effect impact**: Not considering taint effect (`NoSchedule` vs `NoExecute`) combinations.
+
+### Related Metrics (SLI/SLO/SLA)
+- **Node SLI**: Success rate (`1 - failure-probability`), network/disk throughput as taint values.
+- **Workload SLO**: Availability SLO via `failure-probability Lt 1`.
+- **Resource Efficiency SLO**: Cost savings targets for batch jobs.
+
+**Future evolution**: Plans to integrate CEL for more complex scheduling logic.

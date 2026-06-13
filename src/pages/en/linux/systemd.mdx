@@ -1,0 +1,119 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "systemd and Service Management"
+category: "System Administration"
+confidence: medium
+---
+
+# systemd and Service Management
+
+systemd is the mainstream init system and service manager on Linux, responsible for system startup (PID 1), service lifecycle management, log collection, and scheduled tasks. RHEL 7+, Ubuntu 16.04+, and Debian 8+ all use systemd.
+
+## Unit Types
+
+| Unit Type | Suffix | Purpose |
+|-----------|--------|---------|
+| Service | `.service` | Daemons and services |
+| Socket | `.socket` | Socket activation (on-demand startup) |
+| Timer | `.timer` | Scheduled tasks (replaces cron) |
+| Target | `.target` | Startup phase grouping |
+| Mount | `.mount` | Filesystem mounts |
+
+Unit file search paths (highest to lowest priority):
+
+```
+/etc/systemd/system/          # Administrator customizations
+/run/systemd/system/          # Runtime generated
+/usr/lib/systemd/system/      # Package installed
+```
+
+## Service Unit File
+
+```ini
+[Unit]
+Description=My Application Server
+After=network.target postgresql.service
+Requires=postgresql.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=appuser
+WorkingDirectory=/opt/myapp
+EnvironmentFile=/opt/myapp/.env
+ExecStart=/opt/myapp/bin/server
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Type** determines how state is tracked: `simple` (main process is the ExecStart process), `forking` (forks to background), `oneshot` (exits after a single execution), `notify` (signals readiness via sd_notify).
+
+**Dependencies**: `Requires=` is a hard dependency, `Wants=` is a soft dependency, `After=`/`Before=` only control ordering, `Conflicts=` are mutually exclusive.
+
+## Common Commands
+
+```bash
+# Service management
+systemctl start/stop/restart nginx       # Manage lifecycle
+systemctl status nginx -l                # View status and log snippets
+systemctl enable/disable nginx           # Enable/disable at boot
+systemctl daemon-reload                  # Reload after modifying unit files
+systemctl --failed                       # List failed services
+systemctl list-dependencies nginx        # Dependency tree
+
+# Log queries
+journalctl -u nginx -f                   # Follow in real-time
+journalctl -u nginx -n 200               # Last 200 entries
+journalctl --since "1h ago"              # By time range
+journalctl -p err                        # Errors only
+journalctl -b                            # Current boot logs
+journalctl -k                            # Kernel logs
+journalctl --disk-usage                  # Log disk usage
+journalctl --vacuum-time=7d              # Clean old logs
+```
+
+## Timer Scheduled Tasks
+
+Timer units replace cron, providing better log integration. Configuration examples: `OnCalendar=*-*-* 02:00:00` (daily at 2 AM), `RandomizedDelaySec=900` (random delay). Use `systemctl list-timers` to view all timers, `systemctl enable --now backup.timer` to enable.
+
+## SRE Practice Scenarios
+
+### Service Crash Troubleshooting
+
+```bash
+systemctl status myapp -l --no-pager     # Status and logs
+journalctl -u myapp -n 200               # Full logs
+dmesg | grep -i "oom\|killed"            # OOM check
+systemctl show myapp -p NRestarts        # Restart count
+```
+
+### Startup Time Optimization
+
+```bash
+systemd-analyze                          # Total startup time
+systemd-analyze blame | head -20         # Service startup time ranking
+systemd-analyze critical-chain           # Critical path
+```
+
+Optimization strategies: delayed startup for non-critical services, socket activation instead of direct startup, disabling unnecessary services.
+
+### journald Configuration and Resource Limits
+
+Key parameters in `/etc/systemd/journald.conf`: `SystemMaxUse=2G` (maximum disk usage), `MaxRetentionSec=30day` (retention period), `Compress=yes` (compress old logs). After modification, run `systemctl restart systemd-journald` to apply. Use `journalctl --vacuum-size=1G` for manual cleanup.
+
+Service resource limits and security hardening:
+
+```ini
+[Service]
+MemoryMax=4G                             # Memory limit
+CPUQuota=200%                            # CPU limit
+LimitNOFILE=65536                        # File descriptors
+PrivateTmp=true                          # Isolated /tmp
+NoNewPrivileges=true                     # Prevent privilege escalation
+ProtectSystem=strict                     # Read-only filesystem
+```

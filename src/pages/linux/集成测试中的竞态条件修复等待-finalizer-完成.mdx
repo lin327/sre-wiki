@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "集成测试中的竞态条件修复：等待 Finalizer 完成"
 description: "修复 Grafana 集成测试中因 Finalizer 补丁与对象删除操作竞态导致的间歇性失败问题，提高 CI 可靠性。"
@@ -11,6 +12,8 @@ sources:
     title: "Grafana PR #125935: Alerting: Fix flaky RuleSequence delete race in integration test"
 tags: [finalizer, kubernetes, testing, race-condition, ci-cd, grafana]
 ---
+
+# 集成测试中的竞态条件修复：等待 Finalizer 完成
 
 ## 概述
 

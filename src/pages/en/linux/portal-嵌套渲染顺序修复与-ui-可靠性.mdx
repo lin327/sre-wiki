@@ -1,0 +1,82 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Portal Nested Rendering Order Fix and UI Reliability"
+category: "Component and UI Reliability"
+confidence: medium
+---
+
+# Portal Nested Rendering Order Fix and UI Reliability
+
+## Overview
+
+In complex front-end applications like Grafana, reliable rendering of component libraries (such as Portal, Combobox, Modal) is foundational to user experience. The `Portal` component is commonly used to render child elements to a different position in the DOM tree (such as a modal container) to resolve CSS context issues (like `overflow: hidden`) or z-index problems. However, when multiple `Portal` components are nested and target the same container, React's rendering mechanism causes visual layer order confusion, directly constituting a **UI-level reliability issue**. This page summarizes the root cause of this issue, a general solution, and its significance in SRE practice.
+
+## Core Concepts
+
+### React Portal and DOM Rendering Order
+
+`Portal` is a React mechanism for rendering child nodes to a different location in the DOM tree. Its core characteristics include:
+
+- **Decoupling Component Tree from DOM Tree**: Components inside a Portal still retain React context, but their DOM nodes are located outside the parent component.
+- **Driven by React Commit**: When multiple `Portal` components render to the same DOM container, React's Reconciler commits fiber nodes **bottom-up**. This causes the inner `Portal`'s DOM nodes to be inserted into the target container before the outer `Portal`'s nodes, **inverting the expected visual layer order**.
+
+### Layer Control: Z-Index and Nesting Depth
+
+The key to resolving visual layer confusion is controlling CSS `z-index`. Native `z-index` is a static value that cannot sense component nesting relationships. The solution introduces **dynamic context tracking**:
+
+1.  **Nesting Depth Tracking**: Through React Context, a "nesting depth" value is passed and incremented between `Portal` component levels.
+2.  **Dynamic Z-Index Calculation**: Inner `Portal` components automatically calculate a higher `z-index` based on deeper nesting depth values, ensuring they always overlay on top of outer `Portal` components, correcting the visual inversion caused by React's commit order.
+
+## Practice
+
+### Issue Reproduction and Fix
+
+**Problem Scenario**: Two `Portal` components are nested. The outer `Portal` is a dropdown menu container, and the inner `Portal` is a modal or another popup within the menu. When they render to the same container, the modal may be obscured by the menu background.
+
+**Fix Principle**:
+
+1.  **Introduce `PortalContext`**: Create a Context inside the `Portal` component whose value is the current nesting depth.
+2.  **Depth Calculation and Propagation**: Each `Portal` reads the parent Context's depth value during rendering, adds 1, and passes the new value to its `Context.Provider`.
+3.  **Style Application**: The `Portal` component dynamically sets `style={{ zIndex: calculatedZIndex }}` on the rendered target node based on the calculated depth value.
+
+```javascript
+// Simplified example: Portal component fix logic
+const PortalContext = React.createContext(0);
+
+function Portal({ children, container }) {
+  const parentDepth = useContext(PortalContext);
+  const currentDepth = parentDepth + 1;
+  // Calculate z-index based on depth, e.g.: baseZIndex + currentDepth * 100
+  const style = useMemo(() => ({ zIndex: baseZIndex + currentDepth * 100 }), [currentDepth]);
+
+  return (
+    <PortalContext.Provider value={currentDepth}>
+      {ReactDOM.createPortal(
+        <div style={style}>{children}</div>,
+        container
+      )}
+    </PortalContext.Provider>
+  );
+}
+```
+
+**Additional Cleanup**: This fix also removed the `portalContainer` property on `Combobox`/`MultiCombobox` components that was used to solve similar issues. This demonstrates that a general solution is superior to component-specific configurations, reducing maintenance burden and API complexity.
+
+## SRE Essentials
+
+- **Connection to Reliability and Observability**:
+    - **UI Reliability**: This type of fix falls under **functional reliability**. Visual layer confusion prevents users from interacting normally (e.g., clicking obscured elements), constituting a serious functional defect.
+    - **Observability**: Fixed component behavior is more predictable. Front-end monitoring tools (such as Sentry, Datadog RUM) can more accurately report user interaction paths, as interface elements are always visible and clickable as expected.
+    - **Incident Response**: For users relying on the Grafana UI for alert configuration or data visualization, component visual confusion can indirectly lead to configuration errors or data misreading, needing to be categorized as **user experience incidents**.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Anti-Pattern**: Introducing component-specific container attributes (like the old `portalContainer`) to solve layer issues for a single component. This leads to API bloat and scattered logic.
+    - **Best Practice**: **Solve general problems through general infrastructure (such as Context)**. Ensuring the robustness and correctness of base components (such as `Portal`) improves the reliability of the entire component library, aligning with the principle of "designing for failure."
+
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: Focus on **"Critical User Interaction Success Rate"**. For example, "In Grafana's Explore feature, the percentage of sessions that successfully open and use nested menus/modals."
+    - **SLO (Service Level Objective)**: Set a target for the above SLI, such as "99.5% of complex UI interaction operations complete without visual anomalies."
+    - This fix directly contributes to improving this SLI, helping achieve the SLO. After releasing this fix, regression tests using user session recording and replay tools (such as Cypress, Playwright) can verify whether the success rate of related scenarios has improved.
+
+This case emphasizes that in distributed systems and complex front-end applications, **small defects at the component level can cascade into significant degradation of user experience**. SRE's focus should extend from backend services to the reliability of critical front-end components, building more robust systems through general, composable solutions.

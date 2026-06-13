@@ -1,0 +1,144 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Service ExternalIPs Deprecation and Removal"
+description: "Kubernetes v1.36 formally deprecates the Service API's `.spec.externalIPs` field due to serious security issues, with plans for removal in future versions."
+category: Service & Networking
+order: 0
+lastUpdated: 2025-08-08
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/14/kubernetes-v1-36-deprecation-and-removal-of-service-externalips/
+    title: "Kubernetes v1.36: Deprecation and removal of Service ExternalIPs"
+tags: [kubernetes, service, security, deprecation, networking, migration]
+---
+
+# Kubernetes Service ExternalIPs Deprecation and Removal
+
+## Overview
+
+In Kubernetes' evolution, cleaning up APIs with security vulnerabilities or design flaws is a key measure for ensuring long-term cluster security and reliability. The `Service` resource's `.spec.externalIPs` field is a prime example. This feature was originally intended to provide cloud load balancer-like capabilities for non-cloud environments, but its design assumed all users within the cluster are fully trusted, introducing serious security vulnerabilities. With better alternatives available, the Kubernetes community has decided to formally deprecate this field and prepare for its complete removal. Understanding the background, impact, and migration path of this change is critical for maintaining Kubernetes cluster **security posture** and **service reliability**.
+
+## Core Concepts
+
+### `.spec.externalIPs` Field and Security Risks
+
+The `Service` `.spec.externalIPs` field allows users to specify one or more additional IP addresses for a `Service`, enabling it to respond to traffic on those addresses. However, this API hands IP address allocation and ownership entirely to users, lacking centralized coordination and validation. This creates serious security vulnerabilities, particularly **CVE-2020-8554**: an untrusted user can assign IP addresses used by other users or core services to their own `Service`, enabling man-in-the-middle attacks. In RBAC-enabled clusters, this field can also bypass expected permission controls.
+
+### "External IP" Terminology Disambiguation
+
+In the Kubernetes ecosystem, "External IP" is an overloaded term:
+*   **Service API `externalIPs`**: The subject of this discussion, located in `spec`, allowing arbitrary user specification.
+*   **Node API `ExternalIP`**: An address type in `status.addresses` describing a node's public IP.
+*   **`kubectl` output column**: When displaying `LoadBalancer` type `Service`, the `EXTERNAL-IP` column header typically refers to the load balancer-assigned ingress IP.
+
+This deprecation explicitly targets the first -- the `Service.spec.externalIPs` field.
+
+### Deprecation Status and Timeline
+
+This feature has been discouraged since Kubernetes 1.21. In **Kubernetes v1.36**, it is formally marked as deprecated. Deprecation will proceed in phases:
+1.  **v1.36 (current)**: Kubernetes emits warnings when the field is used.
+2.  **~1 year later (v1.40 or later)**: `kube-proxy` will stop supporting the field by default, but provide options for users to re-enable for migration.
+3.  **~2 years later (v1.43 or later)**: Support will be completely removed, unable to be re-enabled.
+
+## Practice
+
+### Migrating Existing `externalIPs` Services
+
+If your cluster has `Service` resources using `.spec.externalIPs`, plan migration to safer alternatives:
+
+#### Alternative 1: Manually Managed LoadBalancer Service (Not Recommended)
+
+An "emergency" migration method, essentially moving IP addresses from `spec.externalIPs` to `status.loadBalancer.ingress`. Since `.status` is RBAC-protected by default, regular users cannot directly edit it, increasing attack difficulty. **But this does not solve the fundamental problem**: users with sufficient permissions can still reproduce the CVE-2020-8554 attack.
+
+**Steps**:
+1.  Create a `LoadBalancer` type `Service` with `loadBalancerClass` set to a non-existent value to prevent real cloud controller intervention.
+2.  After creation, use `kubectl patch` to write the target IP to its `.status` field.
+
+```yaml
+# loadbalancer-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-example-service
+spec:
+  loadBalancerClass: non-existent-class
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: my-example-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+```
+```bash
+kubectl apply -f loadbalancer-service.yaml
+kubectl patch service my-example-service --subresource=status --type=merge -p '{"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.4"}]}}}'
+```
+
+#### Alternative 2: Non-Cloud Load Balancer Controller (Recommended)
+
+For non-cloud clusters, using third-party load balancer controllers like **MetalLB** is the recommended approach. Administrators pre-configure a trusted IP address pool, and the controller handles IP allocation for `LoadBalancer` type `Service` resources.
+
+**Example (MetalLB)**:
+1.  Install and configure MetalLB, defining an IP address pool:
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: production
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.0.2.0/24
+  autoAssign: true
+```
+2.  Create `Service`; MetalLB auto-allocates IP, or users can request specific IPs (if within pool):
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-example-service
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: my-example-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  loadBalancerIP: "192.0.2.4" # Optional, request specific IP
+```
+
+#### Alternative 3: Adopt Gateway API
+
+**Gateway API** is the next-generation Kubernetes Ingress and load balancing API. It separates external access definitions (IP, domain) from routing rules and backend services, managed by administrators through `Gateway` resources with RBAC control. This provides a cleaner, safer, more feature-rich model.
+
+### Preventive Measure: Disable `externalIPs`
+
+Even if not currently used, recommended as a security hardening measure to completely disable the `externalIPs` field via admission controller:
+*   Enable the **`DenyServiceExternalIPs`** admission controller to block any `Service` object containing `.spec.externalIPs` from being created or updated.
+
+## SRE Essentials
+
+### Relationship with Reliability
+*   **Security vulnerabilities are reliability risks**: CVE-2020-8554 and similar vulnerabilities can be exploited to hijack traffic, disrupt services, or steal data, directly undermining service availability and integrity. Removing such insecure features is the foundation for improving overall system reliability.
+*   **Simplified cluster configuration and maintenance**: Deprecating and eventually removing outdated, complex features reduces control plane and data plane (like `kube-proxy`) complexity, lowering the probability of configuration errors and unexpected failures.
+*   **Standardization and compliance**: Using verified components with better security models like MetalLB or Gateway API helps meet organizational security compliance requirements and ensures cluster behavior aligns with Kubernetes certification standards.
+
+### Best Practices and Common Anti-Patterns
+*   **Best Practices**:
+    1.  **Proactive audit**: Immediately check for `Service` resources using `.spec.externalIPs` in your cluster and develop migration plans.
+    2.  **Choose the right alternative**: Based on environment (cloud or non-cloud), choose `LoadBalancer` with controller or Gateway API as replacement.
+    3.  **Follow least privilege**: Use RBAC to strictly control who can create/modify `LoadBalancer` type `Service` or `Gateway` resources.
+    4.  **Enable admission control**: Enable `DenyServiceExternalIPs` admission controller in clusters even without plans to use the feature, as a defense layer.
+    5.  **Plan upgrade path**: Follow Kubernetes release notes and prepare for forced removal in future versions.
+*   **Common Anti-Patterns**:
+    1.  **Ignoring deprecation warnings**: Ignoring deprecation warnings in console output without taking action, facing service disruption risk from future version upgrades.
+    2.  **Depending on `externalIPs` for access control**: Mistakenly believing IP assignment via `externalIPs` achieves access isolation, ignoring inherent security model deficiencies.
+    3.  **Manual `LoadBalancer` status patching with misconfigured RBAC**: If regular users have `Service` status modification permissions, this alternative remains insecure.
+
+### Related Metrics and Monitoring
+While this change does not directly involve traditional SLIs (request latency, error rates), SREs should focus on:
+*   **Configuration drift and compliance**: Monitoring for resources using deprecated fields in the cluster as a configuration compliance **SLI**.
+*   **MTTR for security vulnerabilities**: Include planning and completing security-related migration time in security incident response process **SLO** assessments.

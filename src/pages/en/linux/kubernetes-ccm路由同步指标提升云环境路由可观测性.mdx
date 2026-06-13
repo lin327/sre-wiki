@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes CCM Route Sync Metric: Improving Cloud Environment Route Observability"
+category: "Monitoring and Observability"
+confidence: medium
+---
+
+# Kubernetes CCM Route Sync Metric: Improving Cloud Environment Route Observability
+
+## Overview
+
+In scenarios where Kubernetes clusters integrate with cloud infrastructure, the Cloud Controller Manager's (CCM) route controller is responsible for managing the configuration of node-to-cloud-provider load balancer or network routes. Frequent and unnecessary route synchronization can increase pressure on cloud API rate limits, impacting cluster reliability and operational efficiency. Kubernetes v1.36 introduces a new counter metric `route_controller_route_sync_total`, which provides a key observation point for the route controller's synchronization behavior. It provides SRE teams with data-driven evidence to verify optimization configurations (such as watch-based route reconciliation), serving as an important tool for improving network reliability and observability in cloud-native environments.
+
+## Core Concepts
+
+- **Cloud Controller Manager (CCM)**: A core component in Kubernetes responsible for interacting with underlying cloud platform APIs, managing cloud resources such as nodes, routes, and load balancers.
+- **Route Controller**: One of CCM's sub-controllers, whose primary responsibility is to maintain network route entries in the cloud provider corresponding to Kubernetes nodes, ensuring that network traffic within the cluster can be correctly routed.
+- **`route_controller_route_sync_total` Metric**: A new `Counter` type metric introduced in v1.36. Each time the route controller attempts to synchronize route state with the cloud provider (whether successful or not), this counter increments. It is the direct basis for evaluating the route controller's workload and synchronization frequency.
+- **Watch-Based Route Reconciliation**: A feature introduced in v1.35 (controlled by the feature gate `CloudControllerManagerWatchBasedRoutesReconciliation`). This feature changes the route controller's traditional fixed-interval polling mode to a Watch event-driven reconciliation mode, triggering synchronization only when actual node changes occur, aiming to reduce unnecessary cloud API calls.
+
+## Practice
+
+### Enabling and Viewing Metrics
+
+The `route_controller_route_sync_total` metric is exposed by default with the CCM. You can collect and query it using tools like Prometheus via the CCM's `/metrics` endpoint. This metric is the core basis for evaluating and A/B testing the effectiveness of the `CloudControllerManagerWatchBasedRoutesReconciliation` feature gate.
+
+### A/B Testing with the New Metric
+
+To verify the effectiveness of the Watch-Based route reconciliation feature in reducing cloud API calls, you can use the `route_controller_route_sync_total` metric for before-and-after comparison testing.
+
+**Test Steps:**
+
+1.  **Baseline Measurement (Feature Gate Disabled, Default Fixed-Interval Mode)**:
+    - In a relatively stable cluster (infrequent node changes), ensure the feature gate `CloudControllerManagerWatchBasedRoutesReconciliation` is set to `false` (default state).
+    - Observe and record the growth rate of the `route_controller_route_sync_total` metric over a period of time (e.g., 10 minutes). Regardless of whether nodes change, this value will increase steadily at fixed intervals.
+
+    ```promql
+    # Example: Observe the increase over 10 minutes
+    increase(route_controller_route_sync_total[10m])
+    ```
+
+2.  **Experimental Group Measurement (Feature Gate Enabled)**:
+    - Enable the feature gate `CloudControllerManagerWatchBasedRoutesReconciliation`.
+    - In the same or similar stable cluster environment, observe the growth of the `route_controller_route_sync_total` metric over the same time period. The expected behavior is that this value should remain almost unchanged when there are no node changes.
+
+3.  **Result Analysis**:
+    - Compare the metric growth rates in both scenarios. In a stable cluster, enabling the feature gate should result in a significant rate decrease, demonstrating that Watch-Based mode reduces unnecessary synchronization operations, thereby reducing cloud API call counts and potential rate-limiting risks.
+
+**Expected Behavior Example:**
+- **Feature Gate Disabled (Default)**: Metric value grows linearly and steadily over time (e.g., from 60 to 120).
+- **Feature Gate Enabled**: Metric value remains unchanged for extended periods when there are no node changes (e.g., stays at 1), and only increases when nodes are added, removed, or updated (e.g., to 2).
+
+## SRE Essentials
+
+- **Connection to Reliability and Observability**: `route_controller_route_sync_total` provides a direct runtime behavior metric for the route controller, a critical control plane component. SREs can use it to set Service Level Objectives (SLOs), such as "route synchronization operations should not cause frequent rate limiting on cloud provider APIs," and monitor abnormal metric growth through alerts, which may signal node storms or controller logic anomalies. It is an important piece in building cloud-native network component observability.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: When upgrading Kubernetes versions or enabling new features (such as Watch-Based route reconciliation), use such built-in metrics for quantitative evaluation. Integrate them into Grafana monitoring dashboards and correlate with cloud provider API call counts, error rates, and other metrics. Follow progressive rollout principles, gradually enabling experimental features in production clusters and making decisions based on metric feedback.
+    - **Common Anti-Pattern**: Relying solely on controller logs to judge synchronization activity while ignoring structured metrics. Enabling experimental feature gates in production without baseline comparison may introduce unexpected behavior. Only focusing on absolute metric values while ignoring the correlation analysis of growth rates with cluster node activity patterns.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: The average growth rate of `route_controller_route_sync_total` over a specific time window (e.g., `rate(route_controller_route_sync_total[5m])`) can serve as an SLI reflecting the request intensity of route synchronization. Another more business-relevant SLI can be the count of cloud provider API rate-limiting errors triggered by route synchronization.
+    - **SLO (Service Level Objective)**: An SLO can be set, such as "99% of the time, the route synchronization request rate should be below [threshold based on historical data]," or "cloud API rate-limiting errors caused by route synchronization should not exceed X per week." Through this metric, SREs can quantitatively evaluate the contribution of optimization features like Watch-Based route reconciliation to achieving SLOs.
+
+### Related Pages
+- [[cloud-controller-manager-overview]]
+- [[kubernetes-networking-observability]]
+- [[feature-gates-best-practices]]

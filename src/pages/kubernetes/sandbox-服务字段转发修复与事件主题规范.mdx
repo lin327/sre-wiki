@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Sandbox 服务字段转发修复与事件主题规范"
 description: "修复 containerd 中 gRPC Sandbox 控制器服务创建时字段丢失及事件主题前缀错误的问题，保障沙箱配置完整性和事件系统可靠性。"
@@ -11,6 +12,8 @@ sources:
     title: "[release/2.1] backport: sandbox: forward Create fields, fix event topics"
 tags: [containerd, sandbox, gRPC, event-system, bugfix, reliability]
 ---
+
+# Sandbox 服务字段转发修复与事件主题规范
 
 ## 概述
 在容器运行时生态中，containerd 的 Sandbox 功能为运行时沙箱（如 Kata Containers, gVisor）提供了统一的管理接口。本次修复针对 Sandbox 服务中的两个关键缺陷：gRPC 代理控制器在创建沙箱时静默丢失配置字段，以及事件发布时主题格式不符合约定导致失败。这些问题直接影响了依赖 gRPC 代理路径的客户端的正确配置获取和系统的事件可观测性，是典型的可靠性与功能完整性风险。

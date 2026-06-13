@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Kubernetes细粒度supplementalGroups控制（GA）"
 description: "介绍Kubernetes v1.35中毕业到GA的`supplementalGroupsPolicy`字段，用于精确控制Linux容器中的补充组，增强安全性和透明度。"
@@ -11,6 +12,8 @@ sources:
     title: "Kubernetes v1.35: Fine-grained Supplemental Groups Control Graduates to GA"
 tags: [kubernetes, security, pod-security, supplemental-groups, linux, sre, cri]
 ---
+
+# Kubernetes细粒度supplementalGroups控制（GA）
 
 ## 概述
 在 Kubernetes 中，容器进程以特定的用户（UID）和组（GID）身份运行，这直接决定了其对文件系统和网络资源的访问权限。传统上，Kubernetes 会隐式地将容器镜像中 `/etc/group` 文件定义的组成员关系与 Pod 清单中声明的组进行合并，这可能导致意外的、难以审计的权限提升风险，尤其是在访问持久化存储卷时。`supplementalGroupsPolicy` 字段的引入与 GA，为 SRE 和安全工程师提供了一种标准化、细粒度的方式来精确控制容器的补充组（Supplemental Groups），是实施最小特权原则和提升集群安全态势的关键实践。

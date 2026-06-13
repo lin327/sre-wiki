@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Unable to specify device by symlink (GitHub Issue)"
 category: "容器运行时与设备管理"
 confidence: medium
 ---
+
+# Unable to specify device by symlink (GitHub Issue)
 
 ## Overview
 In containerized environments, secure and reliable delivery of host devices to containers is a common but critical need. Typically, we rely on udev-generated stable symbolic links (such as `/dev/serial/by-id/...`) to refer to physical devices to avoid inconsistencies in kernel device names (such as `/dev/ttyUSB0`) after reboots or device changes. This issue report reveals that containerd v2.0.0 has a flaw in handling such symbolic links, which not only prevents intended device mounting, but also introduces security risks that can be exploited maliciously, posing a challenge to SRE practices that rely on device transparent transmission.

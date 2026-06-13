@@ -1,0 +1,58 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Plugin Catalog Name Sorting Fix"
+category: "System Components"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/pull/125062
+    title: "Plugins: Fix plugins catalog name sorting"
+tags: [grafana, plugin, ui, sorting, data-cleaning]
+---
+
+# Plugin Catalog Name Sorting Fix
+
+## Overview
+
+In Grafana's Plugins Catalog, the plugin display list is sorted by name by default. This fix addresses a UI display bug: when a plugin name string contains leading whitespace (e.g., `" Google Analytics"`), these plugins are unexpectedly displayed at the top of the list according to standard alphabetical sorting rules, disrupting the expected sorting logic and interface consistency. This fix is crucial for ensuring the experience of operations personnel and developers when discovering, installing, and managing Grafana plugins, and is fundamental work in ensuring the reliability of the observability platform's user interface (UI).
+
+## Core Concepts
+
+*   **Leading Whitespace**: Refers to invisible characters such as spaces or tabs at the beginning of a string. In many programming languages and systems' string comparison operations, the Unicode code point of a space character is lower than most letters and digits, so strings with leading whitespace will be sorted before regular strings.
+*   **String Sorting and Data Cleaning**: The essence of this issue is a lack of data cleaning. Plugin metadata (such as names) may accidentally introduce irregular characters during storage or transmission. Robust UI or backend systems should perform necessary cleaning (such as trimming whitespace) on text data before performing display operations like sorting.
+*   **Grafana Plugin Catalog**: Grafana's interface for centrally displaying, searching, and installing official and community plugins. Its data comes from the backend plugin registry service. Sorting correctness directly affects users' navigation efficiency through the plugin list.
+
+## Practice
+
+Based on the content of the PR, the core of this fix is preprocessing the plugin name field used for sorting. The specific implementation can be summarized in the following steps:
+
+1.  **Identify Problematic Data**: In plugin metadata, records were found with name fields starting with spaces, such as `" Google Analytics"`. This is typically introduced by bugs in upstream data sources or data synchronization pipelines.
+2.  **Implement Data Cleaning**: Before rendering the plugin list to the UI (or when computing sort keys on the frontend), perform a string `trim()` operation on each plugin's `name` field to remove leading and trailing whitespace characters.
+    ```javascript
+    // Example code logic (not original PR code, for illustration only)
+    const sanitizedPlugins = plugins.map(plugin => ({
+      ...plugin,
+      displayName: plugin.name.trim() // Clean name for display and sorting
+    }));
+    // Use sanitizedPlugins for sorting and rendering
+    ```
+3.  **Verify Fix Effect**:
+    *   **Before fix**: Plugins with leading whitespace (like Google Analytics) would appear at the top of the plugin list, disrupting alphabetical order.
+    *   **After fix**: All plugin names are sorted in correct alphabetical order based on cleaned text (e.g., `"Google Analytics"`), improving list predictability and user experience.
+
+## SRE Key Points
+
+*   **Relation to Reliability**: Although this is a UI issue, it demonstrates a deviation between system output (plugin list) and expected state (alphabetical sorting), falling under the category of **user experience reliability**. A reliable, consistent UI is fundamental to ensuring the efficiency of operations teams.
+*   **Best Practices**:
+    *   **Defensive Coding**: When processing external or user-provided data (such as plugin metadata), always assume it may contain irregular formats and perform necessary cleaning and validation.
+    *   **Frontend-Backend Data Contract**: Clarify field usage conventions. If the backend's `name` field may contain spaces, the frontend should process it before display or sorting, or the backend should provide a cleaned `displayName` field.
+    *   **Pay Attention to Edge Cases**: When implementing common UI features like lists, search, and sorting, consider edge cases involving character encoding, whitespace, and special symbols.
+*   **Common Anti-Patterns**:
+    *   **Ignoring Data Source Quality**: Directly using unfiltered raw data for sorting or display.
+    *   **UI Logic and Business Logic Disconnect**: Assuming data cleaning should only be performed on the backend, ignoring the frontend's responsibility as the final presentation layer.
+*   **Related Metrics (SLI/SLO)**:
+    *   **SLI**: Plugin catalog page user interaction success rate, average time for users to locate target plugins through search/browse.
+    *   **SLO**: Ensure the plugin catalog's sorting function works correctly in alphabetical order for 99.9% of requests, with no list rendering anomalies.
+    *   **Relation**: This bug may prevent users from finding plugins in the expected order, indirectly affecting the above SLIs. After the fix, UI determinism and user satisfaction are improved.
+
+> **Related pages**: [[grafana-plugin-management]], [[ui-reliability-engineering]]

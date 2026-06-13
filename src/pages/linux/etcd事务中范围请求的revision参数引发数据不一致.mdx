@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "etcd事务中范围请求的revision参数引发数据不一致"
 description: "在etcd的事务中为范围请求指定revision可能导致集群成员间数据不一致，客户端从不同端点获取到相同键的不同值。"
@@ -11,6 +12,8 @@ sources:
     title: "etcd issue #18667: Specifying a revision for a range request in a transaction may cause data inconsistency"
 tags: [etcd, 数据一致性, MVCC, 事务, 分布式系统, SRE]
 ---
+
+# etcd事务中范围请求的revision参数引发数据不一致
 
 ## 概述
 

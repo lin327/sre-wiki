@@ -1,0 +1,50 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Hostinger's Prometheus Monitoring Practice Case Study"
+category: "case-study"
+confidence: low
+---
+
+# Hostinger
+
+## Overview
+
+This article is based on the Prometheus official blog's interview with large hosting provider Hostinger, deeply analyzing the modernization journey of its monitoring system. As an international service provider with over 30 million customers, Hostinger migrated from the traditional Nagios/Cacti/Ganglia (NCG) stack to the Prometheus ecosystem, and built upon it to address performance, high availability, and user experience challenges at scale. This case study provides SRE teams with valuable practical experience regarding monitoring system selection, architecture evolution, performance optimization, and building observability systems.
+
+## Core Concepts
+
+In Hostinger's case, several key monitoring and SRE concepts are involved:
+
+1. **Monitoring Stack Modernization**: Migration from the NCG stack (Nagios, Cacti, Ganglia) focused on threshold checking and simple graphing to the Prometheus stack centered on a powerful data model, rich ecosystem, and native multi-dimensional data support.
+2. **Time Series Database (TSDB)**: Prometheus as the core storage engine, whose write performance, query capability, and storage efficiency underpin large-scale monitoring.
+3. **High Availability (HA) Architecture**: Through deploying redundant components (such as two Prometheus nodes, two Alertmanagers) and using load balancers (such as HAProxy), ensuring the monitoring system itself continues working during single points of failure or regional outages.
+4. **Caching Layer**: Introducing cache proxies like Trickster aims to accelerate dashboard queries, reduce repeated requests to backend Prometheus, and prevent potential "thundering herd" problems during failover.
+
+## Practice
+
+Hostinger treats monitoring as a core pillar of its business reliability and has taken the following specific measures:
+
+- **Gradual Migration and Technology Evaluation**: Prometheus was introduced when starting an automation project in 2015, going through a transition period of running old and new systems in parallel before complete switchover. Before migration, the TICK (Telegraf/InfluxDB/Chronograf/Kapacitor) stack was evaluated, but due to functional limitations and maturity, the simpler, more mature Prometheus was chosen.
+- **Full Exporter Ecosystem Utilization**: Deployed approximately 25 community-developed metric exporters and wrote custom exporters (such as `lxc_exporter`). For network equipment, `node_exporter` runs directly on supported "white-box" switches (x86 architecture running CumulusOS), replacing traditional SNMP methods to expose more human-readable metrics.
+- **Business Metrics Integration**: Through Prometheus's `textfile collector` mechanism, custom business-related metrics (such as those related to customer billing or package usage) are exposed to the monitoring system, achieving unified monitoring of technical and business metrics.
+- **Resolving Monitoring System Bottlenecks and High Availability**:
+    - **Performance and Storage**: As infrastructure scaled to approximately 2,000 servers, Prometheus itself became a bottleneck, with disk usage reaching approximately 2TB and restart times of 10-15 minutes. Plans to upgrade to Prometheus 2.6 to leverage performance improvements and WAL (Write-Ahead Log) features.
+    - **High Availability Deployment**: Implemented a cross-continent two-node HA architecture including two independent Prometheus instances and two Alertmanager instances forming a cluster. The Alertmanager cluster deduplicates identical alerts.
+    - **Query Load Balancing and Caching**: Deployed HAProxy and Trickster between Grafana and Prometheus. HAProxy provides local entry points and failover; Trickster caches time series data in memory, greatly improving dashboard loading speed and preventing backup node impact during primary node failure.
+- **Future Scaling Plans**: Plans to deploy numerous `blackbox_exporters` to monitor external availability of all Hostinger customer websites. Long-term consideration of sharding Prometheus for further scaling and fault domain isolation.
+
+## SRE Essentials
+
+Hostinger's practice profoundly embodies SRE's core principles of focusing on reliability, scalability, and efficiency.
+
+- **Relationship to Reliability**: Monitoring system HA deployment directly improves its own reliability as critical infrastructure. Reducing Mean Time to Detect (MTTD) from 5-minute level to second level (4x MTTD reduction) is key to improving the entire hosting platform's reliability. Using `blackbox_exporters` to proactively probe external services embodies the SRE philosophy of "what cannot be monitored cannot be evaluated."
+- **Best Practices and Anti-Patterns**:
+    - **Best Practices**: Monitor everything (technical and business metrics); protect backend systems and improve user experience through caching layers (Trickster); design HA architecture for the monitoring system itself; leverage standardized exporters to avoid reinventing the wheel.
+    - **Anti-Pattern Warning**: Single monitoring instance as a single point of failure; failing to cache and rate-limit dashboard queries may cause backend overload (thundering herd problem); neglecting monitoring system capacity planning and performance optimization (such as restart time).
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: Time resolution (from 5 minutes to 15 seconds), Mean Time to Detect (MTTD), dashboard loading time.
+    - **SLO (Service Level Objective)**: Monitoring system availability target (e.g., 99.9%), alert timeliness and accuracy.
+    - **SLA (Service Level Agreement)**: While not directly mentioned, monitoring system reliability ultimately supports the service availability SLA committed to customers.
+
+Through this case study, SRE can learn how to evolve an open-source monitoring tool from a simple alerting system into an observability platform that supports a massive business with resilience and self-protection capabilities.

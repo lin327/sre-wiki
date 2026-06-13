@@ -1,0 +1,65 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Cloud AI Observability: A Complete Solution for Monitoring Agentic Workloads"
+description: "Grafana Cloud's AI Observability solution for real-time observation, evaluation, and debugging of AI agent behavior, elevating agent sessions as first-class telemetry signals."
+category: observability
+order: 0
+lastUpdated: 2025-10-24
+confidence: high
+sources:
+  - url: https://grafana.com/blog/ai-observability-for-agents-in-grafana-cloud/
+    title: "AI Observability in Grafana Cloud: A complete solution for monitoring your agentic workloads"
+tags: [AI, observability, agent, Grafana, OpenTelemetry, SRE, LLM]
+---
+
+# Grafana Cloud AI Observability: A Complete Solution for Monitoring Agentic Workloads
+
+## Overview
+
+In the traditional cloud-native application monitoring domain, we have mature observability toolchains based on Metrics, Logs, Traces, and Profiles. However, when organizations shift from "cloud-native" to "AI-native," traditional observability tools cannot effectively answer a core question: what are AI systems (especially agents) *actually* doing? AI agents make decisions, call tools, generate content, and interact with other systems -- these complex behavioral patterns require specialized observability methods.
+
+Grafana Cloud's **AI Observability** feature is designed to address this emerging gap. As a native, complete solution within Grafana Cloud, it aims to help teams monitor AI agents in production, understand their behavior, evaluate their performance, and detect issues early. For SRE teams, this means being able to seamlessly integrate AI agent reliability and performance management into existing full-stack observability practices, achieving end-to-end signal correlation.
+
+## Core Concepts
+
+The core of AI Observability is treating AI agent activities as **first-class telemetry signals** on par with traditional application metrics. Its key concepts include:
+
+- **Agent Sessions & Conversations**: The complete interaction process between an agent and users or systems. AI Observability captures inputs, outputs, and the full execution flow, making them queryable, analyzable structured data.
+- **Generation Evaluation**: Using methods such as LLM-as-a-judge, heuristic rules, or regular expressions to continuously evaluate agent output quality, safety, and compliance, detecting issues like low-quality responses, policy violations, or anomalous behavior.
+- **Agent Versioning**: The system automatically versions agents. When an agent's System Prompt or toolset changes, a new version is created, enabling independent performance inspection of each version to identify root causes (e.g., a specific version performing poorly on a specific model).
+- **Cost Signals**: Automatically correlating and tracking resource consumption associated with AI interactions, such as token usage and compute costs, helping teams understand operational overhead and optimize cost structures.
+
+## Practice
+
+### Integration and Data Collection
+
+AI Observability is compatible with OpenTelemetry and integrates naturally into existing observability architectures. The practical steps are:
+
+1. **Single Instrumentation**: Integrate Grafana's lightweight SDK (such as [sigil-sdk](https://github.com/grafana/sigil-sdk)) into your application or AI framework.
+2. **Automatic Data Capture**: After instrumentation, AI Observability automatically collects the following data:
+    - Agent-generated content and complete conversation threads
+    - Model and provider metadata used
+    - Tool call execution chains and details
+    - Key metrics such as latency and token usage
+    - Related cost signals
+3. **Query and Analysis**: All collected data is stored, queried, and explored uniformly in Grafana Cloud. You can filter and aggregate by model, provider, time range, labels, or environment, making it ideal for comparing the same model's performance across different environments in multi-provider setups.
+
+### Debugging and Alerting
+
+- **Deep Debugging**: When issues arise (such as user feedback on declining response quality or cost anomalies), you can drill down into any conversation to view the complete thread history, including tool calls, execution traces, token usage, cost breakdowns, scores, and annotations. This provides critical context for identifying issues (such as specific tools responding slowly or certain operations being too costly).
+- **Intelligent Alerting**: Leveraging generation evaluation capabilities combined with Grafana Cloud's native [Alerting](https://grafana.com/products/cloud/alerting/) functionality, set up alerts based on content quality or behavioral anomalies. For example, automatically trigger alerts when increased toxicity is detected in agent output.
+- **Integrated Troubleshooting**: Alerts can be linked with Grafana Assistant's [skills](https://grafana.com/docs/grafana-cloud/machine-learning/assistant/guides/skills/) and specific agent runbooks. After receiving an alert, you can directly ask the Assistant to review conversations, reference runbooks, and provide remediation suggestions.
+
+## SRE Key Points
+
+- **Reliability Connection**: AI Observability directly correlates agent conversations and behavior with traditional metrics, logs, and trace signals. When issues like latency spikes occur, SRE teams can see not only metric changes but also directly identify which specific agent interaction, tool call, or model decision caused the issue, enabling rapid diagnosis from macro to micro levels.
+- **Observability Best Practices**:
+    - **Treat Agents as Services**: Monitor AI agents like microservices, defining SLIs (such as output quality scores, task success rates), SLOs, and Error Budgets for them.
+    - **Versioning and Retrospection**: Leverage automatic versioning to rigorously manage agent iterations, and easily roll back or compare performance across versions -- this is key to maintaining AI agent reliability.
+    - **Cost as a Reliability Metric**: In AI scenarios, sudden cost increases are an important signal of system behavior anomalies. Include token consumption and compute costs in monitoring dashboards alongside performance metrics.
+- **Incident Response Improvement**: When an "AI incident" occurs (such as an agent generating harmful content or leaking information), AI Observability provides complete context at the time of the incident (conversation history, decision points), significantly reducing Root Cause Analysis (RCA) time. Combined with Grafana Assistant's analysis capabilities, mitigation strategies can even be proposed semi-automatically.
+- **Common Anti-Patterns**:
+    - **Only Monitoring Infrastructure Metrics**: Focusing solely on CPU/memory/latency while ignoring evaluation of AI output quality, relevance, and safety.
+    - **Lack of Version Control**: Frequently updating agent prompts or tools without version management and A/B testing, making issues difficult to trace.
+    - **Viewing AI Data in Isolation**: Failing to correlate AI interaction data with related Application Performance Monitoring (APM) and business metrics.

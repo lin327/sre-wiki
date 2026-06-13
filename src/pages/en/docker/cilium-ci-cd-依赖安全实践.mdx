@@ -1,0 +1,68 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Cilium CI/CD Dependency Security Practices"
+category: "CI/CD Security"
+confidence: low
+---
+
+# Cilium CI/CD Dependency Security Practices
+
+## Overview
+
+In CI/CD pipelines, controlling "who" can trigger builds is important, but "what" code the build process pulls is equally critical. Even with strict access controls, a workflow that references a tampered dependency is itself compromised. Dependencies form the cornerstone of the software supply chain, and their security directly affects the reliability, integrity, and trustworthiness of the final deliverable and the entire SRE process. Using the Cilium project as a case study, this article explores how to lock down CI/CD dependencies through a series of engineering practices to prevent supply chain attacks.
+
+## Core Concepts
+
+1. **SHA Pinning**: Abandoning mutable tags (e.g., `v1.0.0`) for referencing GitHub Actions or container images, and instead using immutable Git commit SHAs or image digests (`sha256` digests) for precise references. This ensures the referenced code is always a specific, audited version, unaffected by malicious upstream tag modifications.
+2. **Workflow Dependency Locking**: An emerging concept aimed at solving the problem that even after direct dependencies are pinned via SHA, their transitive (indirect) dependencies may still be dynamically resolved at runtime, posing risks. Similar to `go.mod` files, it locks all direct and transitive action dependencies.
+3. **Go Module Vendoring**: Downloading all third-party dependencies of a Go project into the repository's `vendor/` directory and committing them. Builds use local dependencies directly instead of pulling from module proxies in real time, ensuring build determinism and allowing human auditing of dependency changes during code review.
+4. **Dependency Cooling Period**: Setting a minimum release age in automated update tools, only accepting dependency versions that have been published for a certain time (e.g., 5 days). This strategy aims to avoid automatically integrating newly published, potentially compromised packages that might be quickly discovered and rolled back.
+5. **Expression Injection**: A vulnerability in GitHub Actions workflows where attackers control external inputs injectable via `${{ }}` syntax (e.g., PR titles, branch names) to insert malicious shell commands in `run:` steps. Assigning variables to environment variables before referencing them effectively mitigates this risk.
+
+## Practice
+
+### 1. SHA Pinning for GitHub Actions
+Cilium uses full 40-character Git commit SHAs to reference Actions in all `uses:` directives across workflow files, preserving human-readable version labels in comments.
+```yaml
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+```
+This method is also applied to container images used directly in workflow steps, using `@sha256:` digests for pinning. This constitutes the first robust line of defense.
+
+### 2. Automated Updates and Trust Boundaries (Renovate)
+Manually maintaining hundreds of SHA references is impractical. Cilium uses Renovate for automated dependency updates. Its core configuration includes:
+- **Global digest pinning enabled** (`pinDigests: true`), ensuring new version PRs always update SHAs.
+- **Dependency cooling period** (`minimumReleaseAge: "5 days"`), delaying integration of the latest version pending community review.
+- **Trusted package list with auto-merge enabled**: For updates from trusted organizations like `actions/`, `k8s.io/`, Renovate is allowed to automatically create PRs and auto-merge after CI passes. Other updates require manual review.
+- **Dual-verification auto-approval**: The auto-approval workflow not only checks if the PR was created by `cilium-renovate[bot]` but also verifies that the Actor triggering the PR is indeed that bot, preventing forgery.
+
+### 3. Go Module Management Strategy
+- **Forced Vendoring**: All Go dependencies are vendored and committed to the repository. CI pipelines verify consistency between `go.mod`, `go.sum`, and the `vendor/` directory to ensure no drift. The build process is fully offline, independent of external proxies.
+- **Granular Management**: Dependencies requiring special handling (e.g., `gateway-api` needing synchronized testing), having project-specific patches (e.g., `cilium/dns`), or being self-maintained (e.g., `cilium/ebpf`) have Renovate auto-updates disabled in favor of manual management. These `vendor/` changes are reviewed by the dedicated `@cilium/vendor` team via CODEOWNERS.
+- **Periodic Auditing and Simplification**: Following the "fewer dependencies, more copies" principle, periodically auditing third-party libraries and replacing dependencies that provide only minor functionality with small inline code snippets to reduce the attack surface.
+
+### 4. Static Analysis Guards
+- **Permission Checks**: Using CodeQL rules (`actions/missing-workflow-permissions`) to scan workflows, enforcing that all modified files explicitly declare required permissions (e.g., `permissions: read-all` or specific `id-token: write`), following the principle of least privilege.
+- **Workflow Syntax and Standards Checks**: Using the `actionlint` static analysis tool to detect syntax errors, unsafe patterns, and non-standard configurations, such as ensuring all jobs have names, pinning runner versions (e.g., `ubuntu-24.04`) rather than using floating tags.
+- **Vulnerability Pattern Detection**: Both `actionlint` and CodeQL can detect direct use of `${{ }}` syntax on untrusted inputs in `run:` blocks, identifying potential expression injection vulnerabilities.
+
+## SRE Essentials
+
+- **Relationship to Reliability**: Locking down dependencies directly improves build determinism and reproducibility, reducing build failures (unplanned work) caused by dependency source unavailability or mutations. It reduces defects introduced by supply chain issues at the source, improving release quality.
+- **Relationship to Observability**: Through vendoring and explicit change reviews, all third-party code introductions leave clear, auditable diff records. This provides a reliable "source of truth" for security incident investigation and dependency chain analysis.
+- **Relationship to Incident Response**: When a popular dependency is exposed as having a vulnerability or malicious update, SHA-pinned projects can immediately confirm whether they are affected (by checking dependency hashes) and quickly, precisely update to a fixed version via automated tools, significantly shortening the emergency response window.
+- **Best Practices**:
+    1. **Default to Immutable**: In CI/CD, always prefer immutable references (SHAs, digests) over mutable tags.
+    2. **Combine Automation with Manual Review**: Use automated tools (Renovate) for high-frequency, low-risk updates, and manual review for high-risk, special changes.
+    3. **Defense in Depth**: Combine SHA pinning, dependency cooling, static analysis, manual review, CODEOWNERS, and other controls to build deep defense.
+    4. **Minimal Attack Surface**: Actively audit and remove unnecessary dependencies.
+- **Common Anti-Patterns**:
+    1. **Dependency Bloat**: Introducing large third-party libraries for minor functionality.
+    2. **Trusting Mutable References**: Using `@v1`, `@latest`, and other floating tags in workflows.
+    3. **Ignoring Transitive Dependencies**: Only pinning direct dependencies while ignoring risks they may introduce.
+    4. **Over-Granting Permissions**: Using default broad permissions in workflows instead of the minimum required.
+- **Related Metrics**:
+    - **Build Success Rate/Determinism**: Dependency locking helps improve this metric.
+    - **Dependency Update Delay**: Average time from vulnerability announcement to applied fix.
+    - **Supply Chain Security Incidents**: Number of security incidents caused by dependency issues.
+    - **Code Review Coverage**: Whether changes to the `vendor/` directory and workflow files are rigorously reviewed.

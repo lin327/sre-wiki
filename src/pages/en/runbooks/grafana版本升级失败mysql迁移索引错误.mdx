@@ -1,0 +1,87 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Version Upgrade Failure: MySQL Migration Index Error"
+description: "Diagnosis and resolution of Grafana upgrade failure caused by TEXT type column index creation in MySQL during database migration."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-05-24
+confidence: high
+---
+
+# Grafana Version Upgrade Failure: MySQL Migration Index Error
+
+## Overview
+
+When operating Grafana instances, version upgrades are a routine but critical change operation, typically requiring database migrations to accommodate new version data structures. This issue describes a typical scenario where using an external MySQL (version 8) as the database, upgrading from Grafana 10.1.9 to a higher version (such as 10.4) fails due to database migration script failure. The root cause of the failure is that the Grafana migration script attempts to create a unique index on a `TEXT` type column (`name`), but MySQL does not allow creating such indexes on `BLOB/TEXT` columns without specifying a key length. Understanding and resolving such issues is critical for ensuring monitoring platform service continuity and upgradability.
+
+## Core Concepts
+
+- **Grafana Migrator**: A built-in Grafana component responsible for automatically executing database schema changes (DDL) during version upgrades. It runs predefined SQL scripts to create tables, add columns, establish indexes, etc., based on the differences between old and new versions. Migration failure directly blocks application startup.
+- **MySQL Index Constraints**: MySQL has specific limitations on index creation. For `TEXT`, `BLOB` and their derivative types (such as `MEDIUMTEXT`, `LONGTEXT`), when creating regular indexes or unique indexes, you **must** specify a maximum length for the index (e.g., `name(100)`), otherwise it will trigger `Error 1170 (42000): BLOB/TEXT column 'name' used in key specification without a key length`. This is MySQL's inherent behavior, designed to avoid performance impacts from oversized indexes.
+- **Problem Scenario**: The Grafana `library_element` table contains a `TEXT` type `name` column. When upgrading to a specific version, the migration script attempts to create a composite unique index `UQE_library_element_org_id_folder_uid_name_kind` on this column (along with other columns). Since the script does not specify a length for the `name` column, MySQL refuses to execute the DDL statement.
+
+## Practices
+
+When encountering this upgrade error, the following steps can be taken for diagnosis and resolution:
+
+### 1. Confirm the Issue
+Check Grafana's logs for key error messages related to migration failure, such as:
+`Error 1170 (42000): BLOB/TEXT column 'name' used in key specification without a key length`
+
+### 2. Diagnose Table Structure
+Connect to the MySQL database used by Grafana and check the structure of the problematic table.
+```sql
+DESCRIBE library_element;
+```
+Confirm that the `name` column's data type is indeed `TEXT` or a similar type.
+
+### 3. Solutions
+Based on the actual situation, choose one or more of the following solutions:
+
+- **Solution A (Recommended): Manually Fix Table Structure (Proceed with Caution)**
+  This solution aims to make the existing table structure conform to Grafana migration script expectations. Before performing any operations, **be sure to fully back up the database**.
+  ```sql
+  -- 1. Check current table indexes
+  SHOW INDEX FROM library_element;
+
+  -- 2. If confirmed the index does not exist and migration failed, you can try adding an index with a specified length for the TEXT column to "trick" the migrator, or consider modifying the column type.
+  -- Note: Directly modifying production table structures is extremely risky; recommend testing in a staging environment.
+  -- Example (illustrative only, not standard practice): Create an index on a virtual column with length, but this may not be what the migrator expects. A safer approach is to check Grafana's official issues or changelog for official patches.
+  -- The safest path is: Back up database -> Stop Grafana -> Follow official fix guide -> Start Grafana.
+  ```
+
+- **Solution B: Adjust Grafana Configuration to Skip Specific Migrations (Temporary Solution)**
+  Grafana supports skipping failed migration steps through configuration, but this may lead to incomplete functionality or subsequent migration failures. **This method should only be used for emergency recovery and is not recommended as a long-term solution.**
+  Set in the Grafana configuration file (`grafana.ini` or environment variables):
+  ```ini
+  [database]
+  skip_migrations = true
+  ```
+  Or via environment variable:
+  ```
+  GF_DATABASE_SKIP_MIGRATIONS=true
+  ```
+  After starting Grafana, it will skip all database migrations. You will need to manually apply necessary schema changes, or wait for Grafana to provide a fix version, then disable this configuration and re-run migrations.
+
+- **Solution C: Contact Official Support or Downgrade**
+  Check Grafana's official GitHub Issue (as referenced in sources) to see if other users have encountered the same problem and what the official recommended fix is (e.g., a patched version release). Before receiving clear guidance, consider temporarily rolling back to a known working old version (10.1.9) until the issue is resolved.
+
+### 4. Upgrade and Verification
+Regardless of which solution is adopted, before re-attempting the upgrade, it is recommended to:
+1.  Verify the entire upgrade process in a **test environment** isolated from the production environment.
+2.  After the upgrade is complete, log into the Grafana interface and verify that core functions such as dashboards, alert rules, and data sources are working properly.
+3.  Continuously monitor Grafana's startup logs to ensure subsequent database migrations execute successfully.
+
+## SRE Key Points
+
+- **Connection to Reliability and Observability**: This failure directly blocks the software upgrade process. Timely upgrades are critical for obtaining security patches, performance improvements, and new features. Upgrade failures impede the SRE team's ability to maintain system reliability and security, while Grafana's own stability as a monitoring platform is the foundation for ensuring global observability.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practices**: Any major version upgrade should be fully tested in a **staging environment**, especially database migrations. Maintain complete database backups to enable quick recovery if migration fails. Include explicit rollback steps in the upgrade plan.
+    - **Common Anti-Patterns**: Directly performing untested upgrades in production; ignoring migration failure logs and attempting to repeatedly restart the application; making database schema changes without backups and rollback plans.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: Upgrade operation success rate, mean time from migration failure to service recovery (MTTR).
+    - **SLO**: Can set "Grafana major version upgrade operations should be verified in test environment, and production upgrade success rate > 99%".
+    - **SLA**: This issue itself does not directly affect external SLA, but long-unresolved upgrade blocks may prevent fixing security vulnerabilities or critical defects that do affect SLA.
+
+This issue is a typical **[[grafana-migration-troubleshooting]]** case, illustrating the dependency on database platform characteristics and constraints when applications interact with external databases. When handling such issues, SREs need to combine application logs, database metadata, and official documentation for comprehensive analysis.

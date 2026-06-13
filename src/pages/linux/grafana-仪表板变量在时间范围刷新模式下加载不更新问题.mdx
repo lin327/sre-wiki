@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana 仪表板变量在时间范围刷新模式下加载不更新问题"
 description: "Grafana 12.1.0版本后，仪表板在设置为“On time range change”刷新选项时，变量在首次加载时可能无法正确刷新，导致跨组织或数据源查看时数据不一致。"
@@ -11,6 +12,8 @@ sources:
     title: "GitHub Issue: Variables not refreshing on dashboard load when On time range change is selected"
 tags: [grafana, dashboard, variables, bug, troubleshooting]
 ---
+
+# Grafana 仪表板变量在时间范围刷新模式下加载不更新问题
 
 ## 概述
 在运维工作中，仪表板是 SRE 进行系统状态监控、性能分析和故障排查的核心界面。Grafana 作为广泛使用的可视化工具，其功能的稳定性和正确性至关重要。本文所描述的 Bug 涉及 Grafana 仪表板在特定刷新模式下的变量加载行为，该问题直接影响仪表板数据的准确性和一致性，尤其是在多组织（Org）或多数据源的环境中。未能正确处理此问题可能导致 SRE 基于过期或错误的数据做出判断，影响事件响应效率和可靠性目标的达成。

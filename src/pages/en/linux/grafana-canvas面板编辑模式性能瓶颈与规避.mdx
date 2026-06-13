@@ -1,0 +1,83 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Canvas Panel Edit Mode Performance Bottleneck and Workarounds"
+description: "In-depth analysis of Grafana Canvas panel performance issues caused by deep cloning when switching to edit mode, page crash risks, and implications for system reliability."
+category: Monitoring
+order: 0
+lastUpdated: 2025-07-02
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/105081
+    title: "Canvas Panel: switching dashboard to edit mode works very slow and may break the page"
+tags: [grafana, canvas, performance, dashboard, state-management, reliability]
+---
+
+# Grafana Canvas Panel Edit Mode Performance Bottleneck and Workarounds
+
+## Overview
+
+In Grafana's monitoring ecosystem, smooth dashboard interaction is key to ensuring operational efficiency and user experience. This document details a known performance bottleneck: switching to edit mode in dashboards containing complex `Canvas` panels can cause extremely slow page response or even crashes. This issue reveals the direct impact of front-end state management (especially deep cloning operations) on system reliability, and is an important practical case for SRE teams to consider when building and maintaining high-availability monitoring platforms.
+
+## Core Concepts
+
+Understanding this issue requires grasping several core concepts:
+
+1. **Canvas Panel State**: Grafana's `Canvas` plugin is a highly customizable visualization tool. Its internal state typically contains a `Scene` instance that holds a reference to the current panel (`CanvasPanel`), and the panel itself contains context information such as an `eventBus`. The `eventBus` manages event communication within and outside the panel and may have multiple subscribers (callback functions).
+
+2. **Deep Clone**: When a user attempts to enter edit mode, Grafana creates an independent copy of the current dashboard state, so that editing operations don't affect the displayed original data. This process recursively copies the entire state object tree. If the object graph is complex and contains circular references or large function objects (such as subscribers on the `eventBus`), the computational cost of deep cloning increases dramatically.
+
+3. **`RangeError: Maximum call stack size exceeded`**: A JavaScript runtime error typically caused by unlimited recursive calls. In deep cloning scenarios, if the cloning logic cannot correctly handle circular references between objects, it may trigger infinite recursion, causing call stack overflow and page crash.
+
+## Practice
+
+### Issue Reproduction and Symptoms
+
+Based on the provided case, the typical reproduction path is:
+1. Open a Grafana dashboard containing many `Canvas` panels.
+2. Scroll down to ensure all panels have loaded and completed initialization.
+3. Click the "Edit Dashboard" button in the upper right corner multiple times, attempting to switch to edit mode.
+4. **Symptoms**: The switching operation shows significant delay, and the page may become unresponsive. In the browser console, you may see `Uncaught RangeError: Maximum call stack size exceeded`, with the error typically pointing to `lodash.js` or related cloning libraries, indicating the cloning process failed.
+
+### Root Cause
+
+The issue stems from the state management mechanism:
+*   The `eventBus` nested in `Canvas` panel state is a "live" object that holds references to runtime functions and context.
+*   In the current design, deep cloning attempts to copy the `eventBus` and all its subscribers. As panel interactions increase, subscribers on the `eventBus` may accumulate, making the cost of cloning this specific branch grow exponentially.
+*   If subscribers reference complex objects that cannot be simply cloned, or form circular references, the cloning library's (such as lodash) algorithm may fall into infinite recursion, ultimately exhausting call stack space.
+
+### Recommended Workarounds and Solutions
+
+**As a user (operations/monitoring personnel):**
+*   **Reduce dashboard load**: Avoid using too many complex `Canvas` panels in a single dashboard, or split them across multiple dashboards.
+*   **Simplify panel interactions**: Reduce dynamic elements and interaction events within `Canvas` panels, which may lower the complexity of `eventBus` subscribers.
+*   **Stay calm**: When encountering switching lag, avoid repeatedly clicking the button; wait for the system to respond. In severe cases, try refreshing the entire page.
+
+**As a developer/platform maintainer (SRE perspective):**
+1. **Optimize state structure**: Review and refactor `Canvas` panel state definitions to ensure they don't contain runtime objects unsuitable for cloning (such as `eventBus`). State should only contain serializable data.
+2. **Use smart cloning or alternatives**: For states that must contain complex context, consider:
+    *   **Use shallow copy**: Only copy the first level of state references, avoiding deep recursion.
+    *   **Implement custom cloning logic**: Implement special cloning strategies for specific objects (such as `eventBus`), e.g., only copying their configuration rather than current subscriber snapshots.
+    *   **State isolation**: Separate view state (editable) from runtime context (`eventBus`); in edit mode, only clone the view state.
+3. **Add monitoring and defense**:
+    *   **Front-end performance monitoring**: Track edit mode switching duration, memory usage, and JavaScript error rates, setting alert thresholds.
+    *   **User experience protection**: Estimate before cloning operations (such as checking object size), or provide friendly prompts for timeout operations, avoiding complete page freeze.
+
+## SRE Key Points
+
+### Relationship to Reliability
+*   **User experience is reliability**: The response speed and stability of monitoring tools directly affect operational team efficiency and incident response speed. This performance bottleneck reduces Grafana's "availability" as a core observability tool.
+*   **Front-end performance is part of SLI**: "Dashboard edit mode switch succeeds with duration < 2 seconds" can be defined as a critical user experience SLI (Service Level Indicator). The occurrence of this issue directly causes this SLI's compliance rate to drop.
+
+### Best Practices and Common Anti-Patterns
+*   **Anti-pattern: Mixing non-serializable objects into state**: This is the typical pattern that causes such cloning issues. SRE teams should emphasize pure-data state when helping development teams design maintainable front-end systems.
+*   **Best practice: Implement front-end performance budgets**: Set performance budgets for critical interaction operations (such as mode switching, page loading) and monitor them through CI/CD pipelines.
+*   **Best practice: Graceful degradation and defensive programming**: When executing high-cost operations (such as deep cloning), consider setting timeouts, chunked processing, or providing degradation paths to prevent a single operation from bringing down the entire interface.
+
+### Related Metrics (SLI/SLO)
+*   **SLI Examples**:
+    *   `dashboard_edit_mode_switch_success_rate`: Success count / total attempts.
+    *   `dashboard_edit_mode_switch_duration_p95`: Time required for 95% of switching operations to complete.
+*   **SLO Target**: Can be set as "edit mode switch success rate > 99.9%, with P95 duration < 1.5 seconds."
+
+By understanding and addressing such front-end performance pitfalls, SRE teams can better ensure the stable operation of monitoring platforms, ensuring they can reliably support operational decisions at critical moments. Related knowledge can be found at [[observability-frontend]] and [[performance-engineering]].

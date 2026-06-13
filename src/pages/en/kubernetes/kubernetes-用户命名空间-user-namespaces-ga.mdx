@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes User Namespaces GA"
+description: "Kubernetes v1.36 promotes User Namespaces to GA, allowing container processes to run in isolated user ID spaces, significantly enhancing workload security isolation."
+category: Container Security
+order: 0
+lastUpdated: 2024-07-19
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/23/kubernetes-v1-36-userns-ga/
+    title: "Kubernetes v1.36: User Namespaces in Kubernetes are finally GA"
+tags: [kubernetes, security, user-namespaces, rootless, sre, pod-security]
+---
+
+# Kubernetes User Namespaces GA
+
+## Overview
+
+User Namespaces is a Linux isolation technology allowing container processes to have completely independent UID and GID namespaces locally within the container. Its GA in Kubernetes is an important milestone for SRE and security. It fundamentally changes the security boundary between containers and hosts, making rootless container operation standard practice, effectively mitigating risks from container escape attacks.
+
+## Core Concepts
+
+### User Namespaces and the UID 0 Problem
+In traditional container models, container process UIDs map to the same UID on the host. A root (UID 0) process inside a container is also root at the host kernel level. User Namespaces solve this by creating independent UID spaces. Container root (UID 0) maps to an unprivileged host UID, so even after escape, attackers have limited host permissions.
+
+### ID-Mapped Mounts: Key Enabling Technology
+The Linux kernel's **ID-mapped mounts** (Linux 5.12+) solves volume permission challenges. It transparently handles UID/GID remapping at mount time without modifying on-disk file ownership, achieving O(1) efficiency.
+
+### `hostUsers: false` Flag
+In Kubernetes v1.36, enable User Namespaces by setting `spec.hostUsers: false` in Pod spec. This tells kubelet and the container runtime to create a new, isolated user namespace. Container-declared capabilities become "namespaced" -- granting only local resource management, not host access.
+
+## Practice
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: isolated-workload
+spec:
+  hostUsers: false
+  containers:
+  - name: app
+    image: fedora:42
+    securityContext:
+      runAsUser: 0
+```
+
+While the container runs as root, the root identity exists only within the Pod's user namespace. Host filesystem and resources are protected. Currently Linux nodes only.
+
+## SRE Essentials
+
+### Reliability, Observability, Incident Response
+- **Security as reliability**: User Namespaces significantly reduce workload attack surface, a key defense-in-depth layer.
+- **Incident response**: Effectively contain attacker lateral movement; compromised containers remain in low-privilege namespaces.
+- **Compliance**: Provides path for "rootless container" principle without redesigning application images.
+
+### Best Practices and Anti-Patterns
+**Best Practices**:
+1.  **Enable by default**: Consider enabling for all workloads via admission policies.
+2.  **Privilege with isolation**: Run containers needing specific Linux capabilities without host privileges.
+3.  **Monitor and audit**: Monitor User Namespace usage and kernel events.
+
+**Common Anti-Patterns**:
+1.  **Relying only on image-level rootless**: Cannot prevent UID conflicts and post-escape privilege escalation.
+2.  **Ignoring node compatibility**: Depends on Linux kernel features; verify kernel version and runtime support.
+3.  **Thinking it replaces all other security**: Powerful supplement, not replacement for Pod security policies, network policies, Seccomp/AppArmor.
+
+### Related Metrics (SLI/SLO/SLA)
+- **Error Budget consumption rate**: Prevents severe security events from container escapes.
+- **MTTR**: Limits security incident impact scope.
+- **Configuration drift rate**: Enforcing `hostUsers: false` via GitOps reduces drift.

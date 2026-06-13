@@ -1,0 +1,56 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "OverlayFS Updates and SRE Applications"
+description: "Overview of recent OverlayFS feature evolution, particularly nesting support and composefs use cases, and their significance for SRE practice."
+category: Storage & Filesystem
+order: 0
+lastUpdated: 2026-06-12
+confidence: medium
+sources:
+  - url: https://lwn.net/Articles/1077052/
+    title: "An overlayfs update"
+tags: [overlayfs, union-filesystem, linux-kernel, composefs, storage]
+---
+
+# OverlayFS Updates and SRE Applications
+
+## Overview
+
+OverlayFS is a powerful union filesystem in the Linux kernel that allows overlaying one directory tree ("upper" layer) on top of another read-only directory tree ("lower" layer), providing a merged view. This layered architecture makes it central to containerization (Docker, Kubernetes), mutable and immutable system image management, and rapid system testing. At the 2026 Linux Storage and Filesystem Summit, Amir Goldstein presented updates on OverlayFS progress, particularly nesting support status and improvements for `composefs` use cases. These evolutions directly affect how SREs design reliable, efficient, and maintainable storage solutions.
+
+## Core Concepts
+
+**Union Filesystem**: Combines multiple directory trees ("layers") into a unified view. Modifications to the merged view typically occur only in the topmost writable layer without altering read-only layers below. This mechanism underpins Copy-on-Write and efficient image distribution.
+
+**OverlayFS Layering Model**: A mount point associates an **upperdir** (writable, stores all modifications) and one or more **lowerdirs** (read-only, base content providers). The kernel searches files top-down during reads.
+
+**Nesting OverlayFS**: Using an OverlayFS mount point as a layer in another OverlayFS instance. Allows complex multi-level filesystem stacks but increases data consistency, performance, and management complexity challenges.
+
+**composefs Use Case**: A concept/tool for more efficiently combining and distributing read-only filesystem content, especially for immutable container or system images. It drives OverlayFS optimizations for read-only layer performance and metadata management.
+
+## Practice
+
+1.  **Container and Image Storage Optimization**: OverlayFS is the default storage driver for many container runtimes. composefs improvements mean more efficient container image layer pulling, storage, and startup performance.
+
+2.  **System Snapshots and Recovery**: Using OverlayFS to create writable snapshots (current system as read-only lower, new modifications in upper) is a common operational technique. Nesting maturity determines snapshot chain depth and complexity.
+
+3.  **Troubleshooting and Observability**: Understanding OverlayFS layer merging logic is critical when issues arise (files disappearing, permission errors). Use `mount` command to view detailed mount options. Nested OverlayFS makes debugging paths longer, requiring layer-by-layer analysis.
+
+## SRE Essentials
+
+- **Reliability**: OverlayFS stability directly affects application reliability. Continuous kernel fixes and optimizations (especially data consistency in nesting scenarios) are foundations for stable container platforms and immutable infrastructure.
+- **Observability**: Monitoring OverlayFS layer state (upperdir usage, write performance) prevents "disk full" service outages.
+- **Best Practices**:
+    - **Clarify layer purposes**: Strictly separate base image layers (read-only, immutable, shareable), configuration layers (mutable but versioned), and runtime state layers (temporary, high-frequency writes).
+    - **Avoid deep nesting**: Significant performance overhead and management complexity.
+    - **Backup and recovery**: Understand dependencies; typically need separate upper/lower backups or `tar` archiving at mount points.
+- **Common Anti-Patterns**:
+    - **Storing heavy mutable state in upperdir**: Database files, logs in OverlayFS upperdir causes performance issues.
+    - **Ignoring `workdir` directory**: Must be empty, on appropriate storage, with correct permissions.
+- **Related Metrics (SLI/SLO)**:
+    - **File operation latency**: Especially CoW-triggering operations.
+    - **Upperdir storage usage**: Monitor percentage, set SLO (e.g., < 80%).
+    - **Container startup time**: Key UX SLI for OverlayFS-based platforms.
+
+> **Related concepts**: [[container-storage-drivers]], [[union-filesystem]], [[copy-on-write]], [[immutable-infrastructure]], [[kernel-filesystems]]

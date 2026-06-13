@@ -1,0 +1,64 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "PostgreSQL Data Source: Restore EXPLAIN Query Result Return"
+category: "Data Sources"
+confidence: medium
+---
+
+# PostgreSQL Data Source: Restore EXPLAIN Query Result Return
+
+## Overview
+
+In Grafana's observability practice, performance analysis of database queries is critical. `EXPLAIN ANALYZE` is a powerful tool in PostgreSQL for understanding query execution plans and costs. It allows SREs and developers to evaluate query efficiency and identify potential optimization opportunities, thereby improving dashboard response times and user experience. This fix ensures that the Grafana PostgreSQL data source can correctly process and return `EXPLAIN` query results, restoring this critical performance analysis capability.
+
+## Core Concepts
+
+*   **EXPLAIN/EXPLAIN ANALYZE**: PostgreSQL built-in commands. `EXPLAIN` shows the steps (execution plan) the database plans for executing a query, while `EXPLAIN ANALYZE` actually executes the query and reports real runtime statistics such as row counts, time, and resource consumption.
+*   **pgx Library**: A fast and efficient Go language PostgreSQL driver library. When Grafana migrated to `pgx`, a query filtering mechanism was introduced to adapt to its API.
+*   **SELECT Query Filter**: After switching to the `pgx` library, a filter was added to the code to identify which queries return data rows, initially only allowing `SELECT` type queries to pass through. This inadvertently prevented non-`SELECT` queries like `EXPLAIN` from returning results.
+*   **FieldDescriptions**: In `pgx`'s API, `FieldDescriptions` represent column description metadata for query result sets. All queries that return results (even those like `EXPLAIN` that return plan text) provide these descriptions.
+
+## Practice
+
+The core of this fix is **shifting the query result filtering logic from specific query types (`SELECT`) to more general result characteristics (`FieldDescriptions`)**.
+
+1.  **Root Cause**: Grafana's PostgreSQL data source originally had logic roughly like this when parsing queries:
+    ```
+    if queryType == "SELECT" {
+        // Execute query, process result rows
+    } else {
+        // May not process or incorrectly handle non-SELECT results
+    }
+    ```
+    This design prevented statements like `EXPLAIN ANALYZE my_dashboard_query;` from returning their execution plan text, causing the feature to fail in the UI's "Explore" panel.
+
+2.  **Fix**: The fixed logic becomes:
+    ```
+    if query provides FieldDescriptions {
+        // Execute query, process result rows
+    } else {
+        // Special case handling or error
+    }
+    ```
+    Since `EXPLAIN ANALYZE` query results also contain column descriptions (e.g., a column named `QUERY PLAN`), they can now be correctly processed and returned.
+
+3.  **User Verification**: SREs or users can verify the fix in Grafana's **Explore** view:
+    *   Connect a PostgreSQL data source.
+    *   Write a query to analyze, for example: `EXPLAIN ANALYZE SELECT * FROM metrics WHERE time > now() - interval '1 hour';`.
+    *   Execute the query; you should now see the detailed execution plan text result instead of an empty response or error.
+
+## SRE Essentials
+
+*   **Connection to Reliability**:
+    *   **Observability**: Being able to execute `EXPLAIN ANALYZE` is the cornerstone for deep understanding of database query performance. Fixing this issue ensures that Grafana as a monitoring tool can also effectively "monitor" its own query behavior, a key step toward data source-level observability.
+    *   **Performance Optimization**: When building or debugging dashboards, SREs need to ensure the underlying queries are efficient. Restoring this functionality makes it possible to identify slow queries and optimize dashboard performance, directly impacting Grafana instance response times and reliability.
+*   **Best Practices and Common Anti-Patterns**:
+    *   **Practice**: When upgrading data source driver libraries (such as from `lib/pq` to `pgx`), comprehensive functional regression testing must be performed, especially for non-standard but important query types (such as `EXPLAIN`, `SHOW`, etc.). Automated test cases for different query patterns should be established.
+    *   **Anti-Pattern**: Making business logic decisions based on query "type" (string matching) rather than query "result characteristics" is a brittle design. It easily fails during library upgrades or edge cases. A more robust approach is to rely on the driver library's metadata describing the results themselves (such as `FieldDescriptions`).
+*   **Related Metrics (SLI/SLO)**:
+    *   This fix does not directly define new SLIs but supports the observation of existing performance SLIs. For example, to achieve an SLO of "P95 dashboard load time < 2 seconds," it is necessary to analyze and optimize slow queries, and `EXPLAIN` is an indispensable tool. The fix ensures the completeness of this toolchain.
+
+## See Also
+* [[grafana-postgres-datasource]]
+* [[query-performance-optimization]]

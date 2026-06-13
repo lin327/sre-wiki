@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "配置文件中的尾随空格问题 (Grafana Docker)"
 description: "分析 Grafana 11.6 Docker 镜像生成的配置文件中意外引入的尾随空格问题，及其在配置管理和 SRE 实践中的影响。"
@@ -11,6 +12,8 @@ sources:
     title: "Configuration: New trailing space (docker)"
 tags: [grafana, docker, configuration, ci-cd, devops]
 ---
+
+# 配置文件中的尾随空格问题 (Grafana Docker)
 
 ## 概述
 在 Grafana 11.6.0 的 Docker 镜像中，自动生成的 `/etc/grafana/grafana.ini` 配置文件末尾被意外引入了两个尾随空格。虽然这是一个看似微小的格式问题，但它凸显了在运维实践中**配置一致性**和**配置验证**的重要性。对于 SRE 而言，任何偏离预期的配置变更都可能成为配置漂移（Configuration Drift）的源头，进而影响系统行为的可预测性和可靠性。

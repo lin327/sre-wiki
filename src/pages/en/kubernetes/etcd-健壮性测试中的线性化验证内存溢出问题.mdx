@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd Robustness Test Linearization Validation OOM Issue"
+description: "etcd robustness test jobs experiencing OOM process termination due to high peak memory consumption (~40GB) during linearization validation."
+category: etcd
+order: 0
+lastUpdated: 2024-07-10
+confidence: medium
+sources:
+  - url: https://github.com/etcd-io/etcd/issues/21928
+    title: "Robustness test linearization OOM"
+tags: [etcd, robustness-testing, linearization, oom, memory-management]
+---
+
+# etcd Robustness Test Linearization Validation OOM Issue
+
+## Overview
+
+In etcd's continuous integration (CI) pipeline, robustness testing is a critical step for ensuring data consistency and system stability. Linearization validation is a resource-intensive step that confirms operation sequences conform to the linearizability consistency model by analyzing event history. According to etcd project issue #21928, this validation process consumes up to 40GB of peak memory under specific high-traffic test scenarios, causing the test process to be forcibly terminated by the operating system's OOM Killer due to insufficient memory. This issue directly impacts etcd CI reliability and test coverage.
+
+## Core Concepts
+
+### Linearization
+
+Linearization is a strong consistency model in distributed systems. It requires all operations to appear as if they took effect atomically at some single point in time in a global order. For a key-value store like etcd, linearizable reads and writes ensure all clients see a consistent, predictable data view. In robustness testing, verifying linearization is a key means of proving that etcd maintains its core consistency promises even under interference such as network partitions and node failures.
+
+### OOM (Out-Of-Memory)
+
+OOM occurs when a process requests more memory than the system or container cgroup limit allows, and is terminated by the operating system kernel's OOM Killer. In test and production environments, OOM is typically considered a serious reliability event as it causes service interruptions, task failures, and data loss risks. In CI environments, OOM means test job failure, potentially masking real issues.
+
+### Space Exploration
+
+In linearization validation, to confirm event sequence validity, the algorithm may need to explore all possible operation orderings and overlaps. For very long or complex histories (such as those produced in high-traffic scenarios), this exploration leads to exponential memory growth, which is the fundamental technical cause of OOM.
+
+## Practice
+
+### Problem Reproduction and Analysis
+
+The issue was discovered in etcd's nightly robustness test runs, manifesting as CI jobs (like `ci-etcd-robustness-main-arm64`) being killed by the system. Through improvements in etcd PR #21807, tests can now save reports before validation, enabling local reproduction.
+
+A typical reproduction case comes from test case `TestRobustnessExploratory_KubernetesHighTraffic_ClusterOfSize1_raftAfterSave=sleep`. Under the simulated Kubernetes high-traffic scenario, linearization validation peaked at approximately 40GB of memory usage, far exceeding normal CI node or container memory limits.
+
+### Preliminary Solution Ideas
+
+The community proposed initial ideas in issue #21864, but due to the inherent space exploration nature of linearization validation algorithms, completely eliminating OOM risk is extremely difficult. Current focus is on establishing reproducible test baselines and tracking optimization work:
+
+1.  **Algorithm optimization**: Improve linearization validation algorithms using more memory-efficient heuristics or pruning strategies.
+2.  **Memory limits and monitoring**: Set more precise memory limits for validation tools or CI jobs, adding memory usage monitoring to gracefully degrade before reaching thresholds.
+3.  **Test case layering**: Classify test cases based on history complexity and expected memory consumption, scheduling high-resource cases separately.
+
+## SRE Essentials
+
+- **Relationship with Reliability and Incident Response**: While this issue appears in the test environment, it directly relates to etcd's reliability verification capability. Unstable test infrastructure hinders confidence assessment of production component reliability. Treat this as an internal SRE incident, tracking until resolved.
+- **Best Practices and Common Anti-Patterns**:
+    - **Anti-Pattern**: Ignoring test infrastructure resource constraints, hardcoding resource-intensive tasks into standard pipelines.
+    - **Best Practice**: Implement **resource budgets** and **capacity planning**, allocating differentiated computing resources for different test types. Establish **test stability** monitoring metrics, alerting on frequently OOM-ing test jobs.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: Frequency of robustness test job OOM failures in CI pipeline (count/day).
+    - **SLO**: Robustness test job success rate > 95%.
+    - **Internal SLA**: For OOM-failing robustness test jobs, clear root cause analysis or optimization plans within N working days.
+
+[[etcd-robustness-testing]] [[capacity-management]] [[ci-pipeline-reliability]]

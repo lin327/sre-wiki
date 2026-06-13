@@ -1,0 +1,176 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Container Runtime"
+category: ""
+confidence: low
+---
+
+# Container Runtime
+
+The container runtime is the component on Kubernetes nodes that actually executes container lifecycle management. It is responsible for pulling images, creating containers, managing cgroups and namespaces, and terminating processes. Understanding runtime architecture is critical for troubleshooting container crashes, optimizing startup performance, and hardening security boundaries.
+
+## CRI: Container Runtime Interface
+
+Kubernetes introduced CRI (Container Runtime Interface) from version 1.5, decoupling kubelet from specific runtime implementations. CRI defines a set of gRPC interfaces through which kubelet communicates with the runtime via Unix Socket (default `/var/run/containerd/containerd.sock`).
+
+```text
+kubelet  ──gRPC──▶  CRI Shim  ──▶  OCI Runtime (runc)
+                   (containerd
+                    or CRI-O)
+```
+
+CRI core services:
+
+| Service | Responsibility | Key RPCs |
+|---------|---------------|----------|
+| **RuntimeService** | Container lifecycle management | RunPodSandbox, CreateContainer, StartContainer, StopContainer |
+| **ImageService** | Image management | PullImage, ListImages, ImageStatus, RemoveImage |
+
+```bash
+# View runtime used by node
+kubectl get node <node-name> -o jsonpath='{.status.nodeInfo.containerRuntimeVersion}'
+
+# Check CRI socket connection status
+crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock info
+```
+
+## OCI Runtime Spec
+
+OCI (Open Container Initiative) defines container runtime specifications, including two core parts:
+
+- **Image Spec** — Image format standards (layers, manifests, configs)
+- **Runtime Spec** — How to run containers (filesystem, process parameters, cgroups, namespaces)
+
+Runtimes conforming to OCI Runtime Spec are called OCI Runtimes, responsible for actual container process creation:
+
+| OCI Runtime | Characteristics | Use Cases |
+|-------------|----------------|-----------|
+| **runc** | Default runtime, directly manipulates Linux namespaces and cgroups | Most general workloads |
+| **crun** | C implementation, lighter than runc, faster startup | Cold-start-sensitive scenarios |
+| **Kata Containers** | Each container runs in an independent lightweight VM | Multi-tenant isolation, untrusted code |
+| **gVisor (runsc)** | User-space kernel intercepts system calls | Security sandbox, reduced kernel attack surface |
+| **Firecracker** | AWS open-source microVM | Serverless / FaaS platforms |
+
+```bash
+# View OCI runtime used by containerd
+cat /etc/containerd/config.toml | grep -A5 'plugins."io.containerd.grpc.v1.cri".containerd.runtimes'
+
+# View runc version
+runc --version
+```
+
+## containerd vs CRI-O
+
+These are the two most mainstream CRI implementations in the Kubernetes ecosystem:
+
+| Dimension | containerd | CRI-O |
+|-----------|-----------|-------|
+| **Origin** | Independent project split from Docker, CNCF graduated project | Red Hat-led, designed specifically for Kubernetes |
+| **Scope** | Full container management (images, storage, networking) | Only implements CRI interface, minimal functionality |
+| **CLI Tools** | `ctr`, `nerdctl` | `crictl` |
+| **Image Building** | Supported (via BuildKit) | Not supported, requires Buildah |
+| **Distribution Adoption** | GKE, EKS, AKS, Docker Desktop | OpenShift, SUSE |
+| **Plugin Ecosystem** | Rich snapshotter and runtime plugins | Relatively streamlined |
+
+```bash
+# containerd common troubleshooting commands
+crictl ps -a                    # List all containers
+crictl logs <container-id>      # View container logs
+crictl inspect <container-id>   # Container details
+crictl pull <image>             # Manually pull image
+
+# CRI-O troubleshooting commands (crictl universal)
+crictl pods                     # List all Pod Sandboxes
+crictl inspectp <pod-id>        # View Pod Sandbox details
+```
+
+## RuntimeClass: Selecting Runtimes by Workload
+
+Kubernetes RuntimeClass allows specifying different runtimes for different Pods, implementing security tiering:
+
+```yaml
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata
+handler: kata
+scheduling:
+  nodeSelector:
+    security-tier: high
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untrusted-workload
+spec:
+  runtimeClassName: kata
+  containers:
+  - name: app
+    image: untrusted/image:latest
+```
+
+Typical tiering strategy:
+
+| Workload Type | Recommended Runtime | Rationale |
+|---------------|-------------------|-----------|
+| Internal microservices | runc | Best performance, fast startup |
+| Third-party SaaS integration | gVisor | Limits system calls, reduces kernel risk |
+| Multi-tenant user code | Kata Containers | Hard isolation, prevents container escape |
+| Compliance-sensitive workloads | Kata + SEV/TDX | Hardware-level confidential computing |
+
+## SRE Troubleshooting Essentials
+
+### Runtime Crashes
+
+When containerd or CRI-O process itself crashes, all containers on the node are affected:
+
+```bash
+# Check runtime service status
+systemctl status containerd    # or crio
+
+# View runtime logs
+journalctl -u containerd --since "10 minutes ago" --no-pager
+
+# Check node NotReady reason
+kubectl describe node <node-name> | grep -A5 "Conditions"
+```
+
+### Container Startup Failures
+
+```bash
+# View container creation errors
+crictl create <sandbox-id> container-config.json sandbox-config.json
+
+# Check if SELinux / AppArmor is blocking container startup
+ausearch -m AVC -ts recent
+dmesg | grep -i "denied\|apparmor"
+
+# Check if cgroup driver matches
+kubectl get node <node-name> -o jsonpath='{.status.nodeInfo.operatingSystem}'
+cat /var/lib/kubelet/config.yaml | grep cgroupDriver
+```
+
+### Security Incident Investigation
+
+Container escape is the highest priority security incident:
+
+```bash
+# Check for privileged containers running
+kubectl get pods -A -o json | jq '.items[] | select(.spec.containers[].securityContext.privileged==true)'
+
+# Find suspicious exec operations in audit logs
+cat /var/log/kubernetes/audit.log | grep '"verb":"create"' | grep 'exec'
+
+# Check runtime for known CVEs
+containerd --version
+runc --version
+```
+
+## SRE Practice Checklist
+
+- Keep only one CRI implementation per node; avoid multiple containerd or dockerd instances competing for sockets
+- Configure RuntimeClass for untrusted workloads; use sandbox runtimes (gVisor or Kata)
+- Monitor `containerd` / `crio` process CPU and memory; runtime OOM causes node NotReady
+- Regularly update runc and containerd versions; follow security advisories (historically multiple container escape CVEs)
+- cgroup driver (cgroupfs vs systemd) must be consistent between kubelet and runtime
+- Use `crictl` not `docker` commands for troubleshooting; Docker CLI does not go through the CRI interface

@@ -1,0 +1,82 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Containerd Snapshot Layer Residue Problem"
+description: "When Docker uses the containerd snapshotter, interrupted image pulls leave disk data that cannot be cleaned by standard commands."
+category: Container Runtime & Orchestration
+order: 0
+lastUpdated: 2024-08-08
+confidence: medium
+sources:
+  - url: https://github.com/containerd/containerd/issues/10548
+    title: "Containerd snapshotter saves layers that can't be cleared easily"
+tags: [docker, containerd, snapshotter, overlayfs, storage-cleanup, disk-space]
+---
+
+# Containerd Snapshot Layer Residue Problem
+
+## Overview
+
+In modern containerized environments, Docker engine is gradually migrating its underlying storage management to containerd. When the `containerd-snapshotter` feature is enabled, image layer storage is managed by containerd's snapshot component. However, a known issue is: **interrupted image pull operations permanently consume disk space and cannot be cleared by standard commands like `docker system prune`**. This creates additional challenges for SRE daily operations (such as disk space monitoring and reclamation), potentially causing production incidents from disk space exhaustion. Understanding the root cause and solutions for this issue is critical for ensuring host reliability and storage health.
+
+## Core Concepts
+
+- **Containerd Snapshotter**: A plugin in containerd responsible for managing filesystem snapshots needed for container runtime. When Docker is configured to use this feature, `docker pull` layer extraction is handled by the snapshotter, with data stored in containerd's directory structure.
+- **Overlayfs Snapshot (`io.containerd.snapshotter.v1.overlayfs`)**: A specific snapshotter implementation used to store decompressed image layers. Interrupted pull operations leave incomplete or orphaned snapshot data.
+- **Content-Addressable Storage (`io.containerd.content.v1.content`)**: Stores raw image layer packages downloaded from registries (typically compressed tar files). Even if snapshots are cleaned, this content may persist due to reference relationships.
+- **Garbage Collection (GC)**: Containerd's mechanism for cleaning unreferenced objects. It is typically run periodically by the Docker daemon or containerd itself, but policy limitations may prevent cleaning residual data in specific states.
+- **Lease**: Containerd's mechanism for tracking the lifecycle of a set of related objects (such as all content and snapshots involved in a pull operation). Interrupted operations may produce an unreleased lease, blocking GC from reclaiming its associated data.
+
+## Practice
+
+### 1. Diagnosing the Problem
+First, confirm whether the problem exists. After interrupting a pull, check disk usage with:
+```bash
+# View Docker-reported disk usage, note the Images section
+docker system df -v
+
+# Directly check containerd storage directory disk usage
+du -sh /var/lib/docker/io.containerd.snapshotter.v1.overlayfs
+du -sh /var/lib/docker/io.containerd.content.v1.content
+```
+If these directories continue growing and `docker system prune -a` cannot reclaim their space, the problem exists.
+
+### 2. Inspect and Clean Orphaned Leases
+Use containerd's CLI tool `ctr` to inspect incomplete leases. This is key to releasing associated data.
+```bash
+# List all leases
+sudo ctr -n moby leases ls
+
+# Find leases potentially created by interrupted pulls with abnormal status (usually no tags or associated references)
+# Delete suspicious leases (operate cautiously, confirm they don't belong to normal operations)
+sudo ctr -n moby leases rm <lease-id>
+```
+After deleting leases, containerd's garbage collection may reclaim associated data on its next run.
+
+### 3. Forced Cleanup and Manual Intervention
+If the above methods are ineffective, stopping the Docker service for manual cleanup may be necessary, but this stops all containers and **should be done during a maintenance window**:
+```bash
+# Stop Docker service
+sudo systemctl stop docker
+
+# Carefully delete residual snapshot and content directories (paths need confirmation per actual environment)
+sudo rm -rf /var/lib/docker/io.containerd.snapshotter.v1.overlayfs/???
+sudo rm -rf /var/lib/docker/io.containerd.content.v1.content/blobs/sha256/???
+
+# Restart Docker service
+sudo systemctl start docker
+```
+**Note:** Manual deletion is a last resort; ensure you do not accidentally delete snapshots in use. Best practice is to back up or carefully verify directory contents before deletion.
+
+## SRE Essentials
+
+- **Relationship with Reliability**: This issue directly threatens host storage reliability. Unreleased disk space can cause critical services (such as databases, application containers) to crash due to write failures, constituting a potential single point of failure. SREs need to include such storage leaks in capacity planning and alert monitoring.
+- **Observability Gap**: Standard Docker monitoring tools (`docker system df`) cannot accurately reflect the real disk usage managed by containerd's snapshotter, creating an observability blind spot. SREs need to establish monitoring for specific directories under `/var/lib/docker/` and set disk space usage alerts.
+- **Incident Response and Best Practices**:
+    - **Best Practice**: In production environments, for nodes with `containerd-snapshotter` enabled, establish daily operational scripts that check leases and clean anomalous leases. Include this in automated operational workflows.
+    - **Anti-Pattern**: Ignoring persistent discrepancies between `docker system df` and actual `du` values; executing `rm -rf` without confirming safety.
+    - **Operational Procedure**: When receiving disk space alerts, prioritize using `du` combined with `ctr leases` for diagnosis, prioritizing cleanup via leases to let GC take effect, rather than directly manually deleting files.
+- **Related Metrics (SLI/SLO)**:
+    - **SLI (Service Level Indicator)**: "Percentage of available disk space on container hosts" as a storage reliability SLI.
+    - **SLO (Service Level Objective)**: Set targets for this SLI, e.g., "99.9% of the time, available space in Docker root directory (`/var/lib/docker`) is greater than 15%."
+    - By monitoring this SLI, capacity issues caused by storage leaks can be detected early, triggering corresponding operational actions (such as executing the above cleanup procedures), thus avoiding SLO violations.

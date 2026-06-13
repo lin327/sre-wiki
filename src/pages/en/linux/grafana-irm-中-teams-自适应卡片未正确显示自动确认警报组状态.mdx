@@ -1,70 +1,72 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Grafana IRM - Teams adaptive card does not show accurate status on auto-acknowledged"
 category: "Grafana IRM"
-confidence: medium
+confidence: high
 ---
 
+# Grafana IRM - Teams adaptive card does not show accurate status on auto-acknowledged
 
-## 概述
+## Overview
 
-Grafana Incident Response Management (IRM) 是 Grafana 生态中用于管理、协调和响应事件的核心功能模块。它通过集成多种通知渠道（如 Microsoft Teams）的 ChatOps 来实现高效的事件协作。本文所描述的问题涉及 Grafana IRM 在特定场景下的一个缺陷：当警报组被自动确认时，发送至 Teams 的自适应卡片（Adaptive Card）未能准确反映其已确认（Acknowledged）的实际状态，而是错误地显示为未确认（Unacknowledged）。这种状态显示不一致会严重干扰事件响应流程，导致响应人员产生困惑，影响事件处理的准确性和效率，是 SRE 团队在运维可观测性工具链中需要关注和解决的重要问题。
+Grafana Incident Response Management (IRM) is a core functional module in the Grafana ecosystem for managing, coordinating, and responding to incidents. It achieves efficient incident collaboration through ChatOps integration with multiple notification channels (such as Microsoft Teams). The issue described in this article involves a defect in Grafana IRM under specific scenarios: when an alert group is auto-acknowledged, the Adaptive Card sent to Teams fails to accurately reflect its actual Acknowledged status, instead incorrectly displaying as Unacknowledged. This status display inconsistency seriously disrupts the incident response process, causing confusion among responders and affecting the accuracy and efficiency of incident handling. It is an important issue that SRE teams need to address in their observability toolchain operations.
 
-## 核心概念
+## Core Concepts
 
-要理解此问题，需明确以下几个关键概念：
+To understand this issue, the following key concepts need to be clarified:
 
-- **Grafana IRM 与警报组 (Alert Group)**：IRM 用于聚合和管理相关的警报，形成一个“警报组”。一个警报组代表一个独立的事件，其状态（如“触发”、“已确认”、“已解决”）会随着运维操作而变化。
-- **自动确认 (Auto-acknowledge)**：这是一种警报组处理策略，旨在减少不必要的噪音。当预设条件满足时（例如，关联的故障自动恢复或满足特定规则），警报组的状态会自动从“触发”变为“已确认”，无需人工干预。
-- **Teams 自适应卡片 (Teams Adaptive Card)**：这是 Microsoft Teams 平台支持的一种富消息格式，Grafana IRM 通过 ChatOps 集成使用它来推送详细的警报信息。卡片的布局和状态指示器（如颜色、按钮标签）应与警报组的后端状态保持同步。
-- **状态同步问题**：本案例的核心是“后端状态”与“前端通知”之间的同步失败。警报组在 Grafana 后台已处于“已确认”状态，但 Teams 自适应卡片的渲染逻辑或数据传递未能获取或正确应用这一最新状态，导致视觉呈现错误。
+- **Grafana IRM and Alert Group**: IRM is used to aggregate and manage related alerts, forming an "alert group." An alert group represents an independent incident, and its state (such as "Triggered," "Acknowledged," "Resolved") changes as operational actions are performed.
+- **Auto-acknowledge**: This is an alert group processing strategy aimed at reducing unnecessary noise. When preset conditions are met (for example, the associated fault automatically recovers or specific rules are satisfied), the alert group's state automatically changes from "Triggered" to "Acknowledged" without manual intervention.
+- **Teams Adaptive Card**: This is a rich message format supported by the Microsoft Teams platform. Grafana IRM uses it to push detailed alert information through ChatOps integration. The card's layout and status indicators (such as color, button labels) should stay in sync with the alert group's backend state.
+- **State Synchronization Issue**: The core of this case is the synchronization failure between "backend state" and "frontend notification." The alert group is already in the "Acknowledged" state in the Grafana backend, but the Teams Adaptive Card's rendering logic or data transmission fails to fetch or correctly apply this latest state, resulting in an incorrect visual display.
 
-## 实践
+## Practice
 
-### 问题表现与影响
+### Problem Manifestation and Impact
 
-在该 bug 中，主要表现为：
-1.  **触发条件**：警报组被设置为“自动确认”，且触发的警报满足自动确认条件。
-2.  **通知渠道**：配置了通过 Microsoft Teams 发送 ChatOps 通知。
-3.  **错误现象**：接收到的 Teams 自适应卡片上，状态栏或相关指示器明确显示“Unacknowledged”（未确认），这与警报组在 Grafana 界面中的实际“Acknowledged”（已确认）状态相矛盾。
-4.  **用户困惑**：响应人员看到“未确认”的卡片可能会尝试再次确认，造成操作冗余；或可能误判事件严重性，影响后续处理流程。
+In this bug, the main manifestations are:
+1.  **Trigger Condition**: The alert group is set to "auto-acknowledge," and the triggered alert meets the auto-acknowledge criteria.
+2.  **Notification Channel**: ChatOps notifications are configured to be sent through Microsoft Teams.
+3.  **Error Symptom**: The received Teams Adaptive Card's status bar or related indicator clearly displays "Unacknowledged," which contradicts the alert group's actual "Acknowledged" status in the Grafana interface.
+4.  **User Confusion**: Responders seeing "Unacknowledged" on the card may attempt to acknowledge it again, causing redundant operations; or they may misjudge the incident severity, affecting subsequent handling processes.
 
-### 可能的根本原因
+### Possible Root Causes
 
-尽管该 issue 报告本身未深入分析原因，但基于系统交互原理，可能的原因包括：
-- **状态传递延迟或失败**：Teams 卡片生成时，未能及时从 Grafana IRM API 获取到警报组的最新状态。
-- **卡片渲染逻辑缺陷**：自适应卡片的模板或渲染引擎存在逻辑错误，在处理“自动确认”这一特殊状态变更路径时，硬编码了初始状态或忽略了更新。
-- **异步处理问题**：自动确认操作与卡片生成/发送是两个异步流程，在特定时序下，卡片生成时获取到的状态仍是旧状态。
+Although the issue report itself does not deeply analyze the cause, based on system interaction principles, possible causes include:
+- **State Transmission Delay or Failure**: When the Teams card is generated, it fails to timely fetch the alert group's latest state from the Grafana IRM API.
+- **Card Rendering Logic Defect**: The Adaptive Card's template or rendering engine has a logic error. When processing the "auto-acknowledge" special state change path, it hardcodes the initial state or ignores the update.
+- **Asynchronous Processing Issue**: The auto-acknowledge operation and card generation/sending are two asynchronous processes. Under specific timing conditions, the state fetched during card generation is still the old state.
 
-### 复现步骤（验证）
+### Reproduction Steps (Verification)
 
-根据原始资料，可按以下步骤复现以验证问题：
-1.  在 Grafana IRM 中，配置一个警报组（Alert Group）并为其设置**自动确认（Auto-acknowledge）** 策略。
-2.  配置 ChatOps，将该警报组的事件通知发送至指定的 **Microsoft Teams 频道**，使用自适应卡片格式。
-3.  触发一个满足上述自动确认策略的警报，使其进入警报组。
-4.  观察 Teams 频道中收到的自适应卡片，**预期其应显示“已确认”状态**。
-5.  实际结果通常是卡片显示“未确认”状态。
-6.  点击卡片中的链接进入 Grafana 查看该警报组详情，确认其状态在后台**确实已是“已确认”**。
+Based on the original material, the issue can be reproduced and verified using the following steps:
+1.  In Grafana IRM, configure an Alert Group and set an **auto-acknowledge** strategy for it.
+2.  Configure ChatOps to send event notifications for this alert group to a specified **Microsoft Teams channel** using Adaptive Card format.
+3.  Trigger an alert that meets the above auto-acknowledge strategy, causing it to enter the alert group.
+4.  Observe the Adaptive Card received in the Teams channel — **it is expected to display "Acknowledged" status**.
+5.  The actual result is typically that the card displays "Unacknowledged" status.
+6.  Click the link in the card to view the alert group details in Grafana, confirming that its status in the backend is **indeed already "Acknowledged"**.
 
-## SRE 要点
+## SRE Key Points
 
-### 与可靠性和事件响应的关联
-- **事件响应流程干扰**：准确的事件状态是事件指挥系统（Incident Command System）的基础。通知渠道中的错误状态信息会误导一线响应者，可能触发错误的升级流程或不必要的现场介入，直接降低事件解决效率（MTTD/MTTR）。
-- **可观测性完整性受损**：可观测性三大支柱（指标、日志、追踪）的延伸也包括**事件生命周期状态**的可观测性。此 bug 破坏了通过外部集成（Teams）观测事件状态的可靠性，损害了系统的端到端可观测性。
-- **SLI/SLO 潜在风险**：如果基于 IRM 状态通知来计算或保障某些可靠性指标（如“事件确认及时率 SLO”），那么不准确的状态会导致指标计算错误，从而误判 SLO 达成情况。
+### Connection to Reliability and Incident Response
+- **Incident Response Process Disruption**: Accurate incident state is the foundation of the Incident Command System. Incorrect status information in notification channels can mislead frontline responders, potentially triggering incorrect escalation procedures or unnecessary on-site interventions, directly reducing incident resolution efficiency (MTTD/MTTR).
+- **Observability Integrity Compromised**: The extension of the three pillars of observability (metrics, logs, traces) also includes the observability of **incident lifecycle state**. This bug undermines the reliability of observing incident state through external integrations (Teams), damaging end-to-end system observability.
+- **SLI/SLO Potential Risk**: If certain reliability metrics (such as "Incident Acknowledgment Timeliness SLO") are calculated or guaranteed based on IRM status notifications, inaccurate status will lead to incorrect metric calculations, resulting in misjudgment of SLO achievement.
 
-### 最佳实践与反模式
-- **最佳实践**：
-    - **保持通知与实际状态强一致**：任何向外发送的通知（尤其是状态变更通知）必须保证与源系统的最终状态一致。这是 ChatOps 集成的基本要求。
-    - **建立集成验证流程**：对关键的监控-通知集成链路（如 Grafana -&gt; Teams），应建立定期的端到端验证机制，确保关键路径功能正常。
-    - **设置明确的 SLI**：可以考虑将“关键事件通道（如 Teams）中通知的状态与系统实际状态的一致性”作为一个可观测性 SLI。
-- **常见反模式**：
-    - **忽视异步通信中的时序问题**：在微服务或集成架构中，假设同步调用或状态总是即时可用是危险的。
-    - **依赖单一通知渠道验证状态**：SRE 应避免仅通过 Teams 卡片状态来判断事件进展，应回溯至 Grafana IRM 主控台确认事实来源（single source of truth）。
-    - **对自动化流程的结果缺乏校验**：自动确认等自动化策略虽然提升效率，但其产生的后续效果（如通知）必须被纳入验证范围，防止自动化产生“隐性错误”。
+### Best Practices and Anti-patterns
+- **Best Practices**:
+    - **Maintain Strong Consistency Between Notifications and Actual State**: Any notification sent externally (especially state change notifications) must guarantee consistency with the source system's final state. This is a fundamental requirement for ChatOps integration.
+    - **Establish Integration Verification Processes**: For critical monitoring-notification integration chains (such as Grafana -> Teams), establish regular end-to-end verification mechanisms to ensure critical path functionality is working properly.
+    - **Set Clear SLIs**: Consider defining "consistency between notification status in critical event channels (such as Teams) and actual system status" as an observability SLI.
+- **Common Anti-patterns**:
+    - **Ignoring Timing Issues in Asynchronous Communication**: In microservice or integration architectures, assuming synchronous calls or that state is always immediately available is dangerous.
+    - **Relying on a Single Notification Channel to Verify State**: SREs should avoid judging incident progress solely through Teams card status; they should trace back to the Grafana IRM main console to confirm the single source of truth.
+    - **Lack of Verification for Automation Results**: While automation strategies like auto-acknowledge improve efficiency, their resulting effects (such as notifications) must be included in the verification scope to prevent automation from producing "hidden errors."
 
-### 相关组件
-此问题涉及以下组件的交互与集成：
+### Related Components
+This issue involves the interaction and integration of the following components:
 - `[[alert-group]]`
 - `[[auto-acknowledge]]`
 - `[[teams-adaptive-card]]`

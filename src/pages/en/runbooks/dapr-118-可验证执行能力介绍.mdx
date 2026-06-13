@@ -1,0 +1,101 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Dapr 1.18 Verifiable Execution Introduction"
+description: "Introduction to Dapr 1.18's workflow history signing, propagation, and attestation capabilities, providing tamper-proof, verifiable execution lineage for distributed systems and AI agents."
+category: SRE Practices and Governance
+order: 0
+lastUpdated: 2026-06-11
+confidence: high
+---
+
+# Dapr 1.18 Verifiable Execution Introduction
+
+## Overview
+
+In the evolution of the cloud-native ecosystem, the shift from ensuring system resilience to establishing system trustworthiness is a critical paradigm change. Traditional observability tools (logs, metrics, traces) tell us what happened, but they rely on trust in the system and cannot be tamper-proof. The **Verifiable Execution** introduced in Dapr 1.18 is a set of foundational capabilities that provides **tamper-proof evidence, provenance traceability, and trustworthiness attestation** for workflow execution history through cryptographic means. For SREs, this is not only a technical upgrade to enhance system reliability but also a core governance cornerstone for building **zero-trust architectures**, meeting strict compliance requirements, and ensuring the trustworthiness of critical business processes and AI agents.
+
+## Core Concepts
+
+### Limitations of Observability and the Need for Verifiable Execution
+
+Observability provides a **view** of the system's runtime, while verifiable execution provides **proof** of execution history. The former relies on the system's own integrity, while the latter provides cryptographic guarantees. In scenarios where distributed systems and autonomous AI agents are increasingly prevalent, merely knowing "what happened" is no longer sufficient; we need to be able to **prove** that it actually happened, prove that the execution path is complete, and prove that it was not tampered with after the fact.
+
+### Three Core Capabilities of Dapr 1.18
+
+1.  **Workflow History Signing**:
+    *   **What it is**: During workflow execution, Dapr generates cryptographic signatures for workflow history records.
+    *   **What it solves**: Creates **tamper-proof execution history**. Any modification to the history will break the signature, making tampering evident. This provides a more solid foundation for auditing and compliance than plain logs or database records.
+
+2.  **Workflow History Propagation**:
+    *   **What it is**: Allows execution lineage to flow with requests across services, workflows, activities, and agents.
+    *   **What it solves**: Addresses the problem of fragmented distributed context. Downstream components no longer need to piece together information from multiple logs and traces; they can directly obtain the complete lineage about "where this work came from," "which workflows it passed through," and "what the execution order was." It elevates execution context from local information to a first-class citizen of distributed execution.
+
+3.  **Workflow Attestation**:
+    *   **What it is**: Allows workflows and activities to receive and verify **cryptographically verifiable execution context**.
+    *   **What it solves**: Transforms execution lineage from "informational metadata" to "trustworthy signals." Downstream systems can make decisions based on verified lineage, for example: a banking system only accepts transfer requests from a specific approval workflow, thereby enforcing security policies.
+
+### SPIFFE-Based Identity Foundation
+
+Verifiable execution is built on Dapr's existing **SPIFFE workload identity** foundation. SPIFFE solves the "who are you?" (workload identity authentication) problem, while verifiable execution further answers "how did you get here?" (execution lineage verification). The combination of the two builds a **trust chain** spanning orchestrators, activities, services, and agents, extending cryptographic trust from the communication layer to the execution layer.
+
+## Practice
+
+### Architecture and Flow Description
+
+After enabling these capabilities in Dapr 1.18, a typical workflow execution flow will add the following dimensions:
+
+1.  **Signing phase**: When the workflow state transitions or an activity completes execution, the sidecar uses the key associated with the workload identity to sign the relevant history records and attaches the signature to the history.
+2.  **Propagation phase**: When a workflow calls an activity, an activity calls another service, or an agent triggers a new workflow, Dapr automatically injects the signed execution lineage information (such as parent workflow ID, call chain, signed history fragments) into the request context (such as gRPC metadata or CloudEvents) for propagation.
+3.  **Verification phase**: The downstream service or workflow receiving the request can use the Dapr SDK or built-in API to verify the received execution lineage signature. It can validate against the public key corresponding to the initial signer's SPIFFE identity to ensure the lineage has not been tampered with and confirm that the workflow's origin and path meet expectations.
+
+### Operational Example (Conceptual)
+
+```python
+# Conceptual code demonstrating verification logic
+from dapr.clients import DaprClient
+
+def handle_incoming_request(request):
+    with DaprClient() as d:
+        # Verify the workflow lineage and signature attached to the request
+        attestation = d.verify_workflow_attestation(request.context)
+        
+        if not attestation.is_valid:
+            # Signature invalid or lineage doesn't meet policy requirements, reject request
+            raise SecurityError("Invalid workflow attestation")
+        
+        # Check if lineage comes from an allowed parent workflow
+        if "approved-payment-workflow" not in attestation.provenance:
+            raise SecurityError("Unapproved execution provenance")
+        
+        # Process business logic based on trustworthy context
+        process_verified_payment(attestation.data)
+```
+
+## SRE Key Points
+
+### Relationship with Reliability, Observability, and Incident Response
+
+*   **Reliability**: Verifiable execution enhances **state consistency** guarantees. Through cryptographic signatures, SREs can be confident that the workflow's historical state is accurate and uncorrupted, which is crucial for fault recovery and idempotency verification.
+*   **Observability**: It adds a **trustworthy dimension** to the existing three pillars of observability (logs, metrics, traces). A trace chain with a valid signature has much higher credibility than one without. It enables anomaly detection based on "whether the execution path violates expectations" rather than just "whether metrics are abnormal."
+*   **Incident response**: In security incidents or fault investigations, **tamper-proof execution history** is a valuable forensic tool. SRE teams can precisely reconstruct the complete, trustworthy causal chain of events, determining which workload triggered the problem and through what path, greatly improving the accuracy and speed of incident analysis.
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best practices**:
+    1.  **Layered trust**: Use Dapr's workflow attestation as a **mandatory gate** for critical business decisions (such as payments, compliance checks), not an optional one.
+    2.  **Key management**: Ensure that keys used for signing (typically managed by infrastructure like SPIFFE/SPIRE) have strict access control and rotation policies.
+    3.  **Combine with policy engines**: Combine verification logic with policy engines like OPA (Open Policy Agent) to implement dynamic, fine-grained access control based on execution lineage.
+    4.  **As part of SLIs**: Include "workflow signature verification success rate" or "lineage propagation completeness rate" as new SRE metrics in SLO assessments.
+*   **Common anti-patterns**:
+    1.  **Using only for auditing**: Treating verifiable execution only as a post-incident audit tool rather than using it at runtime as a critical decision basis, failing to leverage its real-time protection value.
+    2.  **Trusting all signatures**: Not performing policy-based granular processing on signature verification results, merely checking "signature is valid" before allowing passage, ignoring inspection of lineage content (such as source workflow, call path).
+    3.  **Insufficient performance consideration**: Not evaluating the latency overhead of signature verification on ultra-high throughput paths; should balance security and performance through asynchronous verification or policy optimization.
+
+### Related Metrics (SLI/SLO/SLA)
+
+*   **New SLI candidates**:
+    *   `workflow_attestation_verification_success_rate`: The success rate of workflow attestation verification (i.e., signature is valid and conforms to policy).
+    *   `workflow_history_propagation_completeness`: The completeness ratio of workflow history propagation (whether critical workflows carry complete lineage information).
+*   **Impact on SLOs**: Can provide stronger technical support and quantifiable verification methods for SLOs like "data integrity and non-repudiation of critical business processes." SLA clauses regarding audit traceability and responsibility attribution can be more reliably technically fulfilled based on this capability.
+*   **Error budget consumption**: Request rejections caused by cryptographic signature verification failures or missing lineage should be classified as **security incidents** and their consumption of the error budget should be calculated separately to distinguish their impact from traditional infrastructure failures.

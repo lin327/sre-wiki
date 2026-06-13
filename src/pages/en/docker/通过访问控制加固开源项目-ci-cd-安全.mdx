@@ -1,0 +1,84 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Hardening Open Source Project CI/CD Security Through Access Control"
+category: "CI/CD Security and Supply Chain"
+confidence: low
+---
+
+# Hardening Open Source Project CI/CD Security Through Access Control
+
+## Overview
+
+In the cloud-native era, the reliability and security of CI/CD systems directly determine the integrity of the software supply chain. An attack targeting the build environment can have destructive power reaching millions of running containers, as exemplified by the SolarWinds incident mentioned in the article. For SRE, securing the CI/CD pipeline is a critical prerequisite for maintaining system reliability. It involves controlling "who" can trigger builds and what code the build process can "execute." This article deeply analyzes a set of access control patterns used by the Cilium project to harden its open-source CI/CD pipeline. These practices have broad applicability.
+
+## Core Concepts
+
+In CI/CD security, several core concepts form the foundation of access control:
+
+- **Supply Chain Attack**: Attackers infiltrate software dependencies, build tools, or CI/CD processes to inject malicious code into the final software product. The CI/CD process itself is a high-value target because it possesses privileged permissions to build, sign, and release code.
+- **Trust Boundary**: Clearly distinguishing between "trusted" and "untrusted" code in the pipeline is critical. Typically, code from the repository's base branch or main branch is considered trusted, while code from pull requests (PRs) or external contributors is considered untrusted.
+- **Principle of Least Privilege**: Each build task, workflow step, or bot account should only possess the minimum permission set necessary to complete its task. For example, CI build credentials should only be able to push to development image repositories, not production release repositories.
+- **Transparent Review Gates**: Through technical means (such as `CODEOWNERS` files), requiring that specific high-risk directory changes must be reviewed by designated security teams or maintainers, ensuring changes undergo thorough security assessment before merging.
+
+## Practice
+
+The Cilium project implements multi-layered access control measures around the core question of "controlling who runs what."
+
+### 1. Strict Workflow Trigger Control via Dedicated Bot
+
+To prevent unauthorized users or external contributors from triggering expensive or sensitive CI workflows, Cilium developed an internal bot called **Ariane**. This bot listens for specific commands in PR comments (such as `/test`) and performs the following validations:
+- **Team Verification**: Only members of the `organization-members` team can successfully trigger workflows.
+- **Allowlist Mechanism**: All triggerable workflows and their dependencies are explicitly defined in a configuration file (`.github/ariane-config.yaml`). Any workflow command not on the allowlist is ignored.
+- **Automated Dependency Management**: The configuration supports defining dependencies between workflows (such as `depends-on`), ensuring complex test pipelines execute in the correct order.
+
+This pattern narrows trigger permissions from GitHub's native, broader `pull_request` event to being triggered by authenticated maintainers through specific commands, achieving more granular control.
+
+### 2. Isolating Trusted and Untrusted Code in `pull_request_target` Workflows
+
+The `pull_request_target` workflow has read-write access to the repository and access to secrets. If handled improperly, it is an extremely dangerous security trap. When Cilium must use this context to build images, it employs a "two-stage checkout" pattern to establish trust boundaries:
+
+```yaml
+# .github/workflows/build-images-ci.yaml snippet
+- name: Checkout base or default branch (trusted)
+  uses: actions/checkout@<SHA>
+  with:
+    ref: ${{ github.base_ref || github.event.repository.default_branch }}
+    persist-credentials: false
+- name: Checkout pull request branch (NOT TRUSTED)
+  uses: actions/checkout@<SHA>
+  with:
+    persist-credentials: false
+    ref: ${{ steps.tag.outputs.sha }}
+```
+
+**Security Architecture Key Points:**
+- **Checkout trusted code first**: Check out code from the base branch to load all trusted composite actions, scripts, and signing logic.
+- **Isolate untrusted code usage**: PR branch code is only used as context for `docker build`; it is **never** executed directly as a script (all scripts in `run:` steps are inline or from trusted sources).
+- **Build environment isolation**: Docker BuildKit executes untrusted Dockerfiles in an isolated environment without access to GitHub Actions environment variables, repository secrets, or runner credentials.
+- **Data flow sanitization**: Data from untrusted PRs (such as runtime image references) undergoes strict validation before being passed to trusted actions (e.g., verifying images come from the `quay.io/cilium/` namespace) to prevent injection attacks.
+
+### 3. Enforcing Security Reviews with `CODEOWNERS`
+
+To ensure CI/CD configuration changes must undergo security expert review, Cilium configured a `CODEOWNERS` file in the repository root:
+```
+/.github/                          @cilium/github-sec @cilium/ci-structure
+/.github/ariane-config.yaml        @cilium/github-sec @cilium/ci-structure
+/.github/workflows/                @cilium/github-sec @cilium/ci-structure
+/.github/workflows/auto-approve.yaml  @cilium/cilium-maintainers
+```
+This means any modification to files under the `.github/` directory (including workflow definitions and trigger configurations) must be approved by members of both `@cilium/github-sec` and `@cilium/ci-structure` teams. This establishes an unavoidable review gate for CI/CD infrastructure code.
+
+## SRE Essentials
+
+Cilium's practices provide valuable insights for SRE teams:
+
+- **Relationship to Reliability and Observability**: A secure CI/CD process is the cornerstone of production environment reliability. Preventing malicious code from entering release versions is equivalent to preventing a potential, wide-reaching production incident. At the same time, clear access control and audit trails (who can trigger which workflow) enhance pipeline observability, facilitating incident traceability.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Perform **SHA digest pinning** for all third-party Actions and container images to prevent tampering; use bot accounts with limited permissions; implement mandatory code reviews.
+    - **Common Anti-Pattern**: Abusing `pull_request_target` without isolation measures; using overly broad `GITHUB_TOKEN` permissions; neglecting the isolation between CI credentials and production credentials.
+- **Related Metrics (SLI/SPO/SLA)**: While not directly measured, these security controls provide a foundation for defining "supply chain integrity" related SLIs, such as:
+    - **SLI**: Number of unauthorized trigger attempts in controlled workflows; percentage of SHA-pinned dependencies; average review time for CI configuration changes requiring security team review.
+    - **SLO**: 100% of core release workflows must be initiated through approved triggers; SHA pinning rate for third-party dependencies in critical build workflows at least 99.9%.
+
+Although Cilium has established a robust defense, they also candidly point out areas still being improved, such as not yet implementing SLSA provenance, lacking dependency review during PRs, and some internal references needing optimization. This reflects that security hardening is a continuous iterative process. Other teams can use this as a blueprint to gradually build their own CI/CD security control systems.

@@ -1,0 +1,100 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd Data Corruption Incident Post-Mortem"
+category: ""
+confidence: low
+---
+
+# etcd Data Corruption Incident Post-Mortem
+
+etcd is the core data store for Kubernetes clusters, storing all cluster state, Secrets, and ConfigMaps. etcd data corruption renders the entire cluster unavailable and is classified as a P0 incident.
+
+## Root Causes
+
+**Disk Space Exhaustion**: etcd has a default storage quota of 2GB. When historical data accumulates without compaction, space is filled.
+
+**Sudden Power Loss**: etcd uses the boltdb storage engine. Sudden power loss may cause WAL file corruption or data page inconsistency.
+
+**Disk I/O Errors**: Underlying disk failures (bad sectors, RAID degradation) cause incomplete data writes.
+
+**Network Partition**: After prolonged partitioning, lagging nodes cannot catch up with the leader log and are removed, resulting in data inconsistency.
+
+```bash
+# Check storage usage
+etcdctl endpoint status --write-out=table
+# Check disk health
+dmesg | grep -i "error\|fault\|bad"
+```
+
+## Symptoms
+
+- `kubectl` commands return `connection refused` or timeout
+- API Server logs show `etcdserver: request timed out`
+- Cluster node status shows `NotReady`
+- New Pods remain in `Pending` for extended periods
+
+```bash
+# Quick diagnosis
+etcdctl endpoint health --cluster --write-out=table
+etcdctl member list --write-out=table
+```
+
+## Recovery Procedures
+
+### Scenario 1: Single Node Corruption, Cluster Still Available
+
+```bash
+etcdctl member list --write-out=table          # Find corrupted node ID
+etcdctl member remove <member-id>              # Remove corrupted member
+rm -rf /var/lib/etcd/member                    # Clean up local data
+etcdctl member add <name> --peer-urls=https://<ip>:2380  # Rejoin
+systemctl restart etcd                         # Start (with initial-cluster-state=existing)
+```
+
+### Scenario 2: Majority Nodes Corrupted, Restore from Snapshot
+
+```bash
+systemctl stop etcd                            # Stop all nodes
+etcdctl snapshot restore /backup/snapshot.db \  # Restore from backup
+  --data-dir=/var/lib/etcd --name=<node-name> \
+  --initial-cluster=<all-members>
+systemctl start etcd                           # Start
+etcdctl endpoint health --cluster --write-out=table  # Verify
+```
+
+## Preventive Measures
+
+### Monitoring and Alerting
+
+| Metric | Alert Threshold | Description |
+|------|---------|------|
+| `etcd_server_has_leader` | = 0 | No leader, cluster unavailable |
+| `etcd_disk_wal_fsync_duration_seconds` | > 10ms | WAL write latency too high |
+| `etcd_mvcc_db_total_size_in_bytes` | > 80% quota | Storage near capacity |
+
+### Backup Strategy
+
+```bash
+etcdctl snapshot save /backup/etcd-$(date +%Y%m%d-%H%M).db
+etcdctl snapshot status /backup/etcd-snapshot.db --write-out=table
+```
+
+- At least hourly backups, retaining the last 72 hours
+- Sync backups to object storage (S3, OSS)
+- Monthly recovery drills
+
+### Regular Compact and Defrag
+
+```bash
+etcdctl compact <revision>                     # Compact historical revisions
+etcdctl defrag --cluster                       # Reclaim disk space
+```
+
+Recommended: daily compaction, weekly defragmentation.
+
+## SRE Implications
+
+- **MTTR Impact**: etcd corruption recovery takes a long time (snapshot restore + data verification), directly affecting SLO availability
+- **Change Window**: etcd upgrades should occur during maintenance windows with recent snapshots available
+- **Capacity Planning**: Monitor revision growth rate to forecast compaction frequency
+- **Chaos Engineering**: Regularly simulate etcd failures to verify backup recovery and RTO objectives

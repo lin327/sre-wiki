@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Git Sync v13 Submodule Accidental Deletion Issue"
+description: "Grafana v13's Git Sync feature incorrectly deletes submodule directories when pushing changes containing submodules."
+category: sre-practice-incidents
+order: 10
+lastUpdated: 2026-04-30
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123891
+    title: "Git Sync: deletes submodules in pushed branches as of v13"
+tags: [git-sync, grafana, iac, version-control, incident]
+---
+
+# Grafana Git Sync v13 Submodule Accidental Deletion Issue
+
+## Overview
+
+In Site Reliability Engineering (SRE) practice, using version control systems to manage infrastructure configurations and dashboards (i.e., Infrastructure as Code, IaC) is a core practice. Grafana's Git Sync feature aims to automatically synchronize dashboard configurations with a Git repository, ensuring configuration auditability, rollback capability, and team collaboration. However, a critical change introduced in Grafana v13, after fixing a previous complete blocking issue with submodules, introduced a new destructive behavior: when pushing changes through Git Sync, submodule directories in the repository are unexpectedly deleted. This issue directly impacts the integrity of the IaC codebase and may trigger cascading failures.
+
+## Core Concepts
+
+To understand this issue, the following concepts need to be clarified:
+
+1. **Git Sync**: In the SRE context, this refers to an automation mechanism that keeps configuration files (such as Terraform files, Kubernetes manifests, or Grafana dashboard JSON) in real-time sync with a specific branch of a Git repository. It is a key component for implementing GitOps workflows.
+2. **Git Submodule**: Allows you to use one Git repository as a subdirectory of another Git repository. It is commonly used to manage shared libraries, modular components, or third-party dependencies as independent repositories while referencing specific versions in the main project. Deleting a submodule breaks the project's references to dependencies, potentially causing build failures or runtime errors.
+3. **IaC (Infrastructure as Code) Integrity**: Refers to the consistency between the infrastructure state defined by code and the code repository content. Any automation that causes unexpected changes to repository content undermines this integrity, which SRE teams must strive to avoid.
+
+## Practice
+
+### Issue Reproduction and Detection
+According to the steps described in Grafana issue #123891, the issue can be reliably reproduced:
+1. **Environment Setup**: In Grafana v13.0.1 (deployed on Kubernetes), configure Git Sync connecting to a repository that contains both dashboard files and a Git submodule.
+2. **Trigger Operation**: Edit a dashboard through the Grafana UI and save it to a new branch.
+3. **Verify Results**: Check the newly created branch in the Git repository; the **submodule directory has been completely deleted**, and the related `.gitmodules` file may also have been modified or removed.
+
+**Detection Methods**:
+*   **Proactive Monitoring**: In Git Sync's push commits, set up automated checks (such as CI pipeline steps) to compare the repository tree structure before and after commits, paying special attention to whether submodule references exist.
+*   **Passive Alerting**: Monitor error rates of downstream systems that depend on deleted submodules (such as build processes using that shared library). Submodule loss typically causes build or deployment failures, triggering alerts.
+
+### Mitigation Measures
+Before an official fix is released, the following temporary measures can be taken:
+1. **Suspend Git Sync**: For dashboard repositories known to contain submodules, temporarily disable Grafana's Git Sync feature and manage Git commits manually.
+2. **Pre-Push Check Hook**: Set up a Git pre-push hook in the repository to check whether commit content involves deleting submodules, and block the push if detected.
+3. **Monitor Git Repository Changes**: Configure tools (such as GitHub activity notifications, custom scripts) to monitor specific directories (submodule directories) in the repository, with immediate notification for any deletion operations.
+
+### Fix and Prevention
+1. **Upgrade Grafana**: Closely monitor Grafana's official fix progress for this issue and promptly upgrade to a version that includes the fix.
+2. **IaC Change Review**: Enforce mandatory manual review (Pull Request) for all Git commits produced by automated tools (such as Git Sync), even PRs automatically created by trusted systems.
+3. **Backup and Version Tagging**: Before enabling such automated synchronization features, make complete backups of the repository. Where possible, tag branches that have synchronization enabled with clear version labels.
+
+## SRE Key Points
+
+*   **Relationship to Reliability**: This bug directly threatens the reliability of the IaC codebase. A feature designed to improve configuration management reliability (Git Sync) itself introduces the risk of breaking codebase integrity. This underscores the importance of thorough testing of core toolchains, especially when handling edge cases like submodules.
+*   **Relationship to Observability**: The lack of deep observability into Git Sync operation results is one reason this issue went undetected early on. SRE teams should establish dedicated observability metrics for critical operational operations (such as automated Git pushes), such as: the list of file changes pushed, directory structure changes involved, etc.
+*   **Best Practices and Anti-Patterns**:
+    *   **Best Practice**: Treat Git Sync as a "stateful operational operation." Record state snapshots (such as repository tree hashes, submodule lists) before and after operations. Implement "change management" even for automated changes.
+    *   **Anti-Pattern**: Blindly trusting automated tools to modify the codebase, especially when they modify version control structures (such as submodules, branches) and other core content.
+*   **Related Metrics**:
+    *   **SLI (Service Level Indicator)**: The "change success rate" of the IaC repository, defined as the proportion of commits automatically pushed by Git Sync that did not cause build, deployment, or downstream service failures.
+    *   **SLO (Service Level Objective)**: An SLO can be established for the Git Sync feature, such as: "99% of dashboard Git Sync operations should produce a valid commit that is fully compatible with the source repository structure."
+    *   **Error Budget**: Such bugs directly consume the Git Sync feature's error budget, indicating the need for stricter engineering verification and release thresholds.

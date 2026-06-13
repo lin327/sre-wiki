@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Kubernetes v1.36: 工作负载感知调度（Workload-Aware Scheduling）进阶"
 description: "Kubernetes v1.36通过分离Workload与PodGroup API、引入PodGroup调度周期、拓扑感知调度和工作负载感知抢占，显著提升了AI/ML和批处理工作负载的调度能力。"
@@ -11,6 +12,8 @@ sources:
     title: "Kubernetes v1.36: Advancing Workload-Aware Scheduling"
 tags: [kubernetes, scheduling, ai-ml, batch, gang-scheduling, podgroup, topology, preemption, dra]
 ---
+
+# Kubernetes v1.36: 工作负载感知调度（Workload-Aware Scheduling）进阶
 
 ## 概述
 Kubernetes v1.36 版本为工作负载感知调度（Workload-Aware Scheduling）带来了重大架构演进。此次更新的核心是将API关注点清晰分离：`Workload` API 作为静态模板，而全新的 `PodGroup` API 负责管理运行时状态。这一分离为更高级的调度功能奠定了基础，包括原子化的 `PodGroup` 调度周期、拓扑感知调度、工作负载感知抢占，以及对动态资源分配（DRA）的增强支持。对于SRE而言，这些改进直接关系到AI/ML训练、大数据批处理等复杂工作负载的可靠性、资源利用率与性能表现。

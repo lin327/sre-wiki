@@ -1,0 +1,82 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Building Hybrid Multi-Tenant Architecture for Stateful Services on AWS"
+category: "Multi-Tenant Architecture"
+confidence: high
+sources:
+  - url: https://aws.amazon.com/blogs/architecture/building-hybrid-multi-tenant-architecture-for-stateful-services-on-aws/
+    title: "AWS Architecture Blog: Building hybrid multi-tenant architecture for stateful services on AWS"
+tags: [multi-tenant, architecture, isolation, scalability, aws, ecs, alb, route53, privatelink]
+---
+
+# Building Hybrid Multi-Tenant Architecture for Stateful Services on AWS
+
+## Overview
+
+When building large-scale, stateful SaaS (such as advertising service platforms), the core SRE challenge is how to balance **tenant isolation** (avoiding the "noisy neighbor" problem) with **operational efficiency** (reducing costs, accelerating onboarding). Traditional full isolation (independent AWS account per tenant) is secure but leads to extremely high operational complexity, resource waste, and slow customer onboarding processes. The hybrid multi-tenant architecture on AWS described here provides a solution: by sharing accounts while maintaining cluster-level isolation, it improves resource efficiency while maintaining necessary security and reliability boundaries.
+
+## Core Concepts
+
+- **Cellular Architecture**: An early adopted model that assigns each tenant an independent AWS account, VPC, and load balancer. Its advantage is strong isolation but comes with enormous operational overhead and scaling limitations.
+- **Noisy Neighbor Problem**: On shared infrastructure, one tenant's excessive resource consumption (such as memory) affects other tenants' performance. This problem is particularly acute for stateful services (where data is loaded in memory).
+- **Stateful Services**: In this case, advertising servers maintain data in memory for each tenant to improve performance, making traditional shared compute resource models difficult.
+- **Three-Tier Hierarchy**: A scalable architecture designed to address AWS service limitations (such as ALB target group count, account ENI limits).
+    1.  **Tier**: The top-level logical grouping representing a class of tenants sharing an infrastructure footprint. All downstream connections (such as PrivateLink) are pre-configured at the Tier level.
+    2.  **Cell**: An AWS account boundary, serving as the account-level horizontal scaling unit.
+    3.  **Infra Group**: A self-contained infrastructure unit within a Cell, containing a VPC, an ALB, a set of ECS clusters (one per tenant), IAM roles, and a monitoring stack.
+
+## Practice
+
+### Implementation Steps Overview
+
+The core of this architecture is decoupling **infrastructure dependency pre-configuration** from the **tenant onboarding process**. New tenant onboarding is primarily a configuration operation, not an infrastructure deployment project.
+
+1.  **Configure Route 53 Weighted Routing**: Create a regional DNS endpoint for each Tier (e.g., `tier-1.us-east-1.example.com`), using weighted routing policies to distribute traffic to ALBs across multiple Cells or Infra Groups. This step enables transparent traffic distribution and horizontal scaling.
+2.  **Deploy ALBs with Tenant-Specific Listener Rules**: Each Infra Group contains an ALB. Through listener rules, traffic is routed to the corresponding tenant's ECS cluster based on the tenant identifier in the request (such as path `/tenant-a/*` or HTTP headers).
+3.  **Create Dedicated ECS Clusters for Each Tenant**: Within the Infra Group's VPC, create a dedicated ECS cluster for each tenant (naming convention e.g., `tier-1-cell-1-ig-1-tenant-a`). In the task definition, pass the tenant ID as an environment variable so the application loads the correct data.
+4.  **Establish AWS PrivateLink Connections to Shared Dependencies**: **This is the critical step completed at Tier creation time**. Create VPC interface endpoints to downstream services in the Infra Group's VPC. New tenants joining that Tier automatically inherit these pre-configured connections without requiring individual setup.
+5.  **Configure Tenant Isolation, Scaling, and Observability**:
+    *   **Isolation**: Three-layer protection through ALB routing, dedicated ECS clusters, and in-memory data isolation.
+    *   **Scaling**: Vertical scaling (increasing individual ECS task resources) or horizontal scaling (adding Infra Groups or Cells). Scaling is transparently managed through Route 53 weighted routing.
+    *   **Observability**: Emit CloudWatch metrics with `tenant_id` dimensions from each ECS service (such as memory utilization, latency, error rate). Use structured logging and CloudWatch Logs Insights for cross-tenant analysis.
+
+### Architecture Scaling Strategy
+
+When scaling is needed, the corresponding scaling levers can be used based on different AWS limitations:
+
+| Trigger Condition | Action | Unit Added |
+| :--- | :--- | :--- |
+| ALB target group limit (~50 tenants/Infra Group) | Add new Infra Group within the same Cell | Infra Group (VPC + ALB + ECS clusters) |
+| AWS account-level limit (ENI, VPC endpoints) | Add new Cell | Cell (new AWS account) |
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+
+- **Reliability**: The architecture prevents cascading failures caused by "noisy neighbors" through cluster-level isolation. Tier-level health checks (Route 53, ALB) ensure service availability during partial Cell failures. Weighted routing is used for gradual migration during scaling, reducing change risk.
+- **Observability**: The design mandates tenant-centric monitoring. Key SLIs such as per-tenant **memory utilization** (predicting stateful data growth), **latency** (`TargetResponseTime`), and **error rate** (`HTTPCode_Target_5XX_Count`) must be individually monitored and alerted on. This provides the foundation for calculating Error Budget and capacity planning.
+- **Incident Response**: Clear naming conventions (`tier-cell-ig-tenant`) and tenant-dimensional metrics/logging enable SRE to quickly locate affected tenants and specific infrastructure components during performance issues or failures, significantly reducing MTTI (Mean Time To Investigate).
+
+### Best Practices and Common Anti-Patterns
+
+- **Best Practices**:
+    *   **Decouple Dependency Configuration from Tenant Onboarding**: This is the core of efficiency improvement, reducing onboarding time from weeks to days.
+    *   **Use Weighted Routing for Zero-Downtime Migration**: Avoid client-side changes when moving tenants or scaling infrastructure.
+    *   **Maintain Cluster-Level Isolation for Stateful Workloads**: Even within shared accounts, ensure memory and compute resource isolation.
+    *   **Implement Tenant-Dimensional Observability**: All logs and metrics should carry tenant identifiers.
+- **Common Anti-Patterns**:
+    *   **Creating Independent AWS Accounts for Each Tenant**: Leads to extreme operational burden and resource waste, suitable only for scenarios with extreme financial or compliance isolation requirements.
+    *   **Running Stateful Tenants in Shared Clusters**: Causes severe performance interference and resource contention, making SLO prediction and guarantee difficult.
+    *   **Binding Downstream Connection Configuration to Each Tenant**: Linearly increases onboarding complexity and time.
+
+### Related Metrics (SLI/SLO/SLA)
+
+- **SLI (Service Level Indicator)**:
+    *   Per-tenant **service latency** (e.g., P99 latency < 200ms).
+    *   Per-tenant **service availability** (e.g., non-5xx error response ratio > 99.9%).
+    *   Per-tenant **memory utilization** (as a forward-looking indicator for capacity and performance).
+- **SLO (Service Level Objective)**: Based on the above SLIs, define specific performance objectives for tenants across different Tiers. For example, set stricter latency SLOs for "high TPS" Tier tenants.
+- **Relation**: These SLIs/SLOs directly relate to multiple architectural layers: ALB routing accuracy, ECS cluster performance, PrivateLink connection stability, and underlying EC2 instance health. Monitoring data is used to verify whether the architecture meets business commitments.
+
+Related pages: [[multi-tenant-slos]], [[cloudwatch-monitoring]], [[capacity-planning]]

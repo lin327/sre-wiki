@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana 数据源配置错误：'data source not found' 问题排查"
 description: "排查在 Grafana 通过 Provisioning 功能配置数据源时，启动日志报错 'Datasource provisioning error: data source not found' 的常见原因与解决方案。"
@@ -11,6 +12,8 @@ sources:
     title: "[Bug]: Grafana datasource: Datasource provisioning error: data source not found"
 tags: [grafana, datasource, provisioning, configuration, troubleshooting, docker]
 ---
+
+# Grafana 数据源配置错误：
 
 ## 概述
 在 Grafana 监控系统的运维实践中，通过 [Provisioning（配置即代码）](https://grafana.com/docs/grafana/latest/administration/provisioning/) 功能声明式地管理数据源（Datasource）和仪表板是确保环境一致性和可重复性的关键实践。然而，在启动过程中，有时会遇到 `Datasource provisioning error: data source not found` 这一错误，表明 Grafana 在初始化时无法找到或加载配置文件中指定的数据源定义。这个问题会直接导致数据源配置失败，影响后续的监控数据可视化和告警。

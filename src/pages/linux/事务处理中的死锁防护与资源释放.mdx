@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "事务处理中的死锁防护与资源释放"
 description: "分析 etcd 事务处理中因 panic 导致锁未释放而引发的死锁问题，阐述了利用 defer 进行资源清理的重要性。"
@@ -11,6 +12,8 @@ sources:
     title: "[Bug] Potential deadlock in TestWriteTxnPanicWithoutApply because batchTx lock is not released after panic"
 tags: [deadlock, panic, etcd, 事务, 资源泄漏, 并发]
 ---
+
+# 事务处理中的死锁防护与资源释放
 
 ## 概述
 

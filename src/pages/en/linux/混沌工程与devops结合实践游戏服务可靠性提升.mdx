@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Engineering Combined with DevOps Practice: Improving Game Service Reliability"
+category: "Chaos Engineering"
+confidence: medium
+sources:
+  - url: https://chaos-mesh.org/blog/Securing-Online-Gaming-Combine-Chaos-Engineering-with-DevOps-Practices/
+    title: "Securing Online Gaming: Combine Chaos Engineering with DevOps Practices"
+tags: [chaos-engineering, devops, fault-injection, microservices, chaos-mesh, kubernetes, sre, reliability]
+---
+
+# Chaos Engineering Combined with DevOps Practice: Improving Game Service Reliability
+
+## Overview
+
+In SRE practice, ensuring the reliability of high-concurrency, rapidly iterating complex online services is one of the core challenges. Tencent's Interactive Entertainment Group (IEG), as a well-known game publisher, requires its services to support tens of millions of daily visits and peak QPS in the millions, with frequent activity code updates (up to 500+ per day). In this environment, while microservice architecture improves development agility, it also introduces the "microservice dependency hell" -- where a failure in one service can trigger a chain reaction. Chaos Engineering, as a practice of proactively discovering system weaknesses, combined deeply with DevOps processes, becomes a key means of systematically improving system resilience and reliability ([[reliability]]) before failures occur.
+
+## Core Concepts
+
+**Chaos Engineering**: This is not simply fault injection. It is a systematic practice of proactively injecting faults (such as Pod, container, network, IO failures) in a controlled environment to test system fault tolerance and discover potential risks. Its goal is to build confidence in the system's ability to withstand storms in production.
+
+**DevOps Practices**: Emphasizes collaboration between development and operations, achieving fast and reliable delivery through automated pipelines. In this case, it manifests as a fully automated process from code commit to production deployment (approximately 5 minutes), along with platform-based operational operations.
+
+**Microservice Dependency Hell**: Refers to the increasingly complex inter-service call relationships as the number of microservices grows. If a service's fault tolerance capabilities (such as degradation, circuit breaking) are insufficient or lack effective monitoring and alerting, a single point of failure can quickly spread, causing the entire system to fail in a cascading manner.
+
+**Chaos Mesh**: An open-source chaos engineering platform hosted by the Cloud Native Computing Foundation (CNCF), designed specifically for [[kubernetes]] environments. It provides a rich fault type library, web management interface, and Dashboard API, and is non-intrusive to existing applications, making it easy to integrate into existing platforms.
+
+## Practice
+
+Tencent IEG deeply embedded chaos engineering into its DevOps toolchain, building a closed-loop chaos testing system. Its core practices include platform construction, experiment workflows, and specific use cases.
+
+### Building the Chaos Testing Platform
+IEG integrated Chaos Mesh into its CI/CD pipeline. The operations platform calls Chaos Mesh's Dashboard API to create, run, monitor, and delete chaos experiments. This enables developers and operations personnel to orchestrate and execute various fault injection experiments through a unified web interface using drag-and-drop and click operations within minutes, greatly improving efficiency.
+
+### Five-Stage Closed-Loop Experiment Process
+Chaos engineering at IEG is summarized as a five-stage continuous improvement loop:
+1.  **Enhance System Resilience and Build Platform**: Build an evolvable chaos testing platform based on business needs.
+2.  **Design Test Plan**: Define experiment objectives, scope, fault types to inject, and monitoring metrics to ensure the experiment process is controllable.
+3.  **Execute Experiment and Review Results**: Run fault injection and compare system performance metrics (such as QPS, latency, success rate) before and after the experiment.
+4.  **Fix Issues and Upgrade System**: Fix issues discovered during experiments and harden the system in preparation for the next round.
+5.  **Repeat Experiment and Verify**: Repeatedly execute chaos experiments to verify whether system performance meets expectations. If it does, design new test plans.
+
+### Key Use Cases
+*   **Fine-Grained Fault Injection**: Without shutting down the entire system, traffic can be hijacked at the gateway layer for fault injection targeting individual game accounts or specific services (such as network delay) to test their fine-grained response capabilities.
+*   **Red Team Testing**: Integrate Red Team (simulating external attacker perspectives) practices into chaos engineering. Operations or SRE teams act as the "Red Team", proactively injecting faults into services maintained by development teams to verify the effectiveness of their fault tolerance measures, thereby organically and continuously driving system resilience improvements.
+*   **Dependency Analysis**: By injecting faults into called services and observing the impact on core services, analyze and optimize inter-service dependencies to ensure non-core service failures do not block core services.
+*   **Automated Fault Detection and Diagnosis (Exploratory)**: Using large-scale chaos experiment data to train AI models, aiming to achieve automatic fault detection and diagnosis in production or controlled environments.
+
+## SRE Key Points
+
+**Relation to Reliability**: Chaos engineering is a proactive practice of [[reliability]] engineering. By proactively creating "failures", it transforms "passive firefighting" into "proactive mine clearance", directly serving SRE goals of reducing mean time to repair (MTTR) and improving overall system availability. It validates the effectiveness of reliability design patterns such as service degradation, circuit breaking, and elastic scaling under real pressure.
+
+**Observability and Incident Response**: Effective chaos experiments highly depend on a robust [[observability]] system. During experiments, key metrics (such as error rates, latency, resource utilization) must be observed in real-time through monitoring platforms. These metrics themselves are key SLIs (Service Level Indicators). Experiment results provide real-world data for optimizing alert rules and incident response processes, helping teams understand failure propagation paths and develop more precise runbooks.
+
+**Best Practices**:
+*   **Culture First**: Combine chaos engineering with DevOps culture, encouraging teams (especially developers) to actively participate, forming a culture of "taking responsibility for their own service's reliability".
+*   **Platform and Automation**: Platform-ize chaos experiment capabilities, lowering the barrier to entry so they can be easily integrated into daily operations and release processes.
+*   **Closed-Loop Improvement**: Establish a fixed process of "experiment -> discover issues -> fix -> verify" to ensure every chaos experiment brings actual system improvements.
+*   **Red Team Confrontation**: Introduce adversarial testing to break internal team mental models and more effectively discover blind spots.
+
+**Common Anti-Patterns**:
+*   **Inject Without Fixing**: Performing fault injection but ignoring or delaying the fix of discovered issues, rendering the experiment meaningless.
+*   **Aimless Experiments**: Performing random fault injection without clear monitoring metrics and expected results, making it impossible to measure experiment effectiveness.
+*   **Disconnection from Production Reality**: Experimenting in isolated environments that differ significantly from production, causing discovered issues to not truly reflect production risks.
+
+**Related Metrics (SLI/SLO/SLA)**: Chaos experiments test whether services can meet their service level objectives ([[SLO]]) under extreme conditions by simulating failures. For example, a service's SLO might define "P99 latency < 500ms, availability > 99.9%". By conducting chaos experiments under high CPU load or network latency, it can be verified whether the service can still maintain its SLO under that failure scenario, which directly affects the achievement of the service level agreement ([[SLA]]) ultimately committed to customers.

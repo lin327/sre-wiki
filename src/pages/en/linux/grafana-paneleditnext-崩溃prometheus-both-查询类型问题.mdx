@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "“PanelEditNext crashes with Prometheus ‘Both’ query type” - GitHub Issue"
 category: "故障与调试"
 confidence: high
 ---
+
+# “PanelEditNext crashes with Prometheus ‘Both’ query type” - GitHub Issue
 
 ## Overview
 In Grafana's observability platform, the panel editor is the core component for building and debugging dashboards. When a user attempts to edit a panel that has a Prometheus data source configured and the query type is set to "Both" (i.e., performing both a range query and an immediate query), a front-end application crash occurs under certain user interface (UI) paths. This issue affects the stability and user experience of the dashboard editor and is a specific failure case that SREs and front-end developers need to pay attention to and resolve when maintaining the reliability of the Grafana platform. Understanding this issue can help avoid similar runtime errors caused by inconsistent component states.

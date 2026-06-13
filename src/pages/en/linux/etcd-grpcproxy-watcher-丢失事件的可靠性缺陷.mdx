@@ -1,0 +1,62 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd grpcproxy Watcher Event Loss Reliability Defect"
+category: "SRE / Database and Storage"
+confidence: medium
+---
+
+# etcd grpcproxy Watcher Event Loss Reliability Defect
+
+## Overview
+
+In distributed systems built on etcd, `grpcproxy` is a critical component for scaling and proxying client connections to etcd clusters. However, its internal `watchBroadcast` mechanism has a serious reliability defect: when the underlying etcd watch connection disconnects, the broadcast state is not properly updated, causing subsequent new watchers to be assigned to a "dead" broadcast. This prevents these watchers from ever receiving subsequent data change events, thereby breaking the system's data consistency and real-time guarantees. Understanding this issue is critical for ensuring the reliability of etcd-based critical services.
+
+## Core Concepts
+
+- **watchBroadcast**: In `grpcproxy`, for performance optimization, multiple watchers targeting the same or overlapping key ranges are coalesced onto a shared underlying etcd watch connection. The abstract unit that manages this shared connection and distributes events is the `watchBroadcast`.
+- **Coalesce**: An optimization strategy that merges multiple logical watchers onto a single physical watch connection to reduce connection pressure on the etcd cluster. Coalesced watchers share a single `watchBroadcast`.
+- **Orphaned Watcher**: A watcher whose `watchBroadcast` has disconnected but the watcher itself has not been cleaned up or reassigned to a healthy broadcast. These watchers silently lose all events.
+
+## Practice
+
+### Problem Mechanism and Impact
+The issue stems from `watchBroadcast` lacking a clear representation of its own connection state. When the underlying goroutine exits due to a disconnection, the corresponding `watchBroadcast` object still exists in the managed collection and is not marked as "stopped." This triggers two core failure paths:
+
+1.  **Incorrect `add()`**: When a new watcher joins via the proxy request, the proxy's scheduling logic (`add()`) checks if there is a suitable `watchBroadcast` to accommodate it. Since the dead broadcast is not marked, the scheduler may incorrectly assign the new watcher to it. These new watchers are destined to lose events from the moment they are created, forming a "silent failure."
+2.  **Incorrect `coalesce()`**: The coalescing logic (`coalesce()`) also does not check whether the target broadcast is alive when attempting to optimize watcher distribution. It may migrate existing watchers from a healthy broadcast to a dead one, causing previously functioning watchers to suddenly start losing events.
+
+Additionally, the system lacks a mechanism to detect broadcast death and reassign residual watchers (orphaned watchers) to healthy broadcasts or create new ones.
+
+### How to Reproduce
+Reproducing the issue requires constructing a specific failure scenario:
+1.  Set up an `etcd grpcproxy` and have multiple clients create watchers on the same key range, ensuring they are coalesced into the same `watchBroadcast`.
+2.  Artificially interrupt the watch connection between the proxy and backend etcd (e.g., through network partition simulation, restarting etcd nodes, or using iptables rules).
+3.  After the connection interruption, request creating a new watcher for the same key range through the proxy.
+4.  Observe this new watcher and all watchers originally on the dead broadcast -- they will no longer receive any subsequent key change events.
+
+## SRE Takeaways
+
+### Reliability Impact
+This is a classic **data path reliability** issue. For services that rely on the watch mechanism for configuration synchronization, cache invalidation, or event-driven architectures, this defect directly causes:
+-   **Data Inconsistency**: The client view becomes permanently disconnected from the actual state of the etcd cluster.
+-   **Cascading Failures**: A node holding stale data due to missed events may make incorrect decisions, affecting the entire system.
+-   **Stealthiness**: Since there are no explicit errors or timeouts, the fault is extremely隐蔽 and difficult to detect through conventional monitoring until business logic anomalies appear.
+
+### Best Practices and Common Anti-patterns
+-   **Best Practices**:
+    -   **Monitor Proxy State**: Not only monitor the `grpcproxy` process but also deeply monitor its internal watch connection health and watcher states.
+    -   **Consider Client Reconnection and Retry**: Client watch logic should include robust reconnection and error handling mechanisms. While this cannot fully solve the proxy's internal issues, it adds a layer of resilience.
+    -   **Evaluate Alternatives**: For scenarios requiring extreme reliability, weigh the benefits of using `grpcproxy` against the risks it introduces. Consider direct cluster connections or other more robust proxy patterns.
+-   **Common Anti-patterns**:
+    -   **Assuming Middleware is Fully Transparent**: Incorrectly treating `grpcproxy` as a fully transparent, stateless pipeline, ignoring the failure points its internal state management may introduce.
+    -   **Lacking End-to-End Monitoring**: Only monitoring whether the proxy process is alive without verifying that the data path is end-to-end functional.
+
+### Related Metrics and Improvement Directions
+While not directly mentioned in the report, from an SRE perspective, to address or mitigate this issue, the following monitoring should be established:
+-   **SLI (Service Level Indicator)**:
+    -   Watcher event end-to-end latency.
+    -   Deviation of watcher session lifetime from expected values.
+    -   Watcher loss rate due to connection failures.
+-   **SLO (Service Level Objective)**: Set targets for the above SLIs, such as "99.9% of watchers receive their first heartbeat or event within 5 seconds of creation."
+-   **Detection and Response**: Adding self-checks and logging of `watchBroadcast` health status at the proxy layer, and proactively triggering watcher reassignment after disconnections, is the fundamental solution. This typically requires fixes at the etcd code level.

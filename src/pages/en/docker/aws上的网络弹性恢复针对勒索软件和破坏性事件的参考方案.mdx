@@ -1,0 +1,90 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Cyber Resilience on AWS: A Reference Approach for Ransomware and Destructive Events"
+category: "AWS Architecture"
+confidence: low
+---
+
+# Cyber Resilience on AWS: A Reference Approach for Ransomware and Destructive Events
+
+## Overview
+
+Cyber Resilience is the ability to restore workloads to a known trusted state after an attacker has already impacted the environment. While traditional prevention and detection mechanisms are important, cyber resilience focuses on **recovery**: how to restore a trustworthy environment when backups, credentials, or parts of the infrastructure may no longer be trustworthy. For organizations running critical workloads on AWS, destructive events such as ransomware and data extortion have become central to recovery planning. This page outlines a reference architecture proposed by AWS that ensures the recovery process itself is secure and reliable through isolated recovery environments, tamper-proof backup storage, and verification pipelines. This is a practice that modern SRE and platform engineering teams must deeply understand when building comprehensive [[disaster-recovery]] strategies.
+
+## Core Concepts
+
+The core idea of this approach is to **completely isolate the environment, identity, and control plane that recovery depends on from the production environment being recovered**. If production identities have been compromised, the recovery process must never depend on them. This architecture achieves this through dedicated accounts within AWS Organizations.
+
+### Key Roles and Trust Boundaries
+1. **Production Account**: The account running actual workloads. Once a cyber event is confirmed, these accounts are isolated for investigation, and all recovery work is performed elsewhere.
+2. **Recovery Account**: A dedicated account that owns the **AWS Backup Logically Air-gapped Vault**. Its core responsibility is to protect the security and control of backups. It manages who can share recovery points, who can initiate recovery operations, and approves recovery operations through **Multi-party Approval (MPA)** mechanisms. By restricting control permissions within the recovery account via Service Control Policies (SCPs), compromised identities in production accounts are prevented from modifying backup policies or deleting recovery points.
+3. **Isolated Recovery Environment (IRE)**: This account executes recovery point restoration, validation, and rebuilds a new production environment before cutover. The IRE has no trust relationship with production accounts, no VPC peering connections, and no internet-facing resources. Its purpose is to form a "sandbox" where even if recovered backups still contain threats, they are contained within the IRE and cannot propagate back to production or the internet. Infrastructure deployment in the IRE accesses AWS service APIs through VPC endpoints (AWS PrivateLink), requiring no internet or production network connectivity.
+
+This account-level isolation is the architectural guarantee that ensures the recovery control plane (such as recovery approvals) remains effective even after production identities are compromised.
+
+## Practice
+
+### 1. Tamper-Proof Protection with AWS Backup Logically Air-gapped Vault
+The Logically Air-gapped Vault is a native AWS option for protecting backup storage from deletion. It is permanently locked in **compliance mode**, with the AWS service itself enforcing retention periods during which no principal (including the account root user or compromised administrators) can delete recovery points. This provides critical **tamper-proof** guarantees. Recovery points are actually stored in AWS service-owned accounts, while the vault objects in the recovery account serve as governance and access boundaries. Recovery points can be shared across accounts via **AWS Resource Access Manager (AWS RAM)**, enabling the IRE to access and restore data.
+
+### 2. Building a Multi-Layer Verification Pipeline
+Successfully restoring a backup is not enough; it must also be confirmed that the restored data is **safe to use**. A robust verification pipeline should run within the IRE and combine multiple layers:
+- **AWS-native verification**: Such as **AWS Backup restore testing**, which can automatically verify backup recoverability.
+- **Malware scanning**: For example, using **Amazon GuardDuty Malware Protection** to scan restored volumes.
+- **Workload-specific checks**: Such as database consistency checks, application invariant verification, and configuration diff comparisons against known-good baselines. This is key to discovering attackers who have been lurking long-term and modifying legitimate code or configurations.
+- **Log and audit review**: Using AWS CloudTrail and workload logs to identify unexpected identity or configuration changes within the backup time window.
+
+Only when both AWS-native and workload-specific verification pass will a recovery point be approved for restoration.
+
+### 3. Selecting a Safe Recovery Point
+For cyber events, the most recent backup is often not the best choice, as the attacker may have been present before the event was detected. The safe recovery point selection process is:
+- Build an event investigation timeline based on CloudTrail, VPC Flow Logs, GuardDuty, etc., to determine the **event boundary**.
+- Evaluate backups in reverse chronological order, starting from the most recent backup before the event boundary.
+- Run the verification pipeline for each candidate recovery point. If verification fails, fall back to the next earlier candidate.
+- Record the approver, investigation findings, and decision rationale for the final selected recovery point.
+
+### 4. Executing a Parallelized Recovery Workflow
+The recovery workflow contains five phases, three of which can run in parallel to minimize business disruption time:
+- **Phase 1: Establish Timeline** (parallel with Phases 2 and 4)
+- **Phase 2: Verify Candidate Recovery Points** (parallel with Phases 1 and 4)
+- **Phase 3: Approval** (critical gate)
+- **Phase 4: Rebuild and Restore** (parallel with Phases 1 and 2)
+- **Phase 5: Cutover**
+Phase 3 (Approval) is the critical control point before data restoration; verification must be completed before approval. During Phase 4 restoration, the **Rebuild-Restore-Rotate Framework** should be followed.
+
+### 5. Applying the Rebuild-Restore-Rotate Framework
+This framework guides how different components are handled during recovery operations:
+- **Infrastructure Rebuilt from Code**: Such as IAM policies, security groups, VPCs, Lambda, etc. These come from reviewed, version-controlled Infrastructure as Code (IaC) templates, not potentially compromised backups.
+- **Data Restored from Backup**: Such as RDS databases, EFS file systems, EBS volumes, etc. These are core business data and must be restored from verified, immutable backups.
+- **Credentials Rotated or Re-issued**: Such as access keys, database passwords, API keys, certificates, etc. Any secrets that may have been exposed during the event window must be replaced and cannot be carried over from backups. Tools like **AWS Secrets Manager** provide automation frameworks for this.
+
+This framework assumes the IaC repository itself has not been attacked. Otherwise, recovery must start from an upstream trusted source.
+
+## SRE Essentials
+
+### Relationship to Reliability, Observability, and Incident Response
+- **Enhanced System Reliability**: This approach significantly improves the reliability of recovering from destructive events through architectural isolation and tamper-proof protection, reducing the risk of secondary failures during the recovery process itself.
+- **Deep Observability Dependency**: The success of this approach highly depends on robust observability capabilities. **AWS CloudTrail**, **Amazon VPC Flow Logs**, **Amazon GuardDuty**, and **AWS Security Hub** provide the logs, metrics, and security event data needed to build event timelines and identify event boundaries.
+- **Standardized Incident Response**: This approach provides a structured [[incident-response]] process for dealing with Advanced Persistent Threats (APTs) and ransomware, decomposing recovery operations into clear, parallel phases, reducing confusion and decision delays.
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    - **Never assume the production environment is clean**: Recovery must be performed in a completely isolated environment.
+    - **Implement Multi-party Approval (MPA)**: Add a human review layer to recovery operations to prevent a single compromised identity from abusing recovery capabilities.
+    - **Regularly rehearse recovery workflows**: Not only test backup recoverability but also fully rehearse the entire process from investigation, verification, rebuild, to cutover.
+    - **Maintain known-good configuration sources**: Ensure IaC repositories, pipeline definitions, and source code are stored in an independent, protected trusted source.
+- **Common Anti-Patterns**:
+    - **Restoring in place**: Performing remediation in the same compromised production environment cannot guarantee complete threat elimination.
+    - **Relying on the most recent backup**: For cyber events, this may restore the attacker's operations.
+    - **Ignoring credential rotation**: Only restoring data and infrastructure while reusing potentially compromised credentials allows attackers to immediately re-enter the system.
+    - **Connecting IRE to the production network**: This breaks the isolation principle, potentially contaminating the recovery environment or making it an attack pivot point.
+
+### Related Metrics (SLI/SLO/SLA)
+While this approach does not directly define SLI/SLO, it is a key enabler for higher-level reliability objectives. The following recovery-related metrics can be defined and monitored:
+- **Recovery Time Objective (RTO) Achievement Capability**: Time required to complete each phase of the parallelized recovery workflow during exercises.
+- **Recovery Point Objective (RPO) Verification Pass Rate**: Success rate of periodically verifying recovery point recoverability and security.
+- **Backup Tamper-Proof Policy Effectiveness**: Regularly testing that no one (including root users) can delete recovery points during the retention period.
+- **Recovery Exercise Mean Time to Recovery (MTTR)**: Time from event confirmation to production cutover completion.
+
+These metrics can be used to measure an organization's **[[error-budget]]** resilience against security events and drive continuous investment in recovery capabilities.

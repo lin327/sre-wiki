@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "gVisor gofer 根文件系统绑定挂载在符号链接路径下的失败"
 description: "在containerd升级后，gVisor gofer因无法正确处理/var/run到/run的符号链接，导致Kubernetes沙箱创建失败。"
@@ -11,6 +12,8 @@ sources:
     title: "release-20260520.0: runsc gofer fails rootfs self-bind when bundle path uses /var/run symlink to /run"
 tags: [gvisor, containerd, symlink, rootfs, gofer, sandbox]
 ---
+
+# gVisor gofer 根文件系统绑定挂载在符号链接路径下的失败
 
 ## 概述
 

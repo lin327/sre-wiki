@@ -1,0 +1,94 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Benchmarking KubeVirt Performance with virtbench"
+description: "Introduction to virtbench, a dedicated benchmarking tool for KubeVirt, covering design principles, test methodology, and key metrics for VM readiness, boot storm capacity, and live migration."
+category: SRE Tools and Practices
+order: 0
+lastUpdated: 2026-06-08
+confidence: high
+---
+
+# Benchmarking KubeVirt Performance with virtbench
+
+## Overview
+
+Migrating traditional virtual machine (VM) workloads to the Kubernetes-based KubeVirt platform是云原生现代化的重要一步。然而，现有的 Kubernetes 可观测性工具大多围绕容器工作负载设计，无法充分衡量虚拟机特有的性能变量。例如，标准的 `kubectl` 和 Pod 级监控难以精确反映从 API 调用到虚拟机 guest 操作系统网络完全就绪所需的时间。为了解决这一关键差距，[virtbench](https://github.com/portworx/kubevirt-benchmark) 作为一款开源的 KubeVirt 性能基准测试工具包被开发出来，它能够执行可重复的、针对 VM 场景的压力测试，为平台工程团队提供量化、可靠的性能数据，从而支撑容量规划、变更验证和 [[sla]] 保障。
+
+## 核心概念
+
+在深入 virtbench 的实践之前，必须理解为什么需要专门的工具来基准测试 KubeVirt 性能，其核心原因在于三个关键的“架构不匹配”：
+
+1.  **Pod 就绪 ≠ VM 就绪**： Kubernetes 中 Pod 的 `Ready` 状态在容器进程启动（通常毫秒级）时即满足。而 KubeVirt 的虚拟机实例（VMI）需要等到 guest 内核启动、用户空间服务初始化并由 guest agent 心跳报告后才算真正就绪。标准监控在 `pod/Running` 时停止计时，这会严重误报实际就绪时间。virtbench 通过在集群内部署一个 `ssh-test-pod` 来持续探测 VMI 的 guest 网络栈，测量仅在 SSH 成功连接时才结束，从而精准衡量 **Time-to-Ready**。
+
+2.  **CSI 供应器在高密度多磁盘 VM 下的负载**： 生产环境中的 VM 通常需要多个持久卷声明（PVC）：一个启动盘、一个交换盘以及一个或多个高 IOPS 数据盘。面向容器的基准测试无法充分验证 CSI 驱动在并发地为单个 VMI 配置和热挂载多个块设备时的表现。virtbench 模拟这种配置，在负载下完整测试 `DataVolume → PVC → 块设备` 的挂载流水线。
+
+3.  **Overlay 网络上的实时迁移 vs. vMotion**： 传统 vMotion 通过专用高带宽 TCP 通道传输内存状态。KubeVirt 的实时迁移则将同样的内存传输隧道化至集群的 SDN overlay（如 OVN-Kubernetes）中，增加了延迟并与工作负载流量竞争。virtbench 能够精确测量 **Live Migration Stun Time**——即 VMI 网络接口在迁移期间不可用的窗口时间，支持顺序和并行迁移场景。
+
+## 实践
+
+### 测量 VM 就绪时间
+
+virtbench 采用客户端编排模型结合集群内辅助 Pod 的方式工作。其测量流水线如下：
+
+1.  **API 触发**：`virtbench` CLI 向 Kubernetes API 服务器提交 `VirtualMachine` 对象，API 服务器通过 CSI 驱动创建关联的 `DataVolume` 和 `PVC`。
+2.  **状态机跟踪**：CLI 轮询 VMI 状态，跟踪完整的转换链：`Pending → Scheduled → Bound → Running`。
+3.  **Guest 网络探测**：部署在集群内的 `ssh-test-pod` 对每个 VMI 的分配 IP 地址发起连续的 TCP 探测。
+4.  **测量完成**：只有在 TCP 握手成功（确认 guest 网络栈完全可用）时，计时器才会关闭。
+
+结果以结构化 **JSON 和 CSV** 格式输出，并渲染成交互式 **HTML 仪表板** 供分析。该工具内置四个基准测试引擎：`DataSource Clone`、`Migration`、`Capacity` 和 `Failure Recovery`。
+
+### 内置测试场景
+
+virtbench 提供了六个开箱即用的测试场景，全面覆盖关键运维操作：
+
+*   **DataSource VM 配置**：测试存储克隆效率和卷创建时间。
+*   **单节点启动风暴**：测试单节点在同时启动多个 VM 时的容量上限。
+*   **多节点启动风暴**：测试集群范围的启动性能，模拟故障后恢复场景。
+*   **实时迁移**：测量 VM 迁移中断时间，支持顺序和并行运行。
+*   **混沌基准测试**：并发执行多种混沌操作（创建、调整大小、克隆、重启、快照）。
+*   **故障与恢复**：通过 Fence Agents 验证高可用性，测量从故障到恢复的时间。
+
+### 性能瓶颈可视化
+
+测试结果会自动渲染为多图表 HTML 仪表板。每个图表对应不同的测量阶段：
+
+*   **创建持续时间（蓝色）**：顺序负载下每个 VM 的配置延迟，建立存储和调度器基线。
+*   **启动风暴（绿色）**：在 N 个并发请求下的配置延迟，暴露 CSI 驱动器或 etcd 写入吞吐量的饱和拐点。
+*   **实时迁移（橙色）**：每个 VMI 的迁移持续时间和中断时间，用于界定维护窗口 [[slo]]。
+
+一个 **创建摘要** 表将端到端时间分解为三个子阶段：`clone_duration`（CSI 拷贝时间）、`running_time`（kubelet 容器启动）和 `ping_time`（guest 网络探测）。这种分解有助于定位性能回溯是源于存储层、容器运行时还是 guest 操作系统初始化序列。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+
+*   **容量规划与变更管理**：virtbench 的结果为 SRE 提供了量化依据，用于评估 KubeVirt 集群的 **Burst Capacity**（如启动风暴处理能力）。在进行基础设施变更（如存储阵列升级、CNI 更换、Kubernetes 版本升级）前后运行测试，可以提前捕获性能回溯，避免其影响生产环境。
+*   **可观测性增强**：它填补了标准 [[sli]] 监控在虚拟机场景下的空白。例如，通过监控 `clone_duration` 和 `ping_time`，SRE 可以将问题精准归因于存储性能或 guest OS 启动慢，而不是笼统的“VM 启动慢”。
+*   **事件响应与演练**：`Failure and Recovery` 和 `Chaos Benchmark` 场景直接服务于混沌工程和故障演练。测量故障恢复时间（Time-to-Recovery）是验证和改进系统韧性的关键 [[sli]]。
+*   **实时迁移 SLA**：精确测量的 Stun Time 是定义和保证 VM 在线迁移操作窗口 [[sla]] 的核心指标，有助于制定合理的维护计划。
+
+### 最佳实践与常见反模式
+
+*   **最佳实践**：
+    *   将 virtbench 集成到暂存环境的 CI 流水线中，作为基础设施变更的“质量门禁”。
+    *   关注 **创建摘要** 中的子阶段时间，以隔离性能瓶颈的根本原因。
+    *   使用 `ssh-test-pod` 的测量结果作为 VM 运行就绪的黄金标准 [[sli]]，而非仅依赖 Pod 状态。
+    *   贡献和分享不同平台（存储、CNI、硬件）的基准测试数据，建立社区基线。
+*   **常见反模式**：
+    *   仅依赖 Kubernetes 内置事件或 Pod 状态来判断 VM 就绪情况，导致对 Time-to-Ready 的严重误判。
+    *   在评估存储性能时，仅运行 fio 等微基准测试，而忽略了 CSI 驱动在真实 VM 多磁盘并发挂载场景下的交互性能。
+    *   忽视实时迁移中断时间，从而在制定 SLA 和运维窗口时做出不切实际的承诺。
+
+### 相关指标
+
+virtbench 直接产出或间接关联以下关键可靠性指标：
+
+*   **SLI**:
+    *   **VM Provisioning Time**: 从 API 调用到 VM guest 网络可用的端到端时间。
+    *   **Boot Storm Throughput**: 单位时间内成功启动的 VM 数量，或 N 个并发启动的 P99 延迟。
+    *   **Live Migration Stun Time**: 网络中断的持续时间。
+    *   **Time-to-Recovery**: 从故障注入到 VM 通过 Fence Agent 恢复的时间。
+*   **SLO**:
+    *   可基于 virtbench 测试结果设定诸如 “99% 的新 VM 在 5 分钟内完成配置并可用” 或 “实时迁移中断时间小于 2 秒” 的 SLO。
+*   **Error Budget**: VM 启动超时或迁移中断超过 SLO 的次数可用作消耗的 Error Budget，驱动基础设施优化工作。

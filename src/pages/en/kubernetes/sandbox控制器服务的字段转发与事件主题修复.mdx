@@ -1,0 +1,66 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Sandbox Controller Service Field Forwarding and Event Topic Fix"
+description: "Fixes two critical bugs in containerd's gRPC Sandbox controller service, ensuring complete Sandbox creation configuration and correct event topic format."
+category: Container Runtime & Orchestration
+order: 0
+lastUpdated: 2024-07-19
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/pull/13271
+    title: "sandbox: forward Create fields, fix event topics"
+tags: [sandbox, grpc, bug-fix, containerd, event-driven]
+---
+
+# Sandbox Controller Service Field Forwarding and Event Topic Fix
+
+## Overview
+
+In containerd's architecture, Sandboxes are key components for hosting workloads like Pods. This fix targets containerd's gRPC Sandbox controller service, resolving two fundamental reliability bugs. These issues occurred during Sandbox creation and event publishing, directly affecting configuration completeness of Sandboxes created through the gRPC proxy path and the correctness of the entire event-driven architecture.
+
+## Core Concepts
+
+*   **Sandbox Controller Service**: Core service in containerd managing Sandbox lifecycle via gRPC interfaces (`Create`, `Start`, `Wait` RPC methods).
+*   **gRPC Proxy Path**: When clients don't directly communicate with underlying Sandbox implementations (like Kata Containers), requests go through an intermediate gRPC controller service.
+*   **Event Topics**: containerd uses topic-based publish-subscribe for event notification. All topics must start with `/` (e.g., `/sandboxes/create`) for event switch routing and filtering.
+
+## Practice
+
+### Bug 1 Fix: Incomplete `Create` Method Field Forwarding
+
+Before fix, `controllerService.Create` only forwarded `options` field, ignoring `netns_path`, `rootfs`, and `annotations`. After fix, all four `CreateOptions` fields are explicitly forwarded:
+
+```go
+err = ctrl.Create(ctx, sb,
+    sandbox.WithOptions(req.GetOptions()),
+    sandbox.WithNetNSPath(req.GetNetnsPath()),
+    sandbox.WithRootFS(mount.FromProto(req.GetRootfs())),
+    sandbox.WithAnnotations(req.GetAnnotations()),
+)
+```
+
+### Bug 2 Fix: Incorrect Event Topic Format
+
+Before fix, event topics were `"sandboxes/create"` etc., missing required leading `/`. After fix, all topics corrected:
+*   `/sandboxes/create`
+*   `/sandboxes/start`
+*   `/sandboxes/wait`
+
+### Enhanced Test Coverage
+
+Unit tests added in `controller_service_test.go` covering all implemented RPC methods, correct field forwarding, and error handling for invalid Sandboxer names.
+
+## SRE Essentials
+
+*   **Reliability**:
+    - **Field forwarding (Bug 1)**: Data integrity issue. Lost fields cause downstream component anomalies, affecting SLOs like "Sandbox creation success rate."
+    - **Event topics (Bug 2)**: Internal contract violation. Wrong event formats cause silent event bus message drops, destroying observability. SRE depends on event flows for monitoring and alerting.
+
+*   **Best Practices**: Write unit tests for gRPC service methods validating parameter passing and error handling. Use linters or static analysis to enforce internal protocol specifications.
+
+*   **Anti-Patterns**: "Selectively" forwarding fields in proxy layers assuming some fields are unimportant. Ignoring inter-component communication contracts.
+
+*   **Related Metrics**:
+    - **SLI**: Monitor `containerd_sandbox_create_failed_total` counters.
+    - **SLO**: "99.9% Sandbox creation requests succeed with complete configuration" or "99.99% internal events correctly published."

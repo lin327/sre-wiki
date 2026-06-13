@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana 仪表盘注释数据源刷新问题"
 description: "描述了Grafana中通过仪表盘切换注释时，引用注释的面板数据源未自动刷新的问题。"
@@ -11,6 +12,8 @@ sources:
     title: "Dashboards: panel annotations data source does not refresh when dashboard annotation is toggled"
 tags: [grafana, dashboard, annotations, panel, data-source, bug]
 ---
+
+# Grafana 仪表盘注释数据源刷新问题
 
 ## 概述
 在现代 SRE 实践中，[[dashboard]] 是实现系统可观测性、进行事件响应和容量规划的核心工具。Grafana 作为业界领先的监控可视化平台，其仪表盘功能的稳定性和交互一致性至关重要。本页面记录了一个在 Grafana 版本 12.0.0（及 11.6.1）中发现的、影响用户体验和数据可靠性的 Bug：当通过仪表盘顶部的开关切换一个 [[annotations]] 的显示状态时，引用该注释的特定面板（使用“-- Dashboard --”数据源）不会自动刷新其数据。这可能导致用户看到不一致的数据视图，干扰对事件和指标关联的正确判断。

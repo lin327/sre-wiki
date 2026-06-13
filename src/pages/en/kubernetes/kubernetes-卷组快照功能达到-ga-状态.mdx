@@ -1,0 +1,80 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Volume Group Snapshot Feature Reaches GA"
+description: "Kubernetes v1.36 promotes Volume Group Snapshot to GA, allowing users to create crash-consistent snapshots for groups of PVCs, greatly enhancing multi-volume application data protection and disaster recovery."
+category: storage
+order: 0
+lastUpdated: 2026-05-10
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/05/08/kubernetes-v1-36-volume-group-snapshot-ga/
+    title: "Kubernetes v1.36: Moving Volume Group Snapshots to GA"
+tags: [kubernetes, storage, snapshot, csi, data-protection]
+---
+
+# Kubernetes Volume Group Snapshot Feature Reaches GA
+
+## Overview
+
+Data protection is a core element for ensuring workload reliability. Traditional VolumeSnapshot APIs, while powerful, struggle to guarantee cross-snapshot data consistency for complex multi-volume applications. Volume Group Snapshots address this by allowing users to snapshot a group of related PersistentVolumeClaims (PVCs) as a whole, ensuring crash-consistent state at a specific point in time. Reaching GA in v1.36, it becomes a stable, reliable data protection primitive for building and operating critical business applications.
+
+## Core Concepts
+
+Volume Group Snapshots leverage underlying storage system group snapshot capabilities. API resources promoted to `groupsnapshot.storage.k8s.io/v1` in GA:
+
+1.  **VolumeGroupSnapshotClass**: Created by cluster administrators, defines snapshot creation policies (CSI driver, deletion policy).
+2.  **VolumeGroupSnapshot**: Created by users/automation, declares "create a group snapshot for PVCs matching specific labels."
+3.  **VolumeGroupSnapshotContent**: Dynamically created by the controller, represents actual snapshot resources, bound 1:1 with VolumeGroupSnapshot.
+
+## Practice
+
+### Creating Volume Group Snapshots
+
+Label PVCs to group them:
+```bash
+kubectl label pvc pvc-0 group=myGroup
+kubectl label pvc pvc-1 group=myGroup
+```
+
+Define VolumeGroupSnapshotClass:
+```yaml
+apiVersion: groupsnapshot.storage.k8s.io/v1
+kind: VolumeGroupSnapshotClass
+metadata:
+  name: csi-groupSnapclass
+driver: example.csi.k8s.io
+deletionPolicy: Delete
+```
+
+Create VolumeGroupSnapshot:
+```yaml
+apiVersion: groupsnapshot.storage.k8s.io/v1
+kind: VolumeGroupSnapshot
+metadata:
+  name: snapshot-daily-20260422
+spec:
+  volumeGroupSnapshotClassName: csi-groupSnapclass
+  source:
+    selector:
+      matchLabels:
+        group: myGroup
+```
+
+### Restoring from Volume Group Snapshots
+
+Create new PVCs pointing to individual VolumeSnapshots generated from the group snapshot.
+
+## SRE Essentials
+
+### Data Protection and Reliability
+Group snapshots simplify backup strategies for multi-volume applications (databases, message queues). They transform RPO from a fuzzy time point dependent on multiple independent snapshot consistency to a clear, atomic group snapshot point.
+
+### Best Practices and Anti-Patterns
+*   **Best Practices**: Use clear, consistent labels; test restore processes regularly; monitor snapshot status; define clear deletionPolicy.
+*   **Anti-Patterns**: Ignoring CSI driver compatibility; over-grouping unrelated volumes; neglecting snapshot resource management.
+
+### Related Metrics (SLI/SLO/SLA)
+*   **SLI**: Group snapshot creation success rate (e.g., 99.9% reach Ready within 10 minutes), restore success rate and duration.
+*   **SLO**: "Core database group snapshots must be created daily, with restore drill completion within 1 hour."
+*   **SLA**: GA feature stability directly supports customer-facing data protection SLAs.

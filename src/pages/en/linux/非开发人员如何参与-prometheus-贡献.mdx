@@ -1,66 +1,68 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "How Non-Developers Can Contribute to Prometheus"
-category: "社区参与与生态"
+category: "Community Participation & Ecosystem"
 confidence: high
 ---
 
+# How Non-Developers Can Contribute to Prometheus
 
-## 概述
+## Overview
 
-Prometheus 作为云原生监控领域的事实标准，其强大的功能和社区的繁荣不仅源于核心代码的开发，也离不开文档、社区支持、用户体验（UX）设计等非技术性贡献。对于 SRE 和平台工程师而言，一个健康、活跃且易于参与的开源生态是确保监控工具可持续发展和可靠性的关键一环。然而，非技术背景的贡献者往往在参与时面临独特的挑战。本文旨在阐明这些挑战的价值，并提供具体的实践指南。
+As the de facto standard in cloud-native monitoring, Prometheus's powerful features and thriving community stem not only from core code development but also from non-technical contributions such as documentation, community support, and User Experience (UX) design. For SRE and platform engineers, a healthy, active, and accessible open-source ecosystem is a critical part of ensuring the sustainable development and reliability of monitoring tools. However, contributors from non-technical backgrounds often face unique challenges when participating. This article aims to clarify the value of these challenges and provide practical guidelines.
 
-## 核心概念
+## Core Concepts
 
-非技术贡献者在开源项目中扮演着不可或缺的角色。他们的价值并非直接体现在代码行数上，而是体现在提升项目的可及性、组织性和用户友好度上，这些最终都指向了同一个目标：**增强系统的可靠性与运维效率**。
+Non-technical contributors play an indispensable role in open-source projects. Their value is not directly reflected in lines of code, but in improving the project's accessibility, organization, and user-friendliness, all of which ultimately point to the same goal: **enhancing system reliability and operational efficiency**.
 
-**非技术贡献者面临的四大挑战**是理解参与障碍的关键：
-1.  **技术门槛带来的畏惧感**：在一个由开发者主导的环境中，非技术人员可能因不理解技术术语和讨论而感到孤立，难以自信地发声。
-2.  **不明确的价值主张**：开源项目的 `贡献指南` 和 `问题列表` 通常以代码任务为主，很少明确列出文档、设计或社区管理等需求，导致潜在贡献者不清楚如何将自己的技能与项目需求匹配。
-3.  **贡献的不可见性**：传统的贡献度量（如 Git 提交、代码合并）无法体现组织会议、用户支持或调研工作的价值，这降低了非技术贡献的可见度和认可度。
-4.  **入门指南的缺失**：标准的开发入门指南无法指导非技术贡献者如何参与文档改进、设计反馈或社区支持，从“加入”到“做出首次贡献”之间存在显著鸿沟。
+**The Four Major Challenges Faced by Non-Technical Contributors** are key to understanding participation barriers:
+1.  **Intimidation from Technical Barriers**: In a developer-dominated environment, non-technical personnel may feel isolated due to not understanding technical terminology and discussions, making it difficult to speak up confidently.
+2.  **Unclear Value Proposition**: Open-source projects' `Contributing Guides` and `Issue Lists` are typically focused on code tasks, rarely explicitly listing needs for documentation, design, or community management, leaving potential contributors unsure how to match their skills with project needs.
+3.  **Invisibility of Contributions**: Traditional contribution metrics (such as Git commits, code merges) cannot reflect the value of organizing meetings, user support, or research work, reducing the visibility and recognition of non-technical contributions.
+4.  **Lack of Onboarding Guides**: Standard development onboarding guides cannot instruct non-technical contributors on how to participate in documentation improvements, design feedback, or community support, creating a significant gap between "joining" and "making a first contribution."
 
-这些挑战的产生并非出于恶意，而是项目在早期发展阶段自然演化的结果。当一个项目主要由开发者为开发者构建时，营销、社区管理和用户研究等需求可能不会被立刻意识到。
+These challenges arise not from malice but as a natural result of the project's evolution during early development stages. When a project is primarily built by developers for developers, needs such as marketing, community management, and user research may not be immediately recognized.
 
-## 实践
+## Practice
 
-如果你希望为 Prometheus 项目贡献非代码价值，以下是具体且活跃的参与领域：
+If you wish to contribute non-code value to the Prometheus project, here are specific and active areas of participation:
 
-**1. 加入用户体验（UX）工作组**
-Prometheus 社区现已设立 [UX Working Group](https://cloud-native.slack.com/archives/C09NL3B1EKW) Slack 频道，专注于改善监控系统的用户体验。如果你具备 UX 研究、设计或可用性分析背景，这是绝佳的切入点。你可以在频道中参与讨论，关注后续公告，并直接参与影响 Prometheus 可视化和交互体验的工作。
+**1. Join the User Experience (UX) Working Group**
+The Prometheus community has established a [UX Working Group](https://cloud-native.slack.com/archives/C09NL3B1EKW) Slack channel focused on improving the user experience of monitoring systems. If you have a background in UX research, design, or usability analysis, this is an excellent entry point. You can participate in discussions in the channel, follow subsequent announcements, and directly contribute to work that affects Prometheus's visualization and interaction experience.
 
-**2. 为 Prometheus 博客撰稿**
-博客是分享知识和案例的关键平台。你可以撰写教程、最佳实践、使用案例研究或社区动态。参阅 [博客内容指南](https://github.com/prometheus/docs/blob/main/blog/README.md) 了解提案要求和发布流程。一篇关于如何使用 Prometheus 解决特定问题的博文，能极大帮助其他用户。
+**2. Write for the Prometheus Blog**
+The blog is a key platform for sharing knowledge and use cases. You can write tutorials, best practices, use case studies, or community updates. Refer to the [Blog Content Guide](https://github.com/prometheus/docs/blob/main/blog/README.md) for proposal requirements and publishing processes. A blog post about how you used Prometheus to solve a specific problem can greatly help other users.
 
-**3. 改进与维护文档**
-文档是降低使用门槛的核心。你可以贡献于以下方面：
-*   修正拼写错误和 [修复失效链接](https://github.com/prometheus/docs/issues/2649)。
-*   扩展“入门指南”，使其对新手更友好。
-*   为常见的监控场景（如 Kubernetes 服务监控）创建新教程。
-*   协助进行文档 [问题的分类和优先级排序](https://www.youtube.com/watch?v=SzSUa5y7Ji0&t=27105s)，帮助维护者聚焦重点。即使你非专业文档工程师，只要你曾因文档困惑并最终弄明白，你就能帮助下一位用户。
+**3. Improve and Maintain Documentation**
+Documentation is the core for lowering the barrier to entry. You can contribute in the following areas:
+*   Fix typos and [repair broken links](https://github.com/prometheus/docs/issues/2649).
+*   Expand "Getting Started Guides" to be more beginner-friendly.
+*   Create new tutorials for common monitoring scenarios (such as Kubernetes service monitoring).
+*   Help with documentation [issue triage and prioritization](https://www.youtube.com/watch?v=SzSUa5y7Ji0&t=27105s), helping maintainers focus on priorities. Even if you are not a professional documentation engineer, if you have ever been confused by documentation and eventually figured it out, you can help the next user.
 
-**4. 协助组织 PromCon 会议**
-[PromCon](https://promcon.io/) 是 Prometheus 的年度盛会，其成功举办依赖于大量的协调工作。如果你有活动策划、赞助商联络、市场营销或传播方面的经验，可以联系 [组织团队](mailto:promcon-organizers@googlegroups.com) 或关注社区频道的公告。
+**4. Help Organize PromCon**
+[PromCon](https://promcon.io/) is Prometheus's annual event, and its success depends on extensive coordination work. If you have experience in event planning, sponsor outreach, marketing, or communications, you can contact the [organizing team](mailto:promcon-organizers@googlegroups.com) or watch for announcements in community channels.
 
-**5. 进行宣传与推广**
-最简单也最有影响力的贡献之一是传播 Prometheus 的价值。你可以：
-*   撰写关于你在实际工作中使用 Prometheus 的博客。
-*   在本地 meetup 或技术会议上发表演讲。
-*   在社交媒体上分享技巧和心得，或制作视频教程。
-*   向正在评估监控方案的团队推荐 Prometheus。
+**5. Advocacy and Promotion**
+One of the simplest yet most impactful contributions is spreading the value of Prometheus. You can:
+*   Write blog posts about using Prometheus in your actual work.
+*   Give talks at local meetups or technical conferences.
+*   Share tips and experiences on social media, or create video tutorials.
+*   Recommend Prometheus to teams evaluating monitoring solutions.
 
-## SRE 要点
+## SRE Key Points
 
-非技术贡献与 SRE 核心原则紧密相连：
+Non-technical contributions are closely linked to core SRE principles:
 
-*   **提升可观测性的可理解性**：高质量的文档和清晰的 UX 设计是让监控数据和系统状态“可观测”的最后一公里。SRE 依赖这些信息进行故障排查和容量规划。非技术贡献者通过优化文档和界面，直接提升了整个团队的运维效率。
-*   **增强社区韧性**：一个管理良好、乐于助人的社区意味着当你的团队在深夜遇到 Prometheus 相关问题时，更可能在 Slack 中得到及时回应或找到解决方案。这本质上是分布式支持体系，是可靠性的一部分。
-*   **最佳实践与反模式**：
-    *   **实践**：明确沟通你的技能和兴趣；从小处着手（如修复一个文档链接）；保持耐心，观察社区节奏后再深入参与。
-    *   **反模式**：试图一次性解决所有文档问题；在没有充分观察社区规范前强行推动重大变更；认为只有代码提交才是“真正的”贡献。
-*   **相关指标（SLI/SLO）**：虽然非技术贡献不易直接量化，但其影响可以通过间接指标衡量，例如：
-    *   **文档质量**：可设为目标为“关键操作指南的错误报告率低于 X%”。
-    *   **社区支持响应时间**：监控从用户提问到首次有效回复的平均时间。
-    *   **新用户留存率**：关注首次提问或参与的用户中，持续活跃的比例。
+*   **Improving Observability Comprehensibility**: High-quality documentation and clear UX design are the last mile for making monitoring data and system state "observable." SRE relies on this information for troubleshooting and capacity planning. Non-technical contributors directly improve the operational efficiency of the entire team by optimizing documentation and interfaces.
+*   **Enhancing Community Resilience**: A well-managed, helpful community means that when your team encounters Prometheus-related issues late at night, you are more likely to receive timely responses or find solutions in Slack. This is essentially a distributed support system and part of reliability.
+*   **Best Practices and Anti-Patterns**:
+    *   **Practice**: Clearly communicate your skills and interests; start small (e.g., fix a documentation link); be patient and observe community rhythms before diving deeper.
+    *   **Anti-Patterns**: Trying to solve all documentation issues at once; pushing major changes before sufficiently observing community norms; believing that only code commits are "real" contributions.
+*   **Related Metrics (SLI/SLO)**: While non-technical contributions are not easily quantifiable directly, their impact can be measured through indirect metrics, such as:
+    *   **Documentation Quality**: Can set a target like "error report rate for critical operation guides below X%."
+    *   **Community Support Response Time**: Monitor the average time from user question to first effective response.
+    *   **New User Retention Rate**: Track the proportion of users who continue to be active among those who first ask questions or participate.
 
-最终，Prometheus 社区和类似开源项目的繁荣，需要一个多元化的贡献者基础。正如原文作者所言，问题不在于非技术贡献是否重要，而在于我们如何为它们的发生创造空间。作为 SRE 或技术领导者，我们可以通过主动邀请、明确需求和认可这些贡献来塑造更健康、更可靠的开源生态。
+Ultimately, the prosperity of the Prometheus community and similar open-source projects requires a diverse contributor base. As the original author stated, the question is not whether non-technical contributions matter, but how we create space for them to happen. As SRE or technical leaders, we can shape a healthier, more reliable open-source ecosystem by actively inviting, clearly communicating needs, and recognizing these contributions.

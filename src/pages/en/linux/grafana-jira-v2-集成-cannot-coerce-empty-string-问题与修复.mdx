@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "grafana/grafana Issue"
 category: "Alerting module"
 confidence: medium
 ---
+
+# grafana/grafana Issue
 
 ## Overview
 This document describes a critical flaw in Grafana 12.x series releases that causes the Jira v2 point of contact integration to completely break. Specifically, when Grafana's alerting module performs an issue search (e.g. for alert deduplication) via the Jira REST API, it is rejected by the API for serializing a non-conforming empty string field, returning a **"Cannot coerce empty String"** error. This issue directly affects any SRE or operations team that relies on Grafana 12.x version to manage alerts and seeks deep integration with the Jira incident ticketing system, disrupting core automated incident response and deduplication workflows.

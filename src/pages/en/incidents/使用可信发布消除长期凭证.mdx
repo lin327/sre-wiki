@@ -1,0 +1,49 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Eliminating Long-Lived Credentials with Trusted Publishing"
+category: "Identity and Access Management"
+confidence: low
+---
+
+# Eliminating Long-Lived Credentials with Trusted Publishing
+
+## Overview
+
+In software supply chain security, protecting credentials used to publish software to package repositories (such as PyPI, npm, RubyGems) is critical. Traditional long-lived credentials (such as API keys, passwords), once leaked, allow attackers to launch malicious package publishing attacks for extended periods, seriously threatening the entire ecosystem's security. **Trusted publishing** is a mechanism designed to address this problem. By using ephemeral, automated credentials to replace long-lived manual keys, it fundamentally reduces the risk of credential theft and abuse, serving as a key practice for enhancing software supply chain resilience.
+
+## Core Concepts
+
+The core idea of trusted publishing is to **eliminate long-lived static credentials** and introduce a dynamic authentication flow based on identity and workload. Its key components include:
+
+- **Short-Lived Credentials**: Authentication tokens used in the publishing process have extremely short validity periods (e.g., a few minutes), generated on-demand only when needed and destroyed after use. This greatly narrows the window during which stolen credentials can be exploited.
+- **OIDC and Identity Providers**: Trusted publishing is deeply integrated with the OpenID Connect protocol. CI/CD workloads (such as GitHub Actions, GitLab CI) can be authenticated by a trusted identity provider (such as GitHub). The workload obtains an OIDC token representing its identity.
+- **Trust Chain**: Package repositories (such as PyPI) are pre-configured to trust specific identity providers and publishing environments (e.g., specific GitHub repositories and branches). When a CI/CD workload requests publishing, it presents its OIDC token. The repository verifies whether the token's issuer, repository identity, branch, etc., match the preset policy. If they match, a one-time credential with publishing permissions is automatically granted.
+- **Supply Chain Attack Defense**: The primary goal is to defend against **supply chain attacks**, especially scenarios where attackers inject malicious code by stealing or leaking long-lived credentials. Even if the CI environment or developer machines are compromised, attackers cannot obtain long-term publishing keys.
+
+## Practice
+
+Configuring trusted publishing for a Python project on PyPI, typical steps include:
+
+1. **Project-Side Configuration**: In the package repository's (e.g., PyPI) project settings, navigate to the "Publishing" or "API Tokens" section and create a new "trusted publishing" configuration.
+2. **Declare Trust Source**: In the configuration, explicitly specify the allowed publishing identity provider (GitHub) and its specific source, typically requiring:
+    - Publisher name: `https://token.actions.githubusercontent.com`
+    - Repository owner/name: `your-GitHub-username/your-repo-name`
+    - Workflow filename: e.g., `publish.yml`
+    - Environment (optional): Can further restrict to only specific environments (e.g., `production`) workflows that can trigger publishing.
+3. **CI/CD Workflow Configuration**: In the project's CI/CD workflow file (e.g., `.github/workflows/publish.yml`), remove all static API keys. Instead, configure the workflow to request an OIDC token during the publishing step and use it for authentication.
+4. **Automated Publishing**: When code is pushed to a protected branch (e.g., `main`) and the workflow is triggered, the CI system automatically requests publishing from the package repository. The repository verifies the request comes from an authorized CI environment, issues a short-lived credential, and completes a secure publish.
+
+This pattern has been adopted and supported by major package ecosystems including PyPI, npm, and RubyGems.
+
+## SRE Essentials
+
+- **Relationship to Reliability**: Adopting trusted publishing improves the reliability of the software delivery pipeline. It eliminates publishing disruptions caused by long-lived credential expiration, delayed rotation, or accidental leakage. The publishing process becomes more secure and predictable.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Enable trusted publishing for all packages and strictly configure trust policies (e.g., limited to specific `main` branches and `production` environments); make this the default publishing method, not the exception.
+    - **Anti-Pattern**: Continuing to store long-lived API keys in CI/CD environment variables or code repositories; relaxing trust policies for "convenience" to allow arbitrary branches or workflows to publish.
+- **Observability and Incident Response**: Package repositories should log all trusted publishing-based publish events, including request source (repository, workflow, branch). These logs are critical for auditing and detecting abnormal publishing behavior (e.g., an unexpected branch attempting to publish) and can serve as a data source for **SIEM** or security monitoring systems.
+- **Related Metrics**: While there are no direct SLO/SLIs, "**percentage of publishes completed using trusted publishing**" can serve as an important **operational metric** to track migration progress and adoption rate. The target should be 100%.
+- **Secret Management**: Trusted publishing is an evolution and enhancement of **secret management**. By completely eliminating the need for certain long-lived secrets, it simplifies the overall security model. SRE teams should consider it a standard tool for strengthening supply chain security.
+
+By adopting trusted publishing, teams can effectively mitigate a major category of supply chain risks, shifting the security focus from "protecting static secrets" to "verifying the identity of automated workloads" -- a more modern, more reliable foundation.

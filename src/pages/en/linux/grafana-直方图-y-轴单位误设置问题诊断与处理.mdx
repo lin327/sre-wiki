@@ -1,66 +1,68 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
-title: "“Histogram unit incorrectly applied to Y Axis”"
-category: "可视化与图表"
-confidence: medium
+title: "Histogram unit incorrectly applied to Y Axis"
+category: "Visualization & Charts"
+confidence: high
 ---
 
+# Histogram unit incorrectly applied to Y Axis
 
-## 概述
+## Overview
 
-在运维监控与可靠性工程中，准确、清晰的可视化是理解系统状态和做出决策的基础。Grafana 作为业界广泛使用的可视化平台，其图表渲染的正确性至关重要。本页面基于一个具体的用户报告，分析了在 Grafana v11.x 版本中，直方图（Histogram）图表的 Y 轴单位设置错误（如错误显示为 “seconds” 而非纯数字计数）的问题。此类问题虽小，但会直接误导对数据的理解，可能掩盖真实的性能瓶颈或容量问题，影响事件响应和容量规划的准确性。
+In operational monitoring and reliability engineering, accurate and clear visualization is the foundation for understanding system state and making decisions. Grafana, as a widely used visualization platform, has chart rendering correctness that is critical. This page analyzes, based on a specific user report, an issue in Grafana v11.x where the Histogram chart's Y-axis unit is incorrectly set (for example, incorrectly displaying "seconds" instead of a pure numeric count). Although such issues may seem minor, they directly mislead data interpretation, potentially masking real performance bottlenecks or capacity issues, and affecting the accuracy of incident response and capacity planning.
 
-## 核心概念
+## Core Concepts
 
-为了理解该问题，需要明确以下核心概念：
+To understand this issue, the following core concepts need to be clarified:
 
-1.  **直方图 (Histogram)**：一种用于展示数据分布情况的统计图表，它将数据范围划分为若干个连续的区间（称为“桶”或“bucket”），并统计落入每个区间的数据点数量。在 Prometheus 监控体系中，直方图是衡量请求延迟、响应时间等分位数指标的核心数据类型。
-2.  **Y 轴与 X 轴**：
-    *   **X 轴**：在 Grafana 的直方图可视化中，通常代表数据的取值范围（即“桶”的边界，例如 `0-100ms`，`100-200ms`）。对于表示时间的直方图（如请求延迟），此处应用相应的时间单位是合理的。
-    *   **Y 轴**：代表落在每个桶内的数据点数量，即**频数**或**计数**。它是一个无量纲的计数值，不应被赋予如 `seconds`、`bytes` 等物理单位。
-3.  **单位设置 (Unit)**：Grafana 允许为坐标轴设置单位，以便自动进行数据格式化（例如将 `1000` 显示为 `1.0k`，或将 `60` 秒显示为 `1m`）。错误地为直方图的 Y 轴设置单位（如 `seconds`），会导致计数值被错误解读（例如，将 `500` 次请求误读为 `500秒`）。
+1.  **Histogram**: A statistical chart used to display data distribution. It divides the data range into several consecutive intervals (called "buckets") and counts the number of data points falling into each interval. In the Prometheus monitoring system, histograms are the core data type for measuring quantile metrics such as request latency and response time.
+2.  **Y-Axis and X-Axis**:
+    *   **X-Axis**: In Grafana's histogram visualization, it typically represents the data value range (i.e., the bucket boundaries, such as `0-100ms`, `100-200ms`). For histograms representing time (such as request latency), applying the corresponding time unit here is reasonable.
+    *   **Y-Axis**: Represents the number of data points falling into each bucket, i.e., the **frequency** or **count**. It is a dimensionless count value and should not be assigned physical units such as `seconds` or `bytes`.
+3.  **Unit Setting**: Grafana allows setting units for axes to enable automatic data formatting (for example, displaying `1000` as `1.0k`, or displaying `60` seconds as `1m`). Incorrectly setting units for the histogram's Y-axis (such as `seconds`) causes count values to be misinterpreted (for example, mistaking `500` requests for `500 seconds`).
 
-该问题本质上是一个**可视化渲染缺陷**，即在特定版本的 Grafana 中，为直方图配置的单位被错误地同时应用于 X 轴和 Y 轴，而非预期仅应用于 X 轴。
+The issue is essentially a **visualization rendering defect** — in a specific Grafana version, the unit configured for the histogram is incorrectly applied to both the X-axis and Y-axis, rather than only to the X-axis as expected.
 
-## 实践
+## Practice
 
-当在 Grafana 中遇到直方图单位显示异常时，可以按照以下步骤进行诊断和处理。
+When encountering abnormal histogram unit display in Grafana, follow these steps for diagnosis and handling.
 
-### 诊断步骤
+### Diagnostic Steps
 
-1.  **复现问题**：
-    *   确认使用的 Grafana 版本（本报告中为 v11.x）。
-    *   检查数据源是否为 Prometheus，并且是否使用了原生直方图（Native Histograms）功能。
-    *   打开出现问题的面板，检查 Y 轴标签。错误情况下，Y 轴标签应会显示与 X 轴相同的单位（例如 “seconds”），而不是 “Count”、“Total” 或无单位的数字。
+1.  **Reproduce the Issue**:
+    *   Confirm the Grafana version being used (v11.x in this report).
+    *   Check if the data source is Prometheus and whether it uses the Native Histograms feature.
+    *   Open the affected panel and check the Y-axis label. In the error case, the Y-axis label should display the same unit as the X-axis (for example, "seconds") instead of "Count," "Total," or a unitless number.
 
-2.  **收集调试信息**：
-    *   这是复现和向社区报告问题的关键。在 Grafana 面板的调试菜单（通常通过标题栏的下拉菜单访问）中，选择“导出面板 JSON”或类似选项。
-    *   生成的 JSON 文件包含了面板的完整配置（包括查询、可视化设置、单位配置），可用于在其他环境中精确复现问题。本案例的报告者已提供了这样的调试快照。
+2.  **Collect Debug Information**:
+    *   This is key to reproducing and reporting the issue to the community. In the Grafana panel's debug menu (usually accessible via the title bar dropdown), select "Export panel JSON" or a similar option.
+    *   The generated JSON file contains the panel's complete configuration (including queries, visualization settings, unit configuration) and can be used to precisely reproduce the issue in other environments. The reporter of this case has provided such a debug snapshot.
 
-3.  **隔离问题**：
-    *   尝试在同一个仪表板中创建一个新的直方图面板，使用相同的数据源和查询。观察问题是否依然存在，以排除原有面板配置损坏的可能性。
-    *   尝试切换数据源类型（例如从 Prometheus 切换到测试数据）或修改面板可视化类型（例如切换为折线图再切换回直方图），观察单位设置行为。
+3.  **Isolate the Issue**:
+    *   Try creating a new histogram panel in the same dashboard using the same data source and query. Observe whether the problem persists to rule out the possibility of corrupted original panel configuration.
+    *   Try switching data source types (for example, from Prometheus to test data) or modifying the panel visualization type (for example, switching to a line chart and then back to histogram) to observe unit setting behavior.
 
-### 解决方案与规避方法
+### Solutions and Workarounds
 
-*   **检查并修改单位设置**：这是最直接的尝试。在面板的“可视化”选项卡下，找到“标准选项”中的“单位”设置。尝试将其设置为“无”或“短格式”。尽管该 bug 意味着即使正确设置也可能无法生效，但这应是任何排查的第一步。
-*   **降级或等待修复**：
-    *   根据报告，此问题在之前版本（如 #54376 所追踪的）曾被修复。如果当前版本（v11.x）出现回归，可以考虑暂时使用已知稳定的前一个大版本。
-    *   关注 Grafana 的官方更新和该 GitHub issue 的状态，等待并应用官方修复补丁。
-*   **提交详细报告**：如果您能稳定复现此问题，请按照 Grafana 社区指南，提供详细的**环境信息**、**重现步骤**和**调试快照**，以帮助维护者快速定位和修复缺陷。
+*   **Check and Modify Unit Settings**: This is the most direct attempt. Under the panel's "Visualization" tab, find the "Unit" setting in "Standard options." Try setting it to "None" or "Short." Although the bug means this may not take effect even when correctly set, it should be the first step in any troubleshooting.
+*   **Downgrade or Wait for Fix**:
+    *   According to the report, this issue was previously fixed (as tracked in #54376). If the current version (v11.x) shows a regression, consider temporarily using the known stable previous major version.
+    *   Follow Grafana's official updates and the GitHub issue status, and wait for and apply the official fix patch.
+*   **Submit a Detailed Report**: If you can reliably reproduce this issue, follow Grafana community guidelines to provide detailed **environment information**, **reproduction steps**, and **debug snapshots** to help maintainers quickly locate and fix the defect.
 
-## SRE 要点
+## SRE Key Points
 
-*   **与可靠性的关联**：
-    *   **监控数据解读**：错误的单位会严重干扰工程师对系统指标的理解。一个被误标为“秒”的请求计数，可能让工程师误以为系统延迟极高，从而触发不必要的应急响应或做出错误的容量扩容决策。
-    *   **告警有效性**：基于此图表建立的可视化仪表板，如果被其他团队或 on-call 工程师依赖，错误的信息会传播，影响集体决策的效率和准确性。
-    *   **变更管理验证**：在进行性能优化或架构变更后，直方图是验证效果（如 P99 延迟是否下降）的关键工具。渲染错误会使验证过程失效。
+*   **Connection to Reliability**:
+    *   **Monitoring Data Interpretation**: Incorrect units seriously interfere with engineers' understanding of system metrics. A request count mislabeled as "seconds" may lead engineers to believe the system has extremely high latency, triggering unnecessary emergency responses or incorrect capacity expansion decisions.
+    *   **Alert Effectiveness**: Visual dashboards built based on this chart, if relied upon by other teams or on-call engineers, will propagate incorrect information, affecting the efficiency and accuracy of collective decision-making.
+    *   **Change Management Verification**: After performance optimization or architectural changes, histograms are key tools for verifying effectiveness (such as whether P99 latency has decreased). Rendering errors can invalidate the verification process.
 
-*   **最佳实践与常见反模式**：
-    *   **定期校验监控面板**：对关键业务和基础设施的核心监控仪表板进行定期审查，确保所有图表（尤其是直方图、热力图等复杂图表）的单位、比例尺、阈值设置正确。
-    *   **版本管理与测试**：在升级 Grafana 等核心监控平台版本前，应在测试环境中全面验证现有仪表板的显示是否正常，建立针对监控平台自身的健康检查或“冒烟测试”。
-    *   **反模式：忽略可视化细节**：认为“只要数据准就行，图表样式无所谓”是危险的。错误的可视化等同于错误的信息，会直接损害监控系统的可靠性。
+*   **Best Practices and Common Anti-patterns**:
+    *   **Regularly Validate Monitoring Panels**: Periodically review core monitoring dashboards for critical business and infrastructure, ensuring all charts (especially complex charts like histograms, heatmaps) have correct units, scale bars, and threshold settings.
+    *   **Version Management and Testing**: Before upgrading core monitoring platforms like Grafana, thoroughly verify that existing dashboards display correctly in the test environment, establishing health checks or "smoke tests" for the monitoring platform itself.
+    *   **Anti-pattern: Ignoring Visualization Details**: Believing "as long as the data is accurate, chart styling doesn't matter" is dangerous. Incorrect visualization is equivalent to incorrect information and directly damages monitoring system reliability.
 
-*   **相关指标（SLI/SLO/SLA）**：
-    *   此问题直接影响对 **延迟分布**（Latency Distribution）和 **请求率**（Request Rate）等 SLI（服务水平指标）的观测。
-    *   例如，一个旨在监控服务响应时间是否满足 `P99 < 200ms` 的 SLO（服务水平目标），其验证完全依赖于正确显示的延迟分布直方图。如果单位显示错误，就无法准确判断 SLO 是否达成。
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   This issue directly affects the observation of **Latency Distribution** and **Request Rate** SLIs (Service Level Indicators).
+    *   For example, an SLO (Service Level Objective) aiming to monitor whether service response time meets `P99 < 200ms` relies entirely on correctly displayed latency distribution histograms for verification. If the unit display is incorrect, it is impossible to accurately determine whether the SLO is met.

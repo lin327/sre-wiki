@@ -1,0 +1,116 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Guide to Experimenting with Gateway API Locally Using kind"
+description: "Detailed guide on quickly setting up and experimenting with Kubernetes Gateway API locally using kind clusters and cloud-provider-kind for learning and testing."
+category: Kubernetes & Cloud Native
+order: 15
+lastUpdated: 2025-07-08
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/01/28/experimenting-gateway-api-with-kind/
+    title: "Experimenting with Gateway API using kind - Kubernetes Blog"
+tags: [gateway-api, kind, local-development, traffic-management, networking]
+---
+
+# Guide to Experimenting with Gateway API Locally Using kind
+
+## Overview
+
+Gateway API is the next-generation standard in Kubernetes for managing north-south and east-west traffic. For SREs and platform engineers, understanding and experimenting with its core concepts locally before production is critical. This guide provides a complete setup using `kind` (Kubernetes in Docker) and `cloud-provider-kind` for local, ephemeral Gateway API experimentation.
+
+## Core Concepts
+
+- **GatewayClass**: Defines a class of gateway implementations. Provided by infrastructure administrators or cloud providers.
+- **Gateway**: Defines a network endpoint instance for承载 traffic, specifying listeners (protocol, port, hostname patterns).
+- **HTTPRoute**: Defines how traffic matching specific rules is routed to backend services. Attaches to a Gateway.
+
+Understanding the separation of concerns (GatewayClass by infra team, Gateway by ops team, HTTPRoute by dev team) is key to Gateway API's value.
+
+## Practice
+
+### 1. Environment Setup
+Requires: Docker, kubectl, kind, curl.
+
+### 2. Create kind Cluster
+```shell
+kind create cluster
+```
+
+### 3. Deploy cloud-provider-kind
+```shell
+VERSION="$(basename $(curl -s -L -o /dev/null -w '%{url_effective}' https://github.com/kubernetes-sigs/cloud-provider-kind/releases/latest))"
+docker run -d --name cloud-provider-kind --rm --network host -v /var/run/docker.sock:/var/run/docker.sock registry.k8s.io/cloud-provider-kind/cloud-controller-manager:${VERSION}
+```
+
+### 4. Create Gateway
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gateway
+  namespace: gateway-infra
+spec:
+  gatewayClassName: cloud-provider-kind
+  listeners:
+  - name: default
+    hostname: "*.exampledomain.example"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+```
+
+### 5. Deploy Example Application
+Deploy an echo application returning received request details.
+
+### 6. Create HTTPRoute
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo
+  namespace: demo
+spec:
+  parentRefs:
+  - name: gateway
+    namespace: gateway-infra
+  hostnames: ["some.exampledomain.example"]
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: echo
+      port: 3000
+```
+
+### 7. Test Routing
+```shell
+GW_ADDR=$(kubectl get gateway -n gateway-infra gateway -o jsonpath='{.status.addresses[0].value}')
+curl --resolve some.exampledomain.example:80:${GW_ADDR} http://some.exampledomain.example
+```
+
+### 8. Troubleshooting
+- Check Gateway status for `Accepted: True` and `Programmed: True`.
+- Check HTTPRoute status for conditions.
+- View controller logs: `docker logs -f cloud-provider-kind`.
+
+### 9. Cleanup
+```shell
+kubectl delete namespace gateway-infra
+kubectl delete namespace demo
+docker stop cloud-provider-kind
+kind delete cluster
+```
+
+## SRE Essentials
+
+- **Reliability**: Gateway API separates traffic management (Gateway) from application routing (HTTPRoute), enabling independent team operations.
+- **Best Practices**: Use thoroughly tested Gateway API implementations; prefer `Same` or `Selector` over `All` for `allowedRoutes`.
+- **Anti-Patterns**: Using experimental environments (`cloud-provider-kind`) for production traffic.
+- **Related Metrics**: Gateway listener request handling success percentage; Gateway forwarding P99 latency; Gateway-generated 5xx error proportion.
+
+**Next Steps**: Explore [Gateway API implementations](https://gateway-api.sigs.k8s.io/implementations/) for production; learn [TLS termination](https://gateway-api.sigs.k8s.io/guides/tls/), [traffic splitting](https://gateway-api.sigs.k8s.io/guides/traffic-mirroring/).

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "修复Grafana注解标签并发写入的唯一约束冲突"
 description: "解决因非原子读写模式导致的并发注解标签写入失败问题，提升系统可靠性。"
@@ -8,9 +9,11 @@ lastUpdated: 2026-06-11
 confidence: high
 sources:
   - url: https://github.com/grafana/grafana/pull/126303
-    title: "'fix(annotations): ignore duplicate annotation_tag rows on concurrent writes'"
+    title: "fix(annotations): ignore duplicate annotation_tag rows on concurrent writes"
 tags: [annotations, concurrency, database, grafana, bug-fix]
 ---
+
+# 修复Grafana注解标签并发写入的唯一约束冲突
 
 ## 概述
 

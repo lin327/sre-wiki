@@ -1,0 +1,78 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Contact Point Settings Data Redaction with Case-Insensitive Logic"
+category: "Alerting & Incident Response"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/pull/124955
+    title: "Alerting: Make contact point settings redaction logic case insensitive"
+tags: [grafana, alerting, data-redaction, case-insensitivity, contact-points, security]
+---
+
+# Contact Point Settings Data Redaction with Case-Insensitive Logic
+
+## Overview
+
+In SRE practice, the security and reliability of alerting channel configuration are critical. This document describes an important security and reliability enhancement in the Grafana alerting system: the data redaction logic for Contact Point Settings has been upgraded to be case-insensitive. This change fixes a potential defect in the existing logic, unifies data handling behavior across the configuration API and the new app platform-style API, and introduces new rules to reject duplicate keys that differ only in case, thereby improving the robustness and security of alerting configuration.
+
+## Core Concepts
+
+### Case-Insensitive Data Redaction
+Data Redaction is the process of replacing sensitive information (such as API keys, passwords, tokens) with masks like asterisks (***) during storage or display, to prevent accidental leakage of sensitive information in logs, UI, or API responses. This change ensures that the redaction logic correctly handles cases where configuration key names have inconsistent casing. For example, configuration items `webhookUrl`, `WebhookUrl`, or `WEBHOOK_URL` (if normalized to `webhookUrl`) should be treated as the same field in the redaction logic.
+
+### Key Deduplication Rules
+The new logic adds strictness during the configuration validation phase: **duplicate sensitive keys (Secret Keys) that differ only in case are not allowed within the same contact point's settings**. This is to prevent potential configuration ambiguity and security risks, ensuring each key configuration is unambiguous and unique.
+
+## Practice
+
+### Upgrade and Migration Considerations
+This feature change includes a **Breaking Change**. After upgrading Grafana to the version containing this PR:
+1.  Creating or updating contact point configurations containing duplicate sensitive keys with mixed case (e.g., having both `apiKey` and `Apikey` simultaneously) via the API (especially the Provisioning API) will fail and return an error.
+2.  Existing configurations of this type that were successfully created (via UI or earlier APIs) will have their sensitive information consistently redacted when displayed or read via API, but **when editing via API, the duplicate key issue must be fixed first**.
+
+### Operational Recommendations
+When planning a Grafana upgrade, SRE should take the following steps:
+1.  **Audit Existing Configuration**: Use the Grafana API or directly query the database (if feasible) to check all contact points' `settings` fields for potential case-mixed duplicate keys. A simple check is to convert all key names to lowercase after retrieving the key list and check for duplicates.
+2.  **Fix Configuration**: Before or during the upgrade, clean up all non-compliant configurations, ensuring each sensitive key appears only once.
+3.  **Post-Upgrade Verification**:
+    *   Access the contact point list via both UI and API to confirm sensitive information (such as keys) is correctly displayed as masks.
+    *   Attempt to create a new contact point with case-mixed duplicate keys via API, expecting a clear error rejection response.
+
+### Configuration Example (Conceptual)
+Assume a previously existing "problem" configuration:
+```yaml
+# Problem configuration: contains case-mixed duplicate webhookSecretKey
+settings:
+  url: http://example.com/alert
+  webhookSecretKey: s3cr3t1
+  WebhookSecretKey: another_secret # This key will cause rejection in new version
+```
+After the upgrade, this configuration needs to be corrected to retain only a single unique key name:
+```yaml
+# Corrected configuration
+settings:
+  url: http://example.com/alert
+  webhookSecretKey: s3cr3t1
+```
+
+## SRE Key Points
+
+### Relation to Reliability
+This change directly enhances the configuration reliability of alerting channels. Case-insensitive redaction prevents accidental leakage of sensitive information caused by different configuration writing habits (e.g., displaying values that should have been redacted in logs), reducing human error risk. The duplicate key rejection rule further eliminates configuration ambiguity, ensuring that when alerts are sent to receivers (such as Slack, PagerDuty, Webhooks), the credentials used are unambiguous and correct, preventing alert delivery failures caused by configuration confusion.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**:
+    *   In automated configuration management (such as Ansible, Terraform), always use unified lowercase (or a agreed-upon canonical form) for contact point settings key names.
+    *   Treat Grafana's Provisioning API as a strict contract and follow its latest validation rules.
+    *   Incorporate upgrade checks into SRE's standard release process to identify potential configuration incompatibilities in advance.
+- **Common Anti-Patterns**:
+    *   Relying on the UI to create production-critical configuration instead of using versioned Provisioning files.
+    *   Ignoring the "Breaking Change" section in release notes when upgrading Grafana core components.
+
+### Related Metrics
+This change itself does not introduce new SLIs/SLOs, but it affects existing alerting channel **configuration validity** and **potential risk of sensitive data leakage**. SRE can monitor:
+- **Configuration Sync Success Rate**: The success rate when applying configuration via the Provisioning API. After upgrade, there should be no batch failures caused by new rules.
+- **Alert Sending Success Rate** (as downstream impact): Ensure configuration changes have no negative impact on actual alert notifications.
+
+By implementing this change, Grafana further solidifies its foundation as a reliable monitoring and alerting platform, enabling SRE teams to manage the critical operational process of alert notifications more securely and reliably.

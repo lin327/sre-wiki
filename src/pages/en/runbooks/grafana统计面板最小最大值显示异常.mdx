@@ -1,0 +1,68 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Stat Panel Min/Max Values Display Anomaly"
+description: "Troubleshooting and resolving the issue where Min/Max statistics in Grafana time series or stat panels sometimes display as empty."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-05-29
+confidence: high
+---
+
+# Grafana Stat Panel Min/Max Values Display Anomaly
+
+## Overview
+
+When using Grafana for observability practice, statistical panels (such as Stat Panel) are commonly used to prominently display summary values of key metrics in dashboards, such as the minimum (Min) and maximum (Max) of API response times. These summary values are critical for quickly assessing system performance and identifying anomalous fluctuations. However, users sometimes observe that even within time periods where request data exists, the minimum or maximum value statistics on the panel may display as empty. This document aims to analyze the possible causes of this issue and provide systematic troubleshooting and practice guidelines to ensure reliable monitoring data presentation, which is the foundation for SRE system reliability maintenance.
+
+## Core Concepts
+
+Understanding this issue requires grasping the following core concepts:
+
+1.  **Aggregation Calculation and Data Point Alignment**: The minimum/maximum values displayed in Grafana panels are calculated based on **a series of data points** returned by the data source (such as Prometheus, InfluxDB) within a given time range. If the data point set returned by the query is empty at a certain point in time (i.e., no data), then the aggregation calculation result (Min/Max) based on that set cannot be generated, potentially displaying as empty.
+2.  **Data Sparsity and Downsampling**: When monitoring metrics (such as API response times) themselves have sparse data points, or the query time range is too long, or the data source has automatic downsampling configured, Grafana or the data source may not return all original data points for performance reasons. This can result in insufficient or missing data points for calculating minimum/maximum values, especially at time range boundaries or during data lulls.
+3.  **Timestamp Alignment Issues**: The query time range (`timeRange`) not precisely aligning with actual data timestamps in the data source can also result in no data points being found within certain specific time windows, causing aggregation results to be empty.
+
+## Practices
+
+For the "minimum/maximum values display as empty" issue, follow these steps for troubleshooting and identification:
+
+**1. Verify Raw Query Data**
+   - In the panel editor, switch to the "Explore" view and directly execute the query statement used by the panel.
+   - Check the returned time series data to confirm whether data points are actually returned during the corresponding time period where empty values appear. This is the most direct verification method.
+
+**2. Check Query and Data Source Configuration**
+   - **Query Range**: Ensure the query's time range (`Relative time range`) correctly covers the time period where you expect to see data.
+   - **Data Interval (Step)**: Check the query's `Step` or data source's collection interval settings. For sparse metrics, too large a Step may cause data points to be "skipped."
+   - **Data Source Health**: Confirm the data source connection is normal, and the database or storage service itself was operating normally during the problem time period with raw data being written.
+
+**3. Analyze Panel Visualization Settings**
+   - Check the statistical panel's "Null Value" setting. This option controls display behavior when aggregation results are `null` (no data), such as displaying as `null`, `0`, or remaining blank. Setting it to `connected` or `null` helps distinguish between "value is 0" and "no data."
+   - Confirm that `Min` and `Max` are checked and enabled for display in the panel's "Stat" configuration.
+
+**4. Leverage Grafana Internal Monitoring**
+   - Grafana itself provides metrics about query performance and data retrieval (such as `grafana_data_source_query_duration_seconds`). You can query these internal metrics to determine if query timeouts or errors occurred during specific time periods.
+
+**5. Reproduce and Compare**
+   - Try using the same data source and query on a newly created, clean test dashboard to observe if the issue reproduces. This helps rule out issues caused by a specific dashboard configuration (such as variables, templates).
+   - Shorten the query time range (e.g., from 24 hours to 1 hour) and observe if the problem disappears. If the issue does not appear in shorter time ranges, it strongly suggests a relationship with data sparsity or long-period downsampling.
+
+## SRE Key Points
+
+### Connection to Reliability, Observability, and Incident Response
+- **Observability Quality**: Monitoring panels are the frontend interface of system observability. Display anomalies (such as empty statistical data) directly reduce dashboard credibility, potentially causing SREs or developers to make misjudgments during troubleshooting (e.g., mistakenly believing the system had no traffic during a certain period).
+- **Incident Response Efficiency**: During incidents, relying on Min/Max and other statistical values can quickly identify performance bottlenecks (such as response time spikes). Data not displaying extends the initial diagnostic time of incident response.
+- **Reliability of the Monitoring System Itself**: This issue reflects the reliability challenges of the monitoring pipeline (from data collection, storage to visualization). SREs need to ensure the reliability and data integrity of monitoring systems just as they do for business systems.
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+  1.  **Cross-Validation**: For critical statistical values, do not rely on a single view. Also viewing the raw time series graph (Time Series Panel) can intuitively verify whether minimum and maximum values are as expected.
+  2.  **Set Reasonable SLOs**: Set [[slo]] (Service Level Objectives) for critical API response times, and use Min/Max as a supplementary observation angle for [[sli]] (Service Level Indicators), rather than the sole basis.
+  3.  **Monitor the Monitoring System**: Use Grafana's own monitoring capabilities to set alerts for important dashboard queries (such as queries continuously returning empty values).
+- **Common Anti-Patterns**:
+  1.  **Blindly Trusting Panel Data**: Using panel statistical data directly as the sole basis for decisions without verification, especially during capacity planning or performance attribution analysis.
+  2.  **Ignoring Data Sparsity**: For non-continuously occurring event-type metrics (such as error counts), attempting to use minimum/maximum values to describe their characteristics is usually meaningless.
+  3.  **Deploying Complex Queries Without Testing**: Deploying queries containing complex logic or long time ranges in production without fully testing their performance under different data densities in the development environment.
+
+### Related Metrics (SLI/SLO/SLA)
+- This issue itself does not directly define new SLIs/SLOs, but it affects the observability of existing SLIs. For example, if the SLI is "P99 response time" and the statistical panel used to view this metric is non-functional due to data issues, the SLI monitoring loses its meaning. Therefore, ensuring the robustness of monitoring dashboards is an implicit prerequisite for achieving [[slo]].

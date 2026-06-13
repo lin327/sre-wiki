@@ -1,0 +1,68 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Feature Flags"
+description: "Managing Prometheus experimental features through `--enable-feature` flags, supporting faster innovation and safe experimentation while maintaining stability."
+category: Progressive Delivery
+order: 0
+lastUpdated: 2024-06-21
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2021/02/17/introducing-feature-flags/
+    title: "Introducing Feature Flags - Prometheus Blog"
+tags: [feature-flags, progressive-delivery, change-management, prometheus, experimentation]
+---
+
+# Feature Flags
+
+## Overview
+
+Feature Flags are a technique for dynamically enabling or disabling specific features or code paths without modifying application code or deployment branches. In SRE practice, feature flags are key tools for implementing **progressive delivery** and **controlled experimentation**. They allow teams to test new features, performance optimizations, or behavior changes in small scopes, canary releases, or A/B tests while maintaining core system stability. Prometheus introduced this mechanism from v2.25.0 to manage its "disabled features" list, embodying the SRE principle of balancing reliability with innovation.
+
+## Core Concepts
+
+In Prometheus context, feature flags work through:
+
+1.  **Disabled Features List**: Prometheus maintains a list of features disabled by default, typically considered **experimental**.
+2.  **`--enable-feature` Startup Parameter**: Users explicitly pass this parameter followed by feature name at Prometheus startup to enable specific experimental features. E.g., `--enable-feature=exemplar-storage`.
+3.  **Experimental Characteristics**: All features enabled this way carry disclaimers:
+    - **API may change**: Specifications may change in future versions.
+    - **Behavior may change**: Runtime logic and effects may differ.
+    - **May break existing assumptions**: E.g., `@` modifier and negative offset break "queries don't look up samples before evaluation time" assumption.
+    - **Stability not guaranteed**: While stability is maintained, experimental features may have instabilities.
+
+The core idea: isolate features from the default stable release until they achieve sufficient maturity and widespread use.
+
+## Practice
+
+1.  **Follow version updates**: Check the "Disabled Features" list in official docs with each new Prometheus release.
+2.  **Evaluate and test carefully**: Selectively enable experimental features in development/test environments, assessing impact on existing monitoring data, alert rules, and dashboards.
+3.  **Explicit enablement**: Add `--enable-feature=<feature_name>` to Prometheus service startup command.
+4.  **Expectation management**: Fully recognize experimental nature; prepare for potential API or behavior changes.
+5.  **Feedback and removal**: Participate in community feedback. Remove startup parameter to disable features no longer needed.
+
+## SRE Essentials
+
+### Reliability, Observability, Incident Response
+*   **Support reliability goals (SLO)**: Feature flags manage change risk, avoiding availability or performance incidents from hasty feature launches.
+*   **Enhanced observability**: A/B test new monitoring metrics or tracing features to scientifically decide on global enablement.
+*   **Incident response assistance**: If suspected relation to newly enabled experimental feature, quickly disable by restarting service without `--enable-feature` parameter.
+
+### Best Practices and Anti-Patterns
+*   **Best Practices**:
+    - **Document**: Record enabled feature flags and expected effects in operational manuals.
+    - **Monitor experiment impact**: After enabling, closely monitor performance metrics and error logs.
+    - **Lifecycle management**: Regularly review experimental features; decide to promote to default, continue experimenting, or remove.
+    - **Progressive rollout**: Follow gradual enablement path from small scale (canary instances) to production.
+*   **Common Anti-Patterns**:
+    - **Blind enablement in production**: Enabling untested experimental features on critical production instances.
+    - **Assuming permanent availability**: Building critical automation on experimental feature APIs or behaviors.
+    - **"Enable and forget"**: Lacking follow-up tracking and evaluation after enabling.
+
+### Related Metrics (SLI/SLO/SLA)
+Feature flags themselves aren't SLIs but are important process tools for managing changes affecting SLI/SLOs:
+*   **Change failure rate**: Compare failures/rollbacks from changes with and without feature flags.
+*   **MTTR**: Shorten fault recovery by quickly disabling problematic features.
+*   **Feature release frequency**: Measure team's ability to safely accelerate new feature releases using feature flags.
+
+Related links: [[observability]], [[change-management]], [[slo-error-budget]]

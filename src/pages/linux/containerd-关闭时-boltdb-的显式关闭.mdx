@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "containerd 关闭时 BoltDB 的显式关闭"
 description: "修复 containerd 优雅关闭时，元数据和挂载插件未显式关闭底层 BoltDB 文件的问题。"
@@ -11,6 +12,8 @@ sources:
     title: "fix: close boltdb on metadata and mount plugin close"
 tags: [containerd, BoltDB, Graceful Shutdown, SRE]
 ---
+
+# containerd 关闭时 BoltDB 的显式关闭
 
 ## 概述
 

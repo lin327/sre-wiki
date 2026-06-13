@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Building Highly Available Oracle Databases with Amazon FSx for NetApp ONTAP"
+description: "A modern cloud architecture leveraging Amazon FSx for NetApp ONTAP shared storage, AWS automation services, and self-healing mechanisms for enterprise-grade Oracle database high availability."
+category: Storage & Data Management
+order: 0
+lastUpdated: 2024-07-11
+confidence: medium
+sources:
+  - url: https://aws.amazon.com/blogs/architecture/building-highly-available-oracle-databases-with-amazon-fsx-for-netapp-ontap/
+    title: "Building highly available Oracle databases with Amazon FSx for NetApp ONTAP"
+tags: [oracle, aws-fsx, high-availability, iscsi, auto-scaling, aws-backup, lambda]
+---
+
+# Building Highly Available Oracle Databases with Amazon FSx for NetApp ONTAP
+
+## Overview
+
+Oracle database availability as the core of critical business applications is paramount. Traditional Oracle HA solutions depend on complex cluster software, expensive shared storage arrays, and specialized operations teams, introducing single points of failure and significant operational overhead.
+
+This modern cloud architecture integrates Amazon FSx for NetApp ONTAP (FSxN) shared storage, EC2 Auto Scaling groups, AWS Backup-based automatic AMI creation, AWS Lambda orchestration, and AWS Systems Manager Parameter Store. It significantly reduces traditional Oracle HA complexity while providing enterprise-grade availability, automated fault recovery, and ensuring new instances always start with latest configurations connected to existing databases.
+
+## Core Concepts
+
+1.  **Persistent Shared Storage (FSxN Multi-AZ)**: Unlike AZ-bound EBS, FSxN Multi-AZ provides cross-AZ synchronously replicated persistent shared storage. Oracle database files, software, and configuration reside here. When EC2 instances are replaced in either AZ, new instances immediately access existing Oracle files without backup restore, achieving near-zero RPO.
+
+2.  **Self-Healing Automation Unit (EC2 Auto Scaling Group)**: Fixed capacity of 1 (min=max=desired=1). Core function: automatically terminate and replace unhealthy Oracle instances. Health check grace period should be long (e.g., 300s) to allow Oracle service full startup.
+
+3.  **Automated Configuration Management (AWS Backup + Lambda + SSM Parameter Store)**:
+    - **AWS Backup**: Tag-based resource selection for periodic Oracle EC2 instance backups, creating AMIs.
+    - **AWS Lambda**: Triggered by EventBridge on backup completion, extracts new AMI ID, updates SSM Parameter Store, cleans old AMIs.
+    - **SSM Parameter Store**: Stores latest AMI ID. EC2 launch templates dynamically reference via `resolve:ssm:` prefix.
+
+4.  **Seamless Failover (User Data Script)**: Auto-configures iSCSI, discovers and connects to FSxN endpoints, mounts Oracle volumes, starts Oracle via systemd -- fully automated recovery.
+
+## Practice
+
+### Step 1: Create FSxN Shared Storage
+Create Multi-AZ filesystem, set up Storage Virtual Machine (SVM), configure iSCSI access with MPIO.
+
+### Step 2: Configure Automated Backup and AMI Management
+AWS Backup plan with tag-based selection; Lambda function for AMI updates; EventBridge rule for backup completion events.
+
+### Step 3: Configure Self-Healing Auto Scaling Group
+Launch template with dynamic AMI via `resolve:ssm:`; User Data script for full instance configuration; Auto Scaling group with capacity 1 and 300s+ health check grace period.
+
+### Step 4: Verify and Cleanup
+Test failover by terminating current Oracle EC2 instance; expected recovery within 5 minutes.
+
+## SRE Essentials
+
+### Reliability Practice
+Excellent example of **eliminating common-mode failure** and **self-healing through automation**. State (data in FSxN) decoupled from compute instances allows safe instance replacement.
+
+### Best Practices and Anti-Patterns
+*   **Best Practices**: Tag-based backup; SSM Parameter Store as configuration hub; `resolve:ssm:` for dynamic binding; sufficient health check grace periods.
+*   **Anti-Patterns**: Hardcoded AMI IDs; using Auto Scaling for horizontal scaling instead of self-healing; ignoring FSxN network connectivity and security group configuration.
+
+### Related Metrics (SLI/SLO/SLA)
+*   **SLI**: Time to Recovery; Data Durability (near-zero RPO); Configuration Consistency.
+*   **SLO**: RTO < 5 minutes; Configuration drift rate < 0.1%.
+*   **SLA**: Supports high availability SLA commitments (e.g., 99.99%) through eliminating single points of failure and rapid automated recovery.

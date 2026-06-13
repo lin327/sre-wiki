@@ -1,0 +1,59 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Datasource Configuration Error: 'data source not found' Troubleshooting"
+category: "Configuration Management"
+confidence: low
+---
+
+# Grafana Datasource Configuration Error:
+
+## Overview
+In Grafana monitoring system operations, declaratively managing datasources and dashboards through the [Provisioning (Configuration as Code)](https://grafana.com/docs/grafana/latest/administration/provisioning/) feature is a key practice for ensuring environment consistency and reproducibility. However, during startup, you may sometimes encounter the error `Datasource provisioning error: data source not found`, indicating that Grafana cannot find or load the datasource definitions specified in the configuration file during initialization. This issue directly causes datasource configuration failure, affecting subsequent monitoring data visualization and alerting.
+
+## Core Concepts
+- **Provisioning (Configuration as Code)**: Grafana supports automatically configuring datasources, dashboards, and other resources via YAML files at startup. This avoids manual UI operations, making configuration versionable and auditable.
+- **Datasource**: Defines how Grafana connects to external systems (such as Prometheus, Loki, InfluxDB) to retrieve data.
+- **`data source not found` Error**: This error typically occurs during Grafana's Provisioning service execution. It indicates that a datasource definition referenced in the configuration file cannot be loaded or parsed, causing the entire provisioning process to fail. Note that this error is usually independent of plugin installation failures or signature errors (such as the `grafana-lokiexplore-app` plugin signature invalid appearing in logs), though co-occurrence may increase troubleshooting complexity.
+
+## Practice
+Based on the provided error case, here are specific troubleshooting steps and practices for resolving this issue:
+
+1. **Verify Configuration File Path and Format**:
+    - Ensure the `GF_PATHS_PROVISIONING` environment variable is correctly set in `docker-compose.yml` or Grafana configuration, pointing to the directory containing datasource YAML files. Example: `- GF_PATHS_PROVISIONING=/etc/grafana/provisioning/datasources`.
+    - Check that at least one `.yaml` or `.yml` file exists in that directory. Confirm file content syntax is correct using YAML validation tools.
+    - A minimal datasource configuration example:
+        ```yaml
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus:9090
+            isDefault: true
+        ```
+
+2. **Inspect Datasource Definition Details**:
+    - **`uid` Matching Issues**: If a dashboard's JSON model has a hardcoded datasource `uid`, and the `uid` of the datasource created in the Provisioning file does not match, or if no `uid` is specified in the Provisioning file at all, Grafana may attempt to look up a non-existent `uid`, causing the error. It is recommended to explicitly declare `uid` in the Provisioning file.
+    - **`name` and `type` Fields**: Confirm the `name` and `type` fields are correctly filled and spelled. The `type` must match the Grafana datasource plugin identifier.
+    - **Dependent Plugins**: If the datasource type depends on an uninstalled or failed-to-install plugin (such as `grafana-lokiexplore-app` in this case), even if the datasource configuration file itself is correct, loading may fail due to the missing plugin. Resolve the plugin installation issue first (e.g., fix signature verification or network connectivity problems).
+
+3. **File Location and Permissions**:
+    - Ensure datasource YAML files are located in the subdirectory (typically `datasources`) specified by `GF_PATHS_PROVISIONING`, not in the root directory or elsewhere.
+    - Check that the Grafana process (typically the `grafana` user in containers) has read permissions for the configuration files and directories.
+
+4. **Restart and Log Analysis**:
+    - After correcting configuration files, restart the Grafana container.
+    - Carefully examine startup logs. Successful provisioning outputs messages like `logger=datasource.provisioning t=... level=info msg="Provisioned datasource" name=...`. If it still fails, use more detailed error logs to identify which specific YAML file or datasource definition is problematic.
+
+## SRE Essentials
+- **Reliability and Observability**: Datasource configuration failure is a direct cause of monitoring system reliability issues. It creates "monitoring blind spots," preventing teams from obtaining critical system performance metrics, logs, or tracing data, severely impacting incident response and root cause analysis capabilities during outages. Ensuring the stability of the Provisioning process is a critical part of maintaining the observability foundation.
+- **Best Practices**:
+    - **Version Control**: Include all Provisioning YAML files in version control systems like Git, enabling traceable and rollback-capable configuration changes.
+    - **Health Checks**: Add configuration file syntax validation (e.g., `yamllint`) to deployment pipelines to prevent service startup failures from basic syntax errors.
+    - **Progressive Deployment**: After modifying configuration, verify in non-production environments first, then deploy to production through CI/CD pipelines.
+- **Common Anti-Patterns**:
+    - **Manual Modifications Without Sync**: Modifying datasource configuration in the Grafana UI without syncing changes back to YAML files in the code repository, causing them to be overwritten during the next deployment.
+    - **Ignoring Startup Logs**: Ignoring Grafana startup Provisioning warnings or errors, assuming the service "works fine," which may hide potential configuration inconsistencies.
+- **Related Metrics (SLI/SLO)**:
+    - While the `data source not found` error itself is not a direct SLI, its frequency and duration affect the higher-level "monitoring data availability" SLI. SRE teams can monitor metrics like `grafana_config_provisioning_errors_total` (if available) or the frequency of this error in Grafana logs as configuration health indicators.

@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "cgroup Namespace Version Compatibility"
+description: "Resolving container test failures caused by cgroups v1/v2 differences through environment-aware testing to ensure cross-distribution reliability."
+category: Container Runtime & Orchestration
+order: 0
+lastUpdated: 2026-04-15
+confidence: medium
+sources:
+  - url: https://github.com/containerd/containerd/pull/13240
+    title: "Fix: TestCgroupNamespace failure on cgroups v1 hosts"
+tags: [containerd, cgroups, testing, compatibility, linux]
+---
+
+# cgroup Namespace Version Compatibility
+
+## Overview
+
+In Linux-based container runtimes such as containerd, the `cgroup` namespace is a key feature for isolating container cgroup views. However, the Linux kernel has two different cgroup implementations: cgroups v1 and cgroups v2. They differ significantly in mounting methods and functionality. Certain behaviors of container runtimes (such as whether to add `cgroup` namespace) depend on the cgroup version used by the host. This causes test failures due to environment differences when running the same test suite in mixed environments, affecting the stability and development efficiency of continuous integration (CI) pipelines. This page analyzes a specific test failure case and explores how to write SRE test strategies with environment compatibility.
+
+## Core Concepts
+
+### cgroups v1 vs cgroups v2
+
+Linux control groups (cgroups) are a kernel resource allocation and isolation mechanism.
+- **cgroups v1**: The older, hierarchical implementation where different resource controllers (such as cpu, memory) can be independently mounted on different hierarchies.
+- **cgroups v2**: The unified hierarchy design, aiming to provide more consistent and powerful control interfaces. Certain advanced features of container runtimes (such as `cgroup` namespace) are typically only supported or enabled by default under cgroups v2 (unified mode).
+
+In containerd, the function `isUnifiedCgroupsMode()` is used at runtime to detect whether the host uses cgroups v2.
+
+### cgroup Namespace
+
+The `cgroup` namespace provides virtualization of the cgroup root directory in the container view. It allows processes inside the container to only see their own cgroup subtree, rather than the host's complete cgroup structure, enhancing isolation and security.
+
+## Practice
+
+### Problem Case: Hardcoded Test Assumptions
+
+A unit test `TestCgroupNamespace` for unprivileged containers hardcoded the expected value `expectCgroupNamespace: true`. The test asserted that all unprivileged containers would receive a `cgroup` namespace.
+
+However, the actual implementation logic of the container runtime is: only when `isUnifiedCgroupsMode()` returns `true` (i.e., the host uses cgroups v2) will the namespace be added for unprivileged containers. Therefore, when running this test on hosts using cgroups v1 (such as Amazon Linux 2), the namespace is not added, causing the test assertion to fail.
+
+### Solution: Environment-Aware Testing
+
+The core idea of the fix is **making test cases aware of the environment they run in and skipping inapplicable tests accordingly**. The specific steps are:
+
+1.  **Add environment declarations to test cases**: Add a field to each test sub-case, such as `requireCgroupV2`, explicitly declaring which cgroup version the case expects to run correctly on.
+2.  **Dynamic detection and skipping at test runtime**: At the beginning of each test sub-case's execution logic, call the environment detection function (such as `isUnifiedCgroupsMode()`) to obtain the host's actual cgroup mode.
+3.  **Execute compatibility checks**: Compare the host's actual mode with the test case's `requireCgroupV2` declaration. If they do not match (e.g., the case requires cgroups v2, but the host is v1), use the test framework's skip mechanism (such as `t.Skip()`) to immediately skip that sub-case, stating the reason for skipping.
+
+This modification ensures the same test code can run correctly on hosts with both cgroups v1 and v2: on v1 hosts, only cases declared as `requireCgroupV2: false` will execute; on v2 hosts, all cases may execute (depending on their `requireCgroupV2` value). This eliminates hardcoded assumptions about specific environments.
+
+## SRE Essentials
+
+### Relationship with Reliability
+- **Environment Drift**: This case is a typical "environment drift" problem. In distributed systems or mixed cloud environments, different machines or containers may run different operating system versions and kernel configurations. Tests or deployment scripts that ignore these differences can lead to hard-to-diagnose intermittent failures.
+- **Reproducibility**: SREs need to ensure that failures and test results are reproducible across different environments. By explicitly declaring and detecting environment dependencies, reproducibility can be enhanced and "works on my machine" issues reduced.
+
+### Best Practices
+- **Avoid hardcoded environment assumptions**: When writing tests, deployment scripts, or operational tools, try to avoid implicit assumptions about specific operating system versions, kernel versions, or system configurations.
+- **Promote environment-aware logic**: For logic that must depend on specific environment conditions, implement runtime detection and conditional execution (or skip) mechanisms, providing clear logs or reports.
+- **Enhance CI/CD matrix coverage**: In CI pipelines, proactively set up test matrices that include cgroups v1 and v2, ensuring code is verified in all target environments.
+
+### Related Metrics (SLI/SLO/SLA)
+While this fix does not directly define an SLI, it impacts the following SRE practices:
+- **Test Pass Rate SLI**: After the fix, in test environments with mixed cgroup versions, the test pass rate will improve from partial failure to 100% (for applicable cases).
+- **Delivery Reliability SLO**: By improving test suite stability across different environments, the reliability of the delivery pipeline can be indirectly improved, supporting a more stable release SLO.
+
+### Anti-Pattern Warning
+- **Environment Inconsistency Anti-Pattern**: The root cause of this issue is that the development/test environment's cgroup version is inconsistent with the production environment, and tests do not cover this difference. This warns us to pay attention to environment consistency or improve the code's environmental adaptability.
+- **Silent Failure Risk**: If the fix simply disables this test on v1 environments rather than adapting it, it could mask the **product decision issue** of whether the product should support `cgroup` namespace on v1 environments. SREs should distinguish between "test adapts to environment" and "feature degrades based on environment."

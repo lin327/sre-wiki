@@ -1,0 +1,89 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "DNS Resolution Failure Incident Post-Mortem"
+category: ""
+confidence: low
+---
+
+# DNS Resolution Failure Incident Post-Mortem
+
+DNS is the cornerstone of Kubernetes service discovery. DNS resolution failure causes widespread inter-service call disruptions and is a typical cascading failure trigger, usually classified as a P1 incident.
+
+## CoreDNS Architecture in K8s
+
+CoreDNS is the default cluster DNS server for K8s, running as a Deployment. Query chain:
+
+```
+Pod -> /etc/resolv.conf -> CoreDNS Service (ClusterIP)
+  |-- Local cache hit -> Return directly
+  |-- In-cluster Service -> kubernetes plugin queries API Server
+  |-- External domain -> forward plugin forwards to upstream DNS
+```
+
+Key plugins: `kubernetes` (in-cluster DNS), `forward` (external forwarding), `cache` (local cache), `loop` (forward loop detection), `ready`/`health` (health checks).
+
+## Common Failure Patterns
+
+**Upstream DNS Timeout**: CoreDNS forwards external queries to upstream DNS. When upstream is unreachable, all external domains time out while in-cluster Service resolution works normally.
+
+**Service Discovery Failure**: CoreDNS cannot connect to API Server. `<service>.<namespace>.svc.cluster.local` resolution fails while direct IP access works.
+
+**Stale DNS Cache**: After Service IP updates, some Pods still resolve to old IPs. CoreDNS restart is needed to clear cache.
+
+**ndots Performance Issue**: K8s defaults to `ndots:5`. Short domain names try all search domain suffixes, generating 5 unnecessary in-cluster queries per external lookup.
+
+## Diagnosis Steps
+
+```bash
+# Step 1: Confirm failure scope
+kubectl exec -it <pod> -- nslookup kubernetes.default     # In-cluster
+kubectl exec -it <pod> -- nslookup example.com             # Out-of-cluster
+
+# Step 2: Check CoreDNS status
+kubectl -n kube-system get pods -l k8s-app=kube-dns
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=100
+
+# Step 3: Deep query (bypass local cache)
+kubectl exec -it <pod> -- dig @10.96.0.10 <service>.<namespace>.svc.cluster.local
+
+# Step 4: Check connectivity
+kubectl exec -it <pod> -- nc -zv 10.96.0.10 53
+```
+
+Return code meanings: `SERVFAIL` (upstream failure), `NXDOMAIN` (domain does not exist), `NOERROR` (normal).
+
+## Recovery Procedures
+
+```bash
+# Quick mitigation
+kubectl -n kube-system rollout restart deployment coredns   # Restart CoreDNS
+
+# Temporary switch when upstream DNS fails
+kubectl -n kube-system edit configmap coredns
+# forward . /etc/resolv.conf -> forward . 8.8.8.8 8.8.4.4
+kubectl -n kube-system rollout restart deployment coredns
+
+# Restart affected application Pods to clear their local caches
+kubectl rollout restart deployment <affected-app>
+```
+
+## Preventive Measures
+
+**NodeLocal DNSCache**: Deploy DNS cache proxy on each node (DaemonSet + hostNetwork). Pod queries go through local cache first then to CoreDNS, reducing UDP packet loss and CoreDNS load.
+
+**CoreDNS Optimization**: Set reasonable cache TTL (30s), `max_concurrent 1000`, `health_check 5s`.
+
+**Monitoring and Alerting**:
+
+| Metric | Alert Threshold | Description |
+|------|---------|------|
+| `coredns_dns_responses_total{rcode="SERVFAIL"}` | Continuously increasing | Upstream query failures |
+| `coredns_dns_request_duration_seconds` | p99 > 1s | Query latency too high |
+| Cache hit rate | < 50% | Cache policy needs adjustment |
+
+## SRE Implications
+
+- **Cascading Failure**: DNS failure simultaneously affects all workloads relying on service discovery; a single issue can disrupt cluster-wide communication.
+- **Caching Pitfalls**: DNS caching alleviates upstream pressure but creates an inconsistency window after changes where old and new records coexist. TTL must balance performance and consistency.
+- **SLO Impact**: DNS resolution availability should be measured independently as an infrastructure SLO, with a recommended target of 99.99%.
+- **Fault Injection**: Regularly inject CoreDNS failures and upstream timeouts through Chaos Engineering to validate system resilience.

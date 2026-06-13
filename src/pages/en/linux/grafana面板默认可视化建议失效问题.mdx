@@ -1,0 +1,54 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Panel Default Visualization Suggestion Failure"
+category: "Visualization and Monitoring"
+confidence: high
+---
+
+# Grafana Panel Default Visualization Suggestion Failure
+
+## Overview
+
+In Grafana, panels are the core building blocks of monitoring dashboards. `newVizSuggestions` is a feature designed to improve the panel creation experience by automatically recommending the most suitable visualization chart type based on data when users create new panels. However, a specific UI interaction state (collapsed options pane) causes this automated suggestion flow to fail, rendering the panel empty and affecting user experience and dashboard creation efficiency. This page analyzes the root cause of this issue, the interim solution, and its impact on SRE practice.
+
+## Core Concepts
+
+*   **`newVizSuggestions` Feature Flag**: This is a switch used in the Grafana backend for gradual feature rollouts. When enabled, the panel editor attempts to automatically apply the first recommended visualization after the user adds a query for the first time, rather than defaulting to a time series chart.
+*   **Options Pane Collapsed State**: The panel editor's right side contains an options pane with query, transformation, alert, and other settings. Users can collapse it to gain a larger chart preview area. This state is a common UI operation.
+*   **VisualizationSuggestions Logic**: This logic is responsible for analyzing data and recommending chart types. It relies on the `VisualizationSuggestions` UI component being mounted to execute and display.
+*   **Fallback Mechanism**: Before the `newVizSuggestions` feature was enabled, Grafana's default behavior was to always set the panel type to `timeseries`. This fix essentially restores that fallback behavior under specific conditions.
+
+## Practice
+
+### Issue Description
+
+When the `newVizSuggestions` feature flag is enabled and the user creates a new panel with the **options pane in a collapsed state** on the right side of the panel editor, the `VisualizationSuggestions` component is not mounted (rendered). Therefore, the first visualization suggestion that should have been automatically applied cannot execute, resulting in a panel with no specified chart type, appearing blank.
+
+### Interim Solution (PR #123090)
+
+This Pull Request proposes an interim fix: when a collapsed options pane is detected, the automatic suggestion flow is abandoned, and **the panel type is directly defaulted to `timeseries`**. This ensures that regardless of whether the options pane is collapsed, users immediately see a valid chart rather than an empty panel, restoring the default behavior from before the feature was introduced.
+
+### Recommended Approach and Considerations
+
+Code comments mention a more fundamental alternative solution: **moving the visualization suggestion logic from the current `VisualizationSuggestions` component (inside the options pane) up to the Panel Editor level**.
+
+*   **Advantages**: This approach decouples the suggestion logic from the UI collapse state of the options pane, architecturally solving the problem and ensuring the feature works correctly across different UI states.
+*   **Disadvantages**: It involves deeper refactoring, potentially broader changes, and requires more comprehensive testing. While the interim solution is simple, it introduces conditional branches that may increase future maintenance complexity.
+
+When implementing, SRE teams need to evaluate the long-term impact of both approaches. For critical UI features affecting the core user experience, the more robust architectural approach should be prioritized, even if it requires more development and testing investment.
+
+## SRE Essentials
+
+*   **Connection to Reliability, Observability, and Incident Response**:
+    *   **User Experience Is Reliability**: Such UI behavior anomalies (creating a panel but getting an empty result) undermine Grafana's perceived reliability as a monitoring tool. SREs rely on Grafana to quickly build and adjust dashboards for troubleshooting, and any defect that interrupts workflows indirectly affects incident response speed.
+    *   **Feature Flag Management**: This case highlights both the value and risk of gradual rollouts via feature flags. They allow safe testing of new features but may also expose unforeseen defects in edge cases (such as this UI state combination). SREs should participate in designing monitoring and rollback strategies for feature flags.
+
+*   **Best Practices and Common Anti-Patterns**:
+    *   **Best Practice**: When developing complex features closely tied to user interaction, **conduct exhaustive UI state combination testing**. For logic that depends on the existence of UI components, consider their lifecycle and all possible mounting conditions.
+    *   **Common Anti-Pattern**: Over-coupling business logic to a specific, user-controllable UI component (such as a collapsible pane) without considering the case where the component may not be rendered.
+    *   **Observability**: For features affecting user experience, establish front-end performance and error monitoring (such as Sentry) to capture related JavaScript errors and anomalous behavior for proactive issue detection.
+
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   While this issue does not directly correspond to traditional server-side SLIs (such as latency, error rate), it can be translated into user experience metrics like **"panel creation success rate"** or **"dashboard first-load empty panel rate"**.
+    *   A relevant **SLO** might be: "In environments with `newVizSuggestions` enabled, 95% of new panels should display a non-empty default visualization immediately after creation." This fix was made to ensure such user experience SLOs are met.

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "修复 CRIU 检查点操作因 io_uring 使用而失败"
 description: "在容器检查点操作前预检测 io_uring 的使用，以避免 CRIU 因无法处理其映射而失败，并提供清晰的错误信息。"
@@ -11,6 +12,8 @@ sources:
     title: "containerd/containerd Pull Request #13331"
 tags: [containerd, CRIU, checkpoint-restore, io_uring, container-migration, Linux-kernel]
 ---
+
+# 修复 CRIU 检查点操作因 io_uring 使用而失败
 
 ## 概述
 

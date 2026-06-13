@@ -1,0 +1,53 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.36 DRA Updates Explained"
+description: "Detailed explanation of key Dynamic Resource Allocation (DRA) feature graduation, new capabilities, and their impact on platform reliability and resource management in Kubernetes v1.36."
+category: DRA
+order: 0
+lastUpdated: 2026-05-07
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/05/07/kubernetes-v1-36-dra-136-updates/
+    title: "Kubernetes v1.36: More Drivers, New Features, and the Next Era of DRA"
+tags: [Kubernetes, DRA, Dynamic-Resource-Allocation, GPU, scheduling]
+---
+
+# Kubernetes v1.36 DRA Updates Explained
+
+## Overview
+
+Dynamic Resource Allocation (DRA) is the core mechanism in Kubernetes for managing hardware accelerators and special resources. Through declarative APIs, it enables platform administrators to flexibly and efficiently allocate and manage specialized hardware like GPUs and FPGAs. In Kubernetes v1.36, DRA receives important updates including maturation of several core features (graduating to Beta/Stable) and introduction of innovative capabilities. These updates further solidify DRA's position as the standard path for Kubernetes resource management, enhancing scheduling flexibility, fault handling reliability, and resource management observability, providing stronger infrastructure support for running high-performance workloads (AI/ML).
+
+## Core Concepts
+
+DRA's core model revolves around `ResourceClaim` and `ResourceSlice`. In v1.36, several key features mature from concept:
+
+- **Prioritized list (Stable)**: Allows users to define alternative ordering for device requests (e.g., "prefer H100, but fall back to A100 if unavailable"). The scheduler evaluates these requests in order, significantly improving scheduling flexibility and resource utilization -- a key tool for handling hardware heterogeneity.
+- **Extended resource support (Beta)**: Bridges DRA with traditional extended resources. Application developers can request DRA-managed resources through traditional Pod resource fields, allowing cluster operations teams to gradually migrate to DRA while application teams adopt `ResourceClaim` API at their own pace.
+- **Partitionable devices (Beta)**: Supports dynamically partitioning physical hardware (like multi-instance GPUs) into smaller logical units for allocation. This enables administrators to safely and efficiently share expensive accelerators across multiple Pods.
+- **Device taints (Beta)**: Similar to node taints and tolerations, administrators can taint specific devices to prevent regular `ResourceClaim` allocation. Useful for isolating faulty devices or reserving dedicated hardware for specific teams or workloads.
+- **Device binding conditions (Beta)**: Allows the scheduler to delay binding Pods to nodes until required external device resources are fully ready. By explicitly modeling resource readiness state, it prevents Pod startup failures from unready resources.
+- **Resource health status (Beta)**: Exposes device health information directly in Pod status, providing critical fault visualization for users and controllers. Supports human-readable health information, simplifying hardware fault diagnosis.
+
+Beyond graduated features, v1.36 introduces several foundational Alpha features:
+- **Workload-level ResourceClaim support**: Optimized for large-scale AI/ML workloads, solves previous bottlenecks of shared resource Pod quantity limits and manual management burden by associating `ResourceClaim` with `PodGroup`.
+- **Node allocatable resource management**: First attempt to use DRA API for managing built-in node resources like CPU and memory, enabling extremely fine-grained performance tuning with DRA's advanced topology-aware, NUMA-aware, and priority semantics.
+- **Resource pool status visibility**: Through `ResourcePoolStatusRequest` API, administrators can query device pool capacity snapshots (total, allocated, available, unavailable), greatly improving hardware capacity observability.
+
+## Practice
+
+1.  **Enable features**: New Beta and Alpha features need feature gate activation. Set corresponding `--feature-gates` in kube-apiserver, kube-scheduler, and kubelet startup parameters.
+2.  **Define prioritized lists**: When creating `ResourceClaim`, use `specifiers` list in `spec.resources` to specify device request priority order.
+3.  **Use extended resources for transition**: In Pod specs, continue using `resources.requests` to request DRA-managed resources (like `nvidia.com/gpu`).
+4.  **Query resource pool status**: Create a `ResourcePoolStatusRequest` object to get device pool status for building resource utilization dashboards.
+5.  **Discover device metadata**: DRA drivers mount JSON files containing device details (PCI addresses) at known paths inside containers.
+
+## SRE Essentials
+
+- **Reliability and fault management**: **Device taints** and **device binding conditions** directly enhance system robustness. SREs can proactively isolate faulty hardware, preventing new workloads from being scheduled to known problematic devices.
+- **Observability**: **Resource health status** pushes device fault information directly to Pod status -- a major observability advancement. **Resource pool status** provides macro-level hardware resource capacity views for capacity planning.
+- **Event response**: **Prioritized lists** and **partitionable devices** improve resource utilization elasticity, reducing scheduling failures during resource pressure.
+- **Best practices**: Use DRA as the preferred method for managing GPU accelerators; leverage prioritized lists for flexible resource request strategies; implement fine-grained hardware lifecycle management through device taints and tolerations.
+- **Anti-patterns**: Hardcoding specific device models or paths in application layers; ignoring DRA health status information for automated alerting and recovery workflows.
+- **Related metrics**: Scheduling success rate, workload startup latency, resource utilization, fault recovery time.

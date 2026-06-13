@@ -1,62 +1,64 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "GitHub Issue"
 category: "Grafana"
 confidence: high
 ---
 
+# GitHub Issue
 
-## 概述
+## Overview
 
-Grafana 是一个开源的数据可视化与监控平台，其仪表盘（Dashboard）和面板（Panel）是构建可观测性界面的核心组件。其中，“时间偏移”（Time Shift）功能允许用户在面板查询中指定一个时间偏移量，用于对比当前时间窗口与历史时间窗口的数据，这对于趋势分析和性能对比至关重要。本页面记录了在 Grafana 11.2.3 之后的某些版本中出现的一个关键缺陷：为面板启用时间偏移会破坏其与仪表盘全局时间范围（Dashboard Time Range）的关联，导致面板数据源查询回退到一个默认的固定时间窗口（如 6 小时），这严重影响了监控数据的准确性和面板的可用性，是需要 SRE 团队在平台升级和日常巡检中重点关注的问题。
+Grafana is an open-source data visualization and monitoring platform, and its Dashboards and Panels are core components for building observability interfaces. Among these, the "Time Shift" feature allows users to specify a time offset in panel queries, used for comparing data between the current time window and a historical time window, which is critical for trend analysis and performance comparison. This page documents a key defect that appeared in certain versions after Grafana 11.2.3: enabling time shift for a panel breaks its association with the Dashboard Time Range, causing the panel's data source query to fall back to a default fixed time window (such as 6 hours). This severely affects monitoring data accuracy and panel usability, and is an issue that SRE teams need to pay close attention to during platform upgrades and routine inspections.
 
-## 核心概念
+## Core Concepts
 
-- **仪表盘时间范围 (Dashboard Time Range)**：用户在 Grafana 仪表盘右上角设置的时间窗口（例如 “过去 6 小时”）。正常情况下，该仪表盘内所有未单独设置时间覆盖的面板都会基于这个统一的时间窗口发起数据查询。
-- **面板时间偏移 (Panel Time Shift)**：面板级别的配置，用于将查询的时间范围整体向前或向后移动。例如，设置 `1h` 的时间偏移会使查询的数据相对于当前仪表盘时间范围向过去移动 1 小时，用于实现环比分析。
-- **面板时间覆盖 (Panel Time Override)**：比时间偏移更强大的功能，允许面板完全脱离仪表盘时间范围，使用自己独立的时间窗口查询数据。
-- **问题的根本原因**：在特定 Grafana 版本（如 11.2.3-security-01, 11.3.x）中，存在一个软件缺陷。当用户在面板上配置了任何非零的 `timeShift` 值时，面板不仅应用了时间偏移，还**错误地禁用了对仪表盘时间范围的继承**，并默认使用一个固定的时间窗口（通常为 6 小时）进行查询。这导致面板显示的数据时间跨度与用户在仪表盘上设置的时间范围不一致，造成信息混乱。
+- **Dashboard Time Range**: The time window set by the user in the upper right corner of the Grafana dashboard (for example, "past 6 hours"). Under normal circumstances, all panels within the dashboard that do not have individual time overrides will issue data queries based on this unified time window.
+- **Panel Time Shift**: A panel-level configuration used to shift the query's time range forward or backward as a whole. For example, setting a time shift of `1h` will shift the queried data relative to the current dashboard time range one hour into the past, used for implementing period-over-period analysis.
+- **Panel Time Override**: A more powerful feature than time shift, allowing a panel to completely detach from the dashboard time range and use its own independent time window to query data.
+- **Root Cause of the Issue**: In specific Grafana versions (such as 11.2.3-security-01, 11.3.x), there is a software defect. When a user configures any non-zero `timeShift` value on a panel, the panel not only applies the time shift but also **incorrectly disables inheritance of the dashboard time range**, defaulting to a fixed time window (usually 6 hours) for the query. This causes the panel to display data with a time span inconsistent with the time range set by the user on the dashboard, resulting in information confusion.
 
-## 实践
+## Practice
 
-### 问题复现与确认
+### Problem Reproduction and Confirmation
 
-根据 issue 报告，该问题的复现步骤非常简单：
-1.  在受影响的 Grafana 版本（11.2.3-security-01, 11.3.0, 11.3.1 等）中打开或创建一个仪表盘。
-2.  选择一个面板（例如 `timeseries` 面板）。
-3.  在面板设置中，为查询添加任意的时间偏移（Time Shift）值（例如 `1h`）。
-4.  观察面板数据：尽管仪表盘时间范围可能设置为“过去 24 小时”，但配置了时间偏移的面板可能仅显示过去 6 小时的数据，而其他未配置时间偏移的面板则正常显示 24 小时的数据。
+According to the issue report, the reproduction steps for this problem are very simple:
+1.  Open or create a dashboard in an affected Grafana version (11.2.3-security-01, 11.3.0, 11.3.1, etc.).
+2.  Select a panel (for example, a `timeseries` panel).
+3.  In the panel settings, add any Time Shift value (for example, `1h`) to the query.
+4.  Observe the panel data: Although the dashboard time range may be set to "past 24 hours," the panel configured with time shift may only display data from the past 6 hours, while other panels without time shift configured normally display 24 hours of data.
 
-### 影响与回滚
+### Impact and Rollback
 
-此缺陷影响了使用 Prometheus 等数据源的面板可视化。根据社区反馈，该问题在 Grafana `11.2.4` 版本中已被修复，但在 `11.3` 分支的多个版本中依然存在。
+This defect affects panel visualization using data sources such as Prometheus. According to community feedback, the issue was fixed in Grafana version `11.2.4`, but still persists in multiple versions of the `11.3` branch.
 
-**建议的 SRE 临时应对措施**：
-1.  **版本锁定**：在官方发布稳定修复版本前，将生产环境的 Grafana 实例稳定在已知可靠的版本（如 `11.2.3` 或 `11.2.4`）。参见 [[version-management]]。
-2.  **配置审查**：立即审查所有受监控仪表盘，识别并记录所有配置了面板时间偏移的面板，评估其数据准确性，特别是对于关键业务 SLO 监控面板。
-3.  **移除时间偏移**：在无法立即升级或回滚的紧急情况下，可以考虑**暂时移除**关键面板上的时间偏移配置，使其恢复使用仪表盘时间范围，以确保数据连续性和准确性，但这会失去环比分析功能。参见 [[time-series-visualization]]。
-4.  **升级监控**：密切关注 Grafana 官方 Release Notes 和 Issue 追踪，确认问题在目标版本（如未来的 11.3.2 或更高版本）中已完全解决后再进行升级。参见 [[release-cadence]]。
+**Recommended SRE Temporary Mitigation Measures**:
+1.  **Version Locking**: Before an official stable fix is released, stabilize the production Grafana instance on a known reliable version (such as `11.2.3` or `11.2.4`). See [[version-management]].
+2.  **Configuration Review**: Immediately review all monitored dashboards, identify and record all panels configured with panel time shift, and assess their data accuracy, especially for critical business SLO monitoring dashboards.
+3.  **Remove Time Shift**: In urgent situations where immediate upgrade or rollback is not possible, consider **temporarily removing** time shift configurations from critical panels, restoring them to use the dashboard time range to ensure data continuity and accuracy, though this will lose period-over-period analysis functionality. See [[time-series-visualization]].
+4.  **Upgrade Monitoring**: Closely follow Grafana's official Release Notes and issue tracking, confirming the issue is fully resolved in the target version (such as future 11.3.2 or higher) before upgrading. See [[release-cadence]].
 
-## SRE 要点
+## SRE Key Points
 
-### 与可靠性、可观测性、事件响应的关联
+### Connection to Reliability, Observability, and Incident Response
 
-- **可观测性可信度受损**：该缺陷直接破坏了仪表盘数据的一致性。当 SRE 或开发人员依赖面板进行故障排查或性能评估时，错误的时间窗口数据可能导致误判，例如错误地认为流量下降或错误率消失，而实际上它们只是发生在被错误显示的时间窗口之外。这严重损害了监控系统的可信度。
-- **变更风险与管理**：此事件凸显了对监控平台（如 Grafana）进行版本升级所伴随的风险。即使是小版本或补丁版本升级，也可能引入影响核心功能的严重缺陷。SRE 团队必须将监控平台的变更纳入正式的变更管理流程，进行充分的测试（如使用沙箱环境测试关键仪表盘）。参见 [[change-management]]。
-- **事件响应干扰**：在生产环境故障排查期间，依赖一个功能失效的仪表盘会延长 MTTR（平均修复时间）。SRE 需要在事件响应手册中加入对监控工具自身健康状况的检查项。
+- **Observability Credibility Compromised**: This defect directly undermines dashboard data consistency. When SREs or developers rely on panels for troubleshooting or performance evaluation, incorrect time window data may lead to misjudgments, such as incorrectly concluding that traffic has dropped or error rates have disappeared, when in reality they simply occurred outside the incorrectly displayed time window. This seriously damages the credibility of the monitoring system.
+- **Change Risk and Management**: This incident highlights the risks associated with version upgrades to monitoring platforms (such as Grafana). Even minor or patch version upgrades can introduce serious defects affecting core functionality. SRE teams must include monitoring platform changes in formal change management processes, with thorough testing (such as using sandbox environments to test critical dashboards). See [[change-management]].
+- **Incident Response Interference**: During production environment troubleshooting, relying on a malfunctioning dashboard will extend MTTR (Mean Time To Repair). SREs need to add checks for the monitoring tool's own health status to incident response runbooks.
 
-### 最佳实践与常见反模式
+### Best Practices and Common Anti-patterns
 
-- **最佳实践**：
-    - **版本兼容性测试**：在升级 Grafana 前，在 staging 环境中克隆生产仪表盘，对所有使用了高级时间功能（如时间偏移、时间覆盖）的面板进行回归测试。
-    - **仪表盘设计标准化**：制定仪表盘设计规范，明确何时使用全局时间范围、何时使用面板时间偏移，避免滥用导致功能耦合过紧。
-    - **监控自我监控**：为 Grafana 实例本身设置监控，确保其可用性和响应时间，并在关键仪表盘失效时能触发告警。
-- **常见反模式**：
-    - **盲目升级**：未在测试环境验证就直接在生产环境升级监控工具，尤其是在处理“安全补丁”版本时，认为版本号变化小就风险低。
-    - **功能滥用**：过度依赖复杂的面板级时间操作来生成固定视图，而不是利用仪表盘模板变量或报告功能，增加了维护和升级时的脆弱性。
-    - **缺乏回滚方案**：在升级前没有准备回滚计划，导致出现问题时无法快速恢复服务。
+- **Best Practices**:
+    - **Version Compatibility Testing**: Before upgrading Grafana, clone production dashboards in a staging environment and perform regression testing on all panels using advanced time features (such as time shift, time override).
+    - **Dashboard Design Standardization**: Establish dashboard design specifications, clearly defining when to use global time range and when to use panel time shift, avoiding abuse that leads to excessive feature coupling.
+    - **Monitor the Monitors**: Set up monitoring for the Grafana instance itself, ensuring its availability and response time, and triggering alerts when critical dashboards fail.
+- **Common Anti-patterns**:
+    - **Blind Upgrades**: Upgrading monitoring tools directly in production without testing environment verification, especially when handling "security patch" versions, assuming small version number changes mean low risk.
+    - **Feature Abuse**: Over-relying on complex panel-level time operations to generate fixed views instead of using dashboard template variables or reporting features, increasing fragility during maintenance and upgrades.
+    - **Lack of Rollback Plan**: Not preparing a rollback plan before upgrading, resulting in inability to quickly recover service when problems occur.
 
-### 相关指标（SLI/SLO/SLA）
+### Related Metrics (SLI/SLO/SLA)
 
-- 此问题本身不直接影响系统 SLI，但会影响用于测量 SLI 的**仪表盘的准确性**。如果 SLO 告警依赖于受影响仪表盘上的面板数据，可能导致**告警静默或误报**。
-- SRE 应将 **“监控平台关键功能可用性”** 作为一个内部 SLI，例如，“100% 的关键 SLO 仪表盘在 99.9% 的时间内按设计工作”。本次事件应记录为该 SLI 的一个违背事件，并分析根本原因（平台升级测试不充分），从而改进流程。参见 [[error-budget]]。
+- This issue does not directly affect system SLIs, but it affects the **accuracy of dashboards** used to measure SLIs. If SLO alerts rely on panel data from affected dashboards, it may lead to **alert silencing or false positives**.
+- SREs should define **"Critical Function Availability of Monitoring Platform"** as an internal SLI, for example, "100% of critical SLO dashboards work as designed 99.9% of the time." This incident should be recorded as a violation of this SLI, and the root cause (insufficient platform upgrade testing) should be analyzed to improve processes. See [[error-budget]].

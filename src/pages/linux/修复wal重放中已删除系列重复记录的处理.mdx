@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "修复WAL重放中已删除系列重复记录的处理"
 description: "修复WAL重放遇到已删除系列的重复记录时导致的m-mapping延迟和指标/时间范围漂移。"
@@ -11,6 +12,8 @@ sources:
     title: "tsdb: fix WAL replay handling of duplicate series records for deleted series"
 tags: [prometheus, tsdb, WAL, replay, bugfix, SRE]
 ---
+
+# 修复WAL重放中已删除系列重复记录的处理
 
 ## 概述
 在 Prometheus 的时间序列数据库（TSDB）中，预写日志（WAL）的重放机制是保证数据持久性和系统可靠性的关键环节。本文描述了一个特定的竞态条件 bug 及其修复方案：当 WAL 重放时，一条针对已删除（stale）系列的删除记录与一条同一标签集的重复系列记录紧密相连时，会导致数据一致性和指标准确性问题。修复此问题对于确保监控系统的数据完整性、避免指标误报以及保障在故障恢复后数据的准确性至关重要。

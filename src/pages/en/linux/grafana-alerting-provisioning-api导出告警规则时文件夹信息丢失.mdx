@@ -1,0 +1,47 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Alerting Provisioning API: Folder Information Lost When Exporting Alert Rules"
+category: "Monitoring and Alerting"
+confidence: medium
+---
+
+# Grafana Alerting Provisioning API: Folder Information Lost When Exporting Alert Rules
+
+## Overview
+
+In Grafana's alert management, alert rules are typically organized and hierarchically managed by folders, which is critical for maintaining observability in large-scale monitoring systems. Grafana provides REST APIs for automated alert rule configuration and management (Alerting Provisioning). A key workflow is exporting alert rule configurations via API for version control, backup, or cross-environment migration. However, according to community feedback, in Grafana version 12.0.0, when exporting alert rules through the `RouteGetAlertRuleExport` API, the `folder` field value for each rule group in the returned data is an empty string, rather than the expected folder title (as in Grafana 11). This may be an unintentional regression or a deliberate but insufficiently documented API behavior change, and it directly impacts automation workflows (such as configuration-as-code, disaster recovery) that depend on this API.
+
+## Core Concepts
+
+1.  **Alert Rule Export**: Grafana allows users or automation scripts to export created alert rules in standardized, reusable JSON or provisioning file formats via API. This is a key part of alert configuration lifecycle management.
+2.  **Folder Organization**: In Grafana, folders are used to logically group alert rules, dashboards, and other resources. In the context of alert rules, folder information provides the rule's ownership and management context.
+3.  **API Versioning and Behavior Changes**: Grafana's HTTP API evolves with version iterations. Sometimes, to optimize internal data models or introduce new features, the API's response structure may change. If changes are not clearly documented or introduce breaking changes, they may affect integrators relying on previous behavior.
+4.  **Provisioning API**: A class of APIs for automating Grafana resource management through external scripts or tools. Their stability is critical for GitOps and Infrastructure as Code (IaC) practices.
+
+## Practice
+
+**Problem Reproduction Steps (based on Grafana 12.0.0)**:
+1.  Create several alert rules through the Grafana web UI or Provisioning API and assign them to different folders for organization.
+2.  Use the `GET /api/v1/provisioning/alert-rules` API to get the alert rule list and record the `uid` of any target rule.
+3.  Call the export API: `GET /api/v1/provisioning/alert-rules/:uid/export`, replacing `:uid` with the uid recorded in the previous step.
+4.  Check the returned JSON response. The issue manifests in the `groups[i].folder` field of the response object, which should contain the folder title (e.g., "Production Alerts"), but in Grafana 12 returns an empty string (`""`).
+
+**Temporary Workarounds (to be verified)**:
+While waiting for an official Grafana fix or confirmation of whether this behavior is intentional, affected SRE teams can consider the following temporary approaches:
+*   **Additional Queries**: After exporting rules, use `GET /api/v1/provisioning/folder/:uid` (or similar folder management API) to supplement folder title information based on the folder UID that may exist in the rule metadata. However, this increases API call count and complexity.
+*   **Maintain Known Version**: For automation pipelines heavily dependent on this export functionality, consider temporarily staying on Grafana 11 until the issue is resolved or a clear upgrade path is available.
+*   **Local Mapping**: Maintain a mapping table from folder UID to folder title within the automation tool, and look up and populate based on the folder UID associated with alert rule UIDs.
+
+## SRE Takeaways
+
+*   **Reliability Impact**: This issue directly affects the reliability of alert management automation workflows. Tools that depend on the `RouteGetAlertRuleExport` API for configuration backup, migration, or synchronization will be unable to obtain complete context information (folder ownership), potentially causing post-migration configuration management confusion, violating the "principle of least surprise," and increasing operational risk.
+*   **Best Practices and Anti-patterns**:
+    *   **Best Practice**: Before performing major Grafana version upgrades, thoroughly test all critical Provisioning API endpoints in pre-production environments to verify that their request and response structures are compatible with existing automation scripts. Also, closely monitor Grafana's [release notes](https://grafana.com/docs/grafana/latest/whatsnew/), even though this change may not have been explicitly documented.
+    *   **Anti-pattern**: Ignoring monitoring system API version evolution and tightly coupling external automation tools to undocumented or unstable API behavior of specific Grafana versions. This leads to upgrade difficulties and maintenance cost spikes.
+*   **Related Metrics (SLI/SLO)**: This issue can be monitored as a specific SLI. For example: "The ratio of alert rule configurations exported via Provisioning API with complete folder information should be 100%." The SLO can be set as "This SLI value maintained above 99.9% on all major Grafana versions." This bug would cause the SLI value to drop in Grafana 12 environments.
+
+**Recommended Follow-up Actions**:
+1.  SRE teams should record this finding in their internal issue tracking system and link to the official issue ([grafana/grafana#105925](https://github.com/grafana/grafana/issues/105925)).
+2.  Evaluate currently affected automation scripts and implement the temporary workarounds described above.
+3.  Provide more detailed use cases and impact analysis in the official Grafana issue to drive resolution or official documentation updates.

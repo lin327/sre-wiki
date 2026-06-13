@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Alerting: Recording rules do not write stale markers"
 description: "Grafana托管的录制规则在指标消失时不会写入过期标记，可能导致时间序列数据持续存在而不会过期，影响数据准确性。"
@@ -11,6 +12,8 @@ sources:
     title: "Alerting: Recording rules do not write stale markers"
 tags: [Prometheus, Grafana, stale marker, recording rules, SRE, 数据完整性]
 ---
+
+# Alerting: Recording rules do not write stale markers
 
 ## 概述
 在基于 Prometheus 的可观测性体系中，数据的新鲜度和准确性是系统可靠性的基石。录制规则（Recording Rules）用于预计算常用或复杂的查询结果，以提升查询性能和为告警提供稳定的指标。当录制规则所依据的源指标消失时，理想的行为是该规则生成的时间序列也应标记为过期并最终停止。本文描述了 Grafana 托管的录制规则在此场景下的一个缺陷：它不会向目标数据源写入过期标记，导致已过期的数据可能被错误地持续使用。

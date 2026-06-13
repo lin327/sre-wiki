@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "API数据源UID不匹配的安全处理"
 description: "当更新数据源API请求的负载UID与URL路径参数不一致时，应返回明确错误而非静默失败，以提升系统健壮性。"
@@ -11,6 +12,8 @@ sources:
     title: "[release-12.4.4] Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid"
 tags: [API安全, 错误处理, 数据源管理, 防御性编程, 向后兼容]
 ---
+
+# API数据源UID不匹配的安全处理
 
 ## 概述
 

@@ -1,0 +1,86 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "GitOps Deployment Pipeline"
+category: ""
+confidence: high
+---
+
+# GitOps Deployment Pipeline
+
+GitOps is an operational model that uses a Git repository as the single source of truth for infrastructure and application deployments. For SRE, GitOps provides auditable, rollback-capable, and reproducible deployment capabilities.
+
+## The Four GitOps Principles
+
+**Declarative**: The desired state of the system is described in declarative configuration (e.g., Kubernetes YAML, Terraform HCL). The tool is responsible for converging the current state to the desired state, rather than executing imperative operational steps.
+
+**Versioned**: All desired states are stored in a Git repository, with every change recorded as a commit. Changes are tracked via `git diff`, and different environments are managed through branches and tags.
+
+**Automated**: Configuration changes are automatically applied to the target environment. In push-based workflows, a CI pipeline builds the image and updates the configuration. In pull-based workflows, an in-cluster agent watches the repository and automatically synchronizes.
+
+**Observed**: The agent continuously compares the Git desired state against the actual cluster state, detecting and reporting configuration drift. Automatic remediation can be configured to pull the actual state back to the desired state.
+
+## ArgoCD vs Flux
+
+| Feature | ArgoCD | Flux |
+|---------|--------|------|
+| Architecture | Centralized control plane + Web UI | Decentralized, CRD-centric |
+| UI | Built-in feature-rich Web Dashboard | Requires third-party UIs like Weave GitOps |
+| Multi-tenancy | Supported via Project and AppSet | Native namespace isolation |
+| Sync strategy | Supports auto/manual/scheduled sync | Controlled via Kustomization CRD |
+| SSO integration | Built-in OIDC, LDAP, SAML, GitHub | Requires self-configuration |
+| Learning curve | Web UI lowers the entry barrier | Closer to Kubernetes-native approach |
+
+**Recommendation**: Choose ArgoCD when visualization and team collaboration are priorities. Choose Flux when declarative CRDs and a lightweight architecture are preferred.
+
+## Git Branching Strategy for Infra
+
+### Environment-per-Branch
+
+```
+main          -> Production
+  ├── staging -> Staging environment
+  └── dev     -> Development environment
+```
+
+Each environment's GitOps agent watches the corresponding branch, and changes are promoted through PRs merged sequentially.
+
+### Monorepo with Directory-per-Env
+
+```
+infra/
+├── base/               # Base configuration (shared templates)
+├── overlays/
+│   ├── dev/
+│   ├── staging/
+│   └── prod/
+└── apps/
+    ├── app-a/
+    └── app-b/
+```
+
+Uses Kustomize overlays to manage environment-specific configuration differences, with a single main branch and environment promotion triggered by PR merges.
+
+## Rollback Procedures
+
+```bash
+# Immediate rollback: revert the latest change
+git revert HEAD && git push origin main
+# GitOps agent automatically syncs back to the previous version
+
+# Rollback to a specific version
+git revert <commit-sha> && git push origin main
+
+# ArgoCD CLI rollback
+argocd app history my-app
+argocd app rollback my-app <revision-id>
+```
+
+For Flux, version rollback can be achieved by pausing the source, modifying the GitRepository spec.ref.tag, and resuming.
+
+## SRE Connections
+
+**Deployment Audit Trail**: GitOps natively provides a complete audit trail -- every deployment corresponds to a commit containing the author, timestamp, and change details, meeting the change management audit requirements of SOC 2 / ISO 27001 compliance.
+
+**Rollback Speed**: Git revert plus automatic synchronization typically achieves rollback within minutes, which is more reliable and auditable than manual `kubectl rollout undo`. Rollback time should be incorporated into the MTTR target for incident recovery in SLO definitions.
+
+**Drift Detection**: Manual `kubectl edit` or modifications by other controllers can cause cluster state to diverge from the Git repository. GitOps agents periodically compare and report drift, with configurable automatic remediation. SREs should set up drift alerts, treating drift as an early signal of potential incidents.

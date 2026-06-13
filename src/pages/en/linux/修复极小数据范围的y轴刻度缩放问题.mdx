@@ -1,0 +1,47 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Fix Y-Axis Scale Ranging for Extremely Small Data Ranges"
+category: "Visualization and Monitoring"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/pull/122057
+    title: "TimeSeries: Fix y-scale ranging of extremely small data ranges"
+tags: [grafana, monitoring, visualization, time-series, SRE]
+---
+
+# Fix Y-Axis Scale Ranging for Extremely Small Data Ranges
+
+## Overview
+
+In the daily work of SRE, monitoring dashboards are the core tools for gaining insight into system health and performing fault diagnosis. Grafana, as a widely used visualization platform, has chart rendering accuracy that directly affects our understanding of system behavior. When monitoring metrics have very small values with extremely narrow ranges of variation (e.g., a resource utilization rate maintained between 0.001% and 0.003% over time), the Y-axis scale of its time series chart may experience auto-scaling failures, causing data points to be over-stretched or compressed, making meaningful micro-variations difficult or impossible to discern. This document records Grafana's fix for such issues and explains its importance for maintaining monitoring data fidelity.
+
+## Core Concepts
+
+- **Y-scale Ranging**: The process by which a chart's vertical axis (Y-axis) automatically calculates its maximum and minimum values based on displayed data points. A reasonable scaling range should ensure data occupies most of the chart's vertical space while avoiding excessive blank areas or overly crowded scales.
+- **Extremely Small Data Ranges**: A time series where the difference between the maximum and minimum values of all data points is very small, approaching or falling below Grafana's internal algorithm threshold for determining "zero value" or "static value". This can occur when monitoring high-precision metrics (such as sub-millisecond latency) or certain optimized system resource utilization rates.
+- **Auto-Scaling Mechanism**: Grafana's time series panel has a built-in algorithm to automatically adjust the Y-axis range. This fix primarily addresses cases where when the data range (max - min) is too small, the algorithm may incorrectly determine it as a constant value (e.g., all zeros), fixing the Y-axis range at an inappropriate default value (such as `[-1, 1]`) rather than performing dynamic scaling based on the actual data's subtle variations.
+
+## Practice
+
+For this issue, SRE teams should adopt the following practices:
+
+1.  **Upgrade Grafana Version**: Ensure your Grafana instance is updated to the version containing this fix (PR #122057). This fix may be released with Grafana 11.0 or a subsequent patch version. This is the fundamental solution.
+2.  **Verify Monitoring Panels**: After upgrading, re-examine dashboards monitoring extremely low-value, high-precision metrics. Check whether the relevant time series panel Y-axes correctly reflect data micro-variations, rather than displaying a "flat line" or having an unreasonable scale range.
+3.  **Understand the Fix Mechanism (Technical Details)**:
+    *   The fix adjusts the logic used by Grafana's frontend for calculating Y-axis ranges.
+    *   When the data range (`max - min`) is smaller than a certain internally defined threshold, the system no longer directly treats it as a zero range. Instead, it uses a more refined strategy to calculate a reasonable minimum range.
+    *   This ensures that even with extremely small data fluctuations (e.g., from `0.00112` to `0.00118`), the Y-axis can stretch sufficiently to make these fluctuations visually clear, avoiding information loss.
+4.  **Consider Data Preprocessing or Aggregation**: While this is a Grafana display-layer fix, performing appropriate aggregation at the data source (such as using `avg_over_time` in Prometheus or Loki) or formatting the data (e.g., multiplying by a coefficient then dividing) can sometimes mitigate display issues caused by extreme data ranges, serving as a supplementary measure.
+
+## SRE Key Points
+
+- **Relation to Reliability**: Inaccurate visualization directly damages **observability**. A chart that cannot display micro-variations in critical performance metrics is effectively "blind" in a specific observation dimension, potentially delaying the detection of early performance degradation or resource leaks, thereby affecting the system's overall reliability objectives (SLO).
+- **Best Practices**:
+    *   **Version Maintenance**: Include updates to critical monitoring components like Grafana in regular maintenance plans to promptly obtain stability and functionality improvements.
+    *   **Dashboard Review**: Periodically check monitoring panels for critical business and system services to ensure their data presentation is always effective and accurate.
+    *   **Configuration as Code**: Incorporate dashboard definitions (JSON Model) into version control to facilitate tracking changes, reproducing issues, and applying fixes in bulk (such as uniformly upgrading data source plugins or applying custom scaling logic).
+- **Common Anti-Patterns**:
+    *   **Ignoring Display Issues**: Assuming "the data is there is enough", ignoring that "the data is clearly visible" is equally important, causing teams to spend significant time trying to interpret unintuitive charts.
+    *   **Modifying Panel Settings Without Verification**: Randomly fixing Y-axis ranges (such as setting Min/Max) to "fix" the display, but this masks the data's true distribution and may fail again when the data range changes in the future.
+- **Related Metrics (SLI/SLO)**: This issue primarily affects the presentation accuracy of performance metric **visualization SLIs (such as Apdex, error rates)**. While it does not directly affect **availability SLIs (such as uptime)**, it may indirectly affect service level objective (SLO) achievement by delaying the detection of performance issues.

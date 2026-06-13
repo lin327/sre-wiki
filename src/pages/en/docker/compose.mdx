@@ -1,0 +1,112 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Docker Compose Orchestration Practices"
+category: ""
+confidence: low
+---
+
+# Docker Compose Orchestration Practices
+
+## docker-compose.yml Structure
+
+Docker Compose uses a YAML file to define multi-container applications, describing the relationships between services, networks, and volumes:
+
+```yaml
+version: "3.8"
+
+services:
+  web:
+    build: ./web
+    ports: ["3000:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+```
+
+Key fields for each `service`: `image` / `build` (image source), `ports` (port mapping), `environment` (environment variables), `volumes` (data mounts), `depends_on` (startup dependencies), `restart` (restart policy), `deploy.resources` (CPU / memory limits).
+
+## Networks and Volumes
+
+Compose automatically creates the project default network. Explicitly defining networks enables isolated topologies (`internal: true` disables external network access). Named volumes are declared in the top-level `volumes` section, shared across multiple services, and support volume driver plugins.
+
+```yaml
+networks:
+  backend:
+    internal: true
+
+volumes:
+  app-data:
+    driver: local
+```
+
+## Environment Variables
+
+Three methods, in order of priority from highest to lowest: `environment` within the Compose file, `.env` file (Compose-level variable substitution), `env_file` (container-level environment variables).
+
+**SRE Recommendation:** Add `.env` to `.gitignore` and use an `.env.example` template to document required variables.
+
+## Health Checks and depends_on
+
+Health checks let Compose know whether a service is truly ready, not just whether the process exists. By default, `depends_on` only guarantees startup order; use `condition: service_healthy` to wait for health checks to pass:
+
+```yaml
+services:
+  api:
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+```
+
+View health status: `docker compose ps` shows healthy / unhealthy / starting.
+
+## Profiles
+
+Start a subset of services on demand, avoiding mixing development and debugging tools in a single file. Services without a profile start by default; services with a profile require explicit activation:
+
+```bash
+docker compose up -d                     # Start only default services
+docker compose --profile debug up -d     # Start default + debug services
+```
+
+## Common Commands
+
+```bash
+docker compose up -d                     # Start in background
+docker compose up -d --build             # Rebuild and start
+docker compose ps                        # View status
+docker compose logs -f api               # View logs
+docker compose down                      # Stop (preserve volumes)
+docker compose down -v                   # Stop and delete volumes
+docker compose exec api sh               # Enter container
+```
+
+## SRE Practice Essentials
+
+- **Local Development:** One-click setup of the complete development environment; new team members can run the entire system on their first day.
+- **Staging Deployment:** Use `docker-compose.staging.yml` to override configuration, combined with `--force-recreate` for rolling updates.
+- **CI/CD Integration:** Use Compose in pipelines to start test dependencies; use the `-T` flag to disable TTY; use `down -v` to clean up residual data.

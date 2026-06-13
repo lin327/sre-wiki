@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Etcd v3.7 客户端连接阻塞行为变更"
 description: "分析 etcd v3.7 中 `clientv3.dial` 在设置非零 DialTimeout 时阻塞的行为变更，及其对客户端高可用的影响与应对策略。"
@@ -11,6 +12,8 @@ sources:
     title: "clientv3.dial blocks when a non-zero DialTimeout is set"
 tags: [etcd, SRE, clientv3, DialTimeout, gRPC, high-availability]
 ---
+
+# Etcd v3.7 客户端连接阻塞行为变更
 
 ## 概述
 

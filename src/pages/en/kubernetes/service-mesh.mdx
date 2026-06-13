@@ -1,0 +1,144 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Service Mesh"
+description: "Understanding Service Mesh architecture, Sidecar Proxy pattern, Istio vs Linkerd comparison, and mTLS, traffic management, and observability applications in SRE practice."
+---
+
+# Service Mesh
+
+Service Mesh is an infrastructure layer for handling service-to-service communication. It strips network functionality (load balancing, encryption, authentication, observability) from application code, sinking it into an independent proxy layer. In microservice architectures, when service counts grow to dozens or hundreds, Service Mesh provides unified traffic policy management without modifying business code.
+
+## Sidecar Proxy Pattern
+
+Service Mesh's core architecture is the Sidecar Proxy: each application Pod gets an additional proxy container injected, intercepting all inbound and outbound traffic.
+
+```text
++---------------------------+
+|         Pod               |
+|  +------+  +----------+  |
+|  | App  |--|  Sidecar  |--> Other Pod's Sidecar
+|  |      |  | Proxy     |  |
+|  +------+  +----------+  |
++---------------------------+
+```
+
+Sidecar Proxy responsibilities:
+- Service discovery and load balancing
+- mTLS encryption and identity authentication
+- Traffic routing (canary deployment, A/B testing)
+- Request retry and circuit breaking
+- Metrics collection and distributed tracing context injection
+
+## Istio vs Linkerd
+
+| Dimension | Istio | Linkerd |
+|-----------|-------|---------|
+| **Data Plane** | Envoy (C++) | linkerd2-proxy (Rust) |
+| **Control Plane** | istiod (merged Pilot + Citadel + Galley) | destination / identity / proxy-injector |
+| **Resource Usage** | Sidecar ~60-100MB memory | Sidecar ~10-25MB memory |
+| **Feature Richness** | Extremely high (VirtualService, DestinationRule, PeerAuthentication CRDs) | Moderate, focused on core features |
+| **Learning Curve** | Steep, complex CRD configuration | Gentle, out-of-the-box |
+| **mTLS** | Supports permissive/strict modes | Enabled by default, automatic cert rotation |
+| **Multi-cluster** | Native support via East-West Gateway | Supported via gateway or flat network |
+| **Scale** | Large complex topologies, fine-grained traffic control | Small-medium scale, simplicity and low overhead |
+
+## mTLS: Mutual Service Authentication
+
+mTLS ensures mutual identity verification and encryption for inter-service communication. Service Mesh automatically handles certificate issuance, distribution, and rotation -- applications need not be aware.
+
+Istio mTLS configuration:
+```yaml
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: production
+spec:
+  mtls:
+    mode: STRICT
+```
+
+**Warning**: Before switching from non-mTLS to STRICT mode, ensure all services have Sidecars injected. Otherwise, non-injected services cannot communicate with injected ones. Start with PERMISSIVE mode, confirm full migration, then switch to STRICT.
+
+## Traffic Management
+
+### Canary Deployment
+```yaml
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: my-service
+spec:
+  hosts:
+  - my-service
+  http:
+  - route:
+    - destination:
+        host: my-service
+        subset: stable
+      weight: 90
+    - destination:
+        host: my-service
+        subset: canary
+      weight: 10
+```
+
+### Timeout and Retry
+```yaml
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: my-service
+spec:
+  hosts:
+  - my-service
+  http:
+  - timeout: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: connect-failure,refused-stream,unavailable
+```
+
+### Circuit Breaking
+```yaml
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: my-service
+spec:
+  host: my-service
+  trafficPolicy:
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+```
+
+## Observability
+
+Service Mesh automatically generates RED metrics (Rate, Errors, Duration) without application code changes.
+
+### Distributed Tracing
+Sidecar Proxy automatically injects trace context headers (`x-b3-traceid`, `traceparent`), connecting scattered requests into complete call chains.
+
+### SRE Alerting Metrics
+```promql
+# P99 latency exceeds 500ms
+histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket[5m])) by (le, destination_service)) > 500
+
+# 5xx error rate exceeds 1%
+sum(rate(istio_requests_total{response_code=~"5.*"}[5m])) by (destination_service)
+/ sum(rate(istio_requests_total[5m])) by (destination_service) > 0.01
+```
+
+## SRE Practice Checklist
+
+- Sidecar memory overhead is fixed infrastructure cost; include in capacity planning
+- Deploy mTLS starting with PERMISSIVE, gradually migrating to STRICT
+- Configure reasonable Sidecar resource requests and limits
+- Use Distributed Tracing, not just logs, for cross-service latency issues
+- Canary deployments should combine Prometheus metrics for automatic rollback
+- Regularly check control plane component health and certificate expiration
+- Service Mesh adds ~1-3ms P99 latency from extra network hops; evaluate necessity for performance-sensitive paths

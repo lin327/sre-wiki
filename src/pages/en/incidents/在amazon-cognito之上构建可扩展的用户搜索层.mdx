@@ -1,0 +1,62 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Building a Scalable User Search Layer on Top of Amazon Cognito"
+category: "Authentication and Access Management"
+confidence: low
+---
+
+# Building a Scalable User Search Layer on Top of Amazon Cognito
+
+## Overview
+Amazon Cognito provides powerful user authentication and management capabilities, but when facing massive numbers of users (e.g., tens of thousands of accounts), its built-in `ListUsers` API may not meet demands in advanced search scenarios (such as fuzzy matching, complex filtering across multiple custom attributes, sub-second responses). This solution aims to address this problem by building an independent search layer that enables real-time data synchronization and high-performance queries. This is critical for SRE to quickly locate users, perform troubleshooting, or support teams responding to tickets.
+
+## Core Concepts
+The architecture is an event-driven CQRS (Command Query Responsibility Segregation) pattern that decouples data writes from queries through two data flows (ingestion and search).
+1. **Data Ingestion Flow**: Responsible for synchronizing user changes from Cognito to the search index in real time. It is triggered by two mechanisms:
+    - **Cognito Lambda Triggers**: Capture user data at key points in the authentication flow (such as `PostConfirmation` after registration and `PreTokenGeneration` before each login) and write to DynamoDB.
+    - **AWS CloudTrail and EventBridge**: Capture administrative operations performed via console or CLI (such as creating users, updating attributes) that do not trigger Lambda triggers. EventBridge rules listen for these API calls and trigger Lambda functions to read the latest user state and update DynamoDB.
+2. **Search Flow**: Provides a high-performance query interface. Authenticated users submit query requests via API Gateway, which are forwarded by Lambda functions to [[amazon-opensearch-service]] for search execution, returning formatted results to the frontend.
+
+DynamoDB serves as the authoritative record store for user data and change event source (via DynamoDB Streams), while OpenSearch Serverless provides powerful full-text search and filtering capabilities.
+
+## Practice
+Below are the detailed steps and key design points for building this search layer:
+
+### 1. Data Synchronization and Indexing
+- **Create DynamoDB User Table**: Store canonical copies of user profiles, including `cognitoUserId` (partition key), `email`, `lastName`, `groups`, `lastLoginTime` fields. Enable DynamoDB Streams to capture all data changes.
+- **Deploy Cognito Trigger Lambda**:
+    - Handle `PostConfirmation` events: Create initial records in the DynamoDB table when users first register.
+    - Handle `PreTokenGeneration` events: Update `lastLoginTime` and `appClientId` used each time users log in.
+    - **Important**: This Lambda is deployed in a VPC, and Cognito enforces a maximum execution time of 5 seconds. Ensure its logic is efficient, or use Provisioned Concurrency to avoid cold start delays.
+- **Configure CloudTrail and EventBridge**:
+    - Enable CloudTrail to record Cognito management plane API calls.
+    - Create EventBridge rules matching `source: ["aws.cognito-idp"]` events with a Lambda function target.
+    - The Lambda function receives events, uses Cognito Admin API to get the latest user attributes, and writes them to the DynamoDB table (overwriting or creating records).
+- **Build Index Pipeline**:
+    - Configure an event source mapping for DynamoDB Streams to trigger `OSS-ingest-lambda`.
+    - `OSS-ingest-lambda` parses stream events (INSERT/MODIFY), extracts new/old image data from DynamoDB event records, then uses the OpenSearch client to update data in the OpenSearch Serverless index.
+
+### 2. Build Search API
+- **Configure OpenSearch Serverless**: Create a collection and index, defining appropriate mappings for user data fields (e.g., `email`, `lastName`, `groups`) -- for example, enabling tokenizers for `email` to support prefix matching.
+- **Deploy Search Lambda**:
+    - JWT verification via API Gateway's Cognito authorizer.
+    - The Lambda function receives query parameters (e.g., `q`, `filterGroups`) and constructs OpenSearch DSL queries.
+    - Uses an AWS IAM role (with read-only permissions) to connect to OpenSearch Serverless and execute queries.
+    - Handles pagination (`from` and `size`) and formats results for return.
+- **Create API Gateway**: Configure a REST API to route search requests to the search Lambda function.
+
+## SRE Essentials
+- **Relationship to Reliability and Observability**:
+    - **Latency and Availability**: The architecture's search performance (SLO: e.g., 99% of queries < 200ms latency) directly depends on OpenSearch Serverless performance and search Lambda cold start state. Enable **Provisioned Concurrency** for Lambda to ensure low latency on the search side. Ingestion path latency (from Cognito event to OpenSearch index visibility) is another critical SLO.
+    - **Data Consistency**: The ingestion pipeline's event-driven nature means data is eventually consistent. SRE needs to monitor DynamoDB Streams latency and failed events, as well as Lambda execution failure rates, to ensure the search index stays synchronized with Cognito source data.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Create minimal-privilege IAM roles for Cognito trigger Lambda and search Lambda separately. Use exponential backoff retry for OpenSearch `429` errors. Enable automatic backups for DynamoDB tables and OpenSearch indexes.
+    - **Common Anti-Pattern**: Do not perform time-consuming operations (such as complex external API calls) in `PreTokenGeneration` triggers, as this will cause authentication timeouts. Avoid making the index pipeline dependent on a single region's DynamoDB Streams to prevent regional service disruptions.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **Ingestion SLI**: End-to-end latency from Cognito event occurrence to user data being searchable in OpenSearch.
+    - **Ingestion Reliability**: DynamoDB stream processing failure rate, Lambda function error rate.
+    - **Search SLI**: Search API request latency (P90, P99), success rate, query throughput.
+    - **Search Accuracy**: Proportion of critical business queries (e.g., email prefix lookup) returning expected results.
+
+This architecture decouples search capabilities from the core authentication service, providing SRE and operations teams with a reliable, high-performance tool for quickly retrieving and troubleshooting user account-related issues.

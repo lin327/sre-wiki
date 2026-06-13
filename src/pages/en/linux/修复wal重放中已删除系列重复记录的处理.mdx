@@ -1,0 +1,74 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Fix WAL Replay Handling of Duplicate Series Records for Deleted Series"
+category: "TSDB"
+confidence: high
+sources:
+  - url: https://github.com/prometheus/prometheus/pull/18907
+    title: "tsdb: fix WAL replay handling of duplicate series records for deleted series"
+tags: [prometheus, tsdb, WAL, replay, bugfix, SRE]
+---
+
+# Fix WAL Replay Handling of Duplicate Series Records for Deleted Series
+
+## Overview
+
+In Prometheus's time-series database (TSDB), the write-ahead log (WAL) replay mechanism is a critical component for ensuring data durability and system reliability. This document describes a specific race condition bug and its fix: when during WAL replay, a delete record for a deleted (stale) series is closely followed by a duplicate series record with the same label set, it causes data consistency and metric accuracy issues. Fixing this problem is crucial for ensuring monitoring system data integrity, avoiding false metric reports, and guaranteeing data accuracy after fault recovery.
+
+## Core Concepts
+
+### WAL Replay and Parallel Processing
+The WAL records all write operations. When Prometheus starts or recovers from a crash, these logs need to be replayed sequentially to rebuild in-memory data structures (the head). To improve performance, the replay process uses a parallelized design: series record parsing is completed in the dispatch goroutine, while the more time-consuming series deletion records are distributed to multiple sharded replay processors for asynchronous execution.
+
+### Race Condition: Deletion and Duplicate Series
+The root of the problem lies in the asynchronous nature of these two types of operations. Consider the following event sequence:
+1. WAL records a delete operation for series `S`.
+2. Immediately after, WAL records a creation (duplicate record) for a series `S` with the same label set.
+
+During replay, the dispatch goroutine may first parse the duplicate series record and associate it with the existing `memSeries` object `S`. However, the deletion record may not yet have been applied by the sharded processor. This results in a "reset" operation being performed on an object that is about to be (or has logically been) deleted, causing an inconsistent state.
+
+### Specific Problems Addressed by This Fix
+This fix addresses two issues left over from a previous fix (#18401):
+1.  **Memory-mapped (mmap) Ready Count Deviation**: The `mmapReady` counter for each memory stripe was unnecessarily decremented twice, potentially causing this count to become negative. This would incorrectly block subsequent head chunk memory mapping operations, causing head chunks to linger in heap memory longer, wasting memory.
+2.  **Metric and Time Range Drift**: The reset operation incorrectly attached memory-mapped chunks (m-mapped chunks) that should belong to the new series to the deleted object, causing metrics like `prometheus_tsdb_head_chunks` to be artificially inflated, and expanding the time range of the deleted series without any subsequent correction mechanism.
+
+## Practice
+
+### Detailed Fix Implementation
+The fix is implemented through two independent commits, each addressing one of the above problems, while ensuring the fix's safety:
+
+1.  **Commit 1: Fix Counter Logic**
+    *   **Problem**: In the `deleteSeriesByID` function, while `headChunkCount` was decremented, it was not zeroed out. Therefore, subsequent `resetSeriesWithMMappedChunks` operations for the duplicate series record would again attempt to decrement the `mmapReady` counter based on the old `headChunkCount` value (at least 2), causing double decrement.
+    *   **Fix**: Explicitly zero out `headChunkCount` when deleting a series. This ensures subsequent reset operations see `headChunkCount` as 0, thereby skipping the erroneous decrement of the `mmapReady` counter. This is a minimal fix, facilitating potential backporting.
+
+2.  **Commit 2: Prevent Invalid Reset Operations**
+    *   **Problem**: The `resetSeriesWithMMappedChunks` function processed chunks from duplicate records without checking whether the series was still active, causing the metric and time range drift described above.
+    *   **Fix**: Modify the `resetSeriesWithMMappedChunks` function to make it a no-op for series not in the head (i.e., series already marked as deleted). This prevents subsequent invalid modifications to deleted objects at the source.
+
+### Safety and Test Guarantees
+This fix is designed to be safe because for a given series object, its deletion record and duplicate record's reset operations will be queued for execution in the same replay processor, so the new check-operation path is serialized. Additionally, `mmapHeadChunks` is not run during replay.
+*   **Regression Tests**: Each fix comes with a dedicated regression test. The first fix's test would fail without it, proving the counter fix's effectiveness. The second fix extends the test case to cover chunk attachment, metric changes, and time ranges, ensuring correctness for the complete scenario.
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+*   **Data Reliability**: This bug causes TSDB internal state inconsistency, affecting data integrity after WAL recovery. The fix ensures the correctness of replay logic and is fundamental to guaranteeing Prometheus's core reliability as a monitoring system.
+*   **Observability**: Affected metrics such as `prometheus_tsdb_head_chunks`, `prometheus_tsdb_head_chunks_created_total`, and series time ranges are key observability data for evaluating TSDB performance and health. Incorrect metrics can lead to misjudgments.
+*   **Incident Response**: When handling data recovery events after Prometheus instance crashes or restarts, understanding such boundary conditions helps more accurately diagnose potential anomalous data, avoiding misinterpreting metric anomalies caused by system bugs as business-level issues.
+
+### Best Practices and Common Anti-Patterns
+*   **Best Practices**:
+    1.  **Understand Internal Architecture**: SRE engineers should understand the critical paths and concurrency models of core components (such as TSDB WAL replay) to make more informed decisions during upgrades or troubleshooting.
+    2.  **Monitor Key Metric Drift**: When monitoring Prometheus's own health, pay attention to trends and sudden changes in its TSDB-related metrics (such as the `head_chunks` metrics mentioned above), as they can reveal potential internal issues.
+    3.  **Leverage Regression Tests**: The Prometheus community has strict test coverage for boundary conditions. When upgrading, pay attention to related fix notes and verify whether your environment might encounter similar scenarios.
+*   **Common Anti-Patterns**:
+    1.  **Ignoring Async Operation Timing**: When designing or analyzing systems, underestimating the complex interactions and timing dependencies between asynchronous operations is the root cause of such race condition bugs.
+    2.  **Assuming Metrics "Only Increase, Never Decrease"**: Incorrectly believing that certain counter metrics cannot decrease abnormally without external events, while ignoring the possibility of errors in system internal maintenance logic.
+
+### Related Metrics (SLI/SLO/SLA)
+This fix directly relates to the following Prometheus TSDB internal metrics, which can serve as system reliability SLIs (Service Level Indicators):
+*   `prometheus_tsdb_head_chunks`: The number of currently active chunks in the head. The fix prevents artificial inflation.
+*   `prometheus_tsdb_head_chunks_created_total`: Total number of head chunks created. The fix prevents incorrect accumulation.
+*   Memory mapping related metrics: While not directly listed, the fix affects the `mmapReady` counter, which controls memory mapping scheduling and is related to system memory usage efficiency.
+At the SLA level, ensuring Prometheus data can correctly recover after restarts is one of the fundamental commitments for providing continuous, accurate monitoring services. This fix strengthens that capability.

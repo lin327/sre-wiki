@@ -1,0 +1,87 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard External Sharing Datasource Missing Failure Analysis"
+description: "Analysis of 'Unsupported data sources' and 'No Data' errors when externally sharing Grafana dashboards caused by incomplete internal query target datasource references."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-03-26
+confidence: high
+---
+
+# Grafana Dashboard External Sharing Datasource Missing Failure Analysis
+
+## Overview
+
+In Grafana, sharing dashboards or panels externally (with non-logged-in users) depends on correct data source access permissions and configuration. This document is based on an actual reported issue, analyzing how when the query target datasource reference inside dashboard panels is lost or inconsistent, external users see "`Unsupported data sources`" warnings and "`No Data`" errors. Understanding this issue helps SRE teams maintain dashboard configuration integrity and reliability, ensuring the effectiveness of monitoring views across various access scenarios.
+
+## Core Concepts
+
+To understand this issue, the following key concepts in Grafana's architecture need to be clarified:
+
+- **Dashboard**: A visualization view composed of multiple panels, serving as the primary vehicle for displaying monitoring data.
+- **Panel**: The basic unit of a dashboard, used to display specific charts or data. Each panel retrieves data from data sources through queries.
+- **Query Target**: A specific data query entry within a panel's query configuration. A panel can contain multiple query targets (e.g., simultaneously querying CPU usage and memory usage). Each query target independently specifies its **datasource**.
+- **Datasource**: The backend service that Grafana connects to and retrieves data from (such as Prometheus, InfluxDB, etc.). Datasource configuration can be overridden at the dashboard level, panel level, or query target level.
+- **External Sharing**: Sharing a dashboard or panel with external users who don't have a Grafana account by generating a public link. External access depends on the datasource's own anonymous access permissions or public API.
+
+The core of the problem is that although the panel level may specify a valid datasource, one of its internal **query targets** may have a datasource reference that is empty or points to a non-existent ID. When accessed by internal (logged-in) users, this may be overridden by upstream default datasources and work normally; but during external sharing, due to lack of context or permissions, Grafana cannot automatically handle this inconsistency, resulting in errors.
+
+## Practice
+
+### Issue Reproduction and Diagnosis
+
+According to the report, the issue can be reproduced in the following environment:
+- **Grafana version**: 11.6.0
+- **Deployment method**: Docker
+- **Datasource type**: Prometheus
+
+1.  **Create a dashboard**: Create a dashboard containing one or more panels, each configured with multiple query targets.
+2.  **Configure queries**: In a panel's query editor, possibly through manual JSON model editing or multiple edits, the `datasource` field of one query target is lost or set to `null`/invalid value.
+3.  **Attempt external sharing**: Click the dashboard or panel's "Share" button, select the "External link" option and generate a link.
+4.  **Observe results**: When external users open the link, they will see a yellow warning bar at the top of the panel "`Unsupported data sources`" and the chart area displays "`No Data`".
+
+### Root Cause Analysis
+
+The direct cause of the issue is that the `datasource` property of a query target in the Panel Model failed to correctly associate with a valid datasource UID. This typically stems from:
+
+1.  **Manual JSON editing**: Directly modified the query configuration in the dashboard's JSON Model without ensuring the correctness of the `datasource` field.
+2.  **Plugin or import issues**: When importing dashboard JSON from other environments, the datasource UID does not match.
+3.  **UI editor edge cases**: When rapidly switching or editing datasources in the Grafana UI, state may not be correctly synchronized, causing target-level reference loss.
+
+Since the Grafana UI typically provides a configuration interface at the panel or datasource level, query target-level datasource configuration is sometimes collapsed or not easily noticeable, increasing the hidden nature of such errors.
+
+### Solution
+
+1.  **Locate the problem panel**: In dashboard edit mode, check each panel's query editor one by one. Focus on panels where a datasource has been selected in the panel's top datasource selector but warnings or errors still exist.
+2.  **Check query targets**: Expand each query editor and carefully examine each query target's settings. Although the UI may not directly display a separate datasource selector for each target, you can:
+    - **Check JSON model**: In the panel's "JSON Model" tab, check each object under the `targets` array and confirm its `datasource` field. The correct value should be an object containing `type` and `uid` fields (e.g., `{"type": "prometheus", "uid": "abc123"}`). If the field is `null`, empty string `""`, or `{"type": "prometheus"}` without `uid`, it needs to be fixed.
+    - **Re-select**: The simplest method is to reconfigure the query. In the query editor, delete the problem target, then re-select from the datasource dropdown and create a new query. This ensures the `datasource` field is correctly populated.
+3.  **Verify external access**: After fixing, regenerate the external sharing link and check if the issue is resolved. Also, ensure that the referenced datasource itself allows anonymous access (if external users don't have accounts), or has appropriate API keys/tokens configured.
+
+## SRE Key Points
+
+### Relationship with Reliability and Observability
+
+- **Dashboards as critical infrastructure**: Monitoring dashboards are the primary interface for teams to understand system state and respond to incidents. Configuration errors (like this example) directly undermine **observability**, preventing critical users (including external partners or customers) from obtaining correct monitoring views.
+- **"Fails silently" failure mode**: Such issues typically don't trigger Grafana's own alerts, but silently corrupt shared views. SREs need to proactively discover such configuration drift through periodic **dashboard audits** or **automated validation tests**.
+
+### Best Practices and Common Anti-Patterns
+
+**Best practices:**
+1.  **Use dashboard code repository**: Store dashboard JSON as code in version control systems (like Git) and manage using tools like `grafana-dashboard-exporter`, avoiding direct modifications through UI that may cause configuration inconsistency.
+2.  **Enforce datasource configuration**: In team standards, require that every query target must explicitly specify a datasource, avoiding reliance on panel or global defaults.
+3.  **Implement pre-sharing checks**: In documentation or processes, require that any dashboard configured for external sharing should be previewed and tested in an incognito window without login sessions.
+
+**Common anti-patterns:**
+1.  **Trusting UI default behavior**: Assuming that after selecting a datasource at the panel top, all its query targets will automatically inherit that configuration. In reality, each target's datasource configuration is independent.
+2.  **Ignoring JSON model**: Only operating dashboards through the UI without checking the underlying JSON model's completeness and consistency.
+3.  **Not testing external view**: Only testing dashboard functionality as an admin or internal user, ignoring the final effect seen by external users.
+
+### Related Metrics (SLI/SLO/SLA)
+
+While this is not a direct service metrics issue, related metrics can be defined from the perspective of **data presentation reliability**:
+
+- **SLI (Service Level Indicator)**: `dashboard_rendering_success_rate` - The proportion of successful renders without datasource errors when external or critical internal users request dashboards.
+- **SLO (Service Level Objective)**: For example, `99.9%` of external shared link requests should return complete, error-free data visualizations within 5 seconds.
+- **Monitoring method**: Can use automated scripts to periodically access critical external dashboard links without authenticated sessions, checking HTTP response codes and page content for error strings like "Unsupported data sources" or "No Data." This failure itself is an **anti-pattern** that needs to be fixed, violating the monitoring system's own reliability commitment.

@@ -1,0 +1,73 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Annotation Data Source Refresh Issue"
+category: "Observability"
+confidence: high
+---
+
+# Grafana Dashboard Annotation Data Source Refresh Issue
+
+## Overview
+
+In modern SRE practice, [[dashboards]] are core tools for achieving system observability, incident response, and capacity planning. As a leading monitoring visualization platform, the stability and interaction consistency of Grafana's dashboard functionality is critical. This page documents a bug found in Grafana versions 12.0.0 (and 11.6.1) that affects user experience and data reliability: when toggling the visibility of an [[annotations|annotation]] via the switch at the top of the dashboard, specific panels referencing that annotation (using the "-- Dashboard --" data source) do not automatically refresh their data. This can cause users to see inconsistent data views, interfering with correct judgment of event and metric correlations.
+
+## Core Concepts
+
+To understand this issue, several key concepts need to be clarified:
+
+*   **Dashboard Annotations**: In Grafana, annotations are used to mark specific events on time series graphs, such as deployments, outages, or configuration changes. They can be generated based on manual input, queries, or alert rules.
+*   **"-- Dashboard --" Data Source**: This is a virtual data source that allows panels to reference dashboard-level metadata instead of directly querying a specific data source. In **Annotations mode**, this data source can be used in panels such as tables to query and display the list of visible annotations on the current dashboard.
+*   **Data Refresh Mechanism**: When conditions affecting panel data (such as queries, time ranges, or the set of visible annotations) change, ideally panels that depend on this data should automatically refresh to reflect the latest state.
+
+The core of this issue is: when a user toggles the show/hide state of an annotation at the top of the dashboard, the time series panel responds to this change immediately (showing/hiding the corresponding annotation markers), but the table panel querying that annotation set via the "-- Dashboard --" data source does not sense this change and continues to display the old state until the user manually refreshes.
+
+## Practice
+
+### Reproduction Steps
+
+According to the issue report, this problem can be reproduced with the following steps:
+
+1.  Create a new Grafana dashboard.
+2.  Add a **Time series** panel to the dashboard.
+3.  Add a **Table** panel to the dashboard.
+4.  Set the table panel's data source to `-- Dashboard --` and set the `Data` option to `Annotations`. Configure the panel to query the dashboard's annotations.
+5.  Add an **Annotation query** to the dashboard.
+6.  Find the newly added annotation query at the top of the dashboard and toggle it on and off using the switch beside it.
+
+### Observed Behavior and Impact
+
+After reproducing the steps, the following inconsistent behavior is observed:
+
+*   **Time series panel**: The panel refreshes immediately when the annotation toggle is switched, correctly showing or hiding annotation markers.
+*   **Table panel**: After toggling the annotation switch, the panel does **not** automatically refresh. It continues to display the annotation list from the last refresh (for example, after disabling an annotation, the table still shows it, or vice versa) until the user performs a manual refresh.
+
+This behavior violates direct user expectations and causes confusion. Users expect all panels referencing the same annotation data source to stay synchronized when the data source visibility changes. This issue did not exist in version 11.2.3 but was reproduced in versions 11.6.1 and 12.0.0, suggesting it may be a regression introduced by an update.
+
+## SRE Essentials
+
+### Reliability and Observability Impact
+
+Although this is a front-end interaction bug, its indirect impact on SRE work should not be overlooked. Dashboards are the primary interface for SRE teams to monitor system health and analyze incident root causes.
+
+*   **Data Consistency**: This issue breaks data consistency between different panels within a dashboard. When SREs correlate events with metric timelines based on annotation lists in table panels, stale data can lead to incorrect preliminary judgments.
+*   **Incident Response Efficiency**: During time-critical incident response, relying on automatic refresh is a basic requirement. Manual refreshes interrupt the analysis flow and increase operational complexity.
+*   **User Trust**: Unpredictable dashboard interactions reduce user confidence in the monitoring system.
+
+### Best Practices and Mitigations
+
+Before an official fix is available, the following practices can be considered:
+
+1.  **Validate Critical Dashboards**: For dashboards used for critical service monitoring or incident response, systematically test the annotation toggle functionality after upgrading Grafana to ensure all related panels behave as expected.
+2.  **Use Variables to Control Annotations**: As a workaround, try using dashboard template variables to dynamically control the enable/disable state of annotation queries, which may bypass the current data source refresh issue.
+3.  **Monitor Issue Progress**: Track the fix status of Grafana's official GitHub Issue [#105137](https://github.com/grafana/grafana/issues/105137) and verify whether the issue is resolved in newer versions.
+4.  **Panel Edit Mode Considerations**: The report also mentions a secondary issue with toggling annotations in panel edit mode. SREs should be aware of this when using edit mode to modify panels that reference annotations.
+
+### Related Metrics and SLO Considerations
+
+This issue does not directly correspond to a specific SLI/SLO, but it relates to the internal SLO of "monitoring platform availability and reliability."
+
+*   **Dashboard Interaction Success Rate**: "The percentage of core interactions in critical monitoring dashboards (such as data refresh, control responses) that work as expected" can serve as an internal reliability metric. This type of bug reduces that metric.
+*   **Timeliness of Observability Data**: Data displayed on dashboards must be timely and accurate. This bug affects the "accuracy" of data in specific scenarios.
+
+When dealing with such issues, SREs should advocate for incorporating the fix into the platform maintenance plan to ensure the reliability of monitoring tools does not become the weak link in reliability engineering itself.

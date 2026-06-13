@@ -1,0 +1,87 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Container Runtime Snapshot Leak: containerd's overlayfs Orphaned Snapshot Issue"
+category: "Container Runtime and Storage"
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/issues/13416
+    title: "containerd/containerd#13416: overlayfs: orphaned RW snapshots after container removal"
+tags: [containerd, overlayfs, snapshot, storage-leak, SRE-troubleshooting]
+---
+
+# Container Runtime Snapshot Leak: containerd
+
+## Overview
+
+In containerized and Kubernetes cluster operations, storage management is a critical component for ensuring system reliability and controlling costs. This document describes a severe issue found in a specific version of the containerd runtime: when using the overlayfs snapshot driver, after a container (Pod) is normally deleted, its corresponding read-write (RW) snapshot layer remains in the disk directory and the container metadata BoltDB database, but all associated mount references have disappeared, making these snapshots "orphaned resources". These orphaned snapshots cannot be discovered or cleaned up by standard tools like `ctr` or `crictl`, continuously consuming valuable disk space, and lack effective monitoring methods. This is a classic "silent failure" and resource leak scenario that poses a direct challenge to SRE capacity planning and system reliability.
+
+## Core Concepts
+
+To understand this issue, the following core concepts must be clarified:
+
+1.  **OverlayFS Snapshots**: containerd uses a snapshot manager to build container filesystem layers. OverlayFS is a common union filesystem that merges multiple directories (layers) into a unified view. When running a writable container, containerd creates an RW snapshot (UpperDir) built on top of one or more read-only (RO) image layers (LowerDir). This RW snapshot is where the container writes data, typically containing `fs/` (filesystem view) and `work/` (internal working directory) subdirectories.
+
+2.  **Containerd Snapshot Management**: containerd manages snapshot lifecycles through its snapshot plugins (such as `overlayfs`). Each snapshot has a unique numeric ID and associated metadata stored in an embedded BoltDB database (typically `meta.db`). This metadata includes the snapshot name, parent snapshot reference, child snapshot list, and reference count (`snapshot.ref`).
+
+3.  **Orphaned Resources**: Ideally, deleting a container should trigger a chain reaction: container termination -> stop all associated processes -> unmount all filesystem mount points -> remove snapshot metadata from BoltDB -> delete the corresponding snapshot directory from disk. Orphaned resources are remnants produced when the above cleanup process is incomplete. In this issue, both BoltDB records and disk files exist, but no active container or container runtime API references them.
+
+## Practice
+
+The following details the specific manifestations and diagnostic methods for this leak issue, based on the case provided in the issue (snapshot ID 1384).
+
+**1. Disk Residue Confirmation**
+The snapshot directory exists under the configured snapshot storage path and contains a complete file structure, occupying actual disk space (1021MB in the case).
+```bash
+ls /data/k8s/.../io.containerd.snapshotter.v1.overlayfs/snapshots/1384/
+# fs/  work/
+du -sh /data/k8s/.../io.containerd.snapshotter.v1.overlayfs/snapshots/1384/
+# 1021M    .
+```
+
+**2. BoltDB Metadata Residue**
+Using tools like `strings` to directly query the BoltDB file reveals the complete metadata tree for this snapshot, including references to its parent (`parent`) and children (`children`) snapshots, indicating it was once an intermediate layer in the image layer chain.
+```bash
+strings /data/k8s/.../io.containerd.metadata.v1.bolt/meta.db | grep -A2 -B2 '/1384/'
+# Output shows complete snapshot metadata including name, parent, children fields.
+```
+
+**3. Lost Runtime References**
+In `/proc/self/mountinfo` (or other mount information sources), no `upperdir` or `lowerdir` references pointing to this snapshot directory (1384) can be found. This proves that at the kernel VFS layer, no active mount points use this snapshot layer.
+```bash
+grep 'upperdir.*/1384/' /proc/self/mountinfo
+# (empty output)
+```
+
+**4. Toolchain Cannot Detect or Clean**
+All standard management tools in the container ecosystem are "blind" to this orphaned snapshot:
+- `ctr -n k8s.io snapshot ls | grep 1384`: Does not display.
+- `ctr -n k8s.io snapshot info 1384`: Reports "not found".
+- `crictl rmi --prune`: Command succeeds but does not clean this snapshot (it primarily handles unreferenced image layers, not container RW layers).
+- `ctr snapshot prune`: Similarly ineffective.
+
+**5. Cross-Validation Method**
+To verify this phenomenon, compare with a healthy active snapshot (such as 76747 in the case). In `/proc/self/mountinfo`, it can be clearly seen mounted as `upperdir`, and its information can also be queried through the `ctr` tool. This "disk-database-mountpoint-tool" four-way cross-validation method is key to diagnosing such issues.
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+*   **Reliability and Capacity Management**: This issue directly causes **capacity leaks**. Over time, leaked snapshots accumulate, exhausting disk space, potentially preventing new containers from being created on nodes (`ENOSPC` errors), and affecting service availability. SRE needs to establish storage usage monitoring (such as node `disk_space_usage` metrics), but this issue bypasses standard monitoring and cleanup processes.
+*   **Observability Blind Spot**: Since standard tools cannot list or clean these snapshots, they become an **observability blind spot**. SRE cannot obtain accurate, reclaimable storage space information through conventional dashboards or operational scripts. This increases troubleshooting complexity and response time.
+*   **Incident Response**: When the cluster experiences storage pressure, SRE incident response processes may be hindered by the inability to locate and clean up these "ghost" resources. Reliance on non-standard, high-risk methods (such as manual `rm -rf`) for intervention increases operational risk.
+
+### Best Practices and Common Anti-Patterns
+*   **Best Practices**:
+    1.  **Perform Regular Health Checks**: Write custom scripts to periodically cross-reference snapshot directories (`ls`), BoltDB content (using `strings` or dedicated libraries), and container running states to identify potential orphaned snapshots.
+    2.  **Reserve Maintenance Windows and Monitoring**: Add independent monitoring for the total size of the `snapshots` directory in your monitoring setup, with alert thresholds set for early intervention before issues worsen.
+    3.  **Upgrade and Monitor**: Closely follow containerd's official fix progress for this issue and promptly upgrade to versions containing the fix patch.
+    4.  **Careful Manual Cleanup**: If manual cleanup is necessary, perform it during a maintenance window following strict steps: first confirm no mount references exist -> try `ctr snapshot rm --sync` -> if that fails, as a last resort consider `rm -rf` on the disk directory and cleaning BoltDB (the latter requires expert handling and is extremely risky).
+*   **Common Anti-Patterns**:
+    *   **Ignoring Alerts**: Ignoring alerts about continuously growing storage space without corresponding business growth.
+    *   **Relying on Standard Cleanup Commands**: Incorrectly believing that `crictl rmi --prune` or `ctr snapshot prune` can solve all storage leak problems.
+    *   **Lack of Permanent Solutions**: Frequently performing manual `rm` operations without driving fundamental resolution (upgrading containerd or waiting for official fixes).
+
+### Related Metrics (SLI/SLO/SLA)
+*   **SLI (Service Level Indicator)**: Node available disk space percentage; container creation failure rate (due to `ENOSPC`).
+*   **SLO (Service Level Objective)**: Cluster node available disk space > 15%; container creation failure rate due to storage issues < 0.1%.
+*   **SLA (Service Level Agreement)**: Internal service agreements can specify that infrastructure providers must ensure node storage availability and commit to providing mitigation (such as cleanup scripts or upgrade plans) within agreed-upon timeframes (e.g., 4 hours) when such known leak issues occur. This issue can serve as a basis for revising related clauses in future SLAs.

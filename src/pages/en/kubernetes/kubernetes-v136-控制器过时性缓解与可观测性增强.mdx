@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.36: Staleness Mitigation and Observability for Controllers"
+description: "Introduction to Kubernetes v1.36's controller cache staleness detection mechanism and observability capabilities for improving controller reliability."
+category: Container Orchestration & Platform
+order: 0
+lastUpdated: 2026-04-28
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/28/kubernetes-v1-36-staleness-mitigation-for-controllers/
+    title: "Kubernetes v1.36: Staleness Mitigation and Observability for Controllers"
+tags: [kubernetes, controllers, staleness, observability, SRE, client-go, kube-controller-manager]
+---
+
+# Kubernetes v1.36: Staleness Mitigation and Observability for Controllers
+
+## Overview
+
+In the Kubernetes ecosystem, controllers are core components for implementing declarative APIs and automated operations. Through continuous "reconciliation" loops, they ensure cluster actual state converges toward desired state. However, controllers rely on local caches for fast change response, and these caches can become "stale" due to various reasons (restarts, network issues, high load). Stale caches cause controllers to make incorrect decisions, fail to respond timely, or have excessive latency, seriously threatening service reliability. Kubernetes v1.36 introduces critical mitigation measures and accompanying observability tools for this problem, significant for SRE practice in ensuring control plane stability and observability.
+
+## Core Concepts
+
+**Cache Staleness**: Controller local cache data inconsistent with Kubernetes API server real state. Controllers rebuilding caches after restart or during API server unavailability cannot get cache updates. During these periods, controllers may make incorrect judgments based on "stale" information.
+
+**Resource Version**: Kubernetes API metadata field for optimistic concurrency control. Each versioned object has a unique resource version number representing its last write order to the API server. Controllers can compare cached resource versions with latest versions from the API server to judge cache freshness.
+
+**Reconciliation**: Controller core working pattern. Controllers watch resource changes, view current state in local cache, compare with desired state, then execute necessary operations (create, update, delete) to achieve target state. Cache staleness directly affects reconciliation logic correctness.
+
+**Atomic FIFO**: New feature in v1.36's client-go (via `AtomicFIFO` feature gate). Ensures that even when received events arrive out of order, the queue processes with atomic operations, maintaining internal state consistency -- the foundation for more advanced staleness detection.
+
+## Practice
+
+v1.36 improvements manifest at two levels: the underlying client-go library and top-level kube-controller-manager built-in controllers.
+
+**client-go improvements**:
+- New `LastStoreSyncResourceVersion()` method on `Store` interface, allowing custom controllers to check their Informer cache's last successfully synced resource version.
+- `ConsistencyStore` data structure for cache consistency checking:
+  - `WroteAt()`: Called after writing objects to API server, records write resource version.
+  - `EnsureReady()`: Called before reconciliation, compares cache freshness with recorded write version.
+  - `Clear()`: Called when objects are deleted.
+
+**kube-controller-manager controller improvements**:
+- Four core controllers now have ConsistencyStore-based staleness detection enabled by default:
+  1. DaemonSet controller
+  2. StatefulSet controller
+  3. ReplicaSet controller
+  4. Job controller
+- Before reconciling an object, controllers check if cached resource version is at least as new as their last write. If cache is behind, reconciliation is skipped.
+
+## SRE Essentials
+
+- **Reliability**: Directly improves controller reliability. Prevents decisions based on stale information (e.g., incorrectly scaling due to perceived insufficient Pods), reducing unexpected changes and misoperations.
+
+- **Observability**: Two new alpha metrics (enabled by default):
+  - `stale_sync_skips_total`: Records reconciliation skips due to detected staleness. Sudden spikes may indicate sync pressure or network issues.
+  - `store_resource_version`: Shows latest resource version for each shared Informer cache.
+
+- **Best Practices**: After upgrading to v1.36, focus on `stale_sync_skips_total` and include in alerting rules. When building custom controllers, use `ConsistencyStore` for "read your own writes" semantics.
+
+- **Anti-Patterns**: Ignoring cache staleness, fully trusting local cache data for decisions, especially dangerous after controller restarts or during network partitions.
+
+- **Related Metrics**: `stale_sync_skips_total` as SLI for controller reconciliation health. SLO example: "controller staleness-triggered reconciliation skips below N in any 5-minute window."

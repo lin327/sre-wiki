@@ -1,0 +1,86 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Query Variable Duplicate Value Issue Analysis"
+category: "Observability Tool Configuration"
+confidence: low
+---
+
+# Grafana Dashboard Query Variable Duplicate Value Issue Analysis
+
+## Overview
+
+When building observability systems based on Grafana, Dashboard variables (especially query variables) are core functionality for implementing dynamic filtering and parameterization. SRE engineers often rely on variables to dynamically retrieve label values from data sources, allowing users to flexibly filter data in monitoring panels. However, it has been recently discovered that Grafana query variables exhibit unexpected behavior when processing data in specific formats: when a data source returns a JSON object array containing duplicate `value` entries but different `label` entries, the variable dropdown list only displays the first occurring label, causing subsequent options with the same value but different labels to be silently discarded. This violates the requirement for predictable configuration tool behavior in SRE practice, potentially causing incomplete or misleading dashboard filtering. This document aims to provide a detailed analysis of this issue, clear reproduction steps, and solutions to guide SRE teams in avoiding this pitfall.
+
+## Core Concepts
+
+To understand this issue, you must first clarify the following key concepts:
+
+*   **Dashboard Variables**: Interactive controls at the top of Grafana Dashboards that allow users to dynamically change panel query parameters (such as time range, service name, hostname, etc.). Variables can be static (Custom type) or dynamically queried from data sources (Query type).
+*   **Query Variables**: A variable type that dynamically generates dropdown option lists by executing data source queries (such as SQL, PromQL, or API calls). Its return result is typically a list containing `text` (display label) and `value` (actual filter value).
+*   **Infinity Data Source**: A Grafana plugin that allows fetching data from various REST APIs, CSV, JSON, XML, and other data sources. In this issue, it is used as a data source returning specified inline JSON data.
+*   **Variable Option Uniqueness**: When Grafana generates variable option lists, its internal logic deduplicates based on the `value` field. This means if two options have the same `value`, regardless of whether their `label`/`text` differs, only the first encountered option will be retained in the final list.
+
+## Practice
+
+### Problem Description and Reproduction
+
+The core of this issue is that the deduplication mechanism during variable option generation does not consider `label` uniqueness.
+
+**Reproduction Steps**:
+1.  Create a new Dashboard in Grafana.
+2.  Add a variable of type "Query."
+3.  Select the data source as "Infinity."
+4.  In the query editor, set the query type to "Inline JSON" and paste the following data:
+    ```json
+    [
+        {"label": "foo", "value": "foo"},
+        {"label": "bar", "value": "foo"},
+        {"label": "baz", "value": "baz"}
+    ]
+    ```
+5.  View the options in the preview of the variable configuration interface or in the Dashboard's top dropdown menu after the variable takes effect.
+
+**Expected Behavior**: The variable dropdown should display three options: `foo`, `bar`, and `baz`.
+
+**Actual Behavior**: The variable dropdown only displays two options: `foo` and `baz`. The label `bar` is filtered out because its corresponding `value` ("foo") duplicates the first option.
+
+**Comparison**: If using a "Custom" type variable and entering `foo : foo, bar : foo, baz : baz`, all three labels are correctly displayed. This confirms the issue is specific to query variable logic when processing structured data returned from external data sources.
+
+### Solutions and Workarounds
+
+As of now (Grafana 11.5.1), this behavior is a known Bug. Before Grafana's official fix, SRE teams can adopt the following workarounds:
+
+1.  **Data Source Level Preprocessing**: Before the query is returned to Grafana, ensure `value` field uniqueness in the backend service or data pipeline. If business logic allows, modify the data source so that returned `value` is unique, such as changing duplicate `value` "foo" to "foo_bar."
+2.  **Use Custom Variables as Alternative**: If the variable value set is static or changes infrequently, switching to Custom variables and manually defining `label:value` pairs is a reliable alternative.
+3.  **Monitor Grafana Updates**: Continuously track the progress of [GitHub Issue #102548](https://github.com/grafana/grafana/issues/102548) and wait for the official fix release.
+
+## SRE Key Points
+
+### Relationship with Reliability, Observability, and Incident Response
+
+*   **Reliability**: This Bug affects the UI reliability of the monitoring system. A misconfigured or behaviorally inconsistent variable may prevent SREs from correctly selecting and filtering critical data views during incident response, thereby extending MTTR (Mean Time To Repair).
+*   **Observability**: Dashboards are important interfaces for displaying system observability data. Variable defects directly impair dashboard interactivity and data display completeness, affecting engineers' insight into system state.
+*   **Incident Response**: During troubleshooting, engineers may rely on specific label values (such as specific `hostname` or `pod_name`) to isolate problems. If critical options are hidden due to duplicate value issues, it severely hinders rapid location.
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    1.  **Test Variable Logic**: Before deploying critical Dashboards to production, thoroughly test query variable behavior under various data scenarios, including edge cases (such as duplicate values).
+    2.  **Ensure Data Uniqueness**: When designing data sources provided to Grafana variables, follow the "unique value" principle unless there is an explicit design reason for duplication.
+    3.  **Document Known Limitations**: Record such tool known Bugs or behavioral limitations in internal team documentation to prevent other members from falling into the same trap.
+*   **Common Anti-Patterns**:
+    1.  **Over-relying on Specific Features of a Single Tool**: Assuming all Grafana behavior is fully intuitive or matches documentation without verification.
+    2.  **Ignoring UI Context**: Focusing only on backend data correctness while ignoring how frontend tools (such as Grafana) parse and present this data.
+
+### Related Metrics (SLI/SLO/SLA)
+
+While this issue itself does not directly affect underlying system SLIs (such as request latency, error rate), it affects the **availability and effectiveness of the monitoring system itself**. Consider defining a related metric for the internal monitoring platform:
+
+*   **SLI**: Dashboard critical variable option coverage = (all expected variable options successfully loaded by users) / (total expected variable options). This issue directly causes this metric to drop.
+*   **SLO**: Ensure all critical dashboard variables driven by core data sources have available option coverage no less than 99.5%.
+*   **Internal SLA**: For core monitoring dashboards dependent on such variables, promise that when data source format conforms to the agreement, interactive functionality is normally available in 95% of usage cycles.
+
+## Summary
+
+Grafana query variable's duplicate value handling logic is a classic "toolchain pitfall." SRE engineers building dashboard-based observability interfaces must be aware of potential limitations in the tools themselves. By understanding the problem root cause, mastering reproduction methods, and applying effective workarounds, you can ensure the monitoring system's interaction layer remains reliable and predictable, providing solid support for overall system stability. It is recommended that teams incorporate this case into their internal knowledge base as a reference for configuration management and tool selection.

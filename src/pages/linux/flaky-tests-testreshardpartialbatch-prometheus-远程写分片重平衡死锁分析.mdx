@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "[flaky tests] TestReshardPartialBatch - Prometheus 远程写分片重平衡死锁分析"
 description: "分析 Prometheus 远程写组件中 `TestReshardPartialBatch` 测试失败的根因，揭示了在动态调整分片数量时可能发生的 goroutine 死锁问题及其对 SRE 的启示。"
@@ -11,6 +12,8 @@ sources:
     title: "[flaky tests] TestReshardPartialBatch"
 tags: [prometheus, remote-write, testing, concurrency, deadlock, goroutine, sharding]
 ---
+
+# [flaky tests] TestReshardPartialBatch - Prometheus 远程写分片重平衡死锁分析
 
 ## 概述
 

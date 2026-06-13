@@ -1,0 +1,46 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Node Graph Stale Edge Rendering After Time Range Change"
+category: "Grafana"
+confidence: medium
+---
+
+# Node Graph Stale Edge Rendering After Time Range Change
+
+## Overview
+
+In Grafana's observability practice, the Node Graph panel is commonly used to visually display service topologies, dependencies, or data flows in distributed systems. An accurate topology view is critical for SREs performing fault root cause analysis, impact assessment, and change validation. This document records a specific issue affecting this key visualization: after switching the monitoring time range, the graph may retain and display "stale edges" that no longer exist. This is not a data source error but a front-end state synchronization issue that interferes with SRE judgment of the current system state, constituting a reliability defect in the observability tool itself.
+
+## Core Concepts
+
+1.  **Stale State**: In reactive front-end applications, when the data source updates, due to caching, asynchronous operations, or component lifecycle issues, UI components fail to re-render with the latest data, displaying outdated information. In this case, the edges (relationship arrows) in the graph are the concrete manifestation of this stale state.
+2.  **Reactive Rendering**: The core mechanism of modern front-end frameworks (such as React). When a component's `props` or `state` changes, the framework should automatically trigger the component's re-render to reflect new data. If this chain breaks, the UI becomes out of sync with the data.
+3.  **Idempotent Rendering**: Ideally, given the same data input, a component should produce exactly the same UI result. This problem breaks rendering idempotency -- the same time range selection may produce different results on first load versus page reload.
+
+## Practice
+
+### Issue Manifestation and Debugging Clues
+
+1.  **Trigger Scenario**: Switching from a complex graph view with many nodes and edges (e.g., a longer time window) to a simpler view with fewer nodes and edges (e.g., a shorter time window).
+2.  **Specific Behavior**: After switching the time range, the new graph has the correct number of edges (as returned by the data source), but the UI still renders old edges belonging to the previous time range that should have disappeared.
+3.  **Workaround**: Force-refreshing the entire page resolves the issue, as this resets all front-end state and reloads data.
+4.  **Debugging Findings**: According to developer debugging, the issue occurs in the `Edges` sub-component of the `NodeGraph` component. The data source returned the correct new edge list and passed it as `props` to the component. Therefore, the root cause lies in some cached state within the `Edges` component or its parent component that was not correctly cleared or updated (possibly related to `memoization` optimization techniques), causing it to continue rendering with the old edge list.
+
+### Potential Root Cause and Architectural Considerations
+
+This issue highlights the challenges of **state management** in complex front-end applications. Even when the data flow (from API to component props) is correct, improper management of component-internal or shared global state can lead to UI inconsistency. For SREs, understanding this front-end complexity is important because they operate not only backend services but also the front-end experience of these operational tools themselves.
+
+## SRE Essentials
+
+-   **Connection to Reliability**: This issue directly impacts Grafana's reliability as a monitoring tool. Inaccurate visualizations can mislead troubleshooting, potentially causing SRE teams to waste time investigating non-existent dependencies or ignoring real problem paths, indirectly affecting the reliability of monitored systems.
+-   **Connection to Observability and Incident Response**: Clear system topology is the cornerstone of effective incident response. During incident response, quickly and accurately understanding service dependencies and fault propagation paths is critical. A tool that displays "ghost dependencies" severely reduces the efficiency and accuracy of incident response.
+-   **Best Practices and Workarounds**:
+    1.  **Prioritize Reload**: Before using the Node Graph for critical decisions, if you suspect the graph state is abnormal, the most reliable approach is to refresh the entire Grafana dashboard page to ensure front-end state is completely reset.
+    2.  **Track Updates**: Continuously monitor Grafana's official fix for this issue (Issue #100229). Once upgraded to the fixed version, re-verify this scenario.
+    3.  **Multi-View Verification**: For critical topologies, use Time Series or Table panels simultaneously to verify specific entity traffic or connection states, cross-referencing with the Node Graph.
+-   **Related Metrics (SLI/SLO)**:
+    *   **SLI Suggestion**: `Visualization Data Consistency` -- the percentage of data points (nodes, edges) rendered by the front-end matching the count returned by the data source, given the same data source input. This can serve as a tool-oriented SLI.
+    *   **SLO Impact**: This bug reduces the `Visualization Accuracy` SLO, which may need to be accounted for in the tool's reliability budget (Error Budget).
+
+By documenting and understanding such tool-specific issues, SRE teams can use observability platforms more wisely and, when necessary, provide more precise feedback to tool vendors, collectively improving the reliability of the entire operational toolchain.

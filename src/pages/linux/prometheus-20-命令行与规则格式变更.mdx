@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Prometheus 2.0 命令行与规则格式变更"
 description: "Prometheus 2.0 Alpha 引入了命令行标志格式统一及基于 YAML 的分组规则系统，解决了并发执行和全局间隔的限制。"
@@ -11,6 +12,8 @@ sources:
     title: "Prometheus 2.0 Alpha.3 with New Rule Format"
 tags: [Prometheus, 告警, 规则, 迁移, 命令行]
 ---
+
+# Prometheus 2.0 命令行与规则格式变更
 
 ## 概述
 Prometheus 2.0 引入了多项旨在提升系统可维护性、可靠性和功能性的重大变更。对于 Site Reliability Engineering (SRE) 团队而言，理解这些变更至关重要，因为它们直接影响监控配置的部署方式、告警规则的管理效率以及监控系统自身的可靠性。本文将重点解析 2.0 Alpha.3 版本中引入的两个核心破坏性变更：命令行标志格式的统一与全新的、基于 YAML 的记录规则和告警规则格式。

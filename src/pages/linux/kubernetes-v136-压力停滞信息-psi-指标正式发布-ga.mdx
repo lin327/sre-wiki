@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Kubernetes v1.36: 压力停滞信息 (PSI) 指标正式发布 (GA)"
 description: "介绍 Kubernetes v1.36 中正式发布的 PSI 指标，它为节点、Pod 和容器级别的资源压力提供了高保真信号，是提升集群可观测性和可靠性的关键工具。"
@@ -11,6 +12,8 @@ sources:
     title: "Kubernetes Blog - Kubernetes v1.36: PSI Metrics for Kubernetes Graduates to GA"
 tags: [psi, kubernetes, monitoring, sre, observability, node-health, cgroups, cadvisor]
 ---
+
+# Kubernetes v1.36: 压力停滞信息 (PSI) 指标正式发布 (GA)
 
 ## 概述
 压力停滞信息 (Pressure Stall Information, PSI) 是一种源自 Linux 内核的机制，它通过提供任务因资源饱和而停滞的时间比例，为系统压力提供了高保真信号。在 Kubernetes v1.36 中，PSI 指标正式宣布为稳定可用 (GA)，标志着 Kubernetes 生态系统获得了一个可靠、标准化的接口，用于在节点、Pod 和容器级别观察资源争用情况。对于 SRE 团队而言，这超越了传统的资源利用率监控，是实现主动式容量规划、精准的事件根因分析以及设定可靠的服务级别目标 (SLO) 的重要工具。

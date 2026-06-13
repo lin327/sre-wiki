@@ -1,0 +1,64 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Virtualized List Item Height Estimation Error Causing Content Truncation"
+category: "Frontend Performance"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/96900
+    title: "Combobox/MultiCombobox: Item height estimation incorrect, as the bottom of the list clips items. Given 1 million, the list only goes to ~906,000"
+tags: [grafana, combobox, virtualized-list, performance-issue, floating-point-precision]
+---
+
+# Virtualized List Item Height Estimation Error Causing Content Truncation
+
+## Overview
+
+When building modern web applications that need to handle large datasets (such as monitoring dashboard configuration panels), virtualized lists are a key technology for ensuring UI fluidity. They optimize performance by only rendering DOM elements within the visible area. This document records a defect found in Grafana's `Combobox` and `MultiCombobox` components, related to the core mechanism of virtualized lists: **item height estimation error**, which causes users to be unable to scroll to the end of the list with million-scale data, truncating a large number of data items. This issue directly affects component usability and data integrity and is a typical case SRE needs to focus on when ensuring frontend performance and user experience.
+
+## Core Concepts
+
+1.  **Virtualized List**: A performance optimization technique for rendering lists containing a large number of data items. It maintains a logical total height and only creates a small "window" to render data items currently visible to the user. When scrolling, it dynamically calculates and renders new items based on scroll position, while recycling items that leave the viewport.
+2.  **Item Height Estimation**: Virtualized lists need to know each list item's height when calculating total scroll height and determining which items to render. In scenarios where item heights are not fixed (variable height), an estimated value or height measurement cache is typically needed. If the estimation is inaccurate, it causes total height calculation errors and rendering position offsets.
+3.  **JavaScript Floating-Point Precision**: JavaScript uses double-precision floating-point numbers (IEEE 754) to represent numbers. When handling very large values or performing many consecutive arithmetic operations (especially involving floating-point addition and multiplication), small rounding errors occur, which can accumulate into significant deviations after many iterations.
+
+## Practice
+
+### Issue Manifestation
+In a `Combobox` component containing approximately **1,000,000** data items, when the user drags the scroll bar to the bottom, the list content does not scroll to the 1,000,000th item. The actual visible last item is around **item 906,000**, with unusual truncation or blank areas below, indicating that hundreds of thousands of data items at the bottom cannot be accessed through scrolling.
+
+### Probable Cause Analysis
+Based on the issue description, the preliminary assessment is that the problem lies in **precision accumulation errors** when the virtualized list internally calculates total scroll height or scroll position. The root cause is likely:
+*   **Height Estimation Accumulation**: When calculating the total height of a list containing a million items, multiplication based on estimated height (e.g., assuming each item is `30px` tall, `1,000,000 * 30 = 30,000,000`) is used. While a single multiplication has sufficient precision, if the internal implementation uses item-by-item accumulation of estimated heights, floating-point addition rounding errors accumulate and amplify with increasing item count.
+*   **Scroll Position Calculation**: When calculating "the `scrollTop` value to scroll to item N" or "which items to display based on current `scrollTop`", extensive division and rounding operations are involved. The error propagation from these operations ultimately causes the rendered item count to not match the true data volume.
+
+### Solution Direction
+To fix this issue, the virtualized list's height calculation logic needs optimization:
+1.  **Use More Precise Mathematical Formulas**: Avoid item-by-item accumulation; use direct multiplication based on item count and average/fixed height to calculate total height. For variable heights, maintain an optimized height cache (such as a prefix sum array using binary search).
+2.  **Control Precision and Boundaries**: When calculating the final `scrollTop` value or rendering range, perform reasonable rounding or truncation on results, but ensure the truncation direction does not prevent users from reaching the end.
+3.  **Introduce Safety Margins**: When calculating the scrollable range, reserve a small buffer based on average item height to offset calculation errors.
+
+## SRE Key Points
+
+### Relation to Reliability
+While this manifests as a frontend defect, it directly affects the user experience-related portion of **SLOs (Service Level Objectives)**, such as "users can fully access configuration data". If operations or development personnel cannot select the last item in the UI for configuration, it may affect critical system settings, indirectly impacting reliability.
+
+### Observability and Monitoring
+For such issues, frontend performance monitoring (RUM) can be established:
+*   **Custom Metrics**: Monitor the difference between the virtualized list component's actual rendered item count and the total data length. Alert when the difference continuously exceeds a threshold (e.g., 10%).
+*   **Performance Tracing**: Record performance metrics for list initialization, data loading, and scroll operations to help discover timing anomalies in the calculation process.
+
+### Best Practices and Anti-Patterns
+*   **Best Practices**:
+    *   When designing virtualized lists for large datasets, **prioritize using mature, rigorously tested libraries** (such as `react-window`, `react-virtualized`) and ensure correct configuration.
+    *   For UI components containing massive data, **extreme scenario stress testing** (such as million-scale data) is mandatory, not just functional testing.
+    *   When calculating values involving large numbers, **be wary of floating-point precision traps** and consider using integer arithmetic or `BigInt` (compatibility should be carefully evaluated in browser environments).
+*   **Common Anti-Patterns**:
+    *   Using a component's initial estimated height for all logic calculations without sufficient testing, ignoring the importance of measuring actual DOM height.
+    *   Assuming "longer lists inevitably have worse performance" while ignoring the effectiveness of the virtualization mechanism itself, thereby missing **functional defects** caused by calculation errors like this case.
+
+### Related Metrics (SLI/SLO)
+*   **SLI (Service Level Indicator)**: `VirtualListEffectiveCoverage = (Last visible item index + 1) / Total data length`. Ideal value is 1.
+*   **SLO (Service Level Objective)**: For large data volume list components, `VirtualListEffectiveCoverage` should be at least 0.99 (i.e., users should be able to access at least 99% of data items).
+
+Related pages: [[virtualized-list-perf]], [[javascript-precision-issues]], [[grafana-ui-components]]

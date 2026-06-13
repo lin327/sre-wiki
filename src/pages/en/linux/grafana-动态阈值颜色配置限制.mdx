@@ -1,0 +1,55 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dynamic Threshold Color Configuration Limitation"
+description: "Analysis of the known limitation in Grafana where dynamic thresholds set via 'Config from query results' transformation cannot customize bar chart colors, and its impact on monitoring."
+category: visualization-monitoring
+order: 0
+lastUpdated: 2024-05-17
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/56425
+    title: "Barchart: Can't change dynamic threshold colors with 'config from query results'"
+tags: [grafana, visualization, dynamic-threshold, dashboard, monitoring-configuration]
+---
+
+# Grafana Dynamic Threshold Color Configuration Limitation
+
+## Overview
+
+In the daily work of SRE teams, creating intuitive and informative monitoring panels is critical. Grafana's dynamic threshold feature allows us to adjust threshold lines in real-time based on query results (such as percentiles based on historical data or dynamically calculated alert lines), making it a powerful capability for implementing "monitoring as code" and context-aware visualization. However, when using dynamic thresholds generated through the "Config from query results" transformation, there is a known functional limitation: users cannot simultaneously customize the colors of bars in visualizations (such as bar charts) triggered by these thresholds. This limitation directly impacts the readability and alert differentiation of monitoring panels and is a key point to understand when building refined monitoring views.
+
+## Core Concepts
+
+To understand this issue, several Grafana-related concepts need to be clarified:
+
+- **Dynamic Thresholds**: Unlike static hardcoded values, dynamic thresholds derive their values from one or more panel query results. This enables thresholds to automatically adjust with changes in business metrics (such as traffic peaks and valleys), providing judgment criteria more aligned with the current context.
+- **"Config from query results" Transformation**: A feature in Grafana's data transformations that allows users to use one query's output (e.g., a query calculating the current `p99` latency) to dynamically configure another visualization's properties (such as threshold values, query parameters, etc.). This is the primary method for implementing dynamic thresholds.
+- **Color Mapping**: In Grafana visualizations (especially bar charts, heatmaps, state history, etc.), data values are mapped to different colors based on preset or custom rules to quickly convey status information (e.g., green for normal, red for critical). For threshold visualizations, we expect that when data exceeds a dynamic threshold, the corresponding bar should automatically change to warning or error colors.
+
+The core issue is that the current version of Grafana, when setting dynamic thresholds through the "Config from query results" transformation, does not **synchronize color mapping rules with dynamic threshold values or expose them for user customization**. While users can successfully set threshold lines to change dynamically, they cannot make bar colors follow the same dynamic logic.
+
+## Practice
+
+According to the reported issue, the typical scenario for reproducing this problem is:
+
+1. **Create a base query**: In a bar chart panel, write a data source query (e.g., hourly average request latency from PostgreSQL).
+2. **Create a dynamic threshold query**: Write a second query to calculate the dynamic threshold, such as the `p95` latency for the same time period over the past 7 days.
+3. **Apply transformation**: In the panel's "Transformations" tab, add the "Config from query results" transformation.
+4. **Configure threshold**: In the transformation settings, configure the bar chart's "Thresholds" option to use results from the second query.
+5. **Observe results**: At this point, the threshold line in the panel will correctly display dynamically based on the second query's results. However, when trying to modify colors in the "Thresholds" or "Overrides" settings (e.g., setting bars "above" a certain value to red), you'll find that color settings are either ineffective or cannot correctly associate with the dynamically calculated threshold. Bar colors may always remain default, or can only be configured based on fixed static values.
+
+**Current Status and Workarounds**:
+After this issue was reported by the community, it may have been partially fixed or adjusted in subsequent Grafana versions. When facing this limitation, SRE teams can consider the following workarounds:
+- **Use multiple panels**: Create one panel displaying data bars and another displaying dynamic threshold lines, using panel linking for visual association.
+- **Use "Overrides"**: Try using "Override by value" rules to manually set colors for specific value ranges known to exceed threshold ranges. However, this loses the fully dynamic flexibility.
+- **Monitor version updates**: Regularly check Grafana's release notes; this feature may be enhanced in future versions.
+
+## SRE Key Points
+
+- **Impact on Reliability and Observability**: Monitoring readability directly affects incident response efficiency. When operators scan dashboards, color is the fastest status indicator. The inability of dynamic thresholds to link with colors means dashboards cannot automatically and clearly visualize "abnormal states," potentially extending the time to detect and triage issues.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: When designing monitoring panels, pre-test the complete functionality chain of dynamic configurations. If planning to use dynamic thresholds, confirm that their integration with colors, labels, and other visual properties meets expectations.
+    - **Common Anti-Pattern**: Over-relying on a single visualization to carry too much dynamic logic, which can lead to panel design deadlock when encountering platform feature limitations. Maintain design flexibility.
+- **Related Metrics (SLI/SLO/SLA)**: This functional limitation primarily affects the clarity of **Error Budget consumption visualization**. For example, when a service's error rate (SLI) dynamically approaches its SLO threshold, we want the entire bar chart to change from green to yellow, strongly signaling that the Error Budget is being eroded. The failure of color configuration makes this advanced alert visualization difficult to achieve.
+- **Connection to Incident Response**: During major incidents, SRE teams need to quickly scan numerous panels to locate issues. A well-configured dynamic threshold panel using color for status emphasis can serve as an effective "visual sentinel," highlighting anomalies from the normal background, thereby accelerating MTTR (Mean Time to Repair) reduction. This limitation somewhat weakens Grafana's effectiveness as a real-time incident response tool.

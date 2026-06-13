@@ -1,0 +1,66 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Provisioning allowUiUpdates Failure"
+category: "Configuration Management"
+confidence: low
+---
+
+# Grafana Dashboard Provisioning allowUiUpdates Failure
+
+## Overview
+
+This document describes a known defect affecting the Grafana observability platform. The defect, introduced in Grafana version 12.2.0 and later, causes dashboards configured through the `provisioning` mechanism with explicit UI update permission (`allowUiUpdates: true`) to be non-editable and non-saveable. This issue breaks the standard Dashboards as Code workflow, may lead to configuration drift, and affects teams' ability to make urgent adjustments or local optimizations to dashboards. For SRE and platform teams that rely on declarative configuration to manage large numbers of dashboards, this is a critical usability issue requiring attention.
+
+## Core Concepts
+
+To understand this issue, several core Grafana concepts must be clarified:
+
+1. **Provisioning**: Grafana supports automatically configuring datasources, dashboards, folders, and other resources via YAML files at startup or after startup. This is a key feature for automation and repeatable deployments, and an important part of GitOps practices.
+2. **Dashboard**: The core object for visualizing monitoring data (such as Prometheus, Elasticsearch, etc.), composed of panels, queries, and variables.
+3. **`allowUiUpdates` Flag**: In the provisioning YAML definition, this flag controls whether a provisioning-managed dashboard allows users to manually edit and save it in the Grafana web interface. When set to `true`, the expected behavior is that users can modify the dashboard, but these changes will conflict with the provisioning-defined source and require manual or tool-based synchronization management.
+4. **Configuration Drift**: Refers to the phenomenon where the actual running configuration state of a system diverges from the declarative definition files (such as provisioning YAML). The `allowUiUpdates` feature is designed to allow temporary modifications while tracking and ultimately correcting this drift through declarative files.
+
+## Practice
+
+Based on the provided issue report, the specific symptoms and reproduction steps are as follows:
+
+### Symptoms
+In Grafana 12.2.0 and higher versions (e.g., 12.3.1), even with `allowUiUpdates: true` set for a dashboard in the provisioning configuration file, users cannot complete editing and saving operations in the browser interface. When attempting to save, the system blocks the changes, violating the expected functionality of this configuration option.
+
+### Reproduction Steps
+1. Provision a dashboard to a Grafana instance using a YAML file containing the `allowUiUpdates: true` parameter.
+2. Log into the Grafana UI and navigate to the dashboard.
+3. Attempt any modifications to the dashboard (e.g., resize panels, change queries).
+4. Click the "Save dashboard" button. The save operation should be blocked, and changes will not take effect.
+
+### Environment Information
+- **Grafana Version**: 12.2.0, 12.3.1
+- **Operating System**: Windows 11
+- **Browser**: Microsoft Edge 140
+- **Deployment Method**: Docker
+
+**Conclusion**: The issue is confirmed as a regression bug in the Grafana product within a specific version range, not caused by a specific operating system or browser. The root cause lies in changes to Grafana's internal permission logic for handling provisioning-managed dashboards.
+
+## SRE Essentials
+
+### Relationship to Reliability
+- **Change Management Risk**: This defect directly affects Git-based dashboard change workflows. SRE teams may be unable to deploy dashboard updates as planned or quickly adjust dashboards during troubleshooting to focus on key metrics, thereby extending MTTR (Mean Time to Recovery).
+- **Uncontrolled Configuration Drift**: While `allowUiUpdates` permits temporary modifications, the expectation is that these modifications can be identified and eventually synchronized through code. The bug prevents modifications entirely, forcing administrators to choose: either give up UI modification capability (setting `allowUiUpdates: false`) or give up provisioning management, both of which increase operational complexity and error risk.
+
+### Best Practices and Anti-Patterns
+- **Best Practice - Version Upgrade Testing**: Before upgrading critical infrastructure components like Grafana to major versions, thorough regression testing must be performed in a neutral test environment, especially for core features like provisioning.
+- **Best Practice - Retain Rollback Plans**: For production environments, ensure container images or installation packages of known stable versions are available for quick rollback in case of severe regressions.
+- **Anti-Pattern - Blind Upgrades**: Directly upgrading Grafana in production to unverified new versions may break automated configuration pipelines.
+
+### Related Metrics (SLI/SLO)
+While this issue does not directly affect system performance SLIs, it impacts the important operational SLI of **configuration management process efficiency**.
+- **SLI**: Average time from code commit to successful dashboard configuration activation; number of manual interventions due to configuration issues.
+- **SLO**: Can be set as "99% of dashboard configuration changes take effect automatically within 5 minutes without manual intervention." This bug causes related changes to fail, preventing SLO targets from being met.
+
+### Mitigation and Recommendations
+1. **Pin Grafana Version**: Avoid upgrading Grafana to 12.2.0 or higher until the issue is fixed.
+2. **Monitor Official Fix Progress**: Closely follow Grafana's [GitHub Issue #111525](https://github.com/grafana/grafana/issues/111525) and wait for an official fix patch.
+3. **Adjust Workflows**: As a temporary workaround, consider:
+    - Using provisioning `allowUiUpdates: false` to protect dashboards from accidental modification, and strictly following the GitOps workflow for changes.
+    - When necessary, temporarily commenting out the relevant provisioning configuration to allow UI modifications, but manually syncing changes back to the Git repository to prevent configuration drift.

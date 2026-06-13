@@ -1,0 +1,65 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Incremental Query Cache and Time Comparison"
+category: "Observability Tools"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/125106
+    title: "TimeComparison: Prometheus - incremental query cache Issue"
+tags: [prometheus, grafana, query-cache, performance, time-comparison]
+---
+
+# Prometheus Incremental Query Cache and Time Comparison
+
+## Overview
+
+In modern observability platforms, query performance is a critical factor directly affecting user experience and operational efficiency. Prometheus, as a widely used time-series database, requires performance optimization for its queries (PromQL) to be essential. Grafana's incremental query cache mechanism aims to reduce latency and backend load for repeated queries. However, specific feature combinations (such as enabling "Time Comparison") can cause unexpected side effects, leading to cache invalidation. This page, based on a reported real-world issue, deeply analyzes the interaction conflict between the Prometheus incremental query cache and Grafana's Time Comparison feature, explains the root cause and impact, and explores fix approaches and SRE best practices.
+
+## Core Concepts
+
+### Incremental Query Cache
+The incremental query cache is an optimization strategy used to cache query results executed against monitoring data sources (such as Prometheus). When a new query request matches a cached entry (e.g., querying the same or overlapping time ranges within a specific time window), the system can return cached data directly without re-executing potentially expensive PromQL queries. The cache key is typically generated from a combination of key parameters such as the query statement, data source, and time range.
+
+### Time Comparison
+Time Comparison is a feature in Grafana panels that allows users to visually compare current time range data with a past time range (e.g., last week, last day). When this feature is enabled, Grafana generates two queries for the same panel:
+1. **Primary query**: Fetches data for the currently selected time range (`T_now`).
+2. **Comparison query**: Fetches data for a corresponding past time range (`T_past`).
+
+### Root Cause of Conflict: Cache Key Ambiguity
+According to the issue description, the core of the conflict is that **the comparison query and the primary query share the same cache key**. This typically occurs when the cache key generation logic only considers the query statement and data source, while ignoring the precise distinction of the time range, or when the comparison query incorrectly reuses the primary query's cache key during internal processing. When the comparison query (targeting `T_past`) executes, it may accidentally overwrite or evict the cache entry prepared for (`T_now`), causing the primary query to miss the cache on the next request and forcing it to re-fetch data from Prometheus.
+
+## Practice
+
+### Problem Diagnosis
+When observing that panel loading speed has significantly slowed down after enabling Time Comparison, or that the Prometheus backend experiences unexpected query surges, SRE engineers should consider the possibility of cache invalidation. Initial diagnosis can be performed through the following steps:
+1. In the Grafana panel's Query Inspector, observe the actual number of HTTP requests sent each time the panel is refreshed.
+2. Compare whether there are differences in request patterns with Time Comparison enabled versus disabled. Ideally, enabling comparison should only add comparison query requests, while the primary query should hit the cache.
+3. Check performance metrics for both Grafana and Prometheus (such as `prometheus_query_duration_seconds`) to confirm increased latency caused by cache misses.
+
+### Fix Direction
+Although the original issue did not provide a specific code fix, the logical solution is clear: **ensure the comparison query and primary query use different, unambiguous cache keys**. The fix should ensure:
+- The cache key generation algorithm treats the time range (including start and end timestamps) as a mandatory component.
+- Alternatively, explicitly distinguish between the "primary query" and "comparison query" identifiers, using them as an independent part of the cache key.
+- After the fix, the comparison query's execution should be independent of the primary query's cache lifecycle, without mutual interference.
+
+## SRE Key Points
+
+### Relation to Reliability
+This issue directly concerns **query performance reliability**. Cache invalidation causes unpredictable increases in query latency. In high-concurrency or large-scale data scenarios, it can further trigger Grafana frontend timeouts, degrade user experience, and even impact the overall stability of the Prometheus service (violating its SLO) due to query load spikes.
+
+### Observability and Incident Response
+SRE should detect such performance degradation by monitoring relevant SLIs for Grafana and Prometheus (such as query latency, cache hit rate, error rate). When such issues occur, the incident response process should include:
+- **Rapid mitigation**: Temporarily disable the Time Comparison feature on affected panels to restore query performance.
+- **Root cause identification**: Locate the specific cache key conflict logic.
+- **Long-term fix**: Drive and verify the above fix approach, and perform regression testing after the upgrade.
+
+### Best Practices and Anti-Patterns
+- **Best practice**: When designing cache mechanisms, ensure the **completeness and uniqueness** of cache keys, covering all parameters that affect query results and execution cost. For compound queries (such as those with comparison features), design more granular cache key namespaces.
+- **Anti-pattern**: Avoid ignoring critical variables (such as time windows, comparison identifiers in query labels) when generating cache keys. Such simplified assumptions often surface issues when features are combined.
+- **Monitoring**: Establish **SLOs** for critical cache systems, such as "cache hit rate no less than 95%", and set up alerts.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI**: `grafana_panel_query_duration_seconds` (distinguished by cache status), `prometheus_query_duration_seconds`.
+- **SLO**: Average panel loading time; cache hit rate.
+- **SLA**: (For internal users) Monitoring dashboard availability and response time commitments. This cache conflict directly impacts the ability to meet this SLA.

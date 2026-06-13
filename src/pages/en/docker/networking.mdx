@@ -1,0 +1,105 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Docker Networking Modes Explained"
+category: ""
+confidence: low
+---
+
+# Docker Networking Modes Explained
+
+## Network Mode Overview
+
+Docker provides multiple network drivers suitable for different deployment scenarios. Choosing the correct network mode directly affects inter-container communication efficiency, security isolation, and troubleshooting difficulty.
+
+| Driver | Isolation | Performance | Typical Scenario |
+|------|--------|------|----------|
+| bridge | Medium | Medium | Single-host multi-container, dev/test |
+| host | None | High | High-performance networking, monitoring agents |
+| overlay | High | Medium | Cross-host Swarm/K8s communication |
+| macvlan | Medium | High | Containers needing independent MAC addresses |
+| none | Complete | -- | Security sandbox, offline tasks |
+
+## Bridge Mode (Default)
+
+`bridge` is the default driver. Each container gets an independent network namespace, communicating through the virtual bridge `docker0`.
+
+```bash
+docker network create --driver bridge my-network
+docker run -d --name web --network my-network nginx
+docker run -d --name api --network my-network myapp
+```
+
+Custom bridges support **automatic DNS resolution** (container name = hostname); the default bridge does not. Always use custom networks.
+
+## Host Mode
+
+`host` removes network isolation between the container and the host machine. Containers directly use the host network stack, requiring no `-p` port mapping:
+
+```bash
+docker run -d --network host nginx
+```
+
+Zero network overhead, but with port conflict risk. Suitable for network performance-sensitive scenarios (such as monitoring collection agents).
+
+## Overlay Network
+
+`overlay` enables cross-host container communication through VXLAN encapsulation, serving as the foundation network for Swarm and Kubernetes:
+
+```bash
+docker network create --driver overlay --attachable my-overlay
+```
+
+## Macvlan and None
+
+- **macvlan** -- Assigns independent MAC/IP to containers, making them appear as independent hosts on the physical network.
+- **none** -- Container has no networking at all, only loopback. Suitable for security sandboxes.
+
+## Container DNS Resolution
+
+Docker's built-in DNS server provides name resolution for containers in custom networks:
+
+- Container name -> Container IP (within the same custom network).
+- Service name -> VIP (in Swarm mode).
+- External domain -> Host DNS forwarding.
+
+```bash
+docker exec web cat /etc/resolv.conf
+```
+
+DNS resolution failure is the most common cause of inter-container communication issues. When troubleshooting, first check whether containers are on the same custom network.
+
+## Port Mapping
+
+```bash
+docker run -d -p 8080:80 nginx                    # Host 8080 -> Container 80
+docker run -d -p 127.0.0.1:3306:3306 mysql        # Local access only
+docker port my-container                           # View port mappings
+```
+
+Troubleshooting port conflicts:
+
+```bash
+lsof -i :8080
+ss -tlnp | grep 8080
+```
+
+## Network Troubleshooting Tools
+
+```bash
+# View network details and connected containers
+docker network inspect my-network | jq '.[0].Containers'
+
+# In-container network diagnostics
+docker exec my-container nslookup api-container
+docker exec my-container curl -v http://api-container:8080/health
+
+# View Docker iptables rules
+iptables -t nat -L -n | grep -i docker
+```
+
+## SRE Practice Essentials
+
+- **Service Discovery:** Container names serve as DNS names in custom networks, eliminating the need for additional Consul or etcd.
+- **Network Isolation:** Use independent networks for different environments or business domains to prevent unintended inter-container access.
+- **Port Conflicts:** Use dynamic port allocation in CI/CD or avoid binding host ports in Compose.

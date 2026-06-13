@@ -1,0 +1,50 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Node Graph Data Links Duplicate Display Issue"
+category: "Visualization and Observability"
+confidence: medium
+---
+
+# Node Graph Data Links Duplicate Display Issue
+
+## Overview
+
+Node Graph is a powerful visualization component in Grafana, commonly used to display topological relationships, dependencies, and traffic status between components in distributed systems, microservice architectures, or network infrastructure. It is an important tool for SRE and operations teams for fault localization, trace analysis, and capacity planning. The Data Links feature allows users to add custom external links to nodes or edges in the graph, enabling quick navigation to related monitoring dashboards, documentation, or operations platforms, greatly improving the efficiency of the observability toolchain. However, a data display bug found in specific versions breaks the usability of this critical interaction, affecting work efficiency.
+
+## Core Concepts
+
+*   **Node Graph**: A topology visualization chart based on Nodes and Edges. Nodes typically represent services, instances, or endpoints, while edges represent their relationships or call flows. It can display rich metadata such as request volume, error rates, and latency.
+*   **Data Links**: A data association feature provided by Grafana panels (including Node Graph). Users can configure one or more URL links for panel data (such as a specific field of a node). When interacting with that data on the UI (e.g., clicking a node), a menu pops up displaying all configured links for the user to choose from. This is critical for quickly navigating from an overview to a detailed view.
+
+## Practice
+
+### Reproduction and Manifestation
+
+According to the provided issue report, after adding a data link in Grafana's Node Graph panel and interacting on the panel UI (such as clicking a node), the same link is listed multiple times in the popup menu. This issue persists even without using advanced configurations like Field Overrides. This can cause user misclicks, confusion, and reduced confidence in system state assessment.
+
+A typical reproduction scenario:
+
+1.  Use Grafana's built-in test data source (grafana-testdata-datasource), selecting the `node_graph` scenario to create a Node Graph panel.
+2.  Add a data link pointing to an external page (such as `google.com`) in the panel's `fieldConfig.defaults.links` configuration.
+3.  Save the dashboard and click any node in the Node Graph.
+4.  Observe the popup link menu, where the "Test" link appears multiple times.
+
+### Impact Analysis
+
+This issue primarily affects **interaction reliability** and **user experience**:
+
+*   **Misclick Risk**: Duplicate links may cause users to click the wrong one during rapid operations, accidentally navigating to an unintended page.
+*   **Information Interference**: Redundant information interferes with users' quick judgment of available actions, violating the principle that SRE tools should provide clear, precise feedback.
+*   **Configuration Confusion**: For administrators, this phenomenon may raise doubts about whether the underlying configuration is correctly applied, increasing unnecessary debugging costs.
+
+While this bug itself does not cause monitoring data loss or system functionality failure, it reduces the credibility of the observability tool as a "single source of truth." In emergency incident response scenarios, any factor that increases cognitive load or operational delay should be taken seriously and fixed.
+
+## SRE Essentials
+
+*   **Connection to Reliability**: This issue directly impacts the availability and credibility of **observability tools**, which are a pillar of reliability. A tool whose behavior does not match expectations provides discounted insight value. Ensuring that operational tools themselves behave consistently and reliably is fundamental.
+*   **Best Practices and Anti-Patterns**:
+    *   **Monitoring Tools Themselves**: SRE teams should establish **critical user journey tests** for core observability platforms (such as Grafana), including basic interaction functionality for various visualization panels. This should be part of platform reliability testing.
+    *   **Dashboard Maintenance**: After updating Grafana or modifying panel configurations, basic **smoke tests** should be performed to ensure key interactions (such as data link navigation) work correctly, preventing such issues from reaching production dashboards.
+    *   **Common Anti-Pattern**: Dismissing "user experience" bugs as unrelated to core data flow. In practice, during high-pressure troubleshooting, any "friction" in tools can extend **MTTA** (Mean Time To Acknowledge) or **MTTR** (Mean Time To Repair).
+*   **Related Metrics**: While this bug does not directly affect service SLIs (such as latency, error rate), it may indirectly impact operational efficiency metrics. For example, if incident responders spend extra time or click wrong links due to duplicate links, it may increase the team's **total incident handling time**. From the platform's own perspective, a **feature availability SLI** for critical UI functionality can be defined to monitor the frequency of such interaction errors.

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "修复 containerd 固定镜像标签未应用的问题"
 description: "修复当配置中指定固定镜像但未指定标签时，containerd 未能正确应用固定标签的 bug，该问题在 SandboxImage 到 PinnedImages 的重构中引入。"
@@ -13,6 +14,8 @@ sources:
     title: "Issue #13314: pinned label not applied when pinned_images config has no tag"
 tags: [containerd, pinned-image, label, bug-fix, image-management]
 ---
+
+# 修复 containerd 固定镜像标签未应用的问题
 
 ## 概述
 

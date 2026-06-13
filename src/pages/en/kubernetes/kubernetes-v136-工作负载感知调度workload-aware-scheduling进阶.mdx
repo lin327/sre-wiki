@@ -1,0 +1,83 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.36: Advancing Workload-Aware Scheduling"
+description: "Kubernetes v1.36 advances workload-aware scheduling through Workload/PodGroup API separation, PodGroup scheduling cycles, topology-aware scheduling, and workload-aware preemption."
+category: workload-scheduling
+order: 0
+lastUpdated: 2026-05-13
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/13/kubernetes-v1-36-advancing-workload-aware-scheduling/
+    title: "Kubernetes v1.36: Advancing Workload-Aware Scheduling"
+tags: [kubernetes, scheduling, ai-ml, batch, gang-scheduling, podgroup, topology, preemption, dra]
+---
+
+# Kubernetes v1.36: Advancing Workload-Aware Scheduling
+
+## Overview
+
+Kubernetes v1.36 brings major architectural evolution to workload-aware scheduling. The core change is clear separation of API concerns: the `Workload` API serves as a static template, while the new `PodGroup` API manages runtime state. This separation enables advanced scheduling capabilities including atomic `PodGroup` scheduling cycles, topology-aware scheduling, workload-aware preemption, and enhanced Dynamic Resource Allocation (DRA) support. For SREs, these improvements directly relate to the reliability, resource utilization, and performance of complex workloads like AI/ML training and big data batch processing.
+
+## Core Concepts
+
+### Workload and PodGroup API Separation
+In v1.35, Pod groups and runtime state were embedded in `Workload` resources. v1.36 decouples them:
+- **Workload API** (`scheduling.k8s.io/v1alpha2`): Static template object created by workload controllers (like Job Controller), defining scheduling policy templates.
+- **PodGroup API** (`scheduling.k8s.io/v1alpha2`): Independent runtime object generated from Workload templates, containing actual scheduling policies, template references, and `status` reflecting the entire group's scheduling state.
+
+### PodGroup Scheduling Cycle
+`kube-scheduler` introduces a dedicated **PodGroup scheduling cycle** for atomically processing entire Pod groups:
+1.  **Snapshot**: Single cluster state snapshot for consistent evaluation.
+2.  **Attempt placement**: PodGroup scheduling algorithm tries finding valid node placements for all Pods.
+3.  **Atomic decision**:
+    - **Success**: All schedulable Pods enter binding phase.
+    - **Failure**: Entire group deemed unschedulable; no Pods bound, all return to queue.
+
+This cycle is the foundation of **Gang scheduling** for all-or-nothing workloads.
+
+### Topology-Aware Scheduling
+Defines topology constraints directly on PodGroups to ensure Pods are placed within specific physical or logical domains (like racks) to reduce network latency. Uses a placement-based algorithm with three phases: generate candidates, validate, score and select.
+
+### Workload-Aware Preemption
+When a PodGroup cannot be scheduled, this mechanism attempts to make room for the entire group. Unlike default per-Pod preemption, it treats the entire PodGroup as a preemption unit, potentially preempting Pods from multiple nodes simultaneously. New PodGroup-level fields:
+- `priority`: Overrides individual Pod priority.
+- `disruptionMode`: Determines if Pods can be independently preempted or must be preempted all-or-nothing.
+
+### DRA Support for Workloads
+PodGroup can now serve as a replicable unit for `ResourceClaimTemplate`. For PodGroups referencing `ResourceClaimTemplate`, Kubernetes generates only one `ResourceClaim` for the entire group. The `ResourceClaim` `status.reservedFor` field can now reference PodGroups, breaking the previous 256 Pod limit.
+
+## Practice
+
+### Enable Features (Alpha)
+Feature gates needed on `kube-apiserver` and `kube-scheduler`:
+- `GenericWorkload` (API support)
+- `GangScheduling` (scheduler only)
+- `TopologyAwareWorkloadScheduling` (scheduler only)
+- `WorkloadAwarePreemption` (scheduler only, requires `GangScheduling`)
+- `DRAWorkloadResourceClaims` (api-server, controller-manager, scheduler, kubelet)
+- `WorkloadWithJob` (api-server, controller-manager)
+
+### Job Controller Integration
+For Jobs meeting these conditions, controllers automatically create Workload and PodGroup:
+- `spec.parallelism > 1`
+- `spec.completionMode: Indexed`
+- `spec.completions` equals `spec.parallelism`
+- Pod template has no pre-set `schedulingGroup`
+
+## SRE Essentials
+
+### Relationship with Reliability
+- **Avoid partial failures**: Gang scheduling ensures distributed tasks either fully start or don't start at all, avoiding deadlocks or resource idling.
+- **Improved resource utilization and performance**: Topology-aware scheduling reduces network latency for tightly communicating Pods, critical for AI/ML training.
+- **Controllable resource preemption**: Workload-aware preemption provides predictable resource guarantees for high-priority tasks.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**: Prioritize Gang scheduling for AI training and rendering jobs; combine topology constraints with PodGroups; leverage Job controller native integration.
+- **Anti-Patterns**: Using Gang scheduling for services without strong dependencies; ignoring topology constraint impact on stateful or high-communication workloads.
+
+### Related Metrics (SLI/SLO)
+- **Scheduling Success Rate**: Monitor first-attempt success rate for Gang-scheduled PodGroups.
+- **Scheduling Latency**: Monitor time from Pod entering queue to binding.
+- **Resource Contention**: Monitor via `kube_scheduler_preemption_total`.
+- **Workload Completion Time**: Key SLO for measuring Gang scheduling impact on end users.

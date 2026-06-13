@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "NRI插件环境变量操作被静默忽略的问题 (containerd 2.3.0, NRI v0.12.0)"
 description: "描述了一个在containerd 2.3.0中，NRI插件对已存在的环境变量执行AddEnv或RemoveEnv操作会被静默忽略的缺陷，可能导致环境变量注入失败。"
@@ -11,6 +12,8 @@ sources:
     title: "NRI plugin AddEnv/RemoveEnv silently ignored for env vars that already exist in the container"
 tags: [containerd, nri, environment-variables, csi, bug]
 ---
+
+# NRI插件环境变量操作被静默忽略的问题 (containerd 2.3.0, NRI v0.12.0)
 
 ## 概述
 

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana Tempo 中 TraceQL 编辑器处理无效 Trace ID 的优雅响应"
 description: "当用户在 Tempo TraceQL 编辑器中输入格式不正确的 Trace ID 时，编辑器应优雅地响应并给出提示，而非导致页面崩溃。"
@@ -11,6 +12,8 @@ sources:
     title: "“Tempo: Respond gracefully when user adds a non valid trace id to TraceQL tab”"
 tags: [tempo, traceql, observability, user-experience, grafana, error-handling]
 ---
+
+# Grafana Tempo 中 TraceQL 编辑器处理无效 Trace ID 的优雅响应
 
 ## 概述
 在分布式追踪系统（如 Grafana Tempo）中，Trace ID 是用于标识和检索单个追踪的唯一标识符。TraceQL 是 Tempo 提供的、用于查询和分析追踪数据的查询语言。当运维人员或开发人员在 Grafana UI 的 TraceQL 编辑器中输入一个格式无效的 Trace ID（例如包含非法字符、长度不符的字符串）时，系统需要能够优雅地处理这种用户输入错误，提供清晰的反馈，而不是导致整个应用界面崩溃或需要刷新页面。这对于维持运维工具的稳定性和用户体验至关重要。

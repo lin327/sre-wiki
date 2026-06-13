@@ -1,0 +1,75 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Annotation Query: NULL End Time in First Row Breaks Annotations"
+category: "Monitoring and Visualization"
+confidence: medium
+---
+
+# Grafana Annotation Query: NULL End Time in First Row Breaks Annotations
+
+## Overview
+
+In SRE practice, Grafana is a widely used visualization and monitoring platform whose annotation functionality is used to mark and correlate important operational events on time series charts, such as deployments, outages, or manual interventions. Accurate and reliable annotations are critical for understanding system behavior and correlating metric data (SLI) with events. This document records a specific defect in Grafana v12.0.0: when the first record in the result set returned by an annotation query has a **NULL end time**, the entire chart's annotation functionality fails, even if subsequent records have valid end times. This impacts the ability of operations personnel to quickly locate event impacts through annotations, reducing the effectiveness of the monitoring system.
+
+## Core Concepts
+
+### Annotations
+
+Annotations are metadata markers on Grafana dashboards used to provide context for time series data. An annotation typically contains timestamps, titles, descriptions, and other information. When both a start time and end time are specified, the annotation renders as a **region**, representing the duration of an event. If only a start time is specified, it renders as a **point marker**.
+
+### Connection to SRE Practice
+
+In SRE's observability framework, annotations are the key bridge connecting Metrics, Logs, and Traces. For example, an annotation for a deployment event can help an SRE quickly determine whether a performance metric fluctuation is related to a code change. Therefore, the stability of the annotation functionality directly impacts the efficiency of incident response and post-incident analysis. A broken annotation rendering defect causes critical context information to be visually lost.
+
+## Practice
+
+### Issue Manifestation and Impact
+
+When an annotation query is configured to fetch both start and end times (for example, querying event regions from a database), if the end time in the **first row** of the query results is `NULL`, all annotation regions on the dashboard (including those from subsequent rows) will fail to display correctly. Grafana itself has the ability to handle `NULL` end times (treating them as point markers), but this defect indicates that this handling logic has a boundary condition error on the first record of the result set.
+
+### Reproduction Steps
+
+According to the issue report, this defect can be reproduced in Grafana v12.0.0 with the following steps:
+
+1.  Create a dashboard containing a chart panel (for example, using Grafana's built-in "Random Walk" test data source).
+2.  Configure an annotation query that returns both start and end time fields. For example, use a PostgreSQL data source to execute `SELECT * FROM values;`, where the table structure contains start and end timestamp fields.
+3.  Ensure that the **first row** of the query results has a `NULL` value for the end time field.
+4.  Return to the dashboard view; the expected annotation regions will not render correctly.
+
+### Temporary Workaround
+
+Before an official fix is released, a viable temporary solution is to **adjust at the data layer of the annotation query** to ensure the first row of returned results does not contain a `NULL` end time. Specific approaches include:
+
+1.  Use an `ORDER BY` clause in the SQL query to prioritize records with non-NULL end times.
+    ```sql
+    -- Example: Sort records with non-NULL end times first
+    SELECT * FROM events ORDER BY end_time IS NULL, start_time DESC;
+    ```
+2.  Alternatively, process the query results at the application layer to swap the first row with a subsequent row.
+
+### Reference Configuration
+
+The issue report provides a dashboard JSON file (`dashboard.json`) for reproduction, containing the necessary panel and annotation query configurations. Deploying this configuration and ensuring the backend data source returns data matching the above conditions (first row `end_time` is `NULL`) will reproduce the issue.
+
+## SRE Essentials
+
+### Connection to Reliability and Incident Response
+
+*   **Impact on Observability**: This defect directly undermines the "event correlation" capability of the observability pillar. An unrenderable annotation region prevents operations personnel from visually seeing the duration of outages or changes on the timeline, increasing diagnostic complexity.
+*   **Incident Response Delay**: During incident response, SREs rely on visualization tools to quickly locate issues. Broken annotation display may force SREs to manually look up timestamps in other systems (such as deployment logs or ticketing systems), extending the Mean Time To Repair (MTTR).
+*   **Best Practices**: SRE teams should build a knowledge base of known defects in critical monitoring tools (such as Grafana). When configuring complex annotation queries, boundary conditions (such as the behavior of `NULL` values in different positions) should be thoroughly validated in test environments.
+
+### Common Anti-Patterns
+
+*   **Not Validating Query Boundary Conditions**: Assuming that monitoring tools always perfectly handle raw data returned by databases, especially non-ideal datasets that may contain `NULL` values.
+*   **Ignoring Tool Version Differences**: As the report shows, this defect appeared in a specific version (v12.0.0). SREs should focus on regression testing of related functionality when upgrading the monitoring stack.
+
+### Related Metrics
+
+Although this issue does not directly generate metrics, it impacts the accuracy of context information used to calculate and display SLO/SLI.
+
+*   **SLI**: The affected annotations may mark key events that impact a specific **SLI** (such as "request success rate"), and their absence can lead to misjudgment of the causes of SLI fluctuations.
+*   **Error Budget**: Analysis of SLO consumption (Error Budget) associated with events may be skewed because event durations cannot be accurately visualized.
+
+SRE teams are advised to monitor Grafana for such functional defects and perform targeted regression testing before upgrades to ensure the reliability of the monitoring system.

@@ -1,0 +1,89 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Frontend State Sync Pitfalls in Observability Toolchains: Grafana Dashboard Ad Hoc Variables"
+category: "Dashboard and Data Visualization"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123960
+    title: "Dashboards: adHocVariableFiltersEqual treats undefined and [] as different..."
+tags: [grafana, frontend-state-management, data-model-inconsistency, adhoc-variables, observability-toolchain]
+---
+
+# Frontend State Sync Pitfalls in Observability Toolchains: Grafana Dashboard Ad Hoc Variables
+
+## Overview
+
+When building a reliable and user-friendly observability platform, frontend application state management is critical. Any defect that causes user interface (UI) state to become inconsistent with the underlying data model can severely undermine user experience and potentially erode trust in the tool itself. The case analyzed here originates from a defect in Grafana dashboards: the change tracking logic used to detect "unsaved changes" incorrectly treats the "no filters" state (`undefined`) and the "empty filter list" (`[]`) as different states. This causes users to immediately receive an "unsaved changes" prompt after loading a dashboard, even without performing any actions. It is a classic false alarm problem caused by mismatched frontend data model serialization and comparison logic.
+
+## Core Concepts
+
+To understand this issue, the following key concepts must be clarified:
+
+1.  **Data Model Semantic Consistency**: At the business logic level, different data representations of the same concept should be treated as equivalent. In this case, "ad hoc variable has no configured filters" is semantically equivalent to "the ad hoc variable's filter list is empty". Code implementation must follow this business semantics. `undefined` (indicating the property does not exist or is uninitialized) and `[]` (indicating an existing but empty collection) are different data types in JavaScript/TypeScript, but in certain contexts they need normalization for logical comparison.
+
+2.  **Change Tracking**: This is a core feature of modern dashboard frameworks (like Grafana Scenes). The system serializes the current dashboard state and compares it with the persisted original state to determine if unsaved modifications exist. The `adHocVariableFiltersEqual` function in `getDashboardChanges.ts` is responsible for comparing this specific state of ad hoc variable filters.
+
+3.  **Serialization Normalization**: When saving dashboard state to the backend or using it for comparison, code typically normalizes the data. In this case, the save operation normalizes the `undefined` filter property in the original state to an empty array `[]`. The problem is that the comparison function in the change tracking logic does not perform this normalization simultaneously, causing a deviation in the comparison between "post-save state" and "original loaded state".
+
+## Practice
+
+**Problem Reproduction Scenario**:
+1.  User creates a dashboard containing an `adhoc` type variable without adding any specific filter conditions.
+2.  Saves the dashboard. At this point, in the backend-stored JSON model, the variable's `filters` property may be `[]` or `undefined` (depending on creation timing and code paths).
+3.  User reloads this dashboard. In the frontend's initial state fetched from the backend, `filters` is `undefined`.
+4.  The frontend change tracking module serializes the current (unmodified) state for comparison, which converts `filters: undefined` to `filters: []`.
+5.  The change comparison logic `adHocVariableFiltersEqual(originalFilters, currentFilters)` is called, where `originalFilters` is `undefined` and `currentFilters` is `[]`.
+6.  As shown in the problem code, `undefined` and `[]` are judged as not equal, the dashboard is marked as "modified", and the user immediately sees the "unsaved changes" prompt.
+
+**Core Fix Approach**:
+The key to the fix is making the comparison function's logic consistent with business semantics and serialization rules. Before comparison, normalize the input parameters, treating `undefined` as `[]`.
+
+```typescript
+// Fixed adHocVariableFiltersEqual function example
+export function adHocVariableFiltersEqual(
+  filtersA?: AdHocFilterWithLabels[],
+  filtersB?: AdHocFilterWithLabels[]
+) {
+  // Normalize undefined and [] to empty arrays for semantic equivalence
+  const a = filtersA ?? [];
+  const b = filtersB ?? [];
+
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let i = 0; i < a.length; i++) {
+    // Compare filter details one by one
+    if (a[i].key !== b[i].key || 
+        a[i].operator !== b[i].operator || 
+        a[i].value !== b[i].value) {
+      return false;
+    }
+  }
+  return true;
+}
+```
+This modification ensures that the two representations of "no filters" are always equal during comparison, eliminating the false "unsaved changes" state.
+
+## SRE Key Points
+
+### Relation to Reliability
+While this defect does not directly cause service outages, it directly affects the usability and reliability of the core tool (dashboard). Persistent false prompts represent a "usability degradation" that forces users to perform unnecessary actions (such as forcefully refreshing the page), and may even cause configuration loss through erroneous operations, indirectly increasing operational risk.
+
+### Observability and Incident Response
+This type of issue falls under the category of "toolchain reliability" and is an often-overlooked aspect of observability practice. When monitoring user behavior and errors, SRE teams should monitor metrics for such frontend false positive rates (e.g., the number of times users frequently click "don't save" to leave the page), treating them as SLIs that affect development/operations efficiency.
+
+### Best Practices and Anti-Patterns
+*   **Best Practices**:
+    1.  **Semantic Equivalence Design**: When designing and implementing data comparison logic, explicitly define the equivalence relationships of different data forms (such as `undefined`, `null`, `[]`, `{}`) in the business context, and handle them explicitly in code.
+    2.  **Comprehensive Test Coverage**: Unit tests should cover all possible edge case combinations, including `undefined` vs `[]`, `[]` vs `[]`, with value vs `undefined`, ensuring robust comparison logic.
+    3.  **Monitor User Experience Metrics**: Treat "unexpected state prompts" as part of frontend quality monitoring to detect similar issues promptly.
+*   **Common Anti-Patterns**:
+    1.  **Ignoring Data Serialization Differences**: When developing features like change tracking and cache comparison, only considering ideal states (such as always using `[]`) while ignoring the reality that historical data or different code paths may produce `undefined`.
+    2.  **Relying on Loose Type Checking**: Directly using `===` or `!==` for strict equality comparison in comparison functions without performing necessary type normalization.
+
+### Related Metrics (SLI/SLO)
+While not directly applicable to service SLIs, the following user trust metrics can be extended:
+*   **False State Prompt Rate**: Number of "unsaved changes" prompts caused by tool defects / Total dashboard load count. Ideal value should be 0.
+*   **User Error Operation Rate**: Proportion of "leave without saving" operations due to false prompts out of all "leave" operations. A high proportion indicates a tool reliability problem.

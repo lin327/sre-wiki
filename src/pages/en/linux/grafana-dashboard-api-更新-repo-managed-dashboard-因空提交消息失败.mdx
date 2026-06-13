@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard API Update Repo-Managed Dashboard Fails Due to Empty Commit Message"
+category: "Provisioning"
+confidence: low
+---
+
+# Grafana Dashboard API Update Repo-Managed Dashboard Fails Due to Empty Commit Message
+
+## Overview
+
+This knowledge page documents a known defect in Grafana where updating a Git repository-managed dashboard (marked as `managedBy: repo`) via the standard Dashboard API encounters a failure returning HTTP 500 error with the message `"commit changes: empty commit message"`. This directly affects automation workflows that rely on GitOps workflows (such as using `gcx push`, `kubectl apply`, or direct API calls) to manage dashboard configurations. For SRE teams, understanding the root cause and solution of this issue is critical for maintaining configuration management reliability, ensuring monitoring panel version control, and environment consistency.
+
+## Core Concepts
+
+- **Repo-Managed Dashboard**: A dashboard whose content source code is hosted in a Git repository through Grafana's Provisioning feature. Such dashboards contain `managedBy: repo` and `grafana.app/sourcePath` annotations in their resource metadata, indicating their lifecycle is controlled by the Git repository.
+- **Dashboard API**: Grafana's Kubernetes-style REST API for performing CRUD operations on dashboard resources. Its endpoint format is `/apis/dashboard.grafana.app/v0alpha1/.../dashboards/<uid>`.
+- **Commit Message**: A required Git commit description when writing dashboard changes back to the Git repository. Grafana's internal Git integration layer relies on this message to create meaningful version history.
+- **Error Budget**: The acceptable failure time or failure request ratio defined by SRE through Service Level Objectives (SLOs). Defects affecting automated deployment consume the SLO's error budget and require attention.
+
+## Practice
+
+### Problem Reproduction Path
+
+1.  **Configure Environment**: Set up a Provisioning repository backed by GitHub with `workflows: ["branch", "write"]` permissions enabled.
+2.  **Prepare Resources**: Create or migrate a dashboard so its metadata contains `managedBy: repo` and `grafana.app/sourcePath`.
+3.  **Trigger Error**: As an authenticated user (not the Provisioning system user), send a `PUT` request to the Dashboard API to update the dashboard.
+    ```http
+    PUT /apis/dashboard.grafana.app/v0alpha1/namespaces/default/dashboards/<uid>
+    Content-Type: application/json
+    { ... }
+    ```
+4.  **Observe Results**: The request returns HTTP 500 status code with error message `"commit changes: empty commit message"`.
+
+The root cause lies in Grafana's internal `handleManagedResourceRouting` function. When it identifies the target resource as repo-managed, it proxies the write operation to the Provisioning Files endpoint. However, this code path **does not include the required `message` query parameter** when constructing the forwarded request, causing the downstream Git client to fail when executing the commit.
+
+### Solution and Recommended Fix
+
+A fix has been proposed in the official codebase. The solution suggests in `handleManagedResourceRouting`, first extracting the commit message from the dashboard resource's `grafana.app/message` annotation; if that annotation is not set, generating a reasonable default value (e.g., `"Update <dashboard-name>"`). This is consistent with the existing logic used in export jobs that use this annotation.
+
+### Workaround
+
+Before the official fix is merged, you can directly use the Provisioning Files endpoint for updates, which correctly supports the `message` parameter:
+
+```http
+PUT /apis/provisioning.grafana.app/v0alpha1/namespaces/default/repositories/<repo>/files/<source-path>?message=<commit-message>
+Content-Type: application/yaml
+
+<YAML-format dashboard resource definition, with server-managed fields such as url, status, creationTimestamp, generation, resourceVersion, uid, managedFields, and some internal annotations removed>
+```
+
+## SRE Key Points
+
+- **Relationship with Reliability**: This defect blocks API-based configuration update flows, affecting the reliability of deploying dashboards using automation tools (such as CI/CD pipelines). It may cause configuration deployment failures, thereby affecting monitoring system observability.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practices**: Before the fix, for repo-managed dashboard updates, prioritize using the `PUT .../files/<path>?message=...` endpoint. In automation scripts, ensure the ability to set the `grafana.app/message` annotation.
+    - **Common Anti-Patterns**: Blindly relying on the Dashboard API to update all types of dashboards without realizing repo-managed resources have special API routing rules, potentially causing silent failures or hard-to-trace errors.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: Monitor Grafana Provisioning event failure rates, especially errors related to Git commits.
+    - **SLO**: Teams can set an SLO for automated deployment success rate of dashboard configuration changes. Such issues directly affect this metric.
+    - **SLA**: This is an internal tool defect that does not directly affect external service SLA, but reduces internal team GitOps efficiency.
+- **Incident Response**: If receiving alerts about dashboard updates returning 500 errors with `"empty commit message"`, SRE should first check whether the target dashboard is repo-managed and suggest users adopt the Provisioning Files API endpoint as a temporary workaround. Simultaneously, track the fix progress of Grafana official issue #124620.
+
+**Related Pages**:
+- [[grafana-provisioning-git-integration]]
+- [[slo-for-deployment-pipelines]]

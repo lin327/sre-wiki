@@ -1,0 +1,50 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Graceful Handling of Invalid Trace IDs in Grafana Tempo TraceQL Editor"
+category: "Troubleshooting"
+confidence: low
+---
+
+# Graceful Handling of Invalid Trace IDs in Grafana Tempo TraceQL Editor
+
+## Overview
+
+In distributed tracing systems (such as Grafana Tempo), Trace ID is a unique identifier used to identify and retrieve individual traces. TraceQL is the query language provided by Tempo for querying and analyzing trace data. When operations staff or developers enter a malformed Trace ID (such as a string containing illegal characters or incorrect length) in the Grafana UI's TraceQL editor, the system needs to handle this user input error gracefully, providing clear feedback rather than causing the entire application interface to crash or requiring a page refresh. This is critical for maintaining operational tool stability and user experience.
+
+## Core Concepts
+
+1.  **Trace ID**: In standards like OpenTelemetry, a Trace ID is typically a 32-character hexadecimal string (e.g., `4bf92f3577b34da6a3ce929d0e0e4736`). It has strict format requirements.
+2.  **TraceQL**: Tempo's query language that allows users to query specific traces by trace ID, service name, operation name, labels, and time range conditions. In TraceQL, you can directly query a trace using syntax like `{trace_id = "<your-trace-id>"}`.
+3.  **Input Validation**: A key principle in frontend interface design -- checking whether data format meets expectations before user submission. For the TraceQL editor, input validation should include Trace ID format checking.
+4.  **Graceful Degradation**: Refers to the system not completely stopping service when encountering errors or abnormal input, but instead maintaining core functionality availability through degradation strategies (such as displaying friendly error messages, disabling invalid operations).
+
+## Practice
+
+The issue describes a defect in Grafana's Tempo TraceQL editor: when a user pastes a malformed Trace ID (such as `dafksbdlnj3f-dfjk-jg4k-gsa8` or `msg='error'`) into the query box, the editor or page crashes, potentially forcing the user to refresh the page.
+
+**Problem Manifestation**:
+-   The editor component (based on Monaco Editor) may throw uncaught exceptions when processing illegal input, causing React component rendering to fail.
+-   UI becomes unresponsive, and users cannot continue operations.
+
+**Ideal Fix and Behavior**:
+1.  **Real-time Input Validation**: Integrate Trace ID format checking in Monaco Editor's custom completion, syntax highlighting, or validation features. Use regular expressions for matching (e.g., check if it is a continuous 32-character hexadecimal string).
+2.  **Friendly Error Prompts**: When an invalid Trace ID format is detected, the editor should display a clear error prompt at the relevant location (such as inline, problem panel), e.g., "Invalid Trace ID format. Trace ID should be a 32-character hexadecimal string."
+3.  **Prevent Invalid Query Execution**: Add a pre-validation step on the client side when the user clicks the "Run Query" button. If the Trace ID format is invalid, block the request from being sent to the backend and display a warning message in the UI.
+4.  **Fault Tolerance Design**: Harden Monaco Editor's input handling logic to ensure it can catch and handle internal errors triggered by abnormal formats, preventing the entire component from crashing.
+
+## SRE Key Points
+
+-   **Relationship with Observability and User Experience**: A stable observability tool interface is the foundation for SRE fault investigation and performance analysis. The tool itself crashing due to user input errors severely disrupts the problem diagnosis process, reduces operational efficiency, and is a "tool reliability" issue.
+-   **Best Practices**:
+    -   **Defensive Programming**: Frontend components should take a defensive stance toward all user input, not assuming input format is always correct.
+    -   **Clear Error Messages**: Error messages should guide users on how to correct their input, rather than throwing technical stack traces or causing the interface to freeze.
+    -   **Frontend Robustness Testing**: UI automation testing should cover test scenarios for abnormal input (such as various malformed Trace IDs, null values, SQL injection statements, etc.) to ensure the application does not crash.
+-   **Common Anti-Patterns**:
+    -   Ignoring frontend input validation and placing all validation logic on the backend, causing unnecessary network requests and poor frontend experience.
+    -   Using overly broad `try-catch` blocks that silently swallow errors without providing any meaningful information to users or monitoring systems.
+-   **Related Metrics**:
+    -   **User Experience (UX)**: Can be measured by monitoring frontend error logs (such as exception counts in Sentry) to gauge the frequency of such issues. After fixing, the error rate should significantly decrease.
+    -   **Tool Availability**: While not directly counted in service SLI, a crash-prone query interface directly undermines the core value of "queryability" provided by the Tempo service.
+
+See [[tempo-traceql-query-optimization]] and [[frontend-error-monitoring]] for more related practices.

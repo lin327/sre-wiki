@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Prometheus TSDB WAL 重放缺陷：序列删除后的数据丢失"
 description: "修复 WAL 重放中因序列删除与重建竞争导致的数据丢失问题。"
@@ -11,6 +12,8 @@ sources:
     title: "tsdb: fix WAL replay dropping samples for series re-created after stale deletion"
 tags: [prometheus, tsdb, wal, replay, race-condition, data-loss, bugfix]
 ---
+
+# Prometheus TSDB WAL 重放缺陷：序列删除后的数据丢失
 
 ## 概述
 在 Prometheus 的时间序列数据库（TSDB）中，Write-Ahead Log（WAL）和 Write-Behind Log（WBL）是保证数据持久性和在重启或崩溃后恢复数据的关键组件。WAL 重放过程负责将日志中记录的样本重新加载到内存中。本文档解析了一个在 WAL 重放过程中出现的竞态条件缺陷，该缺陷会导致特定条件下序列的所有样本数据在重启后丢失，并详细阐述了修复方案。

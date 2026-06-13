@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "PromQL解析器中持续时间字面量的括号在往返序列化时丢失"
 description: "当简单的数字字面量被括号包裹在持续时间表达式位置时，括号在Expr.String()序列化过程中被错误地移除，破坏了查询的往返一致性。"
@@ -11,6 +12,8 @@ sources:
     title: "promql/parser: parentheses around a plain duration literal are lost on round-trip"
 tags: [Prometheus, PromQL, Parser, DurationExpression, Round-trip]
 ---
+
+# PromQL解析器中持续时间字面量的括号在往返序列化时丢失
 
 ## 概述
 

@@ -1,0 +1,46 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Geomap Route Layer Grouped Data Connection Issue"
+category: "Observability"
+confidence: medium
+---
+
+# Geomap Route Layer Grouped Data Connection Issue
+
+## Overview
+
+When building location-based monitoring systems (such as tracking ship trajectories or monitoring power line intrusion events), it is critical that visualization tools correctly display and group geospatial data for different entities. Grafana's Geomap plugin provides a powerful way to visualize such data, but its Route layer has a known defect: after grouping data (group by), the rendered path lines still incorrectly connect the first and last data points within the same group, destroying the original meaning of the data. For SRE and monitoring platform engineers, understanding this issue and its impact is a prerequisite for ensuring monitoring dashboard data accuracy and actionability.
+
+## Core Concepts
+
+*   **Geomap Plugin**: A visualization plugin in Grafana for displaying geospatial data on interactive maps, supporting multiple layer types such as Marker, Heatmap, and Route.
+*   **Route Layer**: A layer type in the Geomap plugin used to connect a series of ordered latitude/longitude coordinate points to draw trajectories, routes, or paths. This is useful for tracking the travel routes of moving entities (such as vehicles, ships, equipment).
+*   **Data Grouping**: In the data query stage (using SQL, PromQL, or InfluxQL), data is aggregated by one or more keys (e.g., device name, vehicle ID) through the `group by` clause. In visualization, correct grouping should ensure each group's data forms independent visual elements (such as separate paths).
+*   **Core Issue**: The core of this problem lies in the Geomap Route layer's rendering logic. Even when query results are correctly grouped by entity, the layer still forcibly adds a line segment connecting the last point to the first point within the same group's path segment, causing paths that should be independent or open to become closed loops, producing misleading visualizations.
+
+## Practice
+
+### Problem Description
+Users want to use Geomap's Route layer to display the navigation trajectories of multiple ships, or LiDAR intrusion detection data point trajectories on power lines. The expected behavior is that when data is grouped by ship name or line name, each group's data should form an independent, coherent path. However, the actual observed behavior is that even with `group by` applied, the system still connects the first and last data points within the same group's path, forming unnecessary closed loops.
+
+### Reproduction Steps
+According to the issue report, the steps to reproduce this issue are:
+1.  Prepare a dataset containing geospatial trajectories. The data must include latitude/longitude coordinates and an identifier field for grouping (e.g., ship name `vessel_name`).
+2.  Create a query in Grafana using a `group by` clause on the identifier field (e.g., `SELECT * FROM traces GROUP BY vessel_name`).
+3.  Create a Geomap panel for this query and set the layer type to "Route".
+4.  Configure the Route layer, specifying latitude, longitude, and grouping fields.
+5.  Observe the rendering result -- paths for different groups will be correct, but each path will have an extra line segment connecting its first and last points.
+
+### Environment Information
+This issue has been reported in multiple Grafana versions (e.g., 9.4.7) and is reproducible on various operating systems (e.g., Windows) and browsers (e.g., Chrome, Edge). It affects multiple data sources, including InfluxDB, MSSQL, and CSV.
+
+### SRE Takeaways
+This issue has a direct impact on monitoring system reliability:
+*   **Reliability Impact**: Inaccurate visualizations can cause engineers to misunderstand system state. For example, an intrusion event path that should be point-to-point incorrectly rendered as a closed loop may mask the true direction or scope of the event, delaying root cause analysis.
+*   **Observability Impact**: Observability relies on signals that accurately reflect internal system state. This bug compromises data fidelity on the geospatial dimension, reducing the dashboard's credibility as the system's "source of truth."
+*   **Best Practices and Workarounds**:
+    *   **Verification and Communication**: After introducing or upgrading dashboards containing Geomap, verify that grouped path rendering is correct. If this issue is found, communicate it within the team and consider noting this limitation in dashboard annotations.
+    *   **Alternatives**: Before an upstream fix, consider using other layer types. For example, use the **Marker layer** to display icons with connection order for each trajectory point, or use the **Heatmap layer** to show data density. For scenarios requiring coherent paths, consider preprocessing data at the data processing layer (e.g., using Grafana Transformations), or generating GeoJSON paths with external tools and inputting them via API.
+    *   **Monitor Updates**: This is a confirmed defect. Follow Grafana's official changelog or the GitHub issue page for this problem to get fix version information.
+*   **Related Metrics (SLI/SLO/SLA)**: While this issue does not directly affect core service SLIs, it impacts the **monitoring dashboard accuracy** observability SLI. A relevant indirect SLO could be: "95% of critical monitoring dashboards display geospatial trajectory data consistent with their original data logic." The existence of this bug means this SLO cannot be met on affected dashboards.

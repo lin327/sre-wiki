@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "etcd grpcproxy Watcher 丢失事件的可靠性缺陷"
 description: "etcd grpcproxy中已断开的watchBroadcast可能错误接受新watcher，导致事件丢失，影响系统可靠性。"
@@ -11,6 +12,8 @@ sources:
     title: "etcd grpcproxy: new watchers may be added to a disconnected watchBroadcast and miss all subsequent events"
 tags: [etcd, grpcproxy, reliability, watch, distributed-systems]
 ---
+
+# etcd grpcproxy Watcher 丢失事件的可靠性缺陷
 
 ## 概述
 

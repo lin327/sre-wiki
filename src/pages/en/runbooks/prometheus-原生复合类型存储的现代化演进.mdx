@@ -1,0 +1,90 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Native Composite Type Storage Modernization"
+description: "Prometheus is modernizing by storing composite metric types (like histograms) natively in TSDB, improving monitoring system reliability, efficiency, and transactional integrity."
+category: SRE Practices
+order: 0
+lastUpdated: 2026-02-14
+confidence: high
+---
+
+# Prometheus Native Composite Type Storage Modernization
+
+## Overview
+
+One of Prometheus's core strengths is its highly optimized time-series database (TSDB), which has long employed a concise "classic" storage model. Under this model, regardless of the logical type of the monitoring metric (such as counter, histogram), TSDB only stores raw floating-point samples, while composite types like histograms and summaries are split into multiple independent raw time series. This design simplifies storage implementation but also introduces challenges in efficiency, transactionality, and reliability.
+
+Recently, the Prometheus community has been driving a major architectural evolution: natively supporting atomic storage of composite types at the storage layer. This change aims to address the long-standing deficiencies of the classic model, providing SREs with a more reliable, efficient, and consistent monitoring data foundation. This article analyzes the core concepts of this evolution, the practical path forward, and its profound impact on reliability engineering.
+
+## Core Concepts
+
+### Classic Representation Model
+In the classic model, TSDB stores "primitive samples" that are independent of metric type, namely floating-point values with timestamps. Metric type semantics are inferred by the upper-layer protocol and toolchain (such as PromQL).
+- **Primitive types**: `gauge` (default), `counter` (requires `_total` suffix), `info` (value always 1, with `_info` suffix).
+- **Composite types**: Composed of a set of related raw time series. For example, a classic histogram `foo` is split into multiple `foo_bucket{le=...}` (counter), `foo_count` (counter), and `foo_sum` (gauge) time series.
+
+**Limitations**:
+1.  **Low efficiency**: Each component of a composite type (such as a new bucket boundary) becomes an independent unique time series, consuming large amounts of index space with low compression ratios.
+2.  **Limited functionality**: The data structure is fixed as a collection of primitive sequences, with poor flexibility (unless using encodings like JSON, which introduces new problems).
+3.  **Lack of transactionality**: The parts of a composite type are processed independently. When receiving or sending data through protocols like Remote Write or OTLP, only a portion may be transmitted (e.g., partial bucket data), leading to data inconsistency and potentially causing false alerts.
+4.  **Questionable reliability**: Data consumers cannot determine type semantics from the storage layer, relying entirely on naming conventions, which is prone to miswrites (e.g., writing `foo_bucket` as a gauge).
+
+### Native Representation Model
+The native model directly identifies and atomically stores composite samples (such as a complete histogram structure) at the TSDB storage layer.
+- **Native Histograms**: The first introduced concept. TSDB can store histograms with sparse and exponential buckets as an atomic composite sample, rather than splitting them into multiple time series. This brings significant efficiency improvements (experiments show that using Native Histograms with Custom Buckets (NHCB) can save 30%+ space compared to the classic representation) and data consistency.
+- **Extension to native composite types**: The community is working to extend this native pattern to all composite types, including `summary` and `stateset`, aiming to eventually completely replace the classic model.
+
+### Key Evolution Path and Components
+To achieve a smooth transition from classic to native, the community is working on the following:
+1.  **Native Histograms with Custom Buckets (NHCB)**: Allows storing classic histograms in native composite sample format, combining the compatibility of the classic format with the efficiency of native storage.
+2.  **OpenMetrics 2.0**: The next-generation pull protocol specification. One of its core changes is introducing "composite values" in the text format, enabling native composite types to be parsed directly and atomically, solving the challenge of data "combining."
+3.  **Remote Write 2.0**: Allows transmitting histogram data in native format. Future versions (such as 2.1) can be extended to transmit `summary` and `stateset` in native format, ensuring end-to-end data consistency.
+4.  **Consumer layer compatibility mode**: This is the key to ensuring transparent migration. TSDB and PromQL will provide a compatibility layer that, when data is stored in native format, still allows querying through classic PromQL syntax (such as `foo_bucket`), with automatic "expansion" to the classic representation internally. This allows storage layer migration to proceed independently of query and consumer tool upgrades.
+
+## Practice
+
+### Enabling Native Histogram Storage (NHCB Example)
+In Prometheus scrape configuration, you can enable converting classic histograms to native histograms (NHCB) at scrape time for storage.
+```yaml
+scrape_configs:
+  - job_name: 'my-job'
+    static_configs:
+      - targets: ['localhost:9090']
+    # Enable converting classic histograms to NHCB at scrape time
+    convert_classic_histograms_to_nhcb: true
+```
+This operation performs combining at the scrape side, solving the combining challenge caused by data fragmentation in remote write scenarios. The converted data will be stored as native composite samples named after the original metric (e.g., `foo`).
+
+### Configuring Consumer Layer Compatibility Mode (Future)
+To ensure query compatibility, future versions may allow executing classic queries on metrics stored in native format through runtime flags or dynamic detection. For example, the following query may remain valid for a histogram that has been converted to NHCB in the future:
+```promql
+# Classic syntax will continue to work even when the underlying storage is native NHCB
+histogram_quantile(0.9, sum(foo_bucket{job="a"}) by (le))
+```
+This ensures that after storage layer migration, existing dashboards and alert rules do not need to be immediately modified.
+
+### Protocol Evolution Path
+1.  **Pull protocol**: Follow the progress of OpenMetrics 2.0, where the composite value format will standardize the transmission of native data at the text layer.
+2.  **Push/Remote Write protocol**: Adopt the Remote Write 2.0 specification to ensure that transmitted histogram and other data maintains atomicity. When deploying Prometheus or systems like Thanos/Mimir, prioritize versions that support Remote Write 2.0.
+
+## SRE Key Points
+
+### Relationship with Reliability and Observability
+- **Data consistency and reliability**: The native model fundamentally solves the "partial update" problem of composite type data during transmission and processing. SREs can more reliably rely on individual data points for alerting and decision-making, reducing false alerts caused by data inconsistency, which is a direct improvement in system **reliability**.
+- **Performance and scalability**: More efficient storage reduces resource consumption, making the monitoring system itself more **reliable and scalable**, capable of handling higher cardinality or more complex metrics.
+- **Observability quality**: Atomic data ensures the accuracy of aggregation (such as `sum`, `avg`) and analysis (such as percentile calculations), improving the signal quality of **observability**.
+
+### Best Practices and Common Anti-Patterns
+- **Gradual migration**: Use NHCB and compatibility modes to gradually migrate histogram monitoring for core services without requiring simultaneous modification of all applications and queries.
+- **Monitor protocol and storage format**: When upgrading Prometheus or remote storage systems, list support for Remote Write 2.0 and OpenMetrics 2.0 as evaluation criteria.
+- **Anti-pattern**: Avoid forcing a complete rewrite of existing metrics or queries based on the assumption that "the classic model is about to be deprecated." Follow the community-recommended compatible migration path.
+- **Anti-pattern**: Avoid continuing to assume in custom integrations that all composite types are composed of multiple time series, which may lead to future incompatibility with native formats.
+
+### Related Metrics (SLI/SLO/SLA)
+- **Storage efficiency SLI**: Monitor the storage space ratio between native and classic formats on the same dataset (e.g., target: native histogram storage space at most 70% of classic format).
+- **Data integrity SLI**: Through checksums or sampling comparisons, monitor the integrity of composite type data across the collection, conversion, storage, and query pipeline, ensuring atomicity is not compromised.
+- **Query compatibility SLI**: Monitor the success rate of existing alert rules and dashboards using classic query syntax, ensuring no breaking interruptions during migration.
+- **SLO/SLA impact**: Improvements in storage efficiency and data consistency directly support stricter monitoring data availability SLOs (e.g., from 99.9% to 99.95%), thereby supporting better end-user SLAs.
+
+**Related page links**: `[[data-model]]`, `[[promql]]`, `[[observability]]`, `[[remote-write]]`, `[[native-histograms]]`

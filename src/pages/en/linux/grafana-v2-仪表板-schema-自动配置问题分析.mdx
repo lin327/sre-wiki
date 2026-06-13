@@ -1,0 +1,59 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana v2 Dashboard Schema Auto-Provisioning Issue Analysis"
+description: "Analysis of the issue in Grafana v12.0.1 where enabling the v2 Dashboard Schema feature flag causes file-based auto-provisioning to fail for new version dashboards."
+category: monitoring-visualization
+order: 0
+lastUpdated: 2025-06-05
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/106381
+    title: "Dashboards: auto-provisioning of v2 schema dashboards does not work in Grafana v12.0.1"
+tags: [grafana, dashboard, provisioning, v2-schema, sre]
+---
+
+# Grafana v2 Dashboard Schema Auto-Provisioning Issue Analysis
+
+## Overview
+
+In Grafana operations, dashboard auto-provisioning is a key component for implementing Infrastructure as Code (IaC) and GitOps workflows. It allows automatic management of dashboard creation and updates through file systems or configuration repositories, ensuring environment consistency and version control. However, in Grafana v12.0.1, when the experimental **v2 Dashboard Schema** feature flag is enabled, the traditional auto-provisioning mechanism encounters a compatibility issue: v2 format dashboard JSON files placed in the designated directory cannot be automatically imported when the Grafana service starts, while older v1 format dashboards are unaffected. This issue prevents users from smoothly migrating to the new dashboard data model and impacts the automated deployment workflow of monitoring systems.
+
+## Core Concepts
+
+1. **Dashboard Schema V1 vs V2**:
+    - **V1 Schema**: The traditional dashboard data structure used by Grafana, with API version `v0alpha1`. This is currently the most stable and widely used format.
+    - **V2 Schema**: The next-generation dashboard data structure introduced by Grafana, aiming to provide stronger extensibility and better feature support. Its corresponding API version is `v1beta1`. Enabling this feature requires setting the corresponding experimental feature flag in Grafana configuration.
+
+2. **Dashboard Auto-Provisioning**:
+    - A Grafana management feature that allows system administrators to automatically load dashboards, data sources, and other configurations from predefined file paths at Grafana startup or via API calls. It works by having the Grafana service process scan configuration directories during the startup phase and create or update resources through internal APIs.
+
+3. **API Version Mismatch**:
+    - According to the issue report, the auto-provisioning feature may still be calling the old `v0alpha1` API endpoint (used for v1 dashboards) when loading v2 dashboards, while v2 dashboards require the new `v1beta1` API. This underlying API incompatibility causes the import to fail.
+
+## Practice
+
+### Issue Manifestation and Reproduction
+
+After configuring and enabling v2 Schema in Grafana v12.0.1, placing new format dashboard JSON files in the designated directory according to the official [Provision Grafana Dashboards](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards) documentation and starting the Grafana service results in the following:
+- Service logs show successful import of v1 format dashboards from the directory.
+- v2 format dashboards are not imported and are not visible in the Grafana UI.
+- There may be accompanying logs of API call failures showing attempts to access resources using the `v0alpha1` path.
+
+### Troubleshooting and Temporary Solutions
+
+1. **Confirm feature flag status**: First check Grafana configuration (`grafana.ini` or environment variables) to ensure the feature flag for enabling v2 Schema is correctly set.
+2. **Verify dashboard format**: Carefully review the content of the problem dashboard JSON file to confirm its structure conforms to the v2 Schema specification. For example, the top level should contain a `schemaVersion` of 39 or higher (refer to official documentation for specific version numbers).
+3. **Check logs and network requests**: Analyze Grafana service startup logs, paying special attention to errors or warnings related to Provisioning. If possible, as described in the report, use a proxy or network capture to view API requests initiated internally by Grafana to confirm which API version is being used (`/api/dashboards/db` vs `/api/dashboards`).
+4. **Wait for official fix**: Since this issue has been confirmed as a Grafana bug ([Issue #106381](https://github.com/grafana/grafana/issues/106381)), the most reliable solution currently is to wait for Grafana to release an updated version containing the fix. In the meantime, **avoid enabling both v2 Schema and auto-provisioning in production environments simultaneously**, or consider using other deployment methods (such as directly calling the new Provisioning API) as a transition.
+
+## SRE Key Points
+
+- **Impact on Reliability**: This issue directly undermines the reliability of the core SRE practice of managing monitoring configurations through IaC. The failure of automation processes means manual intervention is required to deploy dashboards, increasing the risk of configuration drift and operational errors, which contradicts the goals of automation and repeatability pursued in [[slo-error-budget]] management.
+- **Observability and Incident Response**: Dashboards are the core user interface for observability. Configuration failures may cause critical monitoring panels to be missing, affecting team diagnostic efficiency (MTTD/MTTR) when incidents occur. SRE teams need to thoroughly test in pre-production environments before upgrading or changing monitoring platform configurations.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: Before introducing any new platform feature (such as a new Schema), thoroughly verify existing automation workflows (CI/CD, Provisioning) in test environments. For automation scripts dependent on external projects (such as Grafana) features, consider version compatibility and set up appropriate alerts or verification steps.
+    - **Common Anti-Pattern**: Directly enabling and relying on features in experimental stages (controlled by feature flags) in production environments, especially when their compatibility with core automation toolchains has not been officially confirmed.
+- **Related Metrics (SLI/SLO)**:
+    - **SLI**: Can be built by monitoring "whether auto-provisioned dashboards are completely consistent with dashboards defined in the version control repository." For example, periodically comparing dashboards existing in Grafana with JSON files in the repository.
+    - **SLO**: An SLO can be set for dashboard deployment, such as "99% of dashboard changes should be synchronized to production Grafana via auto-provisioning within 10 minutes of a Git commit." The occurrence of this issue would directly cause violations of that SLO.

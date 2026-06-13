@@ -1,0 +1,85 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Variable Dependency Resolution False Positive (containsVariable Bug)"
+category: "issue"
+confidence: low
+---
+
+# Grafana Variable Dependency Resolution False Positive (containsVariable Bug)
+
+## Overview
+
+In Grafana dashboards, variables are linked through a dependency graph. When a variable's value changes, all other variables that directly or indirectly depend on it are re-evaluated and re-queried. This entry describes a long-standing logic defect: the core utility function `containsVariable()` used to build this dependency graph produces false positives when detecting variable references, causing variables to be incorrectly identified as depending on another variable that they do not actually reference. This leads to unnecessary variable re-evaluation, impacting dashboard performance and potentially causing confusing behavior.
+
+## Core Concepts
+
+### Format Specifier and Field Path
+Grafana's variable reference syntax supports two extended forms:
+1. **Format Specifier**: For example, `${variable:csv}` or `[[variable:json]]`. The `csv`, `json`, `regex`, `text`, `raw` suffixes are instructions for formatting variable output.
+2. **Field Path**: For example, `${data.host}` or `$var.name.value`. Used to extract specific fields from variable objects or data source results.
+
+The suffixes in both syntax forms (such as `csv`, `host`) may coincidentally match variable names.
+
+### Variable Dependency Graph and `containsVariable`
+- **Variable Dependency Graph**: An internal data structure maintained by Grafana that records dependencies between variables. Query, Custom, Datasource, and Switch variable adapters all use the `dependsOn` method to declare their dependencies, with `containsVariable` being the core utility implementing this method.
+- **`containsVariable` Function**: Located in `public/app/features/variables/utils.ts`, its purpose is to determine whether a string (such as a variable's query definition) references a specific variable name. It uses a regular expression `variableRegex` for matching.
+
+### Root Cause: Regex Matching Logic Error
+The `variableRegex` regular expression contains multiple capture groups matching different syntax parts:
+- Capture groups 1, 2, 4: Match actual variable names (e.g., `varName`).
+- Capture groups 3, 5, 6: Match format specifiers or field paths (e.g., `csv`, `host`).
+
+The current `containsVariable` implementation only checks whether the regex match succeeded (`varMatch !== null`), then uses `indexOf` to search for the variable name in the entire match result array (`varMatch.indexOf(variableName) > -1`). Since `indexOf` scans all capture group contents, if a variable name matches a format specifier or field path (e.g., a variable named `csv` exists while referencing `${other:csv}`), the function incorrectly returns `true`.
+
+## Practice
+
+### Reproduction
+The issue can be directly reproduced:
+```typescript
+import { containsVariable } from 'public/app/features/variables/utils';
+
+// Expected: false ('csv' is a format specifier)
+containsVariable('[[other:csv]]', 'csv'); // Actually returns: true
+
+// Expected: false ('json' is a format specifier)
+containsVariable('${other:json}', 'json'); // Actually returns: true
+
+// Expected: false ('host' is a field path)
+containsVariable('${data.host}', 'host'); // Actually returns: true
+
+// Expected: true
+containsVariable('$realvar', 'realvar'); // Actually returns: true
+```
+
+### End-to-End Reproduction Scenario
+1. Create a variable named `host` in a Grafana dashboard.
+2. Create a second query variable whose query string contains a field path reference, e.g., `${somevar.host}`.
+3. Navigate to dashboard settings > variables page. The system incorrectly marks the second variable as depending on the `host` variable.
+4. When the `host` variable's value changes, the second variable unnecessarily re-runs its query, even though its query never actually references the `host` variable.
+
+### Fix
+The fix core is to precisely check regex matching logic, ensuring only capture groups representing variable names (indices 1, 2, 4) are checked, while ignoring capture groups representing format specifiers or field paths (indices 3, 5, 6). Simply using `indexOf` on the entire match result array should no longer be done.
+
+## SRE Essentials
+
+### Reliability, Observability, and Incident Response
+- **Damaged Observability**: Incorrect dependency relationships make the variable dependency graph (an important system state view) inaccurate, making it difficult for SRE or developers to understand dashboard behavior.
+- **Impact on Incident Response**: During troubleshooting, dashboards are relied upon for root cause analysis. If variable linkage behavior is abnormal (such as unexpected re-evaluation from false positives), it may mask real signals or introduce noise, interfering with fault localization.
+- **Performance and Cost**: Unnecessary variable re-evaluation triggers repeated backend data source queries, increasing system load and network traffic, potentially causing latency or incurring unnecessary cloud service costs.
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    1. **Strict Validation**: When implementing any dependency detection or code analysis logic, precisely match target syntax structures to avoid false positives from broad matching.
+    2. **Thorough Testing**: Unit test edge cases for variable references, especially scenarios where variable names, format specifiers, and field paths overlap.
+    3. **Clear Documentation**: Explicitly annotate variable dependencies in dashboards or code to reduce over-reliance on automated parsing.
+- **Common Anti-Patterns**:
+    1. **Improper Regex Usage**: Using overly broad regular expressions for matching without leveraging capture groups to distinguish different syntax parts.
+    2. **Ignoring Known Defects**: Adopting a laissez-faire attitude toward known, long-standing defects (such as this example) can lead to persistently unpredictable system behavior.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI**: Monitor `dashboard_variable_re-evaluation_count` (dashboard variable re-evaluation count). Before the bug fix, this metric may be inflated due to false positives. After the fix, it should better reflect evaluation needs driven by actual user interactions.
+- **SLO**: For Grafana hosted services, set SLOs such as "99% of dashboard variable linkages should complete within 500ms." Unnecessary re-evaluation creates pressure on this SLO.
+- **SLA**: This bug primarily affects internal operational efficiency and user experience, typically not directly corresponding to external SLA violations, but may indirectly impact business SLAs relying on Grafana (such as data freshness).
+
+**Related pages**: [[variable-dependency-graph]], [[false-positive-detection]]

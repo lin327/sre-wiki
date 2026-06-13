@@ -1,0 +1,53 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana TraceQL Metric Queries Do Not Support Dashboard Variable Substitution for Step"
+description: "Detailed explanation of the issue where TraceQL Metric queries in Grafana cannot use Dashboard variables to dynamically set the Step interval, its impact, and workarounds."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-03-29
+confidence: medium
+---
+
+# Grafana TraceQL Metric Queries Do Not Support Dashboard Variable Substitution for Step
+
+## Overview
+
+When building unified observability dashboards，使用 Dashboard 变量（如 `$interval`）来动态控制所有面板的查询步长（Step）是一项关键实践。这确保了来自不同数据源（如 Prometheus 和 Tempo）的面板在相同的时间粒度上呈现数据，便于关联分析。然而，当前 Grafana 的 TraceQL Metric 查询功能存在一个缺陷：其 Step 参数不支持使用 Dashboard 变量。尝试使用变量时，查询会失败并报错，这破坏了仪表板的一致性和灵活性，是 SRE 团队在构建 Trace 与指标关联分析面板时需要重点关注的限制。
+
+## 核心概念
+
+要理解此问题，需要了解以下概念：
+
+*   **TraceQL Metrics**: Tempo 数据源提供的一种查询功能，它基于 TraceQL 语言，能够从追踪数据中聚合生成时间序列指标（例如：`count_over_time`）。这使得 SRE 可以将 Trace 数据与 Metrics 数据（如 Prometheus）在同一时间轴上进行对比分析。
+*   **Step 参数**: 在时间序列查询中，`Step` 定义了查询结果的时间分辨率或采样间隔。例如，“1m”表示每分钟一个数据点。合理的 Step 设置对于控制查询性能、数据精度和图表渲染至关重要。
+*   **Dashboard 变量替换**: Grafana 的一项核心功能，允许用户在查询或面板设置中使用变量（如 `$interval`、`$datasource`），并在运行时根据仪表板顶部选择的值进行动态替换，从而实现仪表板的交互性和复用性。
+
+## 实践
+
+以下步骤描述了如何复现此问题并找到当前的变通方案：
+
+**问题复现步骤：**
+
+1.  **创建仪表板变量**：在仪表板设置中，创建一个名为 `interval` 的 **Interval** 类型变量。例如，设置自定义选项为 `1m, 5m, 15m`。
+2.  **创建 TraceQL Metric 面板**：添加一个时间序列面板，数据源选择 **Tempo**。将查询类型切换为 **TraceQL Metrics**，并输入一个基础查询，例如 `{} | count_over_time()`。
+3.  **尝试使用变量**：在查询编辑器的 `Step` 输入框中，输入变量 `$interval`。
+4.  **观察错误**：保存或刷新面板后，查询将失败，Grafana 显示类似 `cannot parse "$interval" to a valid duration` 的 RPC 错误。这表明变量值没有被正确解析为有效的时间间隔字符串。
+
+**当前变通方案：**
+
+由于变量替换不可用，为确保仪表板一致性，SRE 团队可以采取以下临时措施：
+
+1.  **硬编码值**：在 TraceQL Metric 面板的 Step 字段中直接输入一个与其它面板匹配的固定值（如 `1m`）。缺点是无法响应仪表板变量的变化。
+2.  **创建多个面板**：为每个需要的 Step 值（1m, 5m, 15m）创建单独的面板，并通过面板可见性规则（基于变量值）来控制显示哪个面板。这会使仪表板变得臃肿且难以维护。
+3.  **优先使用 Prometheus 面板**：对于核心的 SLO 监控，优先考虑使用已支持变量替换的 Prometheus 查询面板来计算关键指标，将 TraceQL Metric 查询用于辅助分析。
+
+## SRE 要点
+
+*   **与可观测性的关联**：此问题直接影响了 **Metrics 与 Traces 的关联分析** 能力。SRE 希望在一个视图中看到相同时间粒度的错误率（来自 Prometheus）和错误追踪数量（来自 TraceQL），但 Step 不一致会导致数据点不对齐，干扰根因分析。
+*   **最佳实践与反模式**：
+    *   **最佳实践**：建立监控面板设计规范，明确要求所有时间序列面板尽可能支持使用统一的 `$interval` 变量，以确保数据视角的一致性。在 TraceQL Metric 面板不支持的情况下，应在文档中注明并给出替代方案。
+    *   **常见反模式**：接受这种不一致性，导致仪表板中不同面板的数据时间粒度混乱，增加了故障排查时的认知负荷和出错概率。
+*   **相关指标（SLI/SLO/SLA）**：虽然此问题本身是一个 UI/查询功能缺陷，但它间接影响了 **基于 Traces 的 SLI 的准确性**。如果用于计算 SLI 的 TraceQL Metric 查询无法与其它指标面板使用相同的 `Step`，那么计算出的 SLI 数值在时间轴上可能无法与错误预算（Error Budget）的消耗正确对齐，影响 SLO 审查的准确性。SRE 在使用 Trace 数据作为 SLI 来源时，需要特别验证其查询配置的正确性和一致性。
+
+相关页面：[[traceql-metrics]]， [[dashboard-variables]]， [[sli-slo-sla]]

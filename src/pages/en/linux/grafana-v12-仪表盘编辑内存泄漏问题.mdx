@@ -1,0 +1,77 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana v12 Dashboard Editing Memory Leak Issue"
+description: "Analysis of severe memory leaks and browser crashes during dashboard editing in Grafana v12 caused by enabling new layout and Kubernetes dashboard feature flags."
+category: observability-monitoring-tools
+order: 0
+lastUpdated: 2025-05-23
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/105808
+    title: "Dashboards: Memory leak and crashes editing in grafana v12"
+tags: [grafana, memory-leak, dashboard, frontend, kubernetes]
+---
+
+# Grafana v12 Dashboard Editing Memory Leak Issue
+
+## Overview
+
+This document describes a specific issue in Grafana v12.0 that affects dashboard editing stability. For SRE teams, dashboards are core tools for daily monitoring, troubleshooting, and performance analysis. A dashboard tool that exhibits severe memory leaks during the editing phase directly hinders operations teams from efficiently building and adjusting monitoring views, impacting observability practice implementation and incident response speed. Understanding this issue's manifestations, trigger conditions, and potential workarounds is critical for teams currently planning to upgrade to or already on Grafana v12.
+
+## Core Concepts
+
+**Grafana v12 New Dashboard Architecture**: Grafana v12 introduces a new dashboard layout engine, typically enabled through the feature flag `dashboardNewLayouts: true`. Simultaneously, the `kubernetesDashboards: true` flag for deep Kubernetes integration is also enabled. This issue is closely related to these two features in their preview stage.
+
+**Browser-Side Memory Leak**: In web applications, when JavaScript code continuously allocates memory without properly releasing it, memory usage grows unboundedly. In the Grafana v12 case, this manifests as browser memory (as shown in Chrome Task Manager) rapidly increasing during dashboard editing or saving operations, ultimately causing the browser tab to crash or triggering Grafana's front-end `RangeError: Map maximum size exceeded` error.
+
+**Issue Trigger Environment**: The issue is reproducible on Grafana v12.0 instances with the new features enabled, using Chrome browser (versions 136.0.7103.114 and 137.0.7151.41 can both trigger it). The dashboard contains canvas, table, and text panels -- not particularly complex. The user reports no such issue in Grafana 11.1.
+
+## Practice
+
+### Reproduction Steps
+
+According to the issue report, this memory leak can be attempted to reproduce with the following steps:
+
+1. **Deploy Grafana v12**: Deploy Grafana v12.0 via Helm Chart in a Kubernetes (e.g., AKS) environment.
+2. **Enable feature flags**: Add the following feature flags to Grafana's startup configuration:
+    ```ini
+    [feature_toggles]
+    enable = dashboardNewLayouts kubernetesDashboards
+    ```
+3. **Perform editing operations**: Use Chrome browser to access Grafana, create a new dashboard. Add some panels, such as Prometheus query canvas panels, table panels, and text panels.
+4. **Trigger the leak**: Try editing these panels multiple times (e.g., modifying queries, adjusting settings), clicking save after each or several edits. Observe browser memory usage -- this typically causes the browser tab to become unresponsive or crash, or the above `Map maximum size exceeded` error when saving.
+
+### Environment Details
+
+-   **Grafana Version**: 12.0
+-   **Deployment Platform**: Kubernetes (AKS)
+-   **Browser Environment**: Windows operating system, Chrome browser.
+-   **Key Configuration**: The `dashboardNewLayouts` and `kubernetesDashboards` feature flags must be enabled.
+-   **Issue Localization**: According to the reporter's analysis, the issue does not appear to be specific to a particular panel type, but rather related to the browser's overall memory management when saving or updating the new dashboard JSON model.
+
+## SRE Key Points
+
+### Relationship to Reliability
+
+This issue directly undermines Grafana's own reliability as a pillar tool for reliability engineering. Dashboards are the visualization vehicles for SLO/SLIs and the information hub during incident response. Unstable editing functionality will:
+1. **Hinder observability construction**: Make it difficult for teams to quickly create and adjust monitoring views, unable to keep up with system changes in a timely manner.
+2. **Impact incident response**: In emergencies, if a dashboard needs to be temporarily modified to focus on a fault point, this issue may cause critical operation delays.
+3. **Reduce developer experience**: Bring frustration to SREs or platform engineers responsible for maintaining monitoring systems, potentially discouraging them from upgrading to versions with new features.
+
+### Best Practices and Temporary Workarounds
+
+Before Grafana officially fixes this bug, consider the following SRE practices:
+
+1. **Monitor instance health**: Implement more detailed monitoring of the Grafana instance itself. Beyond standard availability metrics, watch for front-end process memory growth trends (if collectable) and the frequency of user-reported editing crashes.
+2. **Consider feature flag combination stability**: Evaluate the risk of enabling experimental feature flags in production. Consider enabling `dashboardNewLayouts` only in test or development environments, or keeping it disabled in production until the issue is resolved.
+3. **Rollback or downgrade plan**: If upgrading to v12 severely impacts workflows, prepare to roll back to a stable v11 version. Clarify rollback steps and data compatibility (dashboard JSON model).
+4. **Community feedback**: Supplement the official Issue with more environmental details (such as specific operation sequences, panel complexity) to help the Grafana team locate the root cause faster.
+
+### Related Metrics
+
+-   **Browser memory usage**: As a directly observable metric for this issue, can be monitored via Chrome DevTools.
+-   **Grafana API response time**: Especially for interfaces related to dashboard saving (`/api/dashboards/db`); memory pressure may cause slower backend responses.
+-   **User-reported issue frequency**: Establish internal channels to collect work interruption reports caused by dashboard editing crashes.
+
+It is recommended to monitor Grafana's official updates on this Issue to obtain the official fix version or solution.

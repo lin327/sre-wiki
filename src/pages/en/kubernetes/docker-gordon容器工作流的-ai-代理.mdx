@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Docker Gordon: AI Agent for Container Workflows"
+description: "Docker's AI agent for the entire container workflow, understanding environments, providing suggestions, and taking action."
+category: Containerization & Orchestration
+order: 0
+lastUpdated: 2026-05-20
+confidence: medium
+sources:
+  - url: https://www.docker.com/blog/meet-gordon-dockers-ai-agent-for-your-entire-container-workflow/
+    title: "Meet Gordon: Docker's AI Agent For Your Entire Container Workflow"
+tags: [docker, ai, agent, container, sre, devops, automation, debugging]
+---
+
+# Docker Gordon: AI Agent for Container Workflows
+
+## Overview
+
+Gordon is Docker's official AI Agent, deeply integrated into Docker Desktop and the command-line interface (CLI). Its core value lies in extending AI capabilities from mere code writing assistance to the specific "friction points" developers face when building, debugging, and running containerized applications. For SRE and operations teams, Gordon represents a new paradigm of shifting AIOps capabilities left into the development phase. By understanding real container environment context, it can significantly reduce fault diagnosis and environment configuration time, thereby improving overall system reliability and delivery efficiency.
+
+## Core Concepts
+
+- **Container Environment-Aware AI Agent**: Unlike general-purpose AI coding assistants, Gordon is designed as an "agent." It has access to the local development environment, can read running container logs, image lists, Compose files, and workspace directory contents. This means it understands your system state before you even ask questions, providing context-based precise suggestions and solutions.
+- **Approval-First Principle**: This is Gordon's security cornerstone. Any operation proposed by Gordon (such as executing Shell commands, modifying files, running Docker commands) is explicitly presented to the user before execution and requires explicit approval. This transparent, controlled interaction model ensures developers retain final decision-making authority, preventing accidental operations.
+- **Session-Scoped Permissions**: Gordon's permissions (such as Shell access, filesystem operations) are restricted to the current session. Once the session closes, these temporary permissions are reset, ensuring security and avoiding persistent backdoor risks.
+
+## Practice
+
+**Access and Usage**
+Gordon is currently available through Docker Desktop 4.74+ versions and Docker CLI.
+1.  **Via Docker Desktop**: There is a dedicated Gordon tab in the Docker Desktop sidebar, which can be detached for floating use. Additionally, when issues arise in image, container, volume management interfaces (such as container startup failures), Gordon can be launched directly from the list for diagnosis and repair.
+2.  **Via Command Line**: Run the `docker ai` command in any directory to start a terminal-based Gordon session with the same capabilities and context as the desktop version.
+
+**Typical Use Cases and Operations**
+- **Fault Diagnosis**: When a container exits or a build fails, describe the problem directly to Gordon (e.g., "My container keeps exiting"). It reads logs, traces the root cause of failure (e.g., missing environment variables, wrong base image, incorrect volume mounts), and proposes fixes, waiting for your approval before automatically applying them.
+- **Rapid Environment Setup**: For a new service without a Dockerfile, ask Gordon to "Containerize this app and set up a dev environment with Postgres." It analyzes the code, generates a Dockerfile, writes docker-compose.yml, runs it, and displays results.
+- **Task Automation and Optimization**: Can perform routine operational tasks like "Clean up unused images." Can also optimize existing configurations, e.g., asking "Optimize this Dockerfile" -- Gordon may suggest multi-stage builds, adjusting layer order for caching, switching to lighter base images, and adding health checks.
+- **Instant Query and Learning**: No need to memorize complex CLI parameters; simply ask "Show me running containers" or "How much disk space is Docker using?" to get information. Can also ask Docker concepts like "Explain bind mounts vs named volumes in the context of my setup," receiving explanations based on your actual environment.
+
+## SRE Essentials
+
+**Relationship with Reliability, Observability, and Incident Response**
+Gordon extends observability from traditional centralized logging/monitoring systems partially into the developer's local debugging phase. By analyzing container logs, runtime status, and other real-time data, it serves as the "first responder" during development, quickly locating root causes of environment configuration errors or application crashes, preventing such issues from reaching production. This directly helps improve reliability and reduces mean time to repair (MTTR).
+
+**Best Practices and Common Anti-Patterns**
+- **Best Practices**:
+    - **As a context extender**: Use Gordon as a supplement to existing SRE and monitoring tools, for solving "works on my machine" problems in local development environments.
+    - **Leverage its approval mechanism for teaching**: For junior team members, observing and approving Gordon's operations is itself a learning process for Docker best practices and troubleshooting logic.
+    - **Integrate into CI/CD failure debugging**: While Gordon is primarily for local use, its ability to analyze logs and suggest fixes can inspire teams to write smarter CI/CD failure alerts and auto-diagnosis scripts.
+- **Common Anti-Patterns**:
+    - **Blind trust**: Despite the approval mechanism, developers still need to understand each suggestion Gordon makes, rather than mechanically clicking "approve." AI may produce imperfect or suboptimal solutions.
+    - **Ignoring session security**: Forgetting that session closure resets permissions; in sensitive environments, ensure sessions are closed promptly after use.
+    - **Replacing fundamental learning**: Gordon is an efficient tool, but cannot replace developers' understanding of Docker, container networking, and storage core concepts.
+
+**Related Metrics (SLI/SLO/SLA)**
+While Gordon itself is a development assistance tool, its effective use can indirectly impact the following SRE-relevant metrics:
+- **SLI (Service Level Indicator)**: E.g., reducing the number of development workflow interruptions caused by environment configuration errors.
+- **SLO (Service Level Objective)**: Teams can set an internal efficiency SLO like "use Gordon to successfully resolve X% of local container issues."
+- **SLA (Service Level Agreement)**: For teams providing internal developer platforms, integrating such AI tools can improve the "internal SLA" for developers, promising faster environment preparation and problem resolution times.

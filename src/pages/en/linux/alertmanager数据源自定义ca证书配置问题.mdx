@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Alertmanager Data Source Custom CA Certificate Configuration Issue"
+category: "Alert Management"
+confidence: medium
+---
+
+# Alertmanager Data Source Custom CA Certificate Configuration Issue
+
+## Overview
+
+In SRE practice, ensuring the integrity and security of alerting channels is critical. A common scenario is integrating Grafana with an external Alertmanager instance that uses TLS certificates signed by a private Certificate Authority (CA). This document details a specific issue that may arise when configuring such an Alertmanager data source in Grafana: despite "Test and Save" succeeding, actual alert delivery fails due to TLS verification errors. Understanding this issue helps SRE teams diagnose the root cause of alerting flow disruptions and adopt secure configuration practices.
+
+## Core Concepts
+
+Before diving into the issue, several key concepts need to be clarified:
+
+1.  **TLS Client Verification**: When Grafana (as a client) sends HTTPS requests to Alertmanager (as a server), the client needs to verify the validity of the server certificate. This includes checking whether the certificate is signed by a trusted CA, whether it has expired, whether the certificate domain name matches, and so on. If the client does not recognize the signing CA, verification fails.
+2.  **Custom CA Certificate**: When Alertmanager uses a certificate issued by an organization's internal private CA, the Grafana server must be configured with that private CA's root certificate (or intermediate certificate chain) to add it to the trusted list.
+3.  **Grafana Data Source TLS Configuration**: The Grafana data source configuration interface provides TLS-related options, such as "Skip TLS Verification" (insecure) and "Use CA Certificate". The latter allows users to paste the content of a custom CA certificate, intended to make Grafana trust server certificates signed by that CA in subsequent requests.
+4.  **x509 Verification Failure**: The error message `x509: certificate signed by unknown authority` in logs clearly indicates that the code path responsible for sending alerts could not find the CA information that issued the certificate when attempting to verify the Alertmanager server certificate, causing the TLS handshake to fail.
+
+## Practice
+
+### Problem Description
+A user configured a data source pointing to an external Alertmanager in Grafana 13.0.1 and performed the following actions:
+- Enabled the "Use CA Certificate" option in the "Authentication" section.
+- Pasted the root CA certificate corresponding to the Alertmanager server certificate issued by a private CA.
+- Clicked "Test and Save" -- the operation succeeded, and logs also showed health check records from the Alertmanager reverse proxy.
+- Activated the data source in "Alert Settings".
+- When alerts were triggered, Grafana's `ngalert.sender.external-alertmanager` component attempted to send alerts to Alertmanager, but TLS verification errors repeatedly appeared in logs, and alerts could not be delivered.
+- The workaround was to enable "Skip TLS Verification", but this disables all certificate verification and introduces security risks in production environments.
+
+### Root Cause Analysis
+Based on the provided logs and issue description, the root cause is that **the Grafana component responsible for sending alerts (`ngalert.sender.external-alertmanager`) does not correctly load or apply the custom CA certificate provided by the user in the data source configuration during initialization or execution**. This is most likely a code defect.
+
+Specifically:
+1.  The "Test and Save" function likely uses a separate HTTP client that correctly loads the custom CA certificate for verification.
+2.  The background service (sender) responsible for actual alert delivery may omit the step of reading and applying the `CA` field from `TLSConfig` in the data source configuration when creating its HTTP client, causing it to use the default system trust store and thus fail to recognize the private CA.
+3.  The log message `tls: failed to verify certificate: x509: certificate signed by unknown authority` is a typical error from the Go standard library `crypto/tls` upon verification failure, confirming that the client indeed did not trust the CA used for signing.
+
+### Workaround and Caveats
+Currently, the most straightforward workaround is to check the **"Skip TLS Verification"** option in the data source configuration.
+
+**Warning**: This action disables TLS certificate verification, making Grafana vulnerable to man-in-the-middle attacks. **It is strongly recommended not to use this option long-term in any production environment that handles sensitive data or controls critical operations**. It should only be used as a temporary workaround until an official fix is released.
+
+### Permanent Resolution
+1.  **Wait for Official Fix**: The issue has been reported as a Grafana bug ([Issue #124980](https://github.com/grafana/grafana/issues/124980)). The safest resolution is to follow the progress of the issue and apply the official patch in a subsequent Grafana version update (possibly v13.0.2 or later).
+2.  **Build/Patch Yourself**: For environments that cannot be upgraded immediately, capable teams can refer to the discussion in the issue, attempt to locate and fix the relevant code (possibly in the `pkg/services/ngalert/sender` module), and then build the Grafana binary themselves.
+
+## SRE Takeaways
+
+### Reliability Impact
+This issue directly affects **alerting reliability**. An alerting channel failure means that operations teams may not detect system faults in a timely manner, increasing Mean Time To Detect (MTTD) and potentially increasing Mean Time To Repair (MTTR), impacting Service Level Objectives (SLOs). In SRE practice, the monitoring and alerting pipeline itself must be highly reliable.
+
+### Best Practices and Common Anti-patterns
+- **Best Practices**:
+    - **Validate Alerting Paths**: After configuring an external data source, in addition to using the "Test" button, regularly verify end-to-end alert delivery by injecting simulated alerts.
+    - **Monitor Alert Sending Failures**: Configure monitoring and alerting for `ngalert.sender.external-alertmanager` errors in Grafana's own logs to ensure that alerting channel failures are detected promptly.
+    - **Keep Software Updated**: Apply security updates and bug fixes in a timely manner to address known security and functional defects.
+- **Common Anti-patterns**:
+    - **Abusing "Skip TLS Verification"**: Permanently disabling TLS verification to quickly resolve issues is a serious violation of security best practices and introduces unnecessary risk.
+    - **Ignoring End-to-End Testing**: Relying solely on "Test Successful" in the configuration interface without verifying actual alert delivery in a real or simulated production environment.
+
+### Related Metrics
+To monitor the occurrence of such issues, consider the following SRE-related metrics:
+- **Alert Delivery Success Rate**: The ratio of alerts successfully sent from Grafana to those acknowledged as received by Alertmanager. This issue would cause a sharp drop in this metric.
+- **Certificate Verification Failure Rate**: The number of TLS handshake failures due to `x509` errors collected from the Grafana side.
+- **Alerting Channel Availability**: As part of an SLI, a comprehensive measure of whether the alerting management system is functioning normally.
+
+SRE teams should establish health monitoring for the alerting channel itself, treating it as a "critical internal service" whose availability and reliability must be maintained. Custom configurations involving [[tls-certificate-verification]] especially require thorough testing and validation. For more details on [[alertmanager-configuration]], refer to the relevant documentation.

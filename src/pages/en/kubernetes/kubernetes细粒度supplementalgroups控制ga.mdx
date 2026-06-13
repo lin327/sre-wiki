@@ -1,0 +1,78 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Fine-Grained Supplemental Groups Control (GA)"
+description: "Introduction to the `supplementalGroupsPolicy` field graduating to GA in Kubernetes v1.35, enabling precise control of supplemental groups in Linux containers for enhanced security and transparency."
+category: Container Security
+order: 0
+lastUpdated: 2025-12-24
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2025/12/23/kubernetes-v1-35-fine-grained-supplementalgroups-control-ga/
+    title: "Kubernetes v1.35: Fine-grained Supplemental Groups Control Graduates to GA"
+tags: [kubernetes, security, pod-security, supplemental-groups, linux, sre, cri]
+---
+
+# Kubernetes Fine-Grained Supplemental Groups Control (GA)
+
+## Overview
+
+In Kubernetes, container processes run with specific user (UID) and group (GID) identities, directly determining filesystem and network resource access. Traditionally, Kubernetes implicitly merges container image `/etc/group` group memberships with Pod-declared groups, potentially causing unexpected, hard-to-audit privilege escalation risks. The `supplementalGroupsPolicy` field's GA provides SRE and security engineers a standardized, fine-grained way to precisely control container supplemental groups -- a key practice for implementing least privilege and improving cluster security posture.
+
+## Core Concepts
+
+`supplementalGroupsPolicy` is a new field under `Pod.spec.securityContext` controlling how Kubernetes calculates supplemental groups attached to container processes:
+
+*   **`Merge` (default)**: Backward-compatible. Merges `fsGroup`, `supplementalGroups`, or `runAsGroup` from Pod spec with `/etc/group` group memberships for the container's primary user.
+*   **`Strict`**: Only attaches explicitly specified groups from Pod spec. Container image `/etc/group` memberships for the primary user are completely ignored.
+
+Example: Pod with `runAsUser: 1000`, `runAsGroup: 3000`, `supplementalGroups: [4000]`. If image `/etc/group` defines user 1000 in group 50000:
+- `Merge`: `groups=3000,4000,50000`
+- `Strict`: `groups=3000,4000` -- declarative config matches runtime identity exactly.
+
+## Practice
+
+### Enable Strict Policy
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: strict-supplementalgroups-policy-example
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 3000
+    supplementalGroups: [4000]
+    supplementalGroupsPolicy: Strict
+  containers:
+  - name: example-container
+    image: registry.k8s.io/e2e-test-images/agnhost:2.45
+    command: [ "sh", "-c", "sleep 1h" ]
+    securityContext:
+      allowPrivilegeEscalation: false
+```
+
+### Runtime and Version Requirements
+- **containerd**: v2.0+
+- **CRI-O**: v1.31+
+
+Check node support via `.status.features.supplementalGroupsPolicy`.
+
+### Observability
+Pod status `.status.containerStatuses[].user.linux` exposes process identity (UID, GID, supplemental groups) attached to the container's first process.
+
+## SRE Essentials
+
+### Reliability and Security
+*   **Enhanced auditability and enforcement**: `Strict` forces all group memberships to be declared in Pod specs, enabling policy engines (OPA/Gatekeeper) to fully validate and enforce based on declarative manifests.
+*   **Reduced unexpected access risk**: Eliminates implicit group memberships that could grant unexpected file access, especially with host directory or network storage mounts.
+*   **Upgrade and change management**: When upgrading from v1.32 and earlier to v1.35, note behavior changes. Assess existing workload supplemental group dependencies.
+
+### Observability and Incident Response
+*   **Enhanced observability**: `user.linux` in Pod status is an important observability anchor for troubleshooting file permission issues.
+*   **Best Practice**: Combine with [[pod-security-standards]] `Restricted` policy: `supplementalGroupsPolicy: Strict`, `runAsNonRoot: true`, `allowPrivilegeEscalation: false`.
+*   **Common Anti-Pattern**: Relying on undeclared implicit group memberships after enabling `Strict`. Ensure all legitimate group requirements are explicitly declared.
+
+### Related Metrics
+*   **Policy adoption rate**: Proportion of Pods with `supplementalGroupsPolicy: Strict`.
+*   **Compliance check failure count**: Security alerts triggered by `Merge` or undeclared policies.

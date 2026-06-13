@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Table 'Apply Color to Entire Row' Feature Regression Analysis"
+description: "Analysis of the regression in Grafana 12.2 where table panel's value-mapping-based entire row coloring feature stopped working, and its impact on operational observability."
+category: Monitoring & Observability
+order: 0
+lastUpdated: 2025-11-17
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/113997
+    title: "Table: apply color to entire row does not work anymore."
+tags: [Grafana, Table Panel, Regression, Observability, Dashboard]
+---
+
+# Grafana Table
+
+## Overview
+
+In monitoring dashboards, the Table panel is one of the core panels for displaying multi-dimensional data. Grafana introduced the feature of coloring entire table rows based on Value Maps or Thresholds in the 11.x versions, which greatly enhanced operators' ability to quickly identify anomalous state rows (such as alerts, faulty nodes) and was an important tool for improving operational efficiency. However, in version 12.2, this feature was reported to have regressed -- a previously working function has stopped working in the new version. This article analyzes this issue and explores the implications for SRE practice.
+
+## Core Concepts
+
+### Table Entire Row Coloring
+This feature allows users to apply coloring effects to the **entire data row** based on a column's value (defined through value mapping or threshold rules), rather than just the cell containing that value. Its core value is providing more prominent visual cues to help operators quickly locate targets from dense data rows. For example, marking all rows with "ERROR" status devices in red, or marking servers with load exceeding 80% in yellow.
+
+### Feature Regression
+Refers to defects that were fixed in older versions reappearing in new versions of software, or previously working features becoming broken. Feature regression is one of the major risks in software maintenance and release processes, directly impacting user experience and system reliability. For critical infrastructure components like Grafana, any regression can affect an entire organization's insight into system health.
+
+## Practice
+
+### Issue Reproduction and Symptoms
+According to the issue description, the problem can be reproduced in Grafana 12.2 with the following steps:
+1. **Configure table panel**: Select "Colored background" as the cell type.
+2. **Enable coloring rules**: Turn on the "Apply to entire row" option.
+3. **Set value mapping**: Define value mapping rules, for example mapping the number `1` to "Sensor A" and assigning it a specific color.
+4. **Adjust column visibility**: Through Overrides, hide the column used as the basis for value mapping (e.g., the column storing numbers `1, 2, 3, 4`).
+5. **Execute query**: Use the provided SQL query (`UNION ALL` constructing multiple rows of data).
+6. **Observe results**: In Grafana 11.6, the entire row is correctly colored; but in 12.2, only cell coloring works, and entire row coloring fails.
+
+### Temporary Solutions and Workarounds
+While waiting for an official fix, consider the following temporary measures:
+1. **Maintain old version**: For production environments, do not upgrade to Grafana 12.2 yet; maintain the 11.x version.
+2. **Adjust panel configuration**: If upgrading is necessary, redesign the table configuration. You may need to abandon the "entire row coloring" feature, or explore using other panels (such as status panels) combined with cell coloring to achieve similar visual effects.
+3. **Monitor official updates**: Closely follow the progress of the GitHub Issue and promptly apply subsequent fix patches.
+
+## SRE Key Points
+
+### Relationship to Reliability
+This feature failure directly impacts the **availability** and **actionability** of operational dashboards. When critical status rows cannot be highlighted, it increases the difficulty and time for operators to identify issues from large amounts of data, potentially delaying Incident Response. This demonstrates that the **reliability of monitoring tools themselves** is a prerequisite for ensuring the reliability of monitored systems.
+
+### Best Practices and Anti-Patterns
+*   **Anti-Pattern: Ignoring upgrade verification**. Directly upgrading core monitoring platforms (such as Grafana) without sufficient functional verification may introduce such regression issues into production environments, disrupting existing operational workflows.
+*   **Best Practice: Establish monitoring panel health checks**. Incorporating the functional correctness of critical monitoring panels (especially those with complex visualization rules) into daily inspections or automated testing can quickly detect regression issues after version upgrades.
+*   **Best Practice: Adopt canary releases**. Performing small-scale canary upgrades of platforms like Grafana, first verifying new versions in test environments or on non-critical business dashboards, can effectively reduce the risk of full-scale upgrades.
+
+### Related Metrics (SLI/SLO/SLA)
+While this issue doesn't directly impact core business system SLIs (Service Level Indicators), it directly impacts the **monitoring platform's SLO (Service Level Objective)**. A monitoring platform's SLO should include the availability and accuracy of its own features. For example: "Verified data visualization rules in monitoring dashboards maintain normal operation 99.9% of the time after version upgrades." The occurrence of such regression bugs means a short-term SLO violation for the platform.
+
+**Conclusion**: The regression of Grafana's table "entire row coloring" feature is a typical case of observability platform functionality defects introduced by software updates. It reminds SRE teams that maintaining the reliability of their own toolchains is equally important as maintaining business systems, and rigorous upgrade processes and verification mechanisms must be established.

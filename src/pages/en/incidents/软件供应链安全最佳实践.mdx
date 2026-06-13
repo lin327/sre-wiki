@@ -1,67 +1,69 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "5 Software Supply Chain Security Best Practices for Development Teams"
-category: "安全"
-confidence: medium
+category: "Security"
+confidence: high
 ---
 
+# 5 Software Supply Chain Security Best Practices for Development Teams
 
-## 概述
+## Overview
 
-软件供应链安全是保障从开发到部署全过程中软件组件、依赖及构建环境完整性的关键实践。随着针对开源包管理器（如npm）的恶意软件攻击自动化、复杂化，以及第三方数据泄露事件占比逐年上升，将供应链安全意识转化为可重复的工程实践变得至关重要。对于构建和发布基于容器工作负载的团队而言，一个结构化的供应链安全计划不再是可选项，而是保障系统可靠性的基石。
+Software supply chain security is a critical practice for ensuring the integrity of software components, dependencies, and build environments throughout the entire process from development to deployment. As malicious software attacks against open-source package managers (such as npm) become increasingly automated and sophisticated, and third-party data breaches account for a growing proportion year over year, converting supply chain security awareness into repeatable engineering practices has become essential. For teams building and deploying container-based workloads, a structured supply chain security program is no longer optional — it is a cornerstone for ensuring system reliability.
 
-## 核心概念
+## Core Concepts
 
-理解以下核心概念是实践供应链安全的基础：
+Understanding the following core concepts is the foundation for practicing supply chain security:
 
-*   **软件物料清单（SBOM）**： 一份机器可读的文档，详细列出了软件产品所包含的所有组件、库及其版本信息。它是漏洞管理和合规审计的基础。
-*   **构建来源证明（Build Provenance）**： 回答“这个制品是在哪里、由哪个系统、从什么源码构建的？”。它提供了制品构建过程的完整上下文，是验证制品可信度的关键。
-*   **SLSA 框架**： 全称为“软件工件的供应链级别”。它定义了一个渐进式的构建完整性成熟度模型（从Level 1到Level 4），为团队提升构建平台的安全性和透明度提供了明确路径。
-*   **漏洞可利用性交换（VEX）**： 配合SBOM使用，用于声明特定漏洞在当前制品上下文中是否实际可被利用，从而大幅降低漏洞警报的噪声，聚焦于真正需要修复的风险。
+*   **Software Bill of Materials (SBOM)**: A machine-readable document that details all components, libraries, and their version information contained in a software product. It is the foundation for vulnerability management and compliance auditing.
+*   **Build Provenance**: Answers "where was this artifact built, by which system, and from what source code?" It provides complete context about the artifact's build process and is key to verifying artifact trustworthiness.
+*   **SLSA Framework**: Stands for "Supply-chain Levels for Software Artifacts." It defines a progressive build integrity maturity model (from Level 1 to Level 4), providing teams with a clear path to improve the security and transparency of their build platforms.
+*   **Vulnerability Exploitability eXchange (VEX)**: Used in conjunction with SBOMs to declare whether a specific vulnerability is actually exploitable in the current artifact context, thereby significantly reducing vulnerability alert noise and focusing on risks that truly need to be remediated.
 
-## 实践
+## Practice
 
-本节围绕软件交付的自然流程，阐述五类关键实践。
+This section describes five key practices organized around the natural flow of software delivery.
 
-### 1. 从可信内容开始
+### 1. Start from Trusted Content
 
-**选择经过验证的最小化基础镜像**：每个容器镜像都继承其基础镜像的安全状态。生产环境应从那些持续维护、提供完整SBOM、具备SLSA Level 3或更高构建证明和加密签名的基础镜像构建。最小化镜像（如移除不必要的shell和工具）能有效减少攻击面。
+**Choose verified, minimal base images**: Every container image inherits the security posture of its base image. Production environments should build from base images that are continuously maintained, provide complete SBOMs, have SLSA Level 3 or higher build provenance, and cryptographic signatures. Minimal images (such as those with unnecessary shells and tools removed) effectively reduce the attack surface.
 
-**固定依赖并验证完整性**：依赖固定是防止上游意外或恶意变更流入构建的简单有效实践。应使用SHA256摘要固定容器镜像，而非可变的标签（如 `python:3.12`）。同时，应使用锁文件精确固定语言级别的依赖（如npm, pip），并在CI中验证锁文件的哈希值。如果构建系统拉取的依赖哈希与提交的不匹配，构建应失败。
+**Pin dependencies and verify integrity**: Dependency pinning is a simple and effective practice for preventing upstream accidental or malicious changes from flowing into builds. Use SHA256 digests to pin container images rather than mutable tags (such as `python:3.12`). Also, use lock files to precisely pin language-level dependencies (such as npm, pip), and verify lock file hashes in CI. If the dependency hash pulled by the build system does not match the submitted hash, the build should fail.
 
-### 2. 加固构建管道
+### 2. Harden the Build Pipeline
 
-**强制执行构建证明和认证**：配置CI/CD系统，在每次镜像构建时生成符合SLSA框架的签名证明（通常使用in-toto证明格式）。这些证明将制品与其源代码提交、构建配置和构建器身份进行密码学关联，成为部署策略验证的依据。
+**Enforce build provenance and attestation**: Configure the CI/CD system to generate signed provenance conforming to the SLSA framework (typically using in-toto attestation format) for every image build. These attestations cryptographically link the artifact to its source code commit, build configuration, and builder identity, serving as the basis for deployment policy verification.
 
-**加固CI/CD基础设施**：构建管道本身是高价值攻击目标。加固措施包括：为每个构建作业提供隔离的、临时的环境；限制构建作业可用的密钥；将GitHub Actions等CI插件固定到完整的提交SHA；在合并到发布分支前强制执行代码审查和状态检查。
+**Harden CI/CD infrastructure**: The build pipeline itself is a high-value attack target. Hardening measures include: providing isolated, temporary environments for each build job; limiting the secrets available to build jobs; pinning CI plugins such as GitHub Actions to full commit SHAs; enforcing code review and status checks before merging to release branches.
 
-### 3. 部署前验证
+### 3. Verify Before Deployment
 
-**持续生成和消费SBOM**：应在每次构建时生成SBOM，将其作为证明附加到镜像，并在准入控制器、漏洞扫描器和许可证合规检查中下游消费。当新的CVE披露时，拥有当前SBOM的团队能在几分钟内确定受影响的工作负载。结合VEX信息可以进一步提升修复的针对性。
+**Continuously generate and consume SBOMs**: Generate SBOMs at every build, attach them as attestations to images, and consume them downstream in admission controllers, vulnerability scanners, and license compliance checks. When new CVEs are disclosed, teams with current SBOMs can identify affected workloads within minutes. Combining VEX information can further improve remediation targeting.
 
-**将漏洞分析集成到开发者工作流中**：漏洞扫描最有效的方式是在开发者已有的工作流中（如PR、本地构建、CI）直接呈现结果和修复指导，而非依赖单独的安全部门仪表板。这实现了“左移”安全，让问题在进入注册中心前就被发现和解决。
+**Integrate vulnerability analysis into developer workflows**: Vulnerability scanning is most effective when results and remediation guidance are presented directly in developers' existing workflows (such as PRs, local builds, CI), rather than relying on separate security department dashboards. This achieves "shift-left" security, allowing issues to be discovered and resolved before they enter the registry.
 
-### 4. 控制访问与执行策略
+### 4. Control Access and Enforce Policies
 
-**管理注册中心访问和镜像策略**：实施注册中心访问控制，限制允许使用的镜像来源（如仅允许经验证的发布者或内部构建），并要求在镜像进入生产环境前进行签名验证。这确保了生产环境只消费经过审查、符合策略的镜像。
+**Manage registry access and image policies**: Implement registry access controls, restrict allowed image sources (such as only allowing verified publishers or internal builds), and require signature verification before images enter production. This ensures production only consumes reviewed, policy-compliant images.
 
-**在整个管道中实施最小权限**：为流水线中的每个凭据、令牌和API密钥分配完成特定任务所需的最小权限。例如，构建服务账户不应有权推送至生产注册中心，部署令牌不应能修改构建配置。此外，应在所有开发人员和CI/CD账户上启用防网络钓鱼的多因素认证。
+**Implement least privilege throughout the pipeline**: Assign each credential, token, and API key in the pipeline only the minimum permissions needed to complete its specific task. For example, a build service account should not have permission to push to the production registry, and a deployment token should not be able to modify build configuration. Additionally, enable phishing-resistant multi-factor authentication on all developer and CI/CD accounts.
 
-### 5. 监控、响应与改进
+### 5. Monitor, Respond, and Improve
 
-**实施运行时监控**：静态分析和构建时扫描无法捕捉所有威胁。运行时监控通过检测容器的意外行为（如不应出现的出站网络连接、不可变镜像的文件系统修改）来识别突破了预部署控制的攻击。它需要基于行为基线进行异常检测，而非仅匹配已知的恶意特征。
+**Implement runtime monitoring**: Static analysis and build-time scanning cannot capture all threats. Runtime monitoring identifies attacks that have bypassed pre-deployment controls by detecting unexpected container behavior (such as outbound network connections that should not exist, file system modifications on immutable images). It requires anomaly detection based on behavioral baselines, not just matching known malicious signatures.
 
-**将事件响应内置于供应链计划中**：供应链事件发生时，响应速度取决于事前准备。预案应包括：识别受污染组件产生的所有制品（来源证明和SBOM在此至关重要）、撤销和轮换可能暴露的凭据、从经验证的源重新构建受影响的镜像、以及与软件的下游消费者进行沟通。
+**Build incident response into the supply chain program**: When supply chain incidents occur, response speed depends on prior preparation. Plans should include: identifying all artifacts produced by the compromised component (provenance and SBOMs are critical here), revoking and rotating potentially exposed credentials, rebuilding affected images from verified sources, and communicating with downstream consumers of the software.
 
-## SRE 要点
+## SRE Key Points
 
-*   **与可靠性、可观测性、事件响应的关联**：供应链安全直接关系到系统可靠性。一个被破坏的依赖可能导致生产环境宕机或数据泄露。可观测性不仅用于性能监控，也应用于[[observability]]供应链安全，例如监控运行时异常行为。清晰的来源证明和SBOM能极大加速事件响应中的“爆炸半径”分析，明确受影响的范围，是事件响应计划的核心数据支撑。
-*   **最佳实践与常见反模式**：
-    *   **最佳实践**：采用“安全即工程”的理念，将上述实践作为可重复、自动化的工程任务，而非一次性合规检查。
-    *   **常见反模式**：在开发环境中允许随意拉取未经验证的公共镜像；只在发布时生成一次SBOM并归档；CI/CD管道拥有过高的持久化权限；忽略运行时异常行为的监控。
-*   **相关指标（SLI/SLO/SLA）**：
-    *   **SLI**：可考虑“具有有效构建证明的镜像比例”、“已生成SBOM的活跃组件覆盖率”、“关键漏洞的平均修复时间”。
-    *   **SLO**：可设定目标，如“生产环境100%的容器镜像均来自经策略批准的来源”、“新关键CVE披露后，受影响服务的识别时间在1小时内”。
-    *   这些指标确保了供应链安全实践不是停留在纸面上，而是有了可衡量的、面向可靠性的目标。
+*   **Connection to Reliability, Observability, and Incident Response**: Supply chain security is directly related to system reliability. A compromised dependency can cause production outages or data breaches. Observability is not only for performance monitoring but should also be applied to [[observability]] supply chain security, such as monitoring runtime anomalous behavior. Clear provenance and SBOMs can greatly accelerate "blast radius" analysis during incident response, identifying the scope of impact, and are core data support for incident response plans.
+*   **Best Practices and Common Anti-patterns**:
+    *   **Best Practice**: Adopt a "security as engineering" philosophy, treating the above practices as repeatable, automated engineering tasks rather than one-time compliance checks.
+    *   **Common Anti-pattern**: Allowing arbitrary pulling of unverified public images in development environments; generating SBOMs only once at release time and archiving them; CI/CD pipelines having excessively high persistent permissions; ignoring runtime anomalous behavior monitoring.
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   **SLI**: Consider "proportion of images with valid build provenance," "active component coverage with generated SBOMs," "mean time to remediation for critical vulnerabilities."
+    *   **SLO**: Set targets such as "100% of production container images come from policy-approved sources," "identification time for affected services after new critical CVE disclosure is within 1 hour."
+    *   These metrics ensure that supply chain security practices are not just on paper, but have measurable, reliability-oriented goals.
 
 [[container-security]] [[incident-response]] [[vulnerability-management]]

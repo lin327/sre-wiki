@@ -1,0 +1,80 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Subquery"
+category: "Prometheus"
+confidence: high
+---
+
+# Prometheus Subquery
+
+## Overview
+
+Prometheus subqueries are an important PromQL feature introduced since version 2.7. They allow nesting a range query within a single instant query, greatly simplifying complex multi-timescale data analysis scenarios that previously required recording rules to implement indirectly. In SRE practice, subqueries provide flexibility for quick historical data analysis and ad-hoc troubleshooting, but their use also requires balancing performance impact.
+
+## Core Concepts
+
+The syntax structure of a subquery is: `<instant_query> [ <range>: [ <resolution> ] ] [ offset <duration> ]`. Essentially, before executing the outer query, it performs a range calculation similar to the `/api/v1/query_range` API on the inner query, and passes the result (a range vector) to the outer function.
+
+- **`<instant_query>`**: The instant query expression to execute inside the subquery.
+- **`<range>`**: Defines the time range for the inner query, similar to a range selector (e.g., `[5m]`).
+- **`<resolution>`** (optional): Specifies the calculation step (`step`) for the subquery. If not specified, the Prometheus global evaluation interval (`evaluation_interval`) is used as the default. This step aligns independently of the outer query's evaluation time.
+- **`offset <duration>`** (optional): Allows the subquery to offset relative to the current query execution time.
+
+The subquery's calculation is independent. Its time alignment (determined by `<range>` and optional `<resolution>`) does not depend on the outer query or rule evaluation cycle. This means the same subquery recalculates its full range when evaluated at different time points, which is fundamentally different from recording rules that pre-compute and store results.
+
+## Practice
+
+### Basic Use Case: Multi-Timescale Aggregation
+
+The most common motivation is to first calculate a metric (such as `rate`) at a higher frequency (smaller `range`), then aggregate this result over a longer time window (such as `max_over_time`). Before subqueries, this had to be done in two steps via recording rules.
+
+Suppose we want to see the maximum HTTP request rate per 5 minutes over the past 1 hour. Using a subquery, this can be done in a single query:
+
+```promql
+max_over_time(
+  rate(http_requests_total[5m])[1h:1m]
+)
+```
+
+**Explanation**:
+
+1.  The subquery `rate(http_requests_total[5m])[1h:1m]` means: within the 1-hour range before the current time point, repeat the `rate(http_requests_total[5m])` calculation at 1-minute steps.
+2.  The result is a range vector containing all 5-minute rate values at 1-minute steps over the past 1 hour.
+3.  The outer function `max_over_time()` extracts the maximum value from this range vector.
+
+### Nesting and Default Resolution
+
+Subqueries can be nested. For example, calculating the maximum derivative of speed (`rate`) over the past 10 minutes:
+
+```promql
+max_over_time(
+  deriv(
+    rate(distance_covered_meters_total[1m])[5m:1m]
+  )[10m:]
+)
+```
+
+Note that the inner subquery `[5m:1m]` specifies a 1-minute step, while the outermost `[10m:]` uses a colon `:`, indicating the resolution parameter is omitted. In this case, the `deriv()` function's result will use Prometheus's global `evaluation_interval` as the step for the range query.
+
+### Performance Considerations and Best Practices
+
+Although subqueries are very convenient, **indiscriminate use can significantly impact Prometheus performance**. Every execution of an instant query containing a subquery (whether via API call or as an alert/recording rule) triggers a complete recalculation of the subquery, which can be very time-consuming and memory-intensive.
+
+**Key Practices**:
+
+- **Use for ad-hoc analysis**: Subqueries are best suited for ad-hoc troubleshooting and one-off analysis, not for long-term, high-frequency monitoring or alert rules.
+- **Convert to recording rules**: For subquery logic that needs to be repeatedly calculated for dashboards or alert rules, **it should ultimately be converted to one or more recording rules** to pre-compute and store results, improving query efficiency and system stability.
+- **Avoid deep nesting**: Nesting subqueries inside recording rules is **not recommended**, as it exacerbates performance issues. If recording rule calculations truly need similar logic, they should be broken down into multiple simpler recording rules executed sequentially.
+
+## SRE Essentials
+
+- **Connection to Reliability**: Subqueries are a PromQL query capability that directly affects Prometheus service query reliability and performance. Abusing complex subqueries can lead to query timeouts or OOM, impacting dashboards and alert functionality that depend on these queries, ultimately reducing the reliability of the entire monitoring system.
+- **Observability**: Subqueries extend the capability boundaries of instant queries, enabling engineers to perform deeper "online" analysis of historical data. This is highly valuable for post-mortem analysis and exploratory diagnosis. When querying, it can be thought of as an "instant" range query targeting a historical window.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Use subqueries as exploratory and prototyping tools. Once the analysis logic is confirmed to be stable and important, migrate to recording rules.
+    - **Anti-Pattern**: Using high-frequency, complex subqueries directly in Grafana panels; nesting heavy subqueries in alert rules with short `for` clauses; attempting to use subqueries to completely replace the pre-computation functionality of recording rules.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **Query Latency SLI**: Subquery performance directly affects `prometheus_rule_evaluation_duration_seconds` and overall query latency SLO. Complex subqueries significantly increase these metric values.
+    - **Resource Usage SLI**: Subquery computation temporarily increases the Prometheus process's CPU and memory usage, potentially affecting metrics like `process_resident_memory_bytes` and `process_cpu_seconds_total`.
+    - To safeguard Prometheus service SLOs, teams should conduct code reviews of subquery usage in core alert and dashboard queries, and set performance budgets.

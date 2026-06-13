@@ -1,75 +1,77 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Grafana Issue"
-category: "SRE实践"
+category: "SRE Practices"
 confidence: high
 ---
 
+# Grafana Issue
 
-## 概述
+## Overview
 
-在构建可观测性平台时，Grafana 仪表盘是 SRE 团队实时监控系统健康状态、验证 [[slis-slos-slas|SLO]] 达成情况和快速响应事件的核心工具。仪表盘的准确性和鲁棒性直接影响团队对系统可靠性的判断。一个已知的缺陷（Issue #102039）表明，当面板配置了多个查询数据源，并使用 `merge`（合并）变换时，如果其中一个查询返回空数据帧（例如无匹配结果的查询），会导致整个面板可视化失效，显示“无数据”。这违背了 SRE 实践中对可观测性数据完整性和系统状态准确呈现的基本要求，可能掩盖部分关键指标的变化，误导故障排查方向。
+When building an observability platform, Grafana dashboards are the core tool for SRE teams to monitor system health in real-time, verify [[slis-slos-slas|SLO]] achievement, and respond quickly to incidents. The accuracy and robustness of dashboards directly affect the team's judgment of system reliability. A known issue (#102039) indicates that when a panel is configured with multiple query data sources and uses the `merge` transformation, if one of the queries returns an empty data frame (e.g., a query with no matching results), the entire panel visualization fails, displaying "No data." This violates the basic requirements of SRE practices for observability data integrity and accurate system state representation, potentially masking changes in critical metrics and misleading incident investigation direction.
 
-## 核心概念
+## Core Concepts
 
-要理解此问题，需要明确以下几个关键技术概念：
+To understand this issue, the following key technical concepts need to be clarified:
 
-- **空数据帧（Empty Data Frame）**：在 Grafana 的内部数据模型中，一个查询的结果可能返回一个结构存在但不含任何数据行（Records）的数据帧。这不同于查询失败或数据源连接错误，它表示查询成功执行但未命中任何数据。
-- **数据合并（Merge）**：这是一种常用的数据变换，旨在将来自多个查询（或多个数据帧）的字段进行逻辑合并，通常基于共同的键值（如时间戳或特定维度），以创建一个统一的、便于交叉对比的数据视图。
-- **Merge 变换的实现逻辑**：根据问题描述，当前的 `merge` 变换实现可能类似于 JavaScript 数组的 `concat` 操作，它直接拼接数据帧。当其中一个输入数据帧为空（`[]`）时，该操作可能未能正确处理，导致最终输出结果也被视为空，从而阻断了其他有效数据帧的可视化。
+- **Empty Data Frame**: In Grafana's internal data model, a query result may return a data frame that has a structure but contains no data records. This is different from a query failure or data source connection error; it indicates that the query executed successfully but did not hit any data.
+- **Data Merge**: This is a commonly used data transformation designed to logically merge fields from multiple queries (or multiple data frames), typically based on common keys (such as timestamps or specific dimensions), to create a unified view for cross-comparison.
+- **Merge Transformation Implementation Logic**: According to the issue description, the current `merge` transformation implementation may be similar to JavaScript array's `concat` operation, which directly concatenates data frames. When one of the input data frames is empty (`[]`), this operation may not handle it correctly, causing the final output to also be treated as empty, thereby blocking the visualization of other valid data frames.
 
-## 实践
+## Practice
 
-### 问题复现步骤
+### Issue Reproduction Steps
 
-根据提供的最小化复现用例，可以按以下步骤重现该问题：
+Based on the provided minimal reproduction case, the issue can be reproduced with the following steps:
 
-1.  **创建包含多查询的面板**：在 Grafana 中创建一个新仪表盘，并添加一个表格（Table）类型面板。
-2.  **配置多个数据源查询**：
-    -   查询 A（`refId: “A”`）：使用 `grafana-testdata-datasource` 的 `csv_content` 场景，提供一些示例数据。
-    -   查询 B（`refId: “B”`）：同样使用 `csv_content` 提供不同的示例数据。
-    -   查询 C（`refId: “C”`）：使用 `raw_frame` 场景，但将 `rawFrameContent` 设置为 `“[]”`，模拟一个返回空数据帧的查询。
-3.  **应用 Merge 变换**：在面板的“转换”（Transformations）选项卡中，添加一个“合并”（Merge）变换。
-4.  **观察结果**：预览或保存仪表盘后，面板应显示“无数据”（No data），尽管查询 A 和 B 均有有效数据。
+1.  **Create a panel with multiple queries**: Create a new dashboard in Grafana and add a Table type panel.
+2.  **Configure multiple data source queries**:
+    -   Query A (`refId: "A"`): Use `grafana-testdata-datasource`'s `csv_content` scenario with some sample data.
+    -   Query B (`refId: "B"`): Also use `csv_content` with different sample data.
+    -   Query C (`refId: "C"`): Use the `raw_frame` scenario, but set `rawFrameContent` to `"[]"` to simulate a query that returns an empty data frame.
+3.  **Apply Merge transformation**: In the panel's "Transformations" tab, add a "Merge" transformation.
+4.  **Observe results**: After previewing or saving the dashboard, the panel should display "No data," even though queries A and B both have valid data.
 
-### 当前行为与预期行为
+### Current Behavior vs Expected Behavior
 
--   **当前行为**：当合并的数据源中存在一个空数据帧时，整个可视化输出为空。
--   **预期行为**：可视化应显示所有非空查询的合并数据，忽略或跳过空数据帧。空数据帧不应阻塞整个数据流。
+-   **Current behavior**: When one of the merged data sources contains an empty data frame, the entire visualization output is empty.
+-   **Expected behavior**: The visualization should display the merged data of all non-empty queries, ignoring or skipping empty data frames. Empty data frames should not block the entire data flow.
 
-### 可能的临时规避方案
+### Possible Temporary Workarounds
 
-在官方修复此问题前，SRE 团队可以考虑以下临时方案以保证监控连续性：
+Before an official fix for this issue, SRE teams can consider the following temporary solutions to ensure monitoring continuity:
 
-1.  **数据源层面过滤**：确保所有发送到 Grafana 的查询理论上都会返回至少一行数据，避免设计产生空结果的查询。但这可能不现实。
-2.  **使用其他变换**：尝试替代的合并策略。例如，先使用“添加字段从计算”（Add field from calculation）或“分组”（Group by）等变换对每个查询结果进行预处理，确保输出非空，然后再进行合并。但此方法复杂且可能无法完全模拟所需的合并逻辑。
-3.  **简化查询逻辑**：重新设计仪表盘，尽量减少在一个面板内混合使用可能返回空结果的异构查询。
+1.  **Data source level filtering**: Ensure all queries sent to Grafana theoretically return at least one row of data, avoiding queries designed to produce empty results. However, this may not be realistic.
+2.  **Use other transformations**: Try alternative merge strategies. For example, first use "Add field from calculation" or "Group by" transformations to preprocess each query result to ensure non-empty output, then perform the merge. However, this method is complex and may not fully simulate the desired merge logic.
+3.  **Simplify query logic**: Redesign the dashboard to minimize mixing heterogeneous queries that may return empty results within a single panel.
 
-## SRE 要点
+## SRE Key Points
 
-### 与可靠性的关联
+### Relationship with Reliability
 
-此问题直接影响监控系统的可靠性。仪表盘作为 [[incident-response|事件响应]] 和 [[on-call|On-Call]] 过程中的第一手信息来源，其数据不完整或误报会：
--   **误导故障排查**：掩盖了部分系统指标，导致 SRE 团队无法获得全面的系统状态视图，延长 [[mttd|MTTD]]（平均检测时间）和 [[mttr|MTTR]]（平均恢复时间）。
--   **影响 SLO 计算与决策**：如果用于计算关键 [[slis-slos-slas|SLI]] 的面板因部分数据缺失而失效，可能错误触发 Error Budget 消耗警报，或反过来，未能及时触发必要的可靠性动作。
--   **降低可观测性信任度**：反复出现的“无数据”或数据缺失会降低团队对监控系统的信任，可能导致重要的告警被忽略。
+This issue directly affects the reliability of the monitoring system. Dashboards serve as the primary information source during [[incident-response|incident response]] and [[on-call|On-Call]] processes. Incomplete or misleading data can:
+-   **Mislead incident investigation**: Mask some system metrics, preventing the SRE team from obtaining a comprehensive view of system state, extending [[mttd|MTTD]] (Mean Time to Detect) and [[mttr|MTTR]] (Mean Time to Recover).
+-   **Impact SLO calculation and decision-making**: If panels used to calculate critical [[slis-slos-slas|SLIs]] fail due to partial data loss, it may incorrectly trigger Error Budget consumption alerts, or conversely, fail to trigger necessary reliability actions in time.
+-   **Reduce observability trust**: Repeated occurrences of "No data" or data loss will reduce the team's trust in the monitoring system, potentially causing important alerts to be ignored.
 
-### 最佳实践与反模式
+### Best Practices and Anti-Patterns
 
--   **最佳实践**：
-    1.  **设计健壮的仪表盘**：避免依赖可能产生空结果的查询，或通过数据变换（如 `Filter by name`）显式处理空帧。
-    2.  **使用数据验证（Data Alert）**：为关键面板配置数据条件告警，当可视化意外变为空或数据量骤减时，能主动通知。
-    3.  **仪表盘即代码**：将仪表盘 JSON 定义纳入版本控制，并在 CI/CD 中进行基本的语法和逻辑检查，及早发现此类配置问题。
-    4.  **监控配置健康度**：定期审查仪表盘的查询成功率、面板错误率等元数据，主动发现类似问题。
+-   **Best practices**:
+    1.  **Design robust dashboards**: Avoid relying on queries that may produce empty results, or explicitly handle empty frames through data transformations (such as `Filter by name`).
+    2.  **Use data validation (Data Alert)**: Configure data condition alerts for critical panels to proactively notify when visualizations unexpectedly become empty or data volume drops sharply.
+    3.  **Dashboards as code**: Include dashboard JSON definitions in version control and perform basic syntax and logic checks in CI/CD to detect such configuration issues early.
+    4.  **Monitor configuration health**: Regularly review dashboard query success rates, panel error rates, and other metadata to proactively discover similar issues.
 
--   **常见反模式**：
-    1.  **忽视部分数据失败**：认为“只要数据源能连接，仪表盘就应该工作”，忽视了查询结果内容（如空帧）对可视化的关键影响。
-    2.  **过度复杂的面板**：在一个面板内塞入过多、过于复杂的查询和变换，增加了出现类似未预料行为的风险。
-    3.  **缺乏仪表盘测试**：没有对关键监控仪表盘进行定期的“冒烟测试”（例如，验证关键面板是否一直有数据），导致问题潜伏。
+-   **Common anti-patterns**:
+    1.  **Ignoring partial data failures**: Assuming "as long as the data source is connected, the dashboard should work," ignoring the critical impact of query result content (such as empty frames) on visualization.
+    2.  **Overly complex panels**: Stuffing too many, overly complex queries and transformations into a single panel, increasing the risk of unexpected behaviors.
+    3.  **Lack of dashboard testing**: Not performing regular "smoke tests" on critical monitoring dashboards (e.g., verifying that critical panels consistently have data), allowing issues to lurk undetected.
 
-### 相关指标 (SLI/SLO/SLA)
+### Related Metrics (SLI/SLO/SLA)
 
-虽然此问题本身不直接定义 SLI，但它威胁到 SLI 的准确观测。一个健壮的 SRE 实践应将 **监控系统的自身可靠性** 纳入考量，可以定义如下内部 SLI：
--   **SLI**: 关键监控面板的数据可用率 = (时间窗口内面板正常显示数据的时间 / 总时间) * 100%。
--   **SLO**: 关键监控面板的数据可用率 ≥ 99.9%。
--   **应对措施**: 当面板数据可用率低于 SLO 时，应触发一个事件，调查是监控系统本身的问题（如 Grafana bug、数据源问题），还是被监控系统的真正问题。此 Issue #102039 就是一个可能导致该 SLI 违反的已知原因。
+While this issue itself does not directly define SLIs, it threatens the accurate observation of SLIs. A robust SRE practice should consider **the monitoring system's own reliability**, and can define the following internal SLIs:
+-   **SLI**: Critical monitoring panel data availability rate = (time panels display data normally within time window / total time) * 100%.
+-   **SLO**: Critical monitoring panel data availability rate at least 99.9%.
+-   **Countermeasures**: When panel data availability falls below the SLO, an incident should be triggered to investigate whether it is a monitoring system issue (such as a Grafana bug, data source issue) or a real issue with the monitored system. This Issue #102039 is a known cause that could lead to SLI violations.

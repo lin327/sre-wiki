@@ -1,70 +1,72 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Unable to rename data source"
-category: "监控与可观测性"
-confidence: medium
+category: "Monitoring & Observability"
+confidence: high
 ---
 
+# Unable to rename data source
 
-## 概述
+## Overview
 
-Grafana 是现代可观测性栈中的核心仪表盘与可视化工具，而数据源（Data Source）是其连接外部存储（如 Prometheus, Elasticsearch）并查询数据的关键配置项。数据源的配置管理，包括其创建、重命名和删除，是运维团队进行监控基础设施维护的常规操作。一个影响用户正常修改数据源名称的bug，会阻碍配置的规范化与可读性，并可能在团队协作中造成混淆。本文档基于一个具体的 GitHub Issue，分析此类问题的根本原因、影响范围以及 SRE 团队的应对实践。
+Grafana is a core dashboard and visualization tool in the modern observability stack, and Data Sources are the key configuration items that connect it to external stores (such as Prometheus, Elasticsearch) to query data. Data source configuration management, including creation, renaming, and deletion, is a routine operation for operations teams maintaining monitoring infrastructure. A bug that prevents users from properly modifying data source names hinders configuration standardization and readability, and may cause confusion in team collaboration. This document analyzes the root cause, impact scope, and SRE team response practices based on a specific GitHub Issue.
 
-## 核心概念
+## Core Concepts
 
-1.  **Grafana 数据源**：一个已配置好的、指向特定监控数据后端（如 Prometheus、Loki、InfluxDB）的连接。它包含了访问该数据源所需的所有信息，如 URL、访问方式、认证凭证等。数据源名称（Name）是用户在 Grafana UI 和查询中用于引用该连接的可读标识符。
-2.  **URL 验证（Validation error, invalid URL）**：在保存数据源配置时，Grafana 后端会对提供的 URL 字段进行格式校验，确保其是一个合法的网络地址。此错误表明，尽管用户可能只修改了“名称”字段，但系统在保存时错误地触发了对 URL 的验证，或传递了不完整的 URL 数据导致验证失败。
-3.  **用户权限（Data Sources: Creator）**：Grafana 基于角色的访问控制系统（RBAC）中的一个特定权限。拥有此权限的用户可以创建新的数据源，但根据 Issue 描述，该权限在尝试“重命名”这一更新操作时，似乎未能正确处理，导致了操作失败。
+1.  **Grafana Data Source**: A configured connection pointing to a specific monitoring data backend (such as Prometheus, Loki, InfluxDB). It contains all the information needed to access that data source, such as URL, access method, and authentication credentials. The data source Name is the human-readable identifier users use in the Grafana UI and queries to reference that connection.
+2.  **URL Validation (Validation error, invalid URL)**: When saving data source configuration, the Grafana backend performs format validation on the provided URL field to ensure it is a valid network address. This error indicates that although the user may have only modified the "Name" field, the system incorrectly triggered URL validation during save, or passed incomplete URL data causing validation to fail.
+3.  **User Permissions (Data Sources: Creator)**: A specific permission in Grafana's Role-Based Access Control (RBAC) system. Users with this permission can create new data sources, but according to the Issue description, this permission does not appear to be handled correctly when attempting the "rename" update operation, causing the operation to fail.
 
-## 实践
+## Practice
 
-### 问题复现与影响分析
+### Problem Reproduction and Impact Analysis
 
-根据提供的 Issue 信息，问题在特定操作路径下可稳定复现：
-1.  **前置条件**：用户拥有 “Data Sources: Creator” 权限。
-2.  **操作流程**：创建一个新的 Prometheus 数据源，保存后，尝试点击该数据源的标题进行编辑，修改“名称”字段并保存。
-3.  **预期行为**：新名称成功保存，数据源列表更新显示新名称。
-4.  **实际结果**：操作失败，界面返回 “Validation error, invalid URL” 错误，名称修改未生效。
+Based on the provided Issue information, the problem can be stably reproduced under a specific operation path:
+1.  **Precondition**: The user has "Data Sources: Creator" permission.
+2.  **Operation Flow**: Create a new Prometheus data source, save it, then try clicking the data source title to edit, modify the "Name" field, and save.
+3.  **Expected Behavior**: The new name is saved successfully, and the data source list updates to display the new name.
+4.  **Actual Result**: The operation fails, the interface returns a "Validation error, invalid URL" error, and the name change does not take effect.
 
-此 bug 会导致：
-- **配置管理受阻**：运维人员无法修正数据源的拼写错误或根据规范统一命名，降低了配置的可维护性。
-- **用户体验下降**：界面反馈的错误信息具有误导性（指向 URL 而非名称），增加了问题排查的复杂度。
-- **权限模型疑似不一致**：具备“创建”权限的操作，却在“更新”这一更基础的操作上遇到障碍，这可能暗示 RBAC 或 API 处理逻辑中存在缺陷。
+This bug causes:
+- **Configuration Management Blocked**: Operations staff cannot correct typos in data source names or standardize naming according to conventions, reducing configuration maintainability.
+- **Degraded User Experience**: The error message displayed in the interface is misleading (pointing to URL rather than Name), increasing the complexity of troubleshooting.
+- **Suspected Permission Model Inconsistency**: An operation with "Create" permission encounters obstacles on the more basic "Update" operation, which may indicate a flaw in the RBAC or API processing logic.
 
-### SRE 应对措施
+### SRE Response Measures
 
-对于 SRE 团队，面对此类工具本身的 bug，应采取以下实践：
+For SRE teams facing such tool-level bugs, the following practices should be adopted:
 
-1.  **临时规避方案**：
-    - 如果用户拥有更高权限（如 “Data Sources: Admin”），可以尝试使用该权限账户进行重命名操作。
-    - 备选方案是删除原数据源（如果引用不复杂）并使用正确的名称重新创建，但这会中断所有引用了该数据源的仪表盘和告警规则，操作成本较高。
+1.  **Temporary Workarounds**:
+    - If the user has higher permissions (such as "Data Sources: Admin"), they can try using that permission account to perform the rename operation.
+    - An alternative is to delete the original data source (if references are not complex) and recreate it with the correct name, but this will interrupt all dashboards and alert rules referencing that data source, making it a high-cost operation.
 
-2.  **监控与发现**：
-    - **合成监控**：可以编写一个简单的脚本或使用 Grafana API 自动化测试脚本，定期模拟“创建-重命名-删除”数据源的流程，并断言每一步都返回成功。当此流程失败时，即可触发告警，提前发现回归问题。
-    - **日志分析**：在 Grafana 的应用日志中搜索 “Validation error, invalid URL” 关键词，可以量化该错误在生产环境中的发生频率和影响范围。
+2.  **Monitoring and Discovery**:
+    - **Synthetic Monitoring**: Write a simple script or use the Grafana API to automate testing the "create-rename-delete" data source flow, asserting that each step returns success. When this flow fails, an alert can be triggered to proactively discover regression issues.
+    - **Log Analysis**: Search for the keyword "Validation error, invalid URL" in Grafana's application logs to quantify the frequency and impact scope of this error in production environments.
 
-3.  **根因追踪与反馈**：
-    - 追踪该 Issue 在 Grafana GitHub 仓库的进展，关注修复版本。
-    - 在内部知识库记录此问题的临时解决方案，并在 Grafana 升级计划中将其作为重点验证项。
+3.  **Root Cause Tracking and Feedback**:
+    - Track the progress of this Issue in the Grafana GitHub repository and watch for fix versions.
+    - Document temporary solutions for this problem in the internal knowledge base, and include it as a key verification item in the Grafana upgrade plan.
 
-## SRE 要点
+## SRE Key Points
 
-### 可靠性与事件响应
-- **服务依赖风险**：Grafana 作为关键监控界面，其核心功能（如数据源管理）的稳定性直接影响运维团队的“观察-响应”循环。一个看似简单的 UI bug，可能削弱团队快速调整监控配置的能力。
-- **事件响应关联**：在排查 Grafana 自身问题时，SRE 需区分是基础设施（网络、数据库）问题、配置问题还是应用程序 bug。此案例明确属于应用程序 bug，应遵循 **“记录 - 规避 - 升级/等待修复”** 的流程。
+### Reliability and Incident Response
+- **Service Dependency Risk**: As a critical monitoring interface, the stability of Grafana's core functions (such as data source management) directly affects the operations team's "observe-respond" cycle. A seemingly simple UI bug can undermine the team's ability to quickly adjust monitoring configurations.
+- **Incident Response Association**: When troubleshooting Grafana's own issues, SRE needs to distinguish between infrastructure (network, database) issues, configuration issues, and application bugs. This case clearly falls under application bugs and should follow the **"Document - Workaround - Upgrade/Wait for Fix"** process.
 
-### 最佳实践与常见反模式
-- **最佳实践**：
-    - **基础设施即代码（IaC）**：尽可能通过配置文件（如 Grafana Provisioning）或 API 来管理数据源，而非依赖易出错的 UI。这可以避免此类 UI bug，并实现版本控制。
-    - **分层权限管理**：谨慎分配 “Creator” 权限。在生产环境中，建议由中央团队通过 API 或 IaC 统一管理关键数据源，仅开放给特定人员进行有限的 UI 操作。
-    - **主动升级**：在测试环境中验证 Grafana 新版本时，将数据源管理（CRUD）列为必测用例。
-- **常见反模式**：
-    - **忽视错误信息**：将 “invalid URL” 错误误判为用户输入问题，而忽略了背后可能存在的系统缺陷。
-    - **过度依赖 UI 进行关键配置变更**：这会暴露于此类 UI bug 和人为操作错误。
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    - **Infrastructure as Code (IaC)**: Manage data sources through configuration files (such as Grafana Provisioning) or API wherever possible, rather than relying on error-prone UI. This avoids such UI bugs and enables version control.
+    - **Layered Permission Management**: Carefully assign "Creator" permissions. In production environments, it is recommended that the central team manage critical data sources through API or IaC, only allowing specific personnel limited UI operations.
+    - **Proactive Upgrades**: When verifying new Grafana versions in test environments, list data source management (CRUD) as a mandatory test case.
+- **Common Anti-Patterns**:
+    - **Ignoring Error Messages**: Misinterpreting the "invalid URL" error as a user input issue while overlooking potential underlying system defects.
+    - **Over-relying on UI for Critical Configuration Changes**: This exposes you to such UI bugs and human operational errors.
 
-### 相关指标（SLI/SLO/SLA）
-- **SLI（服务级别指标）**：监控 **Grafana 核心管理操作的成功率**。例如，“通过 UI 创建/更新数据源操作的成功请求数 / 总请求数”。此 bug 会直接导致该 SLI 下降。
-- **SLO（服务级别目标）**：为上述 SLI 设定目标，如 “数据源管理 API/操作成功率 ≥ 99.5%”。当因 bug 导致的成功率低于 SLO 时，应触发告警和后续改进。
-- **Error Budget 消耗**：此类 bug 的出现应计入 Grafana 服务本身的 Error Budget 消耗。SRE 需评估其影响，并在预算不足时推动开发团队优先修复或调整变更节奏。
+### Related Metrics (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: Monitor the **success rate of Grafana core management operations**. For example, "number of successful requests for creating/updating data sources via UI / total number of requests." This bug directly causes this SLI to decrease.
+- **SLO (Service Level Objective)**: Set targets for the above SLI, such as "data source management API/operation success rate at least 99.5%." When the success rate falls below SLO due to bugs, alerts and subsequent improvements should be triggered.
+- **Error Budget Consumption**: The occurrence of such bugs should be counted as Error Budget consumption for the Grafana service itself. SRE needs to assess its impact and push the development team to prioritize fixes or adjust the change pace when the budget is insufficient.
 
-**关联页面参考**：了解如何配置数据源可以参考 [[grafana-data-source-management]]，探讨更广泛的配置管理原则可查阅 [[configuration-management]]。
+**Related Page References**: For information on configuring data sources, see [[grafana-data-source-management]]. For broader configuration management principles, see [[configuration-management]].

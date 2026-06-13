@@ -1,0 +1,65 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Alert Rules Page Authentication Failure Issue"
+description: "Resolving 401 errors on Grafana's alert rules page when using Cookie-based authentication for data sources."
+category: Grafana
+order: 0
+lastUpdated: 2024-05-06
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/87386
+    title: "Alerting: Forward cookies not working on alert routes"
+tags: [grafana, alerting, authentication, cookie, proxy, datasource]
+---
+
+# Grafana Alert Rules Page Authentication Failure Issue
+
+## Overview
+
+In SRE practice, ensuring the alerting pipeline of monitoring systems is unobstructed is a cornerstone of service reliability. When the alert rules page becomes inaccessible due to authentication issues, it severely hampers the team's ability to detect and respond to potential failures. This document details a specific issue and its solution where the alert rules page experiences a 401 authentication failure when using Cookie-based data source authentication in Grafana. This issue reveals that Grafana's authentication context handling may differ when proxying requests to different functional areas, and is a typical pitfall that monitoring architectures relying on such authentication mechanisms need to be aware of and work around.
+
+## Core Concepts
+
+The core of this issue lies in Grafana's authentication mechanism when acting as a proxy server forwarding requests to backend data sources (such as Prometheus or Mimir).
+
+1. **Forward Authentication**: A common security pattern where the front-end application (such as Grafana) is responsible for verifying user identity and forwarding credentials (such as Cookies, HTTP headers) carrying user credentials to the backend service as-is. The backend service trusts the credentials passed from the front-end and authorizes accordingly. In this case, Prometheus/Mimir is configured to rely on specific Cookies for authentication.
+2. **Cookie Forwarding**: Grafana's data source configuration provides a "Forward cookie" option. When enabled, when Grafana acts as a proxy to send query requests to data sources, it attaches Cookies with matching names that were sent by the browser to Grafana, allowing the backend data source to verify the user session.
+3. **Functional Path Differences**: Different functional modules within Grafana (such as Explore, dashboard panel queries, alert rule evaluation) may take different code paths when requesting data sources. This bug indicates that alert rule-related API routes may not correctly apply the data source's configured "Forward Cookie" policy when requesting the backend, resulting in missing authentication Cookies in the request.
+
+## Practice
+
+### Issue Reproduction and Symptoms
+
+According to the issue report, the problem occurs when the following conditions are met:
+- **Environment**: Grafana v10.4.2 on Kubernetes.
+- **Data Source**: Prometheus or Mimir, configured with Cookie-based authentication.
+- **Grafana Configuration**: "Forward Cookie" option enabled in data source settings.
+- **Symptoms**:
+  - Using Grafana's "Explore" feature or querying dashboard panels can access data normally.
+  - Accessing the "Alerting" -> "Rules" page fails to load, displaying "Authentication to data source failed," and the browser developer tools show a 401 status code.
+- **Direct Verification**: Using a curl command to directly access the backend API with the correct Cookie returns a 200 OK response, proving the backend authentication logic itself is normal.
+
+### Temporary Solutions and Considerations
+
+Since this is a known Grafana front-end defect (as of the time Issue #87386 was created), **there is currently no official fix version available**. SRE or platform engineers can consider the following temporary measures:
+
+1. **Switch Authentication Method**:
+    - If the backend data source supports it, consider switching from relying on specific Cookies to more generic HTTP header authentication (such as Bearer Token). Use "Custom HTTP Headers" in Grafana data source configuration to pass the Token. This approach is typically forwarded more consistently across all Grafana features.
+2. **Use API Keys or Service Accounts**:
+    - Create a dedicated Grafana service account or API key for alert evaluation and use it to access data sources. This bypasses the complex user session Cookie forwarding mechanism. Use "Basic authentication" or "Auth token" in the data source configuration to fill in the credentials.
+3. **Monitor Official Fix**:
+    - Follow the progress of the above GitHub Issue and promptly upgrade to a Grafana version that includes the fix.
+
+**Important Reminder**: When implementing any workaround, security must be strictly evaluated. For example, avoid hardcoding long-lived, high-privilege Tokens in configuration; instead, use short-lived credentials with minimal permission scope.
+
+## SRE Key Points
+
+- **Impact on Reliability and Observability**: This issue directly threatens the reliability of the alert management process. The inaccessibility of the alert rules page means SRE teams cannot create, view, or debug critical service-level SLO alerts, potentially delaying fault detection. This breaks the observability loop of the monitoring system.
+- **Incident Response Connection**: During incident response, quickly checking and adjusting related alert rules is a critical step. Authentication failures impede this process, increasing the Mean Time to Repair (MTTR).
+- **Best Practices and Anti-Patterns**:
+    - **Practice**: When adopting non-standard (such as specific Cookie) authentication integration, all core Grafana features (queries, dashboards, alerts, notifications) should be thoroughly verified in the test environment.
+    - **Anti-Pattern**: Over-relying on complex session authentication via browser Cookies to protect internal monitoring data sources can cause compatibility issues across different Grafana functional paths.
+- **Related Metrics (SLI/SLO)**: This issue may affect the SLI related to "alert system availability." The SLI can be defined as "the percentage of requests that successfully load the alert rules page," with an SLO set (e.g., 99.9%). When this SLI drops, an internal operations ticket should be triggered.
+
+> Related Knowledge: For more on Grafana authentication configuration and best practices, refer to the [[authentication-methods]] and [[alerting]] sections.

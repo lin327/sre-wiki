@@ -1,0 +1,80 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Server-Side Sharded List and Watch"
+description: "Introduction to Kubernetes v1.36's server-side sharding mechanism for solving controller performance bottlenecks from watching full resource event streams in large-scale clusters."
+category: Cluster Scalability & Performance
+order: 0
+lastUpdated: 2026-05-06
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/06/kubernetes-v1-36-server-side-sharded-list-and-watch/
+    title: "Kubernetes v1.36: Server-Side Sharded List and Watch"
+tags: [kubernetes, sharding, watch, performance, scalability, alpha-feature]
+---
+
+# Kubernetes Server-Side Sharded List and Watch
+
+## Overview
+
+As Kubernetes clusters scale to tens of thousands of nodes, controllers (especially those watching high-cardinality resources like Pods) face severe scalability challenges. In traditional client-side sharding, even with horizontal scaling, each replica must receive and process the complete event stream, causing severe CPU, memory, and network resource waste. **Server-Side Sharded List and Watch**, introduced as Alpha in Kubernetes v1.36, fundamentally solves this by moving filtering logic to the API server side.
+
+## Core Concepts
+
+### Client-Side Sharding Dilemma
+In earlier solutions (like kube-state-metrics), controllers used client-side sharding. Each replica was assigned a key space portion and discarded objects not belonging to it after receiving the full event stream. While functionally scalable, this did not reduce total data volume from API server to client:
+- **Resource amplification**: `N replicas x full event stream`, each deserializing then discarding most data.
+- **Linear network bandwidth growth**: Bandwidth consumption proportional to replica count.
+- **Wasted compute**: CPU consumed deserializing ultimately discarded objects.
+
+### Server-Side Sharding Working Principle
+Server-side sharding moves filtering to the API server. Clients specify their hash range via the new `shardSelector` field in `ListOptions`. The API server computes a deterministic 64-bit hash (FNV-1a) of specified fields (like `metadata.uid`) and only returns objects whose hash falls within the client's specified range `[start, end)`. This applies to both list responses and subsequent watch events.
+
+### Key Fields
+- **`shardSelector`**: New field in `ListOptions` for specifying shard query conditions.
+- **`shardRange()`**: Helper function generating shard selector strings: `shardRange(field, start, end)`.
+
+## Practice
+
+### Using Sharded Watch in Controllers
+Each replica injects its corresponding `shardSelector` via `WithTweakListOptions` when creating informer factories:
+
+```go
+import (
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/informers"
+)
+
+shardSelectorReplica0 := "shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000')"
+
+factory := informers.NewSharedInformerFactoryWithOptions(client, resyncPeriod,
+    informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+        opts.ShardSelector = shardSelectorReplica0
+    }),
+)
+```
+
+### Verifying Server Sharding Support
+Check list response metadata for `shardInfo` field echoing the used `selector`. If missing, the server did not apply server-side sharding; robust controllers should have client-side filtering for graceful degradation.
+
+### Enable the Feature
+Currently Alpha; enable feature gate `ShardedListAndWatch` on API server startup.
+
+## SRE Essentials
+
+### Reliability and Event Response
+- **Reduced core component load**: API server and controller CPU/memory growth with replica count is mitigated.
+- **Improved event processing real-time**: Reduced event volume per replica, lower latency for automation operations.
+- **Enhanced predictable scaling**: Horizontal controller scaling approximately linearly increases processing capacity.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**: Progressive adoption in critical controllers; design robust degradation logic; plan shards evenly; monitor shard effectiveness.
+- **Anti-Patterns**: Relying on single shards without redundancy; ignoring compatibility with older API servers; excessive shard granularity.
+
+### Related Metrics (SLI/SLO/SLA)
+- **API server event send throughput**: Should remain stable or improve while CPU doesn't scale linearly with controller replicas.
+- **Controller event processing latency (P99)**: Should remain stable under load with effective sharding.
+- **Controller memory and CPU**: Should be proportional to shard size, not total cluster resources.
+- **Controller error rate**: Should decrease from resource overloads (OOM, CPU throttling).
+
+More details: [[kubernetes-api-concepts]], [[KEP-5866]].

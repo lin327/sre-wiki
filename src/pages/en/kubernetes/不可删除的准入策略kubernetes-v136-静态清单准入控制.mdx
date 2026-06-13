@@ -1,0 +1,57 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Undeletable Admission Policies: Kubernetes v1.36 Manifest-Based Admission Control"
+description: "Kubernetes v1.36 introduces disk file-based static manifest admission control, ensuring critical security policies take effect at API server startup and cannot be deleted via API."
+category: Cluster Security & Governance
+order: 0
+lastUpdated: 2026-05-04
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/05/04/kubernetes-v1-36-manifest-based-admission-control/
+    title: "Kubernetes v1.36: Admission Policies That Can't Be Deleted"
+tags: [Kubernetes, admission-control, ValidatingAdmissionPolicy, CEL, cluster-bootstrap, security-policy]
+---
+
+# Undeletable Admission Policies: Kubernetes v1.36 Manifest-Based Admission Control
+
+## Overview
+
+Enforcing consistent security policies in Kubernetes clusters often faces a "chicken and egg" dilemma. Traditional API-based admission control policies are cluster resource objects that must be explicitly created and can be deleted by users with sufficient permissions. This creates two key issues: a policy enforcement "blank window" during cluster startup, and lack of protection against malicious or accidental policy deletion. Kubernetes v1.36's **Manifest-Based Admission Control** feature fundamentally solves these by defining policies as disk files loaded by the API server at startup.
+
+## Core Concepts
+
+The core idea is binding policy lifecycle to the API server process rather than the API server's API.
+
+*   **Static Manifest Directory (`staticManifestsDir`)**: New field in existing `AdmissionConfiguration` pointing to a local directory. The API server scans and loads all policy YAML files at startup **before serving any requests**.
+*   **Policy Naming Convention**: Policies in static manifests **must** end with `.static.k8s.io`. This reserved suffix distinguishes statically loaded policies from API-created ones.
+*   **Self-Protection Mechanism**: Static policies are naturally exempt from "policies cannot intercept operations on their own resources" limitations. You can write a static policy to protect other important API-based admission policies from deletion or modification.
+
+## Practice
+
+1.  **Enable Feature Gate**: Enable `ManifestBasedAdmissionControlConfig` on each `kube-apiserver`.
+2.  **Prepare Static Policy Files**: Create a directory (e.g., `/etc/kubernetes/admission/static/`) with policy YAML files.
+3.  **Configure Admission Control**: Add `staticManifestsDir` field to `AdmissionConfiguration`:
+    ```yaml
+    apiVersion: apiserver.config.k8s.io/v1
+    kind: AdmissionConfiguration
+    plugins:
+    - name: ValidatingAdmissionPolicy
+      configuration:
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: ValidatingAdmissionPolicyConfiguration
+        staticManifestsDir: "/etc/kubernetes/admission/static/"
+    ```
+4.  **Start/Restart API Server**: **If any file is invalid, the API server will not start**, ensuring fast failure exposure.
+
+**Runtime Updates**: Static manifest files are watched at runtime. Modified files are validated and atomically replaced without restarting the API server.
+
+## SRE Essentials
+
+*   **Reliability**: Directly improves cluster reliability baseline. Eliminates security policy blank window during startup. Ensures core security policies are **continuous** and **tamper-proof**.
+
+*   **Best Practices**: Set the most critical cluster security baseline policies as static manifests. Establish independent code review processes. Leverage runtime hot-reload with GitOps for versioned management.
+
+*   **Anti-Patterns**: **Do not** convert all admission policies to static manifests. Avoid placing untested files in the static policy directory to prevent API server startup failure.
+
+*   **Related Metrics**: Monitor policy loading status for `.static.k8s.io` suffixed policies. Use configuration hash as metric label to detect **consistency drift** across multiple API server instances.

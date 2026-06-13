@@ -1,0 +1,115 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Docker Images and Layering"
+category: ""
+confidence: low
+---
+
+# Docker Images and Layering
+
+## Union Filesystem
+
+At the core of Docker images is the **Union Filesystem**, which overlays multiple directories (called layers) into a single unified view. The most commonly used implementation today is **overlay2**.
+
+Key characteristics: separation of read-only and writable layers (image layers are immutable, with a thin writable layer appended on top of containers), transparent overlay (users see a merged file tree), and shared base layers (multiple containers reuse the same layers, saving disk space).
+
+## Image Layers
+
+Each Dockerfile instruction (`RUN`, `COPY`, `ADD`) generates a new image layer. Layers have an incremental relationship:
+
+```dockerfile
+FROM ubuntu:22.04          # Layer 0 - Base image
+RUN apt-get update         # Layer 1 - Package index update
+RUN apt-get install -y curl # Layer 2 - Install curl
+COPY app.py /app/           # Layer 3 - Copy application code
+```
+
+Each layer only records file changes (additions, deletions, modifications) relative to the previous layer. Unchanged layers can be **reused** across different images, which is the source of the common `Already exists` message during Docker image pulls.
+
+## Copy-on-Write
+
+When a container needs to modify a file from a read-only layer, Docker uses a **Copy-on-Write (COW)** strategy:
+
+1. Copy the file from the read-only layer to the top writable layer.
+2. Perform the modification in the writable layer.
+3. Subsequent reads of that file use the writable layer version, overriding the read-only version.
+
+COW guarantees the immutability of image layers, but also means that frequent writes to large files can cause performance degradation and container layer bloat.
+
+## Layer Caching
+
+When building images, Docker checks the cache layer by layer. If a layer's instruction and context have not changed, the cached layer is reused directly, skipping the build.
+
+**Cache Invalidation Rules:**
+
+- Instruction content changes -> that layer and all subsequent layers are invalidated.
+- `COPY` / `ADD` source file content changes -> that layer is invalidated.
+- Base image updates -> everything from `FROM` onward is invalidated.
+
+**Best Practice -- Place less frequently changing instructions first:**
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./   # Dependency definitions change infrequently
+RUN npm ci                                # High cache hit rate
+COPY . .                                  # Source code changes frequently, place last
+```
+
+## Multi-Stage Builds
+
+Multi-stage builds separate the build environment from the runtime environment by using multiple `FROM` statements in a single Dockerfile:
+
+```dockerfile
+# ---- Build stage ----
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app/server
+
+# ---- Runtime stage ----
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /app/server /server
+ENTRYPOINT ["/server"]
+```
+
+**SRE Value:** The final image contains only the binary and minimal runtime, reducing size from hundreds of MB to around ten MB, significantly reducing the attack surface.
+
+## Image Size Optimization
+
+| Strategy | Example |
+|------|------|
+| Use minimal base images | `alpine`, `distroless`, `slim` variants |
+| Combine RUN instructions | `RUN apt-get update && apt-get install -y pkg && rm -rf /var/lib/apt/lists/*` |
+| Clean build caches | Remove temporary files within the same `RUN` layer |
+| Use `.dockerignore` | Exclude `.git`, `node_modules`, test files, etc. |
+| Multi-stage builds | Copy build artifacts to a blank image |
+
+## Common Troubleshooting Commands
+
+```bash
+# View image layer sizes to identify abnormally large layers
+docker history myapp:latest --no-trunc --format "table {{.Size}}\t{{.CreatedBy}}"
+
+# View image metadata (layer SHAs, environment variables, entrypoint)
+docker inspect myapp:latest --format '{{json .RootFS.Layers}}' | jq
+```
+
+## SRE Practice Essentials
+
+### Image Vulnerability Scanning
+
+Each layer can introduce vulnerable dependencies. CI pipelines should integrate scanning tools (`trivy`, `grype`) to block high-severity vulnerability images from entering the repository after build completion.
+
+### Layer Deduplication
+
+At cluster scale, identical image layers are stored only once on each node. Proper use of layer caching can:
+
+- Accelerate node image pull speeds.
+- Reduce Registry storage overhead and network bandwidth.
+- Reduce deployment latency caused by `docker pull`.
+
+Placing common dependencies (OS packages, runtimes, shared libraries) in the early stages of image builds is a key design for enabling layer reuse.

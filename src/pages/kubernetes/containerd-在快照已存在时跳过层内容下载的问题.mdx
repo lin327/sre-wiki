@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "containerd 在快照已存在时跳过层内容下载的问题"
 description: "分析 containerd 在使用 WithPullUnpack 选项拉取镜像时，若快照已存在则跳过层下载导致内容不完整的缺陷及其影响。"
@@ -11,6 +12,8 @@ sources:
     title: "containerd/containerd Issue #8973: client.Pull(..., WithPullUnpack) doesn‘t fetch layer contents if snapshot already exists"
 tags: [containerd, image-pull, snapshot, unpack, layered-storage]
 ---
+
+# containerd 在快照已存在时跳过层内容下载的问题
 
 ## 概述
 

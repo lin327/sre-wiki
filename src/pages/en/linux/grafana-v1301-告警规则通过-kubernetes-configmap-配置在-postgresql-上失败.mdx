@@ -1,0 +1,58 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana v13.0.1 Alert Rules via Kubernetes ConfigMap Provisioning Fail on PostgreSQL"
+category: "Grafana"
+confidence: low
+---
+
+# Grafana v13.0.1 Alert Rules via Kubernetes ConfigMap Provisioning Fail on PostgreSQL
+
+## Overview
+
+In Kubernetes environments, deploying Grafana via Helm Chart and using ConfigMap for declarative alert rule provisioning is a common and recommended practice that enables configuration-as-code. However, in Grafana v13.0.1, when the backend database is PostgreSQL, this functionality triggers an ORM (Object-Relational Mapping) layer table mapping error, causing Grafana startup failure and the alerting service to become unready. The issue stems from Grafana generating incorrect SQL query statements that execute `SELECT` on the wrong table, thereby aborting the database transaction. For SREs, this issue directly causes the monitoring and alerting system to fail after version upgrades, affecting service reliability and maintainability.
+
+## Core Concepts
+
+*   **ConfigMap Provisioning**: In Kubernetes, allows users to store Grafana configurations (such as data sources, dashboards, alert rules) as ConfigMaps in the cluster. Grafana automatically reads and applies these configurations at startup.
+*   **ORM Table Mapping**: Grafana uses ORM to map Go structs (such as `AlertRule`) to database tables (such as `alert_rule`). A common error is that the mapping relationship (such as table names or column names) is misconfigured, causing generated SQL to point to wrong database objects.
+*   **Aborted Transaction**: In PostgreSQL, if a statement (such as `SELECT`) within a transaction fails, the transaction is marked as "aborted." Any commands executed within the same transaction after that (such as `UPDATE`) will immediately fail until the transaction is rolled back. This explains why `UPDATE alert_rule` fails -- its root cause is the preceding `SELECT` error.
+
+## Practice
+
+### Problem Symptoms
+
+Under the Grafana v13.0.1 + PostgreSQL + Kubernetes ConfigMap Provisioning deployment architecture, the Grafana Pod immediately enters `CrashLoopBackOff` state after startup. Checking Grafana logs reveals error messages about alert rule configuration failure (`error="alert rules: failed to update rule..."`). The true root cause requires checking PostgreSQL or RDS database logs, which record the erroneous SQL statements issued by Grafana that caused the transaction abort.
+
+### Solutions and Workarounds
+
+1.  **Upgrade Grafana Version**: Monitor Grafana official version updates -- this issue is expected to be resolved in a subsequent version by fixing the ORM mapping.
+2.  **Rollback Grafana Version**: If this functionality worked properly in v12.x (such as v12.1), consider temporarily rolling back to a known stable version until the new version fixes this issue.
+3.  **Temporary Configuration Workaround**: Avoid executing alert rule update operations via ConfigMap at startup. Try manually importing rules via API or UI after Grafana starts and becomes ready. However, this approach undermines the declarative configuration intent.
+4.  **Data Source Workaround (Not Recommended)**: Based on observation, this issue does not occur on SQLite backend. In development or testing environments, you can temporarily use SQLite for verification, but you should **not** use SQLite to replace PostgreSQL in production environments.
+
+### Reproduction Steps
+
+This issue is stably reproducible under the following conditions:
+*   Using Grafana v13.0.1 Helm Chart deployment.
+*   Configuring PostgreSQL as the backend database (e.g., Aurora PostgreSQL 17.7).
+*   Defining and deploying multiple alert rules through the Grafana Helm Chart's `grafana.alerting.rules.yaml` configuration.
+
+## SRE Key Points
+
+*   **Relationship with Reliability, Observability, and Incident Response**:
+    *   **Reliability**: This Bug directly causes Grafana service startup failure, affecting all its provided functionality (including monitoring, dashboards, alerting), severely undermining service availability. It violates SLO commitments regarding Grafana service availability.
+    *   **Observability**: Alert rule configuration failure means loss of critical monitoring and notification capabilities, reducing overall system observability.
+    *   **Incident Response**: Service unavailability after upgrade is a high-priority incident. The response process should include: quickly identifying it as a Grafana version Bug, deciding whether to rollback or wait for fix, and verifying remediation measures.
+
+*   **Best Practices and Common Anti-Patterns**:
+    *   **Version Testing and Change Management**: **Best Practice**. Before upgrading core monitoring components like Grafana, thorough testing in pre-production environments is essential, verifying critical features like ConfigMap Provisioning. **Common Anti-Pattern** is performing major version upgrades directly in production.
+    *   **Layered Log Analysis**: **Best Practice**. When Grafana logs only show top-level errors (such as `Failed to fetch folder fullpaths`), simultaneously check underlying dependency logs (such as PostgreSQL) to locate the true root cause (`column "guid" does not exist`). This is a key SRE troubleshooting skill.
+    *   **Declarative Configuration Stability**: **Best Practice**. Ensure the toolchain used for declarative configuration (such as Helm Chart, Grafana Provisioning) is itself stable and reliable on the target version.
+
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   **SLI**: Grafana service startup success rate (after configuration changes). This Bug causes this SLI to be 0% on v13.0.1.
+    *   **SLO**: Can be defined as "Grafana service can normally start and respond to configuration requests 99.9% of the time." This incident would cause SLO violation.
+    *   **SLA**: Typically associated with SLO -- service degradation or unavailability may trigger compensation terms for customers.
+
+Related pages: [[grafana-alerting]], [[kubernetes-configmap]], [[database-orm-mapping]]

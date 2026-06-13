@@ -1,0 +1,228 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "ImagePullBackOff Troubleshooting"
+description: "Standardized troubleshooting procedure for Kubernetes Pods in ImagePullBackOff state due to image pull failures, covering authentication, networking, image naming, and registry issues."
+---
+
+# ImagePullBackOff Troubleshooting Guide
+
+ImagePullBackOff 是 Kubernetes 中容器处于 Waiting 状态时最常见的原因之一。当 kubelet 无法从镜像仓库拉取容器镜像时，会进入指数退避重试（exponential backoff），等待时间从 5 秒逐步增加到 5 分钟，状态显示为 `ImagePullBackOff`。退避重试期间的状态为 `ErrImagePull`。
+
+## 症状识别
+
+- `kubectl get pods` 显示 `STATUS` 为 `ImagePullBackOff` 或 `ErrImagePull`
+- `kubectl describe pod` 的 Events 中出现 `Failed to pull image` 或 `Back-off pulling image`
+- Pod 一直处于 `Pending` 状态，容器处于 `Waiting` 状态
+- 相关 Deployment 的 Ready 副本数为 0
+
+```bash
+# 快速查看所有命名空间中镜像拉取失败的 Pod
+kubectl get pods -A | grep -E "ImagePullBackOff|ErrImagePull"
+
+# 查看具体错误信息
+kubectl describe pod <pod-name> | grep -A5 "Events"
+```
+
+## 诊断步骤
+
+### 第一步：查看详细错误信息
+
+```bash
+kubectl describe pod <pod-name>
+```
+
+Events 部分会显示具体失败原因。常见错误信息与对应根因：
+
+| 错误信息 | 根因 |
+|---------|------|
+| `manifest for <image> not found` | 镜像名或 tag 拼写错误 |
+| `unauthorized: authentication required` | 认证失败，缺少 imagePullSecrets |
+| `unauthorized: access denied` | 认证成功但无权限拉取该镜像 |
+| `dial tcp: i/o timeout` | 网络不通，无法连接 Registry |
+| `dial tcp: no such host` | DNS 解析失败 |
+| `x509: certificate signed by unknown authority` | TLS 证书不信任（私有 Registry） |
+| `toomanyrequests: Rate limit exceeded` | 触发了 Registry 的速率限制（Docker Hub 公共限制） |
+
+### 第二步：检查镜像名称和 Tag
+
+```bash
+# 获取 Pod 使用的镜像名
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].image}'
+
+# 验证镜像是否存在（本地测试）
+docker pull <image>:<tag>
+
+# 或使用 crane 工具验证（无需 Docker daemon）
+crane manifest <image>:<tag>
+```
+
+常见错误：
+- tag 拼写错误：`v1.0.0` vs `V1.0.0` vs `1.0.0`
+- 镜像名拼写错误：`myapp` vs `my-app`
+- 使用了 `latest` 但镜像已被覆盖或删除
+- 省略了 Registry 地址，默认去 Docker Hub 但镜像在私有仓库
+
+### 第三步：检查认证配置
+
+```bash
+# 查看 Pod 关联的 imagePullSecrets
+kubectl get pod <pod-name> -o jsonpath='{.spec.imagePullSecrets}' | jq .
+
+# 验证 Secret 是否存在
+kubectl get secret <pull-secret-name> -n <namespace>
+
+# 查看 Secret 内容（base64 解码）
+kubectl get secret <pull-secret-name> -n <namespace> -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d | jq .
+
+# 确认 Secret 中的 Registry 地址与镜像地址匹配
+```
+
+典型 `.dockerconfigjson` 结构：
+
+```json
+{
+  "auths": {
+    "registry.example.com": {
+      "username": "deploy-robot",
+      "password": "s3cret-token",
+      "auth": "ZGVwbG95LXJvYm90OnMzY3JldC10b2tlbg=="
+    }
+  }
+}
+```
+
+<div class="admonition admonition--warning">
+  <p class="admonition-title">注意</p>
+  <p>Secret 中 Registry 地址必须与镜像引用中的地址完全匹配。例如镜像为 <code>registry.example.com/myapp:v1</code>，则 Secret 中的 key 必须是 <code>registry.example.com</code>，不能是 <code>https://registry.example.com</code> 或 IP 地址。</p>
+</div>
+
+### 第四步：检查网络连通性
+
+```bash
+# 在节点上测试 Registry 连通性
+curl -v https://registry.example.com/v2/
+
+# 检查 DNS 解析
+nslookup registry.example.com
+
+# 检查防火墙或安全组规则
+# 需要确保节点可以访问 Registry 的 443 端口（或自定义端口）
+
+# 从 Pod 内部测试网络（如果 Pod 有其他容器可 exec）
+kubectl exec -it <other-pod> -- curl -v https://registry.example.com/v2/
+
+# 检查代理配置
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].env}' | grep -i proxy
+```
+
+### 第五步：检查 Docker Hub 速率限制
+
+Docker Hub 对匿名用户限制为每 6 小时 100 次拉取，认证用户为 200 次：
+
+```bash
+# 查看 Docker Hub 的速率限制头
+TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:ratelimitpreview/test:pull" | jq -r .token)
+curl -s -I -H "Authorization: Bearer $TOKEN" https://registry-1.docker.io/v2/ratelimitpreview/test/manifests/latest | grep ratelimit
+
+# 查看节点 IP 的剩余配额
+# RateLimit-Limit: 100;w=21600
+# RateLimit-Remaining: 87;w=21600
+```
+
+解决方案：使用 Docker Hub 的 Personal Access Token 认证，或部署 Registry Mirror。
+
+## 修复方案
+
+### 创建或更新 imagePullSecrets
+
+```bash
+# 创建 Docker Hub 认证 Secret
+kubectl create secret docker-registry dockerhub-creds \
+  --docker-server=https://index.docker.io/v1/ \
+  --docker-username=<username> \
+  --docker-password=<token> \
+  --docker-email=<email> \
+  -n <namespace>
+
+# 创建私有 Registry 认证 Secret
+kubectl create secret docker-registry private-registry-creds \
+  --docker-server=registry.example.com \
+  --docker-username=<username> \
+  --docker-password=<password> \
+  -n <namespace>
+
+# 为 ServiceAccount 添加默认 imagePullSecrets
+kubectl patch serviceaccount default -n <namespace> -p \
+  '{"imagePullSecrets": [{"name": "dockerhub-creds"}]}'
+```
+
+### 为 Deployment 配置 imagePullSecrets
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+      - name: private-registry-creds
+      containers:
+      - name: app
+        image: registry.example.com/myapp:v1.0.0
+```
+
+### 配置私有 Registry 的 TLS 证书信任
+
+```bash
+# 将 CA 证书添加到节点的信任链
+# 对于 containerd：
+sudo cp ca.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+sudo systemctl restart containerd
+
+# 或在 containerd 配置中指定
+# /etc/containerd/config.toml
+# [plugins."io.containerd.grpc.v1.cri".registry.configs."registry.example.com".tls]
+#   ca_file = "/etc/containerd/certs.d/ca.crt"
+```
+
+### 部署 Registry Mirror 缓解速率限制
+
+```bash
+# containerd 配置 Registry Mirror
+# /etc/containerd/config.toml
+# [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+#   endpoint = ["https://mirror.gcr.io", "https://docker.mirrors.example.com"]
+```
+
+## 确认修复
+
+```bash
+# 删除当前 Pod 触发重建
+kubectl delete pod <pod-name>
+
+# 观察新 Pod 状态
+kubectl get pod -w
+
+# 确认 Pod 进入 Running 状态
+kubectl get pod <pod-name> -o wide
+
+# 确认镜像拉取成功
+kubectl describe pod <pod-name> | grep -A3 "Events"
+# 应看到：
+# Normal  Pulling    Pulling image "..."
+# Normal  Pulled     Successfully pulled image
+```
+
+## 预防措施
+
+- 为所有访问私有镜像的 Deployment 显式配置 `imagePullSecrets`
+- 使用 ServiceAccount 级别的 `imagePullSecrets`，避免每个 Deployment 重复配置
+- 在 CI/CD 流水线中验证镜像 tag 存在后再部署
+- 避免使用 `latest` tag，使用不可变的版本号或 SHA digest
+- 为 Docker Hub 部署 Registry Mirror 或使用付费账户提升速率限制
+- 定期轮换 Registry 凭证，并在 Secret 过期前自动更新
+- 在节点上配置 TLS 证书信任，避免自签名证书导致的拉取失败
+

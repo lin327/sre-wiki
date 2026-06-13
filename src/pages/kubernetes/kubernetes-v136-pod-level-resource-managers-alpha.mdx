@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Kubernetes v1.36 Pod-Level Resource Managers (Alpha)"
 description: "介绍Kubernetes v1.36引入的Pod级别资源管理器Alpha特性，允许以Pod为中心分配计算和内存资源，优化性能敏感型工作负载的资源隔离与利用率。"
@@ -11,6 +12,8 @@ sources:
     title: "Kubernetes v1.36: Pod-Level Resource Managers (Alpha)"
 tags: [kubernetes, sre, performance, resources, alpha]
 ---
+
+# Kubernetes v1.36 Pod-Level Resource Managers (Alpha)
 
 ## 概述
 Kubernetes v1.36 引入了 **Pod-Level Resource Managers** 作为 Alpha 特性。它扩展了 kubelet 中的拓扑管理器（Topology Manager）、CPU 管理器和内存管理器，使其能够支持在 Pod 级别（`.spec.resources`）定义资源请求与限制。这一增强将资源分配模型从严格的“每容器”模型演进为以 Pod 为中心的模型，为性能敏感型工作负载（如机器学习训练、高频交易、低延迟数据库）提供了更灵活、高效的资源管理方式。

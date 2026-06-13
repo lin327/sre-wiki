@@ -1,0 +1,142 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "SageMaker HyperPod Inference Operator: Simplified Setup Guide"
+category: "sagemaker-hyperpod"
+confidence: high
+---
+
+# SageMaker HyperPod Inference Operator: Simplified Setup Guide
+
+## Overview
+
+Amazon SageMaker HyperPod provides end-to-end solutions for the entire AI lifecycle (experimentation, training, inference). The HyperPod Inference Operator is a Kubernetes controller responsible for managing model deployment and lifecycle on HyperPod clusters. It offers flexible deployment interfaces (`kubectl`, Python SDK, SageMaker Studio UI, HyperPod CLI), advanced auto-scaling based on dynamic resource allocation, and comprehensive observability (tracking key metrics such as time-to-first-token, latency, and GPU utilization).
+
+In SRE practice, infrastructure manageability and deployment reliability are critical. Traditionally, deploying AI inference workloads on Kubernetes involves complex Helm charts, IAM configuration, dependency management, and manual upgrades, taking hours. Upgrading the Inference Operator to an **EKS Add-on** model enables one-click installation and managed upgrades from the SageMaker console, drastically simplifying operational complexity and allowing SRE teams to focus more on meeting service reliability objectives (SLOs) rather than configuring underlying infrastructure.
+
+## Core Concepts
+
+**1. Inference Operator and EKS Add-on Model**
+
+- **Inference Operator**: A controller running on Kubernetes that processes custom resources (CRs) such as `InferenceEndpointConfig` or `JumpStartModel`, managing model deployment, scaling, and node scheduling.
+- **EKS Add-on**: An AWS-managed extension mechanism tightly integrated with EKS clusters. It simplifies the installation, upgrade, and management of third-party software (such as load balancers, storage drivers). Implementing the Inference Operator as an EKS Add-on means its version management, patching, and rollback are handled by AWS and the EKS control plane, aligning with SRE requirements for change management and incident recovery.
+
+**2. Advanced Deployment Features**
+
+- **Multi-instance type deployment**: Allows specifying a prioritized list of instance types in the configuration (e.g., `["ml.p4d.24xlarge","ml.g5.24xlarge"]`). The Kubernetes scheduler uses `nodeAffinity` rules to attempt scheduling in priority order. When the preferred instance type is unavailable, it automatically falls back to the next best option, improving deployment success rates and resource utilization efficiency.
+- **Native node affinity**: Directly exposes Kubernetes' `nodeAffinity` field, allowing SRE/platform teams fine-grained scheduling control, such as excluding Spot instances, preferring specific availability zones, or targeting nodes with custom labels. This is crucial for achieving high availability and cost optimization.
+
+**3. Dependency Management**
+
+The Operator depends on several Kubernetes components, included by default but can be disabled as needed:
+
+- **cert-manager**: Manages TLS certificates.
+- **S3/FSx CSI drivers**: Provide persistent storage access to S3 and FSx for Lustre.
+- **AWS Load Balancer Controller**: Manages AWS load balancers.
+- **KEDA Operator**: Enables event-driven auto-scaling (e.g., based on queue length or GPU utilization).
+
+## Practice
+
+### Installation Methods
+
+**Method 1: Install via SageMaker Console (Recommended)**
+
+This is the most streamlined experience, offering two options:
+
+- **Quick setup**: Automatically creates all necessary resources (IAM roles, S3 buckets, dependent add-ons) and deploys the Operator with optimized defaults.
+- **Custom setup**: Allows reusing existing resources (such as IAM roles, S3 buckets) or customizing configuration.
+
+Installation steps:
+
+1. Navigate to SageMaker Console -> **HyperPod Clusters** -> **Cluster Management**.
+2. Select the target cluster.
+3. Go to the **Inference** tab, select **Quick Setup** or **Custom Setup**.
+4. For **Custom Setup**, specify existing resources.
+5. Click **Install** to begin the automated process.
+6. Verify installation status:
+
+    ```bash
+    kubectl get pods -n hyperpod-inference-system
+    # or
+    aws eks describe-addon --cluster-name <CLUSTER-NAME> --addon-name amazon-sagemaker-hyperpod-inference --region <REGION>
+    ```
+
+**Method 2: Install via EKS API (CLI)**
+
+Suitable for teams that prefer command-line workflows, but requires **manually creating all prerequisite resources** in advance (IAM roles, S3 buckets, VPC endpoints, etc.).
+
+```bash
+aws eks create-addon \
+  --cluster-name my-hyperpod-cluster \
+  --addon-name amazon-sagemaker-hyperpod-inference \
+  --addon-version v1.0.0-eksbuild.1 \
+  --configuration-values '{
+    "executionRoleArn": "arn:aws:iam::ACCOUNT-ID:role/SageMakerHyperPodInference-inference-role",
+    "tlsCertificateS3Bucket": "hyperpod-tls-certificate-bucket",
+    "hyperpodClusterArn": "arn:aws:sagemaker:REGION:ACCOUNT-ID:cluster/CLUSTER-ID",
+    "alb": { "serviceAccount": { "create": true, "roleArn": "arn:aws:iam::ACCOUNT-ID:role/alb-controller-role" } },
+    "keda": { "auth": { "aws": { "irsa": { "roleArn": "arn:aws:iam::ACCOUNT-ID:role/keda-operator-role" } } } }
+  }' \
+  --region us-west-2
+```
+
+**Method 3: Install via Terraform (IaC)**
+
+Suitable for teams using infrastructure as code to manage environments. Enable the module in the `custom.tfvars` file:
+
+```hcl
+create_hyperpod_inference_operator_module = true
+```
+
+The Terraform module handles installation of all dependencies. Existing components can be disabled via variables (e.g., `enable_cert_manager = false`).
+
+### Model Deployment Example
+
+After installation, models can be deployed via custom resources:
+
+```yaml
+apiVersion: inference.sagemaker.aws.amazon.com/v1
+kind: InferenceEndpointConfig
+metadata:
+  name: lmcache-test-1
+  namespace: default
+spec:
+  replicas: 13
+  modelName: Llama-3.1-8B-Instruct
+  instanceTypes: ["ml.p4d.24xlarge","ml.g5.24xlarge","ml.g5.8xlarge"] # Multi-instance type priority list
+```
+
+### Cleanup and Migration
+
+- **Uninstall operator**: Via the SageMaker console by clicking "Remove," or using AWS CLI `aws eks delete-addon`.
+- **Delete model**: `kubectl delete inferenceendpointconfig <name>` or `kubectl delete jumpstartmodel <name>`.
+- **Migrate from Helm**: Automated migration scripts exist that support automatic discovery of existing Helm configurations, safe scaling down of old deployments, installation of new add-ons, with rollback capability, ensuring zero-downtime migration.
+
+## SRE Takeaways
+
+### Reliability Connection
+
+- **Reduced deployment risk**: One-click, managed installation and upgrade processes eliminate human error caused by manual Helm chart or IAM policy misconfiguration, a common root cause in incident response.
+- **Enhanced resilience**: Multi-instance type deployment and node affinity features make model deployments more resilient in the face of underlying instance capacity fluctuations, helping maintain service availability targets (SLA).
+- **Simplified disaster recovery**: As an EKS Add-on, its state is managed by the control plane, enabling rapid reinstallation after cluster rebuild or recovery, reducing Recovery Time Objective (RTO).
+
+### Best Practices and Common Anti-Patterns
+
+- **Best practices**:
+    - **Use IaC**: Manage installation configuration through tools like Terraform to ensure environment consistency.
+    - **Leverage custom setup**: In production environments, reuse vetted IAM roles and infrastructure resources, following the principle of least privilege.
+    - **Enable observability**: Integrate the HyperPod Observability Add-on to build comprehensive visibility into inference service performance, setting **SLOs** and **Error Budgets** based on **SLIs** (such as time-to-first-token, P99 latency).
+- **Anti-patterns**:
+    - **Bypassing the console to directly modify underlying resources**: Such as directly modifying the add-on's IAM role, which can break the managed lifecycle and cause upgrade failures.
+    - **Ignoring dependency management**: Using "Quick Setup" on clusters with existing complex environments can cause resource conflicts. Use "Custom Setup" to explicitly manage dependencies.
+
+### Relevant Metrics (SLI/SLO/SLA)
+
+The observability data provided by the Inference Operator forms the foundation for building SLOs:
+
+- **Time to first token**: Measures the latency from request to first token generation, a key LLM inference experience metric.
+- **End-to-end latency**: Total request processing time.
+- **GPU utilization**: Reflects resource efficiency and potential bottlenecks.
+- **Auto-scaling metrics**: Such as KEDA-based queue length or custom metrics, used to implement **SLI**-driven auto-scaling to maintain **SLOs**. SRE teams should define clear service level objectives based on these metrics (e.g., "99% of requests have time-to-first-token < 500ms") and manage Error Budgets accordingly.
+
+Related pages: [[sre-observability]], [[incident-response]], [[infrastructure-as-code]]

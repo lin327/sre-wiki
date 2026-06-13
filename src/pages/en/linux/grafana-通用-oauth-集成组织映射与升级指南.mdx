@@ -1,0 +1,69 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Generic OAuth Integration: Organization Mapping and Upgrade Guide"
+category: "Authentication and Authorization"
+confidence: low
+---
+
+# Grafana Generic OAuth Integration: Organization Mapping and Upgrade Guide
+
+## Overview
+
+In SRE practice, centralized authentication is the cornerstone of ensuring system accessibility and security. As a core visualization and monitoring platform, Grafana's user authentication process stability and predictability are critical. Recently, when upgrading Grafana from v10.x to v11.x, significant changes were made to its generic OAuth integration, particularly regarding organization-level access control. This change aims to provide more flexible and powerful user identity and permission mapping capabilities, but it also breaks compatibility with some existing configurations, potentially leading to unexpected login behavior after upgrading. This document aims to help SRE teams understand the core of this change and master best practices for the new configuration to ensure authentication process reliability.
+
+## Core Concepts
+
+In Grafana's generic OAuth integration, controlling whether users can log in and be assigned to the correct organization mainly involves the following key configuration items:
+
+- **`allowed_organization` (deprecated or behavior changed)**: In older versions (such as 10.2.2), this option was a powerful access control mechanism. By specifying an identity provider's (such as Auth0) organization name, you could precisely control that only users belonging to that organization could log in to Grafana. This was essentially an **organization-level access control list (ACL)** based on identity provider attributes. However, in newer versions, this option's functionality has been replaced by more fine-grained mapping mechanisms, and using it directly to control "allowed login" may no longer be effective.
+- **`organization_attribute_path` (new)**: This is a JSONPath expression used to extract the attribute value representing "organization" from the user information returned by the OAuth provider (typically `id_token` or userinfo endpoint). For example, if Auth0 returns `"org_name": "our-company"` in the user information, this should be configured as `org_name`.
+- **`organization_mapping` (new)**: This is a mapping rule that maps the organization value extracted in the previous step (which may be a string array or single value) to Grafana internal organization IDs and user roles. This is a **`organization attribute value -> (Grafana orgId, role)`** mapping table. For example, the value `"our-company"` extracted from `organization_attribute_path` can be mapped to Grafana's `orgId: 1` with the role set to `Viewer`.
+
+**Working principle change**: The "admission control" implemented by the old version through `allowed_organization` has been decoupled. The new version's access control logic becomes:
+1.  **Authentication**: User logs in via OAuth (identity verification).
+2.  **Attribute extraction**: Grafana uses `organization_attribute_path` to extract the organization identifier from user information.
+3.  **Mapping and authorization**: Grafana maps the extracted values to internal organizations and roles based on `organization_mapping`. **The key point is that if mapping fails (i.e., the extracted value cannot find a corresponding rule in `organization_mapping`), the user may be assigned to `Main Org` by default or unable to obtain expected permissions.** Whether a user is "allowed to log in" now depends more on mapping success or failure rather than a separate whitelist option.
+
+## Practice
+
+For scenarios where you want to control "only specific Auth0 organization members can log in to Grafana," you need to configure the Grafana configuration file (`grafana.ini`) as follows. The following example assumes the goal is to only allow users belonging to the Auth0 organization `acme-corp` to log in, assigning them to Grafana organization ID `2` with the role `Editor`.
+
+```ini
+[auth.generic_oauth]
+enabled = true
+name = Auth0
+client_id = YOUR_AUTH0_CLIENT_ID
+client_secret = YOUR_AUTH0_CLIENT_SECRET
+scopes = openid profile email
+auth_url = https://YOUR_DOMAIN.auth0.com/authorize
+token_url = https://YOUR_DOMAIN.auth0.com/oauth/token
+api_url = https://YOUR_DOMAIN.auth0.com/userinfo
+# Use a field in Auth0 that uniquely identifies the user's organization, such as org_name
+organization_attribute_path = org_name
+# Mapping rule: map the value "acme-corp" extracted from org_name to Grafana orgId=2, role Editor
+# Format: organization_attribute_value = GrafanaOrgId:Role
+organization_mapping = acme-corp = 2:Editor
+# Note: The allowed_organization option may no longer serve as the primary access control mechanism in new versions.
+# If strict restriction is needed, consider using the mapping rules above to ensure users without matching rules
+# cannot be granted effective permissions, or consider combining with other mechanisms (such as network access control).
+```
+
+**Configuration steps and verification**:
+1.  **Update configuration**: Modify `grafana.ini` or corresponding environment variables according to the above instructions.
+2.  **Restart Grafana**: Apply the new configuration.
+3.  **Test User A (belongs to `acme-corp` organization)**: Should be able to log in successfully and be assigned to Grafana organization 2 with the Editor role.
+4.  **Test User B (does not belong to `acme-corp` organization)**: Since their `org_name` value has no matching entry in `organization_mapping`, their login behavior will depend on Grafana's default policy (may log in to Main Org and receive basic permissions, or be rejected). To completely reject users from non-specified organizations, you may need to check if Grafana has other methods (or wait for official provision of more fine-grained control).
+
+## SRE Key Points
+
+- **Reliability and upgrade management**: This change highlights that when relying on external authentication provider integration, **thorough testing before platform version upgrades** is a key SRE responsibility. Regression test suites covering core authentication flows should be established, and production configurations should be validated in pre-release environments. Security/authentication changes in upgrade logs and release notes must be carefully reviewed.
+- **Observability**: Grafana's authentication events (success, failure, reason) should be integrated into a unified log monitoring platform (such as Loki). For the new configuration, pay special attention to logs where `organization_mapping` matching fails, which helps identify configuration errors or unexpected user access attempts.
+- **Configuration management and documentation**: When official documentation lags behind feature changes (as mentioned in the issue), SRE needs to proactively become the knowledge center. Internal configuration guides (such as this document) should be written based on source code, issue discussions, and actual testing, and configuration should be version-controlled and reviewable.
+- **Best practices and anti-patterns**:
+    - **Best practice**: Use `organization_attribute_path` and `organization_mapping` to implement attribute-based dynamic authorization, which is more flexible and more aligned with modern identity architectures than hardcoding `allowed_organization`.
+    - **Anti-pattern**: Trying various random combinations just because the `allowed_organization` option "doesn't work" without understanding the fundamental differences between old and new mechanisms. This leads to fragile and difficult-to-maintain configurations.
+- **Related metrics (SLI/SLO)**:
+    - **SLI**: Consider defining "percentage of requests where Grafana successfully logs in via SSO" as an SLI.
+    - **SLO**: Set a target for this SLI (e.g., 99.9%), and monitor spikes in authentication failure rates due to configuration errors, which directly impacts platform availability.
+    - Post-upgrade authentication success rate changes should be tracked as a key metric.

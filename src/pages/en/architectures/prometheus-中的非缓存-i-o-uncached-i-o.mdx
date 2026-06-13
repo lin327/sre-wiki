@@ -1,0 +1,94 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Uncached I/O in Prometheus"
+category: "System Optimization"
+confidence: high
+---
+
+# Uncached I/O in Prometheus
+
+## Overview
+
+In cloud-native monitoring systems like Kubernetes and Prometheus, accurately understanding and configuring memory metrics (such as `container_memory_usage_bytes`, `container_memory_working_set_bytes`, and `container_memory_rss`) is critical. Incorrect choices can lead to ineffective resource limits, distorted performance benchmarks, or even trigger OOMKilled events. One often-overlooked key factor is the impact of the operating system's **Page Cache** on memory reporting. As a high-frequency write time-series database, Prometheus generates large volumes of write operations during its block compaction process, and this data is typically not suitable for long-term caching in memory. To address this, Prometheus introduced the `use-uncached-io` feature flag, which uses **Direct I/O** to bypass the page cache, significantly reducing memory usage unpredictability and improving system reliability.
+
+## Core Concepts
+
+### Page Cache and Memory Metrics
+
+The page cache is a mechanism where the operating system uses free memory to cache disk file contents, aiming to speed up subsequent read operations. For Prometheus containers, the memory consumed by the page cache may constitute a large portion of reported memory usage, but this memory is inherently **reclaimable**. This explains the discrepancies between different memory metrics and can mislead operators about a container's true memory pressure.
+
+### Direct I/O
+
+Direct I/O is a disk read/write method that bypasses the operating system's page cache. When an application writes data using direct I/O, the data is not retained in the kernel's page cache. This is suitable for large-scale data operations where written data is unlikely to be immediately re-read, such as Prometheus's block compaction process. Adopting this approach provides several benefits:
+
+1. **More predictable memory usage**: Reduces Prometheus's own page cache footprint, making its memory usage patterns more stable.
+2. **Reduced cache contention**: Frees cache space occupied by Prometheus, preventing other "hot" data (such as frequently queried data) from being evicted from the cache.
+3. **Potential CPU overhead reduction**: Reduces system overhead from cache allocation and eviction.
+
+### Alignment Requirements
+
+A key limitation of direct I/O is **strict alignment requirements**. Unlike buffered I/O, direct I/O requires three elements of a write operation to be aligned with the logical sector size of the underlying storage device (typically 512 or 4096 bytes):
+
+- File offset
+- Memory buffer address
+- Transfer data size
+
+This is the primary technical challenge for implementing this feature and the reason it was not widely adopted earlier.
+
+## Practice
+
+### Enabling and Using
+
+The `use-uncached-io` feature flag was introduced in Prometheus `v3.5.0` and currently **only supports Linux**. It is implemented through the kernel's direct I/O system calls and requires kernel version `v2.4.10` or higher.
+
+**How to enable**: Activate the feature flag via command-line arguments or configuration file when starting Prometheus.
+
+### Technical Implementation Details
+
+To meet direct I/O's alignment requirements, Prometheus implemented a special writer called `directIOWriter`. It works as follows:
+
+1. **Alignment detection**: On Linux kernel `v6.1` or higher, it uses the `statx` system call to obtain the precise alignment value of the storage device. On older kernels, conservative default values are used.
+2. **Write buffering**: The writer is similar to `bufio.Writer`, buffering data internally until alignment conditions are met before performing the actual direct I/O write.
+3. **Current scope**: Currently, `directIOWriter` only covers **chunk writes** during the block compaction process. Nevertheless, this accounts for a significant portion of Prometheus I/O. Benchmarks show that enabling it reduces page cache usage (`container_memory_cache`) by **20% to 50%**.
+
+### Development and Testing
+
+For contributors or users needing deep customization, all TSDB tests can be run with `directIOWriter` via a specific build tag to verify its correctness:
+
+```bash
+go test --tags=forcedirectio ./tsdb/
+```
+
+## SRE Takeaways
+
+### Reliability Connection
+
+- **Memory stability**: By reducing unpredictable page cache fluctuations, Prometheus's memory footprint becomes smoother, lowering the risk of OOMKilled due to memory statistics偏差 and improving service **reliability**.
+- **Performance assurance**: Prevents Prometheus's own large-scale write operations from polluting the shared page cache, thereby protecting the read performance of other components or queries. This helps maintain stable **SLIs (Service Level Indicators)** such as query latency and throughput.
+
+### Best Practices and Anti-Patterns
+
+**Best practices:**
+- When running Prometheus `v3.5.0` or higher in Linux environments, evaluate and consider enabling `use-uncached-io`, especially in resource-sensitive production environments.
+- Combine monitoring of `container_memory_cache` and `container_memory_working_set_bytes` metrics to verify the actual memory improvement from this feature.
+- Provide more accurate data for capacity planning, as reported memory usage now more truthfully reflects the non-reclaimable "working set."
+
+**Common anti-patterns:**
+- Relying solely on `container_memory_usage_bytes` to judge container memory pressure without understanding that it includes significant reclaimable page cache, leading to misjudgment and unnecessary scaling.
+- Forcefully enabling this feature on file systems or older kernels that do not support direct I/O, which may cause write failures or performance degradation.
+
+### Relevant Metrics (SLI/SLO)
+
+- **SLI**: `container_memory_working_set_bytes` (more accurate container actual working memory usage), `process_resident_memory_bytes` (Prometheus process resident memory).
+- **SLO**: Internal targets can be set for Prometheus memory usage stability, for example, "99% of the time, the 5-minute average of `container_memory_working_set_bytes` should not exceed preset threshold X MiB."
+- This feature may impact disk I/O performance SLIs, so disk read/write latency and throughput should be continuously monitored after enabling it.
+
+### Future Directions and Contributions
+
+This feature is still evolving. The community welcomes contributions in the following areas:
+
+1. **Covering more write paths**: Extending to index file and WAL (Write-Ahead Log) writes.
+2. **More testing and validation**: Improving edge case testing for `directIOWriter` and exploring formal verification of its alignment requirements.
+3. **Exploring new technologies**: Evaluating the `RWF_DONTCACHE` flag introduced in Linux kernel `v6.14`, which could achieve similar uncached effects in buffered I/O, potentially bypassing alignment limitations.
+4. **Cross-platform support**: Extending this feature beyond Linux.

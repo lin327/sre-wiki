@@ -1,0 +1,93 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Structured z-pages Debugging Interface Enhancement"
+description: "Kubernetes 1.35 introduces structured, versioned JSON responses for control plane component debug endpoints, improving automation and troubleshooting efficiency."
+category: Kubernetes
+order: 0
+lastUpdated: 2025-12-31
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2025/12/31/kubernetes-v1-35-structured-zpages/
+    title: "Kubernetes 1.35: Enhanced Debugging with Versioned z-pages APIs"
+tags: [kubernetes, debugging, observability, sre, control-plane, api]
+---
+
+# Kubernetes Structured z-pages Debugging Interface Enhancement
+
+## Overview
+
+In Kubernetes cluster operations, quickly diagnosing runtime status of control plane components (like `kube-apiserver`) is a core SRE challenge. Traditional `/*z` debug endpoints (z-pages) provide critical information, but their plain-text format is difficult for programmatic parsing and automation tools. Kubernetes 1.35 enhances this significantly, introducing structured, versioned JSON responses for `statusz` and `flagz` endpoints. This improvement maintains backward compatibility while significantly improving machine-readability of debug information.
+
+## Core Concepts
+
+### What are z-pages?
+
+z-pages are special debug endpoints exposed by Kubernetes control plane components (`kube-apiserver`, `kube-controller-manager`, `kube-scheduler`, `kubelet`, `kube-proxy`). They provide real-time runtime diagnostic information. The two main endpoints:
+
+*   **`/statusz`**: Shows high-level component information including version, startup time, uptime, and available debug paths.
+*   **`/flagz`**: Shows all command-line parameters and their values used at component startup (secrets are redacted).
+
+### 1.35 Core Improvement: Structured Responses
+
+Before 1.35, these endpoints returned only plain text. 1.35 introduces **structured, versioned** response format:
+
+1.  **Backward compatible**: Opt-in feature. Without specifying `Accept` header, endpoints still return plain text.
+2.  **JSON format**: Through specific `Accept` header in HTTP request, JSON responses can be obtained. E.g., `Accept: application/json;v=v1alpha1;g=config.k8s.io;as=Statusz`.
+3.  **Versioned API**: Responses explicitly identify `apiVersion` (currently `config.k8s.io/v1alpha1`), providing clear path for future API evolution.
+
+## Practice
+
+### Prerequisites
+
+Enable corresponding feature gates on components:
+*   `/statusz` endpoint: Enable `ComponentStatusz`.
+*   `/flagz` endpoint: Enable `ComponentFlagz`.
+
+### Query Examples
+
+```bash
+# Get structured statusz response
+curl \
+  --cert /etc/kubernetes/pki/apiserver-kubelet-client.crt \
+  --key /etc/kubernetes/pki/apiserver-kubelet-client.key \
+  --cacert /etc/kubernetes/pki/ca.crt \
+  -H "Accept: application/json;v=v1alpha1;g=config.k8s.io;as=Statusz" \
+  https://localhost:6443/statusz | jq .
+
+# Get structured flagz response
+curl \
+  --cert /etc/kubernetes/pki/apiserver-kubelet-client.crt \
+  --key /etc/kubernetes/pki/apiserver-kubelet-client.key \
+  --cacert /etc/kubernetes/pki/ca.crt \
+  -H "Accept: application/json;v=v1alpha1;g=config.k8s.io;as=Flagz" \
+  https://localhost:6443/flagz | jq .
+```
+
+**Important**: Use `--cacert` to verify server certificates in production. Never use `-k` (`--insecure`) in production as it risks man-in-the-middle attacks.
+
+## SRE Essentials
+
+### Relationship with SRE Practice
+
+Structured z-pages directly enhance Kubernetes control plane **observability**, adding fine-grained **configuration and state observability** beyond the three pillars (metrics, logs, traces):
+
+*   **Incident response**: Quickly and accurately obtain API Server version, configuration, and uptime during troubleshooting.
+*   **Automation**: Scripts and monitoring systems can easily parse JSON to check if components run expected versions or critical flags.
+*   **Configuration drift detection**: Periodically comparing `flagz` JSON responses can automate detection of unexpected configuration changes.
+
+### Best Practices and Security
+
+*   **Access control**: z-pages endpoints are protected by `system:monitoring` group authorization. Strictly control RBAC permissions for this group.
+*   **Authentication required**: Production environments must enable authentication, typically using client certificates. Never allow anonymous access or expose to public internet.
+*   **Information exposure risk**: `flagz` exposes all startup parameters (though secrets are redacted) -- high-sensitivity information.
+*   **Feature maturity**: Structured responses in 1.35 are still **alpha**. API format may change. **Not recommended for critical production SLO monitoring or alerting workflows** until Beta or Stable.
+
+### Related Metrics and Evolution
+
+*   **Related metrics**: While z-pages aren't SLIs, their metadata (version, uptime) is vital for understanding component health and defining related SLOs.
+*   **Future evolution**: SIG Instrumentation plans to advance the API from `v1alpha1` to `v1beta1` and `v1`. See [KEP-4827](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/4827-component-statusz/README.md) and [KEP-4828](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/4828-component-flagz/README.md).
+
+### Related Pages
+*   [[kubernetes-health-checks]]
+*   [[observability]]

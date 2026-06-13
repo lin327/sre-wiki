@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes 1.35 kuberc Credential Plugin Policy and Allowlist"
+category: "Security and Access Control"
+confidence: low
+---
+
+# Kubernetes 1.35 kuberc Credential Plugin Policy and Allowlist
+
+## Overview
+
+In the Kubernetes ecosystem, the `kubectl` client connects to clusters through `kubeconfig` files. A powerful feature of this file is allowing the specification of an executable (credential plugin) via the `users[n].exec.command` field to automatically obtain authentication credentials, which is useful for integrating external identity providers. However, this feature also introduces security risks: if the `kubeconfig` file is tampered with or its generation pipeline is subject to a supply chain attack, malicious code could be silently executed on the local system with user privileges. To address this, Kubernetes v1.35 introduces Credential Plugin Policy and Allowlist functionality, allowing users to precisely control which plugins `kubectl` is allowed to execute, thereby enhancing client runtime environment security.
+
+## Core Concepts
+
+- **Exec Credential Plugin**: An external program defined in the `kubeconfig` file that `kubectl` executes when authentication is needed to obtain temporary credentials. It provides flexible authentication but means `kubectl` runs external code.
+- **kuberc**: `kubectl`'s global preference configuration file (`Preference`), used to set user general configuration options such as appearance and default behavior. Building on this, v1.35 extends its security configuration capabilities.
+- **credentialPluginPolicy**: A new field in `kuberc` that defines how `kubectl` handles credential plugin execution requests. Supports three modes:
+    - `AllowAll` (default, when explicitly set): Allows execution of any credential plugin, maintaining backward compatibility.
+    - `DenyAll`: Denies execution of all credential plugins. Suitable when unsure whether plugins are in use or when strict auditing is needed.
+    - `Allowlist`: Only allows execution of plugins explicitly listed in `credentialPluginAllowlist`.
+- **credentialPluginAllowlist**: A field used with the `Allowlist` policy, defining a list of allowed plugin names or full paths.
+
+## Practice
+
+Configuration is done through the `kuberc` file (typically located at `~/.kube/kuberc`). Here are specific examples for several configuration scenarios:
+
+**1. Default Behavior (Allow All Plugins)**
+No new fields configured, or explicitly set to `AllowAll`. This is the most compatible setting.
+```yaml
+apiVersion: kubectl.config.k8s.io/v1beta1
+kind: Preference
+# Equivalent to the following explicit configuration
+# credentialPluginPolicy: AllowAll
+```
+
+**2. Strict Policy: Deny All Plugins**
+If you suspect environment security issues or need auditing, set to `DenyAll`. Any credential plugin execution will be blocked by `kubectl` with an error.
+```yaml
+apiVersion: kubectl.config.k8s.io/v1beta1
+kind: Preference
+credentialPluginPolicy: DenyAll
+```
+Error example: `Unable to connect to the server: getting credentials: plugin "cloudco-login" not allowed: policy set to "DenyAll"`. Use `kubectl get pods --verbosity 5` to increase log level for more debugging information.
+
+**3. Recommended Practice: Use Allowlist**
+Set the policy to `Allowlist` and explicitly specify executables.
+```yaml
+apiVersion: kubectl.config.k8s.io/v1beta1
+kind: Preference
+credentialPluginPolicy: Allowlist
+credentialPluginAllowlist:
+  - name: /usr/local/bin/cloudco-login  # Recommended: full path, more secure
+  - name: get-identity                  # Uses basename, will be looked up via PATH
+```
+- **Full Path vs. Basename**: Strongly recommend using full paths (e.g., `/usr/local/bin/cloudco-login`), as it restricts the exact location of the executable. Using basename causes the system to use `exec.LookPath` to search in `PATH`, which may introduce path hijacking risks.
+- **Limitations**: The current version does not support wildcards (globbing).
+
+## SRE Essentials
+
+- **Relationship to Reliability and Security**: This feature is a key step in implementing the **principle of least privilege** at the client tool level. By restricting which external programs `kubectl` can execute, SRE teams can significantly reduce the risk of local host compromise from configuration file leaks or supply chain attacks, thereby protecting the reliability foundation of developers and CI/CD pipelines.
+- **Observability and Incident Response**: Setting `DenyAll` policy and observing `kubectl` command failure output is a quick **security audit** method to discover credential plugins running in the environment that may be unknown. Increasing log level (`--verbosity`) aids debugging and event correlation.
+- **Best Practices**:
+    - **Gradual Rollout**: When rolling out in teams, first set `DenyAll` in some developers' `kuberc` for testing and discovery, then gradually transition to `Allowlist`-based fine-grained control.
+    - **CI/CD Integration**: In build and deployment pipelines, configure strict `Allowlist` for service accounts or machine users running `kubectl` to prevent pipeline credentials from being abused for unexpected operations.
+    - **Use Full Paths**: Always prefer the plugin's full absolute path in the allowlist.
+- **Common Anti-Patterns**:
+    - **Continuing to use default `AllowAll` without evaluation**: In environments with high security requirements, this is risk negligence.
+    - **Abusing basenames in `Allowlist`**: This weakens the policy's effectiveness and should be avoided where possible.
+    - **Ignoring Debugging Information**: When policies reject execution, use `--verbosity` commands to obtain detailed logs rather than simply reverting to a permissive policy.
+- **Related Metrics (SLI/SLO)**: While this feature directly affects clients rather than servers, it is part of building the overall security posture. SRE teams can use "percentage of `kubectl` credential plugin policy compliance in critical CI/CD pipelines" as a security SLI and set SLOs (e.g., 100% of critical pipelines must configure `Allowlist` policy) to ensure security controls are implemented. Related concepts include [[kubeconfig-security]] and [[kubectl-kuberc]].

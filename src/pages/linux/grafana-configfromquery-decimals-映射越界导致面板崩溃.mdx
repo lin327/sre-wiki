@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana ConfigFromQuery 'Decimals' 映射越界导致面板崩溃"
 description: "未经边界检查的查询结果值被写入 field.config.decimals，在渲染时导致 Number.toFixed 抛出 RangeError 异常，使面板显示空白。"
@@ -11,6 +12,8 @@ sources:
     title: "ConfigFromQuery: 'Use as: Decimals' crashes panel on out-of-range values"
 tags: [grafana, transformer, fieldConfig, decimals, RangeError, toFixed, input-validation, error-budget]
 ---
+
+# Grafana ConfigFromQuery
 
 ## 概述
 

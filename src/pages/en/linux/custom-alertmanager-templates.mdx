@@ -1,0 +1,94 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Custom Alertmanager Templates"
+category: "Alerting"
+confidence: high
+---
+
+# Custom Alertmanager Templates
+
+## Overview
+
+Alertmanager is the component in the Prometheus ecosystem responsible for processing alerts. It receives alerts from the Prometheus Server, routes and groups them by label, and ultimately sends notifications through configured receivers (such as PagerDuty, Slack, email, etc.). The default notification format may not meet the needs of all teams. By customizing templates, SRE teams can enhance the richness and usefulness of notification messages, such as dynamically linking to internal runbooks, thereby accelerating the incident response process. In [[alerting-overview]], we discussed the overall alerting architecture, and template customization is a key part of achieving high-quality alert notifications.
+
+## Core Concepts
+
+- **Alertmanager**: Prometheus's alert management server, responsible for alert deduplication, grouping, routing, and silencing.
+- **Template**: A Go `text/template` script used to generate notification message content. Alertmanager allows the use of built-in default templates or custom templates.
+- **Receiver**: A notification target defined in the Alertmanager configuration, such as a Slack channel or a webhook URL. Each receiver can use different templates.
+- **Go Template Language**: Alertmanager templates are based on Go's standard library `text/template`, providing powerful logic and data access capabilities, allowing developers to access and manipulate data within the template context.
+- **Template Context Data**: Within receiver configurations, templates can access a series of predefined objects, such as `{{ .GroupLabels }}` (grouping labels), `{{ .CommonLabels }}` (labels common to all alerts), `{{ .Alerts }}` (list of all alerts included in this notification), and so on.
+
+## Practice
+
+### Scenario: Embedding Runbook Links in Slack Notifications
+
+Suppose a team maintains an internal Wiki with a corresponding runbook for each application's alerts, with URLs formatted as `https://internal.myorg.net/wiki/alerts/{app}/{alertname}`. The goal is to have each Slack notification automatically include a link to the corresponding runbook.
+
+#### Method 1: Inline Template
+
+You can define a simple inline template directly in the `slack_configs` section of the Alertmanager configuration file using the `text` field.
+
+```yaml
+global:
+  slack_api_url: '<slack_webhook_url>'
+
+route:
+  receiver: 'slack-notifications'
+  group_by: [alertname, datacenter, app]
+
+receivers:
+- name: 'slack-notifications'
+  slack_configs:
+  - channel: '#alerts'
+    # Use Go template syntax to construct the runbook link
+    text: 'https://internal.myorg.net/wiki/alerts/{{ .GroupLabels.app }}/{{ .GroupLabels.alertname }}'
+```
+
+After modifying the configuration, reload it by sending a `SIGHUP` signal to the Alertmanager process or restarting the service. A clickable runbook link will appear at the bottom of Slack notifications.
+
+#### Method 2: Using External Template Files
+
+For more complex templates, it is recommended to define them in separate `.tmpl` files for better maintainability.
+
+1.  Create a template file `/etc/alertmanager/templates/myorg.tmpl` and define a named template:
+    ```go
+    {{ define "slack.myorg.text" }}https://internal.myorg.net/wiki/alerts/{{ .GroupLabels.app }}/{{ .GroupLabels.alertname }}{{ end }}
+    ```
+2.  Update the Alertmanager configuration to specify the template file path and reference the named template in the `text` field.
+    ```yaml
+    global:
+      slack_api_url: '<slack_webhook_url>'
+
+    route:
+      receiver: 'slack-notifications'
+      group_by: [alertname, datacenter, app]
+
+    receivers:
+    - name: 'slack-notifications'
+      slack_configs:
+      - channel: '#alerts'
+        text: '{{ template "slack.myorg.text" . }}'
+
+    templates:
+    - '/etc/alertmanager/templates/myorg.tmpl'
+    ```
+
+#### Testing and Iteration
+
+Before deploying to production, you can use online tools (such as [promslack](https://juliusv.com/promslack/)) to simulate template rendering results for quick testing and iteration, avoiding notification delivery failures due to template syntax errors.
+
+## SRE Takeaways
+
+- **Reliability Impact**: High-quality alert notifications are the first bridge in incident response. Clear templates can provide critical context, severity levels, and self-service guidance (such as runbook links), directly reducing **MTTR** (Mean Time To Repair) and serving as a practical means to improve service reliability.
+- **Best Practices**:
+    - **Embed Runbook Links**: This is the golden practice for improving alert actionability. Ensure every alert has a corresponding, accessible document.
+    - **Keep Templates Simple**: Template logic should be as simple as possible, avoiding overloading notifications with too much information. Focus on highlighting the impact, urgency, and next steps.
+    - **Use Template Files for Complex Logic**: When templates involve multi-line logic or conditional statements, always use external template files for version control and code review.
+    - **Preview and Test**: Before applying template changes in production, verify notification formats through testing tools or staging environments to prevent information loss due to format errors.
+- **Common Anti-patterns**:
+    - **Vague Notification Content**: Only sending "Firing: 1 alert" without specific, actionable label information.
+    - **Ignoring Context**: Templates lacking descriptions of critical context such as when the alert occurred or the source cluster.
+    - **Hardcoding Paths**: Hardcoding runbook URLs in templates; when the Wiki address changes, all templates need to be modified. Instead, configure them as Alertmanager global or template variables.
+- **Related Metrics**: While not directly defining SLIs/SLOs, the effectiveness of alert templates can be indirectly assessed by analyzing the **notification delivery rate** of alert channels and the **fault recovery time** initiated by teams based on notifications. Optimizing templates is an important supporting activity for achieving reliability objectives in [[slo-management]].

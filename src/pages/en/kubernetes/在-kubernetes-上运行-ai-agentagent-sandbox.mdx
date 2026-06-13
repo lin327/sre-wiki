@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Running AI Agents on Kubernetes: Agent Sandbox"
+description: "Agent Sandbox provides Kubernetes with a declarative API for securely and efficiently running long-running, stateful AI Agent workloads."
+category: Kubernetes & Container Orchestration
+order: 0
+lastUpdated: 2025-10-27
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/
+    title: "Kubernetes Blog - Running Agents on Kubernetes with Agent Sandbox"
+tags: [kubernetes, ai, agent, sandbox, sig-apps, stateful-workloads]
+---
+
+# Running AI Agents on Kubernetes: Agent Sandbox
+
+## Overview
+
+As AI evolves from ephemeral stateless inference requests to long-running, coordinated autonomous Agents, traditional Kubernetes workload primitives face new challenges. These AI Agents are typically stateful singleton workloads requiring persistent identity and isolation environments, mostly idle. The Agent Sandbox project (by SIG Apps) fills this abstraction gap, providing a declarative, standardized API for running AI Agents securely on Kubernetes.
+
+## Core Concepts
+
+AI Agent workloads differ from traditional web services:
+
+*   **Long-running and stateful**: Agents are persistent digital workspaces for LLM instruction execution. They need context maintenance, tool usage, code writing/execution, with lifecycles lasting weeks.
+*   **Strong isolation needs**: When Agents autonomously generate and execute code, security is paramount. Execution environments must isolate untrusted code.
+*   **Stable network identity**: Multi-Agent collaboration requires Agents to discover and communicate with each other.
+*   **Elastic lifecycle**: Idle-friendly environments need Scale-to-Zero capability with fast restoration.
+
+The **Sandbox CRD** directly addresses these:
+1.  **Strong isolation**: Native support for gVisor, Kata Containers runtimes.
+2.  **Lifecycle management**: Scale idle environments to zero, fast restoration.
+3.  **Stable identity**: Stable hostname and network identity per Sandbox.
+
+## Practice
+
+### Installation
+```bash
+export VERSION="vX.Y.Z"
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${VERSION}/manifest.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${VERSION}/extensions.yaml
+```
+
+### Extensions API for Cold Start Elimination
+**SandboxWarmPool** maintains a pre-warmed Sandbox Pod pool. Users submit `SandboxClaim` requests; controller immediately assigns a pre-warmed, fully isolated environment, eliminating cold start latency.
+
+### Client Integration
+Python SDK available for AI Agent frameworks to directly interact with Kubernetes API for Sandbox lifecycle management.
+
+## SRE Essentials
+
+*   **Reliability and Isolation**: Using gVisor or Kata Containers significantly reduces risk of one Agent's failure affecting entire node or other Agents. Key **blast radius control** practice.
+*   **Resource Efficiency**: Scale-to-Zero for idle Agents dramatically saves compute resources. SRE teams need monitoring for Sandbox pool size, utilization, and wake latency.
+*   **Observability**: Agent activity (code execution, resource usage, errors) still needs monitoring in unified observability platform.
+*   **Incident Response**: Clear diagnosis and recovery processes needed for Agent issues (resource leaks, unresponsiveness). May need special "snapshot" or "rollback" mechanisms due to persistent state.
+*   **Best Practices**: Use SandboxWarmPool for fast-response scenarios; specify security runtime and resource limits.
+*   **Anti-Patterns**: Avoid manual complex stateful set orchestration per Agent; don't ignore Agent resource quotas and limits.
+
+Related metrics: Sandbox **wake latency** (idle to ready), Sandbox pool **utilization**, per-Sandbox **resource consumption** as [[sli|SLIs]] for Agent infrastructure service quality.

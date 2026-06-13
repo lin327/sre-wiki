@@ -1,0 +1,80 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Inconsistent Alerting Behavior Between Mimir and Loki with Local Storage in Grafana"
+category: "SRE Observability Practice"
+confidence: high
+---
+
+# Inconsistent Alerting Behavior Between Mimir and Loki with Local Storage in Grafana
+
+## Overview
+
+When building a Grafana-based observability platform, providing a unified user experience across multiple backend data sources (such as Loki for logs and Mimir for metrics) is key to operational efficiency. This case study analyzes the functional inconsistency in the alerting management interface in Grafana 10.3.3, when both Mimir and Loki use **local file system storage (Local Storage/Rule Provisioning)**. This discrepancy not only affects operator expectations but also reveals a consistency issue that needs attention in aligning front-end interaction design with backend capabilities.
+
+## Core Concepts
+
+Understanding this issue requires clarifying several key concepts:
+
+1. **Local File System Storage (Local Storage)**: The Ruler components of both Mimir and Loki support reading alerting rules from local file system directories. This is a simple configuration method suitable for development/testing or monolithic deployments, but it typically does not support dynamic rule modification via API.
+2. **Alert Management Capability Differences**:
+    *   **Mimir (using local storage)**: Although its Ruler component loads rules from local files, the Grafana front-end still displays "Edit" and "Delete" buttons for alert rules. When users click these buttons, an error is returned because the backend does not support this operation.
+    *   **Loki (using local storage)**: Its Ruler component also does not support dynamic modification of locally stored rules. The Grafana front-end correctly identifies this limitation and hides the "Edit" and "Delete" buttons, providing an interface consistent with backend capabilities.
+3. **Grafana Alerting UI**: Grafana's unified alert management interface is responsible for interacting with different data source alerting backends (such as Mimir or Loki's `/rules` API). The visibility of action buttons should accurately reflect the actual capabilities of the backend data source.
+
+## Practice
+
+The following steps reproduce this inconsistent behavior, clearly demonstrating both aspects of the issue.
+
+### Reproducing the Mimir-Side Problem Behavior
+
+1. **Configure Mimir to use local storage**: In Mimir's configuration file (`mimir.yaml`), set the Ruler's rule source to a local directory.
+    ```yaml
+    ruler:
+      alertmanager_url: http://alertmanager:9093
+      rule_path: /data/rules
+      storage:
+        backend: local
+        local:
+          directory: "/mimir/config/rules" # Points to the directory containing alert rule files
+    ```
+2. **Place alert rule files**: Create a YAML file in the specified directory (`/mimir/config/rules`) defining an alert rule group.
+    ```yaml
+    groups:
+      - name: tempo_alerts
+        rules:
+          - alert: TempoRequestLatency
+            annotations:
+              summary: "{{ $labels.service_component }} {{ $labels.route }} latency is high."
+            expr: cluster_namespace_job_route:tempo_request_duration_seconds:99quantile{} > 3
+            for: 15m
+            labels:
+              severity: crit
+    ```
+3. **Start Mimir**: Start Mimir via development scripts or Docker Compose.
+4. **Access the Grafana Alerting page**: Log in to Grafana and navigate to the alert list page (`/alerting/list`). **At this point, for alert rules from Mimir, the interface displays "Edit" and "Delete" buttons.**
+5. **Trigger the error**: Click either of the above buttons. Since Mimir's local storage backend does not support modifying rules via API, the interface displays an error message indicating the operation failed.
+
+### Reproducing the Loki-Side Expected Behavior
+
+1. **Configure Loki to use local storage and enable Alerting**: In Grafana's data source configuration, enable `manageAlerts: true` for the Loki data source to ensure Grafana uses Loki's Ruler API for alert management.
+2. **Configure Loki Ruler to use local storage**: In Loki's configuration, similarly configure the Ruler to read rules from a local directory.
+3. **Place alert rule files**: Place similar alert rule files in Loki's rule directory.
+4. **Start Loki and Grafana**.
+5. **Access the Grafana Alerting page**: Navigate to the alert list page. **At this point, for alert rules from Loki, the interface does not display "Edit" and "Delete" buttons.** This is consistent with the expected behavior for Loki's local storage not supporting dynamic modification.
+
+Through this comparison, it is clear that Grafana exhibits inconsistent front-end interaction logic when handling alerts from different data sources that share the same limitation (local storage).
+
+## SRE Takeaways
+
+Although this issue appears to be a front-end UI defect, from an SRE perspective it involves several important aspects:
+
+*   **Reliability and Error Budget**: Users attempting an operation destined to fail (edit/delete) not only produces error responses but may also cause confusion and waste troubleshooting time, indirectly consuming operational "error budget." A well-designed system should **prevent errors before they occur**.
+*   **Consistency and User Experience**: When managing multiple backends in a unified Grafana platform, maintaining consistent interaction logic is critical. SRE teams rely on consistent, predictable interfaces to quickly locate issues and execute operations. Inconsistent behavior reduces tool credibility and operational efficiency.
+*   **Observability of Observability Tools**: This issue itself is an observability problem about the monitoring tool's own behavior. It reminds us that the UI/UX of monitoring systems also needs to be tested and validated to ensure behavior matches backend capabilities.
+*   **Related SLI/SLO**: For the Grafana platform itself, SLIs related to alert management UI functionality availability can be defined. For example, "the success rate of users being able to successfully click and execute a valid alert management operation (such as edit, delete)." Inconsistent UI behavior directly affects the measurement of this SLI.
+*   **Best Practices and Recommendations**:
+    *   **Defensive Front-End Design**: Grafana should dynamically and consistently disable unsupported action buttons at the UI level, based on data source type and configuration (e.g., local storage vs. object storage). Loki's existing behavior is the correct model.
+    *   **Use Declarative and Compatible APIs**: When designing systems, prioritize providing full API functionality through backends that support dynamic modification (e.g., Mimir using object storage). If local storage must be used, clearly document its functional limitations in both the UI and documentation.
+    *   **Unified Test Cases**: When developing and testing Grafana integrations with different data sources, include scenario tests for all major features (especially CRUD operations) covering different backend configurations to ensure behavioral consistency.
+    *   **Related Pages**: This issue is closely related to [[monitoring-stack]], [[observability]], and [[incident-response]] practices. A stable, consistent monitoring system is the foundation for efficient [[incident-response]].

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Kubernetes v1.35: 基于 Watch 的 CCM 路由协调机制"
 description: "介绍了 Kubernetes v1.35 中引入的基于 Watch 的路由协调特性，通过事件驱动替代固定轮询，显著减少云控制器管理器对云平台 API 的不必要调用，提升集群可扩展性与可靠性。"
@@ -11,6 +12,8 @@ sources:
     title: "Kubernetes v1.35: Watch Based Route Reconciliation in the Cloud Controller Manager"
 tags: [Kubernetes, CCM, Reliability, Performance]
 ---
+
+# Kubernetes v1.35: 基于 Watch 的 CCM 路由协调机制
 
 ## 概述
 在 Kubernetes 集群中，云控制器管理器（CCM）负责管理与云提供商交互的各类资源，其中路由控制器（Route Controller）负责为集群节点创建和管理云平台上的网络路由。自 v1.34 及之前版本，路由协调机制采用固定时间间隔轮询的方式，无论路由是否发生变化，都会向云平台 API 发起请求。这种机制在大规模集群中会产生大量不必要的 API 调用，不仅浪费云资源，也可能触及 API 速率限制，影响系统稳定性。Kubernetes v1.35 引入了一个新的特性门控（Feature Gate），允许将路由协调行为切换为基于 `Watch` 的事件驱动模式，从根本上优化了这一过程。

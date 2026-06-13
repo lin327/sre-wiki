@@ -1,0 +1,105 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes SELinux Volume Label Changes and Upgrade Guide"
+description: "Analysis of the breaking changes from SELinuxMount feature expected to be enabled in Kubernetes v1.37, impacts, and smooth upgrade paths for clusters using SELinux."
+category: Storage & Volumes
+order: 0
+lastUpdated: 2026-04-22
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/22/breaking-changes-in-selinux-volume-labeling/
+    title: "Kubernetes Blog: SELinux Volume Label Changes goes GA (and likely implications in v1.37)"
+tags: [Kubernetes, SELinux, SELinuxMount, storage, security, upgrade, reliability]
+---
+
+# Kubernetes SELinux Volume Label Changes and Upgrade Guide
+
+## Overview
+
+For Kubernetes clusters running on Linux with SELinux in Enforcing mode, an important breaking change is coming: in the upcoming v1.37 version (expected), the `SELinuxMount` feature gate will be enabled by default. This change aims to significantly improve volume setup speed by applying SELinux labels directly at mount time, but it changes the underlying behavior of volume sharing and may break applications relying on the old recursive relabeling model (e.g., scenarios where privileged and unprivileged Pods on the same node share the same volume). As SREs, understanding this change and planning upgrade paths in advance is key to ensuring cluster reliability and smooth operation.
+
+## Core Concepts
+
+### SELinux and Kubernetes Volume Labels
+
+Linux SELinux uses labels to enforce access control on files, network sockets, and other objects. In Kubernetes, the container runtime is responsible for applying SELinux labels to Pods and their volumes.
+
+**Old Model (Recursive Relabeling)**: Historically, container runtimes recursively traversed all files in a volume and changed their SELinux labels. This process could be very time-consuming, especially on remote filesystems or volumes with many files. While `subPath` could achieve isolation between different Pods sharing the same volume, overall efficiency was low.
+
+**New Model (Mount Options)**: The new method allows kubelet to directly use the `-o context=<label>` option when mounting volumes, with the kernel applying correct labels at the mount point level without traversing the filesystem. This achieves constant-time volume setup but requires meeting several prerequisites.
+
+### SELinuxMount Feature Gate and Evolution
+
+`SELinuxMount` is the feature gate controlling the new mount behavior. Its evolution has two phases:
+1.  **`SELinuxMountReadWriteOncePod`**: For `ReadWriteOncePod` access mode volumes, Beta (enabled by default) since v1.28, reaching GA in v1.36.
+2.  **`SELinuxMount`**: Extends new behavior to all volumes. Beta but disabled by default in v1.36, expected to be enabled by default in v1.37.
+
+### Conditions for New Behavior
+
+For the new mount behavior to take effect (using mount options instead of recursive relabeling), Pods and their volumes must simultaneously meet **all** of the following conditions:
+1.  The operating system supports SELinux.
+2.  The corresponding feature gate is enabled (in v1.36, `SELinuxMountReadWriteOncePod` is GA, `SELinuxMount` is Beta disabled by default).
+3.  The Pod's PersistentVolumeClaim meets specific conditions: either `ReadWriteOncePod` mode, or with `SELinuxChangePolicy` and `SELinuxMount` feature gates enabled, the Pod's `spec.securityContext.seLinuxChangePolicy` is set to default or `MountOption`.
+4.  The Pod or its containers explicitly specify `seLinuxOptions.level` in `securityContext`.
+5.  The CSI driver or volume plugin responsible for the volume supports mount options and declares `seLinuxMount: true` in the `CSIDriver` resource.
+
+## Practice
+
+### Upgrade Preparation and Conflict Detection (v1.36)
+
+In v1.36 clusters, proactively prepare for the v1.37 upgrade by identifying potential conflicts:
+
+1.  **Enable SELinux Warning Controller**: Add `--controllers=*,selinux-warning-controller` to `kube-controller-manager` startup parameters, and ensure `SELinuxChangePolicy` feature gate is not explicitly disabled.
+2.  **Monitor conflict metrics**:
+    - **`selinux_warning_controller_selinux_volume_conflict`**: Lists all potential inter-Pod SELinux label conflicts that would cause problems when `SELinuxMount` is enabled. Metric labels include conflicting Pod names, namespaces, and specific SELinux labels.
+    - **`volume_manager_selinux_volume_context_mismatch_warnings_total`**: Emitted by kubelet, counts Pods that can run with `SELinuxMount` disabled but would fail to start due to label conflicts when enabled.
+3.  **Apply opt-out strategies**: For identified conflicting Pods, force old recursive relabeling mode by setting `spec.securityContext.seLinuxChangePolicy: Recursive`. Can be batch-applied via [[mutating-admission-policy]] or policy engines like Kyverno, Gatekeeper.
+
+### Executing the Upgrade
+
+1.  After resolving all known conflicts, upgrade the cluster to the version expected to enable `SELinuxMount` (v1.37 or later).
+2.  After upgrading, observe the following metrics to confirm status:
+    - **`volume_manager_selinux_volume_context_mismatch_errors_total`**: Emitted by kubelet, counts Pods that **actually cannot start** due to SELinux label conflicts.
+    - Continue monitoring `selinux_warning_controller_selinux_volume_conflict` for specific conflicting Pod information.
+
+### Architectural Considerations
+
+This change requires SRE teams to re-examine application deployment architecture. Special attention needed for:
+- **Volume sharing patterns**: Evaluate whether applications depend on sharing volumes across different SELinux contexts (e.g., privileged and unprivileged Pods).
+- **Security context declarations**: Ensure all relevant Pod YAML definitions explicitly specify `seLinuxOptions.level`, a prerequisite for new behavior.
+- **CSI driver compatibility**: Confirm storage backend CSI drivers support and declare `seLinuxMount` capability.
+
+## SRE Essentials
+
+### Relationship with Reliability
+
+This change directly relates to cluster **availability** and **change reliability**.
+- **Disruption risk**: Unprepared upgrades may cause Pods depending on specific volume sharing patterns to enter `ContainerCreating` state, unable to start, causing service disruption.
+- **Performance improvement**: After successful migration, for volumes with many files or remote storage, Pod startup time will significantly decrease, improving system performance and resilience.
+- **Observability**: New metrics and events provide powerful tools for SREs to discover and diagnose issues before and after upgrades, a concrete practice of [[observability]] in security and storage domains.
+
+### Best Practices and Anti-Patterns
+
+**Best Practices:**
+- **Plan ahead**: Enabling the warning controller and resolving conflicts during v1.36 is key to smooth upgrades.
+- **Use policy management**: Leverage policy engines to uniformly set `seLinuxChangePolicy` for workloads, avoiding omissions.
+- **Explicitly declare security contexts**: Define `seLinuxOptions.level` explicitly in Pod specs rather than relying on container runtime random label assignment.
+- **Verify CSI drivers**: Before upgrading, confirm CSI drivers supporting core business workloads support new mount options.
+
+**Common Anti-Patterns:**
+- **Ignoring upgrade warnings**: Ignoring events and metrics from `selinux_warning_controller`, proceeding directly with version upgrade, causing production failures.
+- **Ambiguous security contexts**: Relying on `securityContext` defaults, preventing kubelet from knowing `level` at mount time, falling back to recursive relabeling and losing performance benefits.
+- **Untested shared volume scenarios**: Not verifying SELinux label volume sharing schemes under new behavior in test environments.
+
+### Related Metrics (SLI/SLO)
+
+Key metrics to monitor during this change help maintain Service Level Objectives:
+- **SLI**: Pod latency from creation to running state (for workloads involving volume mounts).
+- **SLO**: Startup success rate for related workloads should be 100%.
+- **Specific monitoring metrics**:
+    - `selinux_warning_controller_selinux_volume_conflict` (potential conflicts, should be 0)
+    - `volume_manager_selinux_volume_context_mismatch_errors_total` (actual startup failures, should be 0)
+    - `volume_manager_selinux_volume_context_mismatch_warnings_total` (potential risk Pod count, should be 0)
+
+See Kubernetes official documentation for more details on [[kubernetes-storage]], `CSIDriver` specifications, and [[security-context]].

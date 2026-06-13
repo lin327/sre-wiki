@@ -1,0 +1,59 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Terraform Enterprise 2.0 Core Features and Evolution"
+description: "Terraform Enterprise 2.0 introduces Stacks orchestration, project-level notifications, enhanced identity and access controls, and operational diagnostics for large-scale infrastructure management."
+category: SRE Tools and Platforms
+order: 0
+lastUpdated: 2025-10-27
+confidence: high
+---
+
+# Terraform Enterprise 2.0 Core Features and Evolution
+
+## Overview
+
+Terraform Enterprise 2.0 is a major release from HashiCorp addressing large-scale infrastructure management challenges. It is not just a feature iteration but an evolution of infrastructure operations models, aiming to provide SRE and platform teams with more powerful orchestration, governance, and operational capabilities. For SREs, the core value of this release lies in **embedding infrastructure change coordination, monitoring, and security controls into the platform**, thereby reducing manual coordination overhead, improving deployment consistency, strengthening security baselines, and ultimately enhancing the reliability and observability of the entire infrastructure stack.
+
+## Core Concepts
+
+The core innovations of Terraform Enterprise 2.0 revolve around the following key concepts:
+
+1.  **Stacks (Orchestration Unit)**: This is the core of this update. Stacks allows teams to define multiple Terraform configurations (e.g., network, compute, database layers) as a logical unit for management and deployment. It addresses the complexity and risks of manually coordinating dependencies, deployment order, and environment replication across multiple workspaces, environments, and regions at scale. Stacks platformizes orchestration capabilities, automating dependency handling between components.
+2.  **Project-level notifications**: This is a governance model shift from "workspace-level" to "project-level." Previously, alert configurations needed to be set per workspace, prone to omissions. Now, notification policies can be uniformly defined at the project level and automatically applied to all workspaces under it, ensuring monitoring defaults and consistency.
+3.  **SCIM 2.0 and team member mapping**: This is a standardized automated identity lifecycle management protocol. Through integration with identity providers (such as Okta, Azure Entra ID), it automates user creation, update, and deletion in Terraform Enterprise, as well as team membership synchronization, greatly improving security and management efficiency.
+4.  **Site Auditor role**: This is a read-only role specifically designed for audit and security workflows. It provides access to resources such as organizations, workspaces, run history, and policy sets, while masking sensitive data like state files, achieving security and compliance visibility.
+5.  **Enhanced API token management**: Newly created API tokens are required to set expiration times, or a long automatic expiration period (such as two years) is set by default. This reduces the security risk of long-term credential exposure.
+
+## Practice
+
+In SRE practice, Terraform Enterprise 2.0's new features can be applied as follows:
+
+-   **Using Stacks for complex deployment management**:
+    For application stacks composed of network modules, VM pools, load balancers, databases, and other components, a Stacks configuration file can be created to define their dependencies and deployment parameters. During execution, Terraform Enterprise will parse and execute these components' `plan` and `apply` in the correct order, without the SRE team manually recording and executing a complex deployment checklist. This makes consistent replication across environments (such as dev, staging, prod) simple and reliable, **significantly reducing infrastructure failures caused by deployment order errors**.
+
+-   **Implementing project-level monitoring policies**:
+    The platform SRE team can configure notification channels (such as PagerDuty, Slack, Webhook) on the parent project that manages all infrastructure workspaces. Thereafter, any new workspaces created or moved into this parent project will automatically trigger alerts for all `plan` and `apply` run statuses. This eliminates "blind spots" caused by missing monitoring configuration, ensuring all infrastructure changes are under observability coverage.
+
+-   **Automating identity and access control**:
+    Integrate Terraform Enterprise with the company's IdP via SCIM. When a new user is created in the IdP and assigned to the "Production Operations" group, the user is automatically added to the corresponding team in Terraform Enterprise and granted appropriate production workspace permissions. When an employee leaves, disabling their account in the IdP automatically revokes all access permissions, achieving automated and immediate security governance.
+
+-   **Leveraging enhanced operational diagnostics tools**:
+    When the Terraform Enterprise platform itself experiences performance issues or anomalies, administrators can run diagnostics directly in the console's health check interface. The tool provides clear status reports and collected diagnostic information, helping SRE quickly identify whether it's a database connection issue, storage issue, or service failure, **shortening the Mean Time to Repair (MTTR) for platform-level incidents**.
+
+-   **Secure cross-organization workspace migration**:
+    When organizational structure changes require migrating workspaces from one organization to another, the new workspace migration API can be used. The process locks the source workspace, creates the target workspace, and copies critical data (such as state). SREs can run validation `plan`/`apply` in the target workspace before final switching, ensuring everything is normal before completing the migration and deleting the source workspace. This provides a **secure, auditable, and low-risk path** for large-scale reorganizations.
+
+## SRE Key Points
+
+-   **Relationship with reliability**: Stacks directly improves multi-environment deployment consistency and reliability through automated orchestration, reducing configuration drift and human error. Pre-upgrade validation checks proactively identify compatibility issues before platform upgrades, reducing upgrade failure risk and ensuring platform stability.
+-   **Relationship with observability**: Project-level notification functionality transforms monitoring capability from "optional configuration" to "default baseline," which is a key step in achieving comprehensive observability of infrastructure changes. Built-in health checks and diagnostic tools enhance the platform's own observability, which is a necessary means for SRE to ensure toolchain reliability.
+-   **Relationship with incident response**: Stronger alert defaults (project-level notifications) help discover incidents related to infrastructure changes faster. The Site Auditor role and enhanced API token audit provide secure and rich contextual information for post-incident auditing and root cause analysis.
+-   **Best practices and common anti-patterns**:
+    -   **Best practices**: Define Stacks early for all infrastructure components; use project-level notifications to unify alert baselines; use SCIM integration instead of manual user management; set short-term expiration for all API tokens.
+    -   **Anti-patterns**: Individually and repeatedly configuring the same monitoring policy for each workspace; ignoring API token expiration policies, using permanently valid tokens; using overly broad admin permissions for daily operations instead of using Site Auditor or delegated policy coverage.
+-   **Related metrics (SLI/SLO)**: Consider setting SLOs for the Terraform Enterprise platform itself, such as:
+    -   **SLI**: Platform API request success rate, workspace `apply` operation average success rate.
+    -   **SLO**: 99.9% of API requests return success within 2 seconds; 99.5% of `apply` operations complete within 10 minutes without errors.
+    -   **Error Budget**: Based on the above SLOs, used to balance new feature release speed with platform stability.
+-   **Related pages**: [[terraform]], [[infrastructure-as-code]], [[idp-integration]], [[security-in-sre]]

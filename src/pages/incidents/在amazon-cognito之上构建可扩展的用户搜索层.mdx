@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "在Amazon Cognito之上构建可扩展的用户搜索层"
 description: "介绍如何使用AWS Lambda, DynamoDB和OpenSearch Service为Amazon Cognito构建一个可扩展、事件驱动的高级用户搜索层。"
@@ -11,6 +12,8 @@ sources:
     title: "Building a scalable user search layer on top of Amazon Cognito"
 tags: [cognito, opensearch, dynamodb, lambda, serverless, architecture, search]
 ---
+
+# 在Amazon Cognito之上构建可扩展的用户搜索层
 
 ## 概述
 Amazon Cognito 提供了强大的用户认证与管理功能，但在面对海量用户（例如成千上万的账户）时，其内置的 `ListUsers` API 在高级搜索场景（如模糊匹配、跨多个自定义属性的复杂过滤、亚秒级响应）下可能无法满足需求。本方案旨在通过构建一个独立的搜索层来解决这一问题，它能够实现实时数据同步与高性能查询，对于SRE快速定位用户、执行故障排查或支持团队响应工单至关重要。

@@ -1,0 +1,75 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Trailing Space in Configuration File (Grafana Docker)"
+category: "Configuration Management"
+confidence: low
+---
+
+# Trailing Space in Configuration File (Grafana Docker)
+
+## Overview
+In the Grafana 11.6.0 Docker image, two trailing spaces were accidentally introduced at the end of the auto-generated `/etc/grafana/grafana.ini` configuration file. While this may seem like a minor formatting issue, it highlights the importance of **configuration consistency** and **configuration validation** in operational practices. For SRE, any configuration change that deviates from expectations can become a source of Configuration Drift, affecting the predictability and reliability of system behavior.
+
+## Core Concepts
+### Configuration Drift
+Refers to unmanaged differences between a system's actual running configuration and its expected state (typically defined by version-controlled configuration templates). Trailing spaces are a typical, easily overlooked form of configuration drift.
+
+### Environment Consistency
+One of SRE's core principles, aimed at ensuring that all environments from development to testing to production remain consistent in configuration, dependencies, and deployment processes, reducing "works on my machine" issues. Inconsistent configuration files are a common cause of broken consistency.
+
+### Configuration Validation
+The practice of incorporating configuration file syntax, format, and content checks into deployment pipelines or monitoring systems. Through automated tools (such as `check` scripts, linters), these subtle errors are caught before they reach production.
+
+## Practice
+### Reproducing and Confirming the Issue
+Based on the issue description, the problem can be locally reproduced and confirmed through the following steps:
+
+1. **Extract configuration files from different versions**: Use Docker to create Grafana containers of specified versions and copy `grafana.ini` locally.
+    ```bash
+    declare -a arr=("11.5.2" "11.6.0")
+    for GRAFANA_VERSION in "${arr[@]}"
+    do
+      id=$(docker create grafana/grafana:$GRAFANA_VERSION)
+      docker cp $id:/etc/grafana/grafana.ini ${GRAFANA_VERSION}_config.ini
+      docker rm -v $id
+    done
+    ```
+
+2. **Check for trailing spaces**: Use the `grep` command to search for spaces at line endings (` $` matches a space before line end).
+    ```bash
+    grep " $" *_config.ini
+    ```
+    The command outputs matching lines for the 11.6.0 configuration file but not for 11.5.2.
+
+### Specific Manifestation
+The issue manifests as trailing spaces at the **end** of the `grafana.ini` file. This typically does not affect Grafana service startup (configuration parsers are usually tolerant), but may cause issues in the following scenarios:
+- Using `diff` to compare configuration files produces unnecessary difference reports.
+- In configuration validation or change detection systems based on file hashes (such as SHA256), it causes hash value changes, triggering false positives.
+- In version control systems (such as Git), it produces irrelevant commit history, interfering with code review.
+
+## SRE Essentials
+### Impact on Reliability
+- **Configuration Inconsistency**: A potential root cause of unexpected behavior (incidents). Even minor format differences can be amplified during complex configuration merging or rendering processes.
+- **Reduced Predictability**: Undermines the reliability of "declarative configuration" in Infrastructure as Code (IaC). SRE expects the same configuration template to produce completely identical output at different times or in different environments.
+- **Automated Pipeline Interference**: May cause CI/CD pipelines, security scanning tools, or compliance checks that depend on configuration file content to produce false positive results, reducing team trust in automation tools.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**:
+    1. **Version control configuration files**: Ensure all configuration changes are traceable and auditable.
+    2. **Implement configuration validation gates**: Add steps in deployment pipelines to check whether configuration files meet predefined format and specification requirements (using tools like `shfmt`, `editorconfig-checker`, or custom scripts to check trailing spaces, indentation, etc.).
+    3. **Use configuration management tools**: Render configurations from centralized templates through tools like Ansible, Puppet, or Chef to ensure final configuration consistency, rather than directly modifying production environment files.
+    4. **Image provenance and content scanning**: In CI processes, not only build images but also decompress and inspect critical configuration files to verify they meet expectations.
+
+- **Common Anti-Patterns**:
+    1. **Manually modifying production configuration**: Directly SSH-ing to servers to edit `grafana.ini` is the most direct cause of configuration drift.
+    2. **Ignoring "insignificant" changes**: Believing that spaces, comments, and other formatting issues do not affect operations and ignoring them, but these changes break configuration determinism.
+    3. **Lack of configuration diff detection**: Not having a mechanism to periodically or in real-time compare actual running configuration with expected configuration.
+
+### Related Metrics (SLI/SLO)
+While this issue itself does not directly define SLI/SLO, it relates to **configuration management** and **deployment success rate** metrics:
+- **SLI (Example)**: Configuration file deployment success rate (proportion of deployed configuration files that exactly match repository templates).
+- **SLO (Example)**: Monthly, over 99.9% of configuration deployments are unmodified and content-consistent.
+- **Error Budget Consumption**: Such configuration inconsistency events can be recorded as "minor configuration deviation" events, counted toward **change management** related error budget consumption, driving teams to improve automated validation processes.
+
+**Related pages**: [[configuration-management]], [[ci-cd-pipeline]], [[configuration-drift]]

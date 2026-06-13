@@ -1,0 +1,75 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "PACIFIC Platform: Building Multi-Tenant, Sovereign PCF Exchange on the Catena-X Data Space"
+category: "Platform Architecture and Engineering"
+confidence: low
+---
+
+# PACIFIC Platform: Building Multi-Tenant, Sovereign PCF Exchange on the Catena-X Data Space
+
+## Overview
+
+PACIFIC is an AWS-based product co-developed by BASF and CircularTree, designed to address the complex challenges of product carbon footprint data exchange in the automotive supply chain. As a multi-tenant SaaS solution, the platform allows companies to securely and reliably manage and exchange carbon emission data while maintaining data sovereignty. In an era where sustainability has become an operational hard requirement, PACIFIC significantly reduces manual operations by automating data exchange processes, ensures data trustworthiness, and provides measurable environmental impact for improving competitiveness in a carbon-conscious market. From an SRE perspective, PACIFIC's architecture demonstrates how to deeply integrate reliability, security, scalability, and data sovereignty principles into platform engineering practices when building complex, cross-organizational data exchange platforms.
+
+## Core Concepts
+
+Understanding PACIFIC's architecture requires grasping several key concepts. **Data Sovereignty** means each company retains complete control over its data, even when it is shared or stored on shared infrastructure. **Multi-Tenant Architecture** means multiple organizations (tenants) share the same application instances and infrastructure, but strict logical isolation must be implemented to prevent data leakage. In the automotive industry's Catena-X data space, this isolation is critical. **Eclipse Dataspace Components (EDC)** are standard connectors for implementing cross-company, compliant data exchange. PACIFIC uses EDC connectors as the channel for inter-company data sharing, enforcing policy negotiation before sharing. **Catena-X Digital Twin Registry (DTR)** is the core service for managing digital identities of entities (such as products, devices) in the supply chain. PACIFIC integrates DTR to ensure carbon footprint data can be associated with the correct product digital twin.
+
+## Practice
+
+### Architecture and Deployment
+
+PACIFIC uses a microservices-based serverless architecture deployed on AWS. The core compute layer uses **Amazon Elastic Container Service (Amazon ECS) on AWS Fargate**, eliminating the burden of managing server infrastructure and enabling automatic scaling. Key microservices include `core-modules` (core platform functionality), `integration-module` (supplier system integration), `pcf-exchange-module` (secure data exchange endpoint), and `edc-dtr-module` (Catena-X interoperability). Traffic enters the VPC through **AWS WAF** and **Application Load Balancer**.
+
+### [[iam-based-tenant-isolation|IAM-Based Tenant Isolation]]
+
+This is the key practice for achieving data sovereignty. Instead of creating separate AWS accounts for each tenant, the platform uses a fine-grained IAM isolation model:
+1. When a new company onboards, PACIFIC automatically provisions a dedicated **AWS IAM role** whose policy only allows access to that company's **AWS Secrets Manager** secrets.
+2. Users are assigned to **Amazon Cognito User Pool groups** associated with their company.
+3. During user authentication, the Cognito identity pool maps user groups to corresponding IAM roles and issues temporary credentials via **AWS Security Token Service (STS)**.
+4. These temporary credentials can only retrieve their company's EDC keys; other tenants' configurations are explicitly denied at the IAM policy level. This architecture leverages native AWS identity services to achieve true multi-tenant isolation without the overhead of managing dedicated accounts or VPCs per customer.
+
+### [[edc-authorization-tokens|Securing Data Exchange with EDC Authorization Tokens]]
+
+The data exchange layer's security is achieved through the `pcf-exchange-module` and OAuth2 token mechanism. The flow is as follows:
+1. The consumer's EDC connector sends a PCF data request to the supplier's EDC.
+2. The two EDC connectors perform **policy negotiation** to agree on data usage terms.
+3. After successful negotiation, the supplier's EDC issues a specific OAuth2 authorization token based on its internally stored **Cognito application client credentials**.
+4. The consumer uses this token to call the supplier's exclusive `pcf-exchange-module` endpoint in PACIFIC.
+5. The endpoint validates the token's validity (performed by the `supplier-oauth2-client` component), authorizing data transfer only when the token matches the supplier company and was issued through the EDC handshake process.
+This design implements authorization controls at both the EDC policy negotiation and company-based OAuth2 token verification levels, ensuring PCF data is only transmitted to specific trading partners after explicit consent.
+
+### [[supplier-integration|Integrating Supplier PCF Systems]]
+
+The `integration-module` serves as a flexible integration layer, responsible for ingesting data from supplier internal systems (such as BASF's PCF service). This module:
+1. Handles diverse authentication flows (OAuth2 client credentials, certificate authentication, API keys, etc.), with all credentials securely stored in **AWS Secrets Manager**.
+2. Expects received PCF data to conform to the standardized **Catena-X PCF JSON format**, ensuring data consistency at the entry point.
+3. Stores received data in **Amazon S3** buckets partitioned by company prefix, with IAM policies ensuring only data owners can access their data.
+This design decouples supplier system integration from downstream data sharing workflows, allowing new supplier data sources to be added without affecting existing Catena-X exchange processes.
+
+## SRE Essentials
+
+### Reliability, Observability, and Incident Response
+PACIFIC platform's SRE practices focus on ensuring end-to-end reliability and security of cross-organizational data exchange. Fargate provides underlying compute availability, while multi-tenant isolation and authorization mechanisms are themselves critical security controls for preventing data leakage events. Due to handling sensitive supply chain carbon data, the platform's audit logs and monitoring (though not detailed in the text, but can be inferred from the architecture to use CloudWatch, etc.) are critical for security incident response and compliance verification. Any failure involving EDC connectors or Cognito tokens could interrupt data exchange, affecting supply chain visibility.
+
+### Best Practices and Anti-Patterns
+**Best Practices** include:
+- Using managed services (ECS Fargate, Cognito, Secrets Manager) to reduce operational burden and focus on application logic.
+- Implementing fine-grained access control (IAM) based on identity and policy rather than relying on network boundaries.
+- Decoupling components (integration and exchange modules) for independent evolution and fault isolation.
+- Adopting standardized data formats (Catena-X PCF JSON) to promote interoperability.
+
+**Anti-Patterns to Avoid**:
+- **Shared Super Credentials**: Never allow one tenant's temporary credentials to infer or access other tenants' resources.
+- **Tightly Coupled Integration**: Hardcoding specific supplier integration logic into the core exchange module reduces platform scalability and resilience.
+- **Ignoring Policy as Code**: For EDC policy negotiation and IAM policies, adopt declarative, version-controlled management rather than manual configuration.
+
+### Related Metrics (SLI/SPO/SLA)
+For such a platform, SRE teams should track the following metrics:
+- **Data Exchange Success Rate (SLI)**: Proportion of EDC-to-EDC data exchange requests that complete successfully.
+- **Average Data Delivery Latency (SLI)**: Time from consumer request initiation to PCF data return (the original text emphasizes optimization from "days" to "seconds").
+- **Platform Onboarding and Activation Rate (SLI/SLO)**: Time and proportion of new companies successfully onboarding and completing their first data exchange (the original text mentions an 80% increase in onboarded companies).
+- **Data Exchange Volume Growth Rate (SLO)**: Growth rate of shared PCF product count (the original text mentions a 55% increase).
+- **Cost Efficiency**: Cost savings relative to manual processes (the original text mentions a 75% time savings).
+These metrics collectively reflect the platform's performance in reliability, efficiency, and business value, forming the basis for defining SLOs and establishing SLAs.

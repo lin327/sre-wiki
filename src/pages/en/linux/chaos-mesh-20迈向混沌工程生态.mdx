@@ -1,0 +1,57 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Mesh 2.0: Toward a Chaos Engineering Ecosystem"
+category: "Chaos Engineering"
+confidence: medium
+---
+
+# Chaos Mesh 2.0: Toward a Chaos Engineering Ecosystem
+
+## Overview
+
+Chaos engineering is the practice of proactively injecting faults to validate a system's fault tolerance and improve service resilience, and it is critical for ensuring the reliability of modern distributed systems. Chaos Mesh is an open-source, Kubernetes-native chaos engineering platform designed to simplify this process. Its 2.0 release is a major milestone, making significant improvements across three core dimensions -- usability, experiment orchestration, and fault types -- toward building a more complete "chaos engineering ecosystem." This enables SRE teams to more efficiently and comprehensively simulate real-world failures in production or test environments, thereby validating and improving their SLI (Service Level Indicator) performance and SLO (Service Level Objective) attainment rates.
+
+## Core Concepts
+
+Chaos Mesh 2.0 introduces several key new concepts and components to support more complex chaos experiment scenarios.
+
+*   **Chaos Dashboard**: A web interface for orchestrating and managing chaos experiments. The 2.0 version expands its capabilities to provide a unified experience for managing fault injection across both in-cluster Kubernetes resources (such as Pods) and cloud environment resources (such as AWS EC2, GCP VMs).
+*   **Workflow (Native Workflow Engine)**: Used to define and orchestrate the execution logic of multiple chaos experiments. It replaces the earlier Argo integration approach, natively supporting serial and parallel experiment execution, and can embed notification and health check steps to simulate complex failure scenarios.
+*   **Schedule**: A custom Kubernetes object for more precise control over periodic chaos experiment execution. It borrows the CronJob concept but adds more explicit semantic attributes (e.g., whether to allow multiple experiment instances to run simultaneously), making the description of desired behavior clearer.
+*   **Application-Level Fault Injection**: In addition to traditional system-level faults (such as network, disk), the 2.0 version formally introduces application-level fault types, including **JVMChaos** (for Java/Kotlin applications) and **HTTPChaos** (for HTTP protocols).
+*   **Chaosd**: An independent command-line tool evolved from Chaos Mesh's core component `chaos-daemon`, specifically designed for fault injection on physical machines (non-Kubernetes environments).
+
+## Practice
+
+The following content is based on the major feature updates in Chaos Mesh 2.0, demonstrating how to leverage the new capabilities for chaos experiments.
+
+### 1. Managing Experiments with Chaos Dashboard
+The 2.0 Dashboard provides more comprehensive visualization for experiments. Users can now perform the following operations in a single interface:
+*   **Create and Manage Cloud Environment Faults**: Directly define and manage `AWSChaos` (e.g., simulating EC2 instance stops) and `GCPChaos` (e.g., simulating GCE instance stops) experiments without manually writing YAML.
+*   **Experiment State Visualization**: View more detailed execution records and status for each experiment, improving observability of the experiment process.
+
+### 2. Orchestrating Complex Experiments with Workflow
+`Workflow` allows you to organize multiple experiments into an automated pipeline to simulate more realistic cascading failures. For example, you can create a workflow that first performs network latency injection, then runs database connection pool exhaustion and CPU stress tests in parallel, and finally sends a notification report with the results. This can be achieved by defining a `Workflow` custom resource.
+
+### 3. Defining Periodic Experiments with Schedule
+Replacing the original simple `cron` and `duration` fields, the `Schedule` object provides richer configuration options for periodically running chaos experiments. You can set a cron expression and define a concurrency policy (such as `Forbid` or `Replace`) to control the experiment scheduling behavior and avoid unexpected experiment overlaps.
+
+### 4. Injecting Application-Level Faults
+*   **JVMChaos**: Uses Java Agent technology to inject faults without modifying application code. Supported fault types include method call delays, specified return values, simulated OOM, and throwing custom exceptions.
+*   **HTTPChaos**: Can intercept HTTP requests and responses of target services, supporting fault injection (such as delays), connection disruption, and modification of headers or bodies. Suitable for all HTTP-based microservices.
+
+## SRE Takeaways
+
+Chaos engineering is a key practice in SRE for proactively validating system reliability. The improvements in Chaos Mesh 2.0 directly serve this goal.
+
+*   **Reliability Impact**: With richer fault types and more powerful orchestration capabilities, SRE teams can more realistically simulate various production failures (from infrastructure to application protocol layers), enabling more accurate assessment of system behavior under real failures and driving reliability improvements. This is directly related to managing [[error-budget]], using experiments to consume Error Budget and proactively discover issues.
+*   **Best Practices**:
+    *   **Start Small**: Begin in non-production environments, using `Schedule` to establish regular, controlled "health check"-style chaos experiments.
+    *   **Scenario-Based Design**: Use `Workflow` to simulate specific, business-meaningful failure scenarios (e.g., "core checkout flow performance during an availability zone network partition") rather than injecting faults in isolation.
+    *   **Observability First**: Before injecting faults, ensure sufficient monitoring metrics ([[SLI]]) and alerts are in place to accurately measure the scope and duration of fault impact.
+*   **Common Anti-patterns**:
+    *   **Chaos Without Monitoring**: Blindly injecting faults without measurement makes it impossible to determine whether the system handled the failure as expected.
+    *   **Uncontrolled Blast Radius**: Failing to set adequate experiment scope and stop conditions, causing fault impact to exceed the expected range.
+    *   **Focusing Only on System-Level Faults**: Ignoring application-level (such as JVM, HTTP) fault injection, resulting in incomplete assessment of system resilience.
+*   **Related Metrics**: Chaos experiments are the ultimate test for validating [[SLI]] and [[SLO]] effectiveness. For example, injecting network latency to verify whether the "request latency" SLI can still meet the SLO under failure conditions. Experiment execution and results should become part of the reliability review process.

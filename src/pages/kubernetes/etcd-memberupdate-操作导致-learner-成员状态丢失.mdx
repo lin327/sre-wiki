@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "etcd MemberUpdate 操作导致 learner 成员状态丢失"
 description: "etcd 的 MemberUpdate API 在更新 learner 成员的 peer URL 时，会错误地清除其 learner 状态标志，影响集群配置和可靠性。"
@@ -11,6 +12,8 @@ sources:
     title: "etcd MemberUpdate forgets that the member is a learner"
 tags: [etcd, reliability, configuration-management, bug, learner]
 ---
+
+# etcd MemberUpdate 操作导致 learner 成员状态丢失
 
 ## 概述
 

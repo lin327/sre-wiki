@@ -1,0 +1,211 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "OOMKilled Troubleshooting"
+description: "Complete troubleshooting procedure for Kubernetes containers terminated by the OOM Killer due to exceeding memory limits, covering symptom identification, memory analysis, and resource tuning."
+---
+
+# OOMKilled Troubleshooting Guide
+
+OOMKilled indicates that a container process was forcibly terminated by the Linux kernel's OOM Killer (Out of Memory Killer) for exceeding its memory limit. In Kubernetes, when a container's actual memory usage exceeds the value set in `resources.limits.memory`, kubelet triggers an OOM Kill, and the container exits with code **137** (128 + 9, where 9 is the SIGKILL signal number).
+
+## Symptom Identification
+
+When a container is OOMKilled, you will observe the following:
+
+- `kubectl get pods` shows `STATUS` as `CrashLoopBackOff` or `OOMKilled`
+- The `RESTARTS` count continuously increases
+- `kubectl describe pod` Events show `OOMKilled` or `Back-off restarting failed container`
+- Container exit code is 137
+- Users experience brief service unavailability, request timeouts, or connection resets
+
+```bash
+# Quickly find all OOMKilled Pods across all namespaces
+kubectl get pods -A -o json | jq -r '.items[] |
+  select(.status.containerStatuses[]?.lastState.terminated.reason == "OOMKilled") |
+  "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
+## Diagnostic Steps
+
+### Step 1: Confirm the OOM Event
+
+```bash
+# View Pod details, focusing on Last State and Events
+kubectl describe pod <pod-name>
+
+# Pay attention to the following output sections:
+# - Containers > State > Last State > Reason: OOMKilled
+# - Containers > Last State > Exit Code: 137
+# - Events > Reason: Killing
+```
+
+Typical `describe pod` output:
+
+```text
+State:          Waiting
+  Reason:       CrashLoopBackOff
+Last State:     Terminated
+  Reason:       OOMKilled
+  Exit Code:    137
+  Started:      Wed, 11 Jun 2025 10:15:30 +0000
+  Finished:     Wed, 11 Jun 2025 10:16:02 +0000
+Events:
+  Type     Reason     Age   From     Message
+  ----     ------     ----  ----     -------
+  Warning  OOMKilled  2m    kubelet  Memory cgroup out of memory
+```
+
+### Step 2: Check Memory Limits and Actual Usage
+
+```bash
+# View Pod memory limit configuration
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].resources}' | jq .
+
+# View current memory usage (requires metrics-server)
+kubectl top pod <pod-name> --containers
+
+# View node memory pressure
+kubectl describe node <node-name> | grep -A10 "Allocated resources"
+```
+
+If metrics-server is unavailable, you can read directly from cgroup files:
+
+```bash
+# Get container ID
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[0].containerID}'
+
+# View cgroup memory stats on the node
+# cgroup v2 path
+cat /sys/fs/cgroup/kubepods.slice/kubepods-<qos>.slice/<pod-uid>/<container-id>/memory.current
+cat /sys/fs/cgroup/kubepods.slice/kubepods-<qos>.slice/<pod-uid>/<container-id>/memory.peak
+
+# cgroup v1 path
+cat /sys/fs/cgroup/memory/kubepods/<qos>/<pod-uid>/<container-id>/memory.max_usage_in_bytes
+```
+
+### Step 3: Analyze Memory Trends Before OOM
+
+```bash
+# View logs from the previous crash (application output before OOM)
+kubectl logs <pod-name> --previous --tail=200
+
+# For multi-container Pods
+kubectl logs <pod-name> -c <container-name> --previous --tail=200
+```
+
+View memory growth trends in Prometheus:
+
+```promql
+# Container memory usage (bytes)
+container_memory_working_set_bytes{
+  pod="<pod-name>",
+  container="<container-name>"
+}
+
+# Memory usage as percentage of limit
+container_memory_working_set_bytes{pod="<pod-name>"}
+/ container_spec_memory_limit_bytes{pod="<pod-name>"} * 100
+```
+
+### Step 4: Determine if It Is a Memory Leak or Insufficient Limit
+
+Distinguishing between the two root causes:
+
+| Characteristic | Memory Leak | Insufficient Limit |
+|----------------|-------------|---------------------|
+| **Memory curve** | Continuously rises without dropping back | Fluctuates within normal range but hits the ceiling |
+| **OOM timing** | Crashes after running for some time | Crashes shortly after startup |
+| **Behavior after restart** | Each run duration progressively shortens | Consistent behavior each time |
+| **Pod restart frequency** | Intervals become shorter and shorter | Intervals remain roughly constant |
+
+## Remediation
+
+### Option 1: Adjust Resource Limits
+
+```bash
+# Temporarily increase memory limits via patch
+kubectl patch deployment <deployment-name> -p \
+  '{"spec":{"template":{"spec":{"containers":[{"name":"<container-name>","resources":{"limits":{"memory":"512Mi"},"requests":{"memory":"256Mi"}}}]}}}}'
+
+# Observe new Pod status
+kubectl get pod -w
+```
+
+<div class="admonition">
+  <p class="admonition-title">Tip</p>
+  <p>Setting requests to 50%-80% of limits is a common practice. Requests affect scheduling decisions, while limits determine the OOM threshold. A large gap between the two can lead to severe node overcommit.</p>
+</div>
+
+### Option 2: Fix Memory Leaks
+
+```bash
+# Java applications: Get a heap dump before OOM
+# Add to JVM parameters:
+# -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heapdump.hprof
+
+# Go applications: Enable pprof memory analysis
+# Expose /debug/pprof/heap endpoint in the application
+kubectl port-forward <pod-name> 6060:6060
+go tool pprof http://localhost:6060/debug/pprof/heap
+
+# Node.js applications: Use --inspect flag
+# Add --inspect=0.0.0.0:9229 to the startup command
+```
+
+### Option 3: Enable QoS Policy
+
+Ensure the Pod receives Guaranteed or Burstable QoS class to avoid being preferentially evicted:
+
+```yaml
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+```
+
+When requests equal limits, the Pod receives **Guaranteed** QoS and will not be preferentially evicted under node memory pressure.
+
+### Option 4: Large Memory Application Optimization
+
+For applications that rely on virtual memory, such as Java:
+
+```yaml
+# Java applications: Set heap memory to 75% of limit, leaving room for non-heap memory
+env:
+- name: JAVA_OPTS
+  value: "-Xms256m -Xmx384m -XX:MaxRAMPercentage=75.0"
+```
+
+```yaml
+# Python applications may need to disable the memory allocator arena
+env:
+- name: MALLOC_ARENA_MAX
+  value: "2"
+```
+
+## Verify the Fix
+
+```bash
+# Observe if the new Pod runs stably
+kubectl get pod <pod-name> -w
+
+# Confirm restart count is no longer increasing
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[0].restartCount}'
+
+# Continuously monitor memory usage
+watch -n 5 "kubectl top pod <pod-name> --containers"
+
+# Check QoS class
+kubectl get pod <pod-name> -o jsonpath='{.status.qosClass}'
+```
+
+## Preventive Measures
+
+- Set `resources.requests` and `resources.limits` for all containers to avoid unbounded memory usage
+- Use VPA (Vertical Pod Autoscaler) to automatically recommend appropriate resource values
+- Deploy memory alerts: trigger alerts when container memory usage exceeds 80% of the limit
+- Include load testing in CI/CD to verify application memory consumption under expected concurrency
+- For runtimes such as Java / Python / Node.js, explicitly configure heap memory parameters rather than relying on automatic inference from container limits

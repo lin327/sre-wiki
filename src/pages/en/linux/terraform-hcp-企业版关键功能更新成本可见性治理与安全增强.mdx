@@ -1,72 +1,74 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Terraform adds cost visibility, project-level notifications, and more"
 category: "Terraform"
 confidence: high
 ---
 
+# Terraform adds cost visibility, project-level notifications, and more
 
-## 概述
+## Overview
 
-HashiCorp 在其 HCP Terraform 和 Terraform Enterprise 平台中引入了一系列重要更新。这些功能升级的核心目标是消除基础设施管理中的“盲点”，从而在基础设施的整个生命周期内加强治理、安全与成本控制。对于实践 Site Reliability Engineering（SRE）的团队而言，这些更新直接关联到成本效率、系统可靠性、安全合规与运维自动化等关键领域，有助于构建更可靠、更安全、更高效的基础设施管理体系。
+HashiCorp has introduced a series of important updates to its HCP Terraform and Terraform Enterprise platforms. The core goal of these feature upgrades is to eliminate "blind spots" in infrastructure management, thereby strengthening governance, security, and cost control throughout the infrastructure lifecycle. For teams practicing Site Reliability Engineering (SRE), these updates directly relate to key areas such as cost efficiency, system reliability, security compliance, and operational automation, helping to build a more reliable, secure, and efficient infrastructure management system.
 
-## 核心概念
+## Core Concepts
 
-此次更新的核心是围绕 **“项目”（Project）** 这一管理单元，构建了更精细的治理和隔离边界，并引入了更深层的可观测性与安全性机制。
+The core of this update revolves around the **Project** management unit, building more granular governance and isolation boundaries, and introducing deeper observability and security mechanisms.
 
-### 1. 可计费资源分析 (Billable Resource Analytics)
-此功能解决了基于资源管理（RUM）计费模式下成本不透明的痛点。它允许管理员在**项目**和**工作空间**级别查看资源消耗明细，而非仅限于组织总量。这使得成本分摊（Showback/Chargeback）和资源优化成为可能。
+### 1. Billable Resource Analytics
+This feature addresses the pain point of cost opacity under the Resource Unit Management (RUM) billing model. It allows administrators to view resource consumption details at the **Project** and **Workspace** levels, rather than only at the organization total. This enables cost showback/chargeback and resource optimization.
 
-### 2. 项目级远程状态共享 (Project-level Remote State Sharing)
-此功能利用项目作为天然的隔离边界。当一个工作空间启用“与本项目内所有工作空间共享”选项后，其 Terraform 状态文件仅对**同一项目**内的其他工作空间自动可见。这实现了动态、基于策略的状态共享，避免了全局共享的风险和手动维护访问列表的繁琐。
+### 2. Project-Level Remote State Sharing
+This feature leverages projects as natural isolation boundaries. When a workspace enables the "Share with all workspaces in this project" option, its Terraform state file becomes automatically visible only to other workspaces within the **same project**. This achieves dynamic, policy-based state sharing, avoiding the risks of global sharing and the tedium of manually maintaining access lists.
 
-### 3. 项目级通知 (Project-level Notification)
-这是一种“监控即默认”（Monitoring-by-default）的实现。在项目级别配置的通知（如 Slack、PagerDuty、Email）会自动继承到其下属的所有工作空间。新创建或移动到该工作空间的任何环境都会自动被监控，确保无“静默故障”。
+### 3. Project-Level Notification
+This is an implementation of "monitoring-by-default." Notifications configured at the project level (such as Slack, PagerDuty, Email) automatically inherit to all workspaces under it. Any environment newly created or moved into the workspace is automatically monitored, ensuring no "silent failures."
 
-### 4. 动态凭证测试支持 (Module Testing for Dynamic Credentials)
-此功能将 OIDC（OpenID Connect）动态凭证的使用范围从标准的 `terraform plan/apply` 流程扩展到了 `terraform test` 流程。模块测试现在可以安全地使用临时凭证，消除了对静态“测试专用”密钥的依赖，从而在测试和生产部署之间统一了安全身份认证策略。
+### 4. Module Testing for Dynamic Credentials
+This feature extends the use of OIDC (OpenID Connect) dynamic credentials from the standard `terraform plan/apply` flow to the `terraform test` flow. Module tests can now securely use temporary credentials, eliminating the reliance on static "test-only" keys, thereby unifying security authentication policies between testing and production deployment.
 
-### 5. 注册表标签 (Registry Tagging)
-该功能（目前为 Beta）允许为模块和提供商等注册表制品添加键值对标签，例如环境标签（`non-prod`, `prod`）或项目标签。这为消费者提供了清晰的版本状态和使用指引，便于在复杂的模块生态中快速发现和选择合适的制品。
+### 5. Registry Tagging
+This feature (currently in Beta) allows adding key-value pair tags to registry artifacts such as modules and providers—for example, environment tags (`non-prod`, `prod`) or project tags. This provides consumers with clear version status and usage guidance, facilitating quick discovery and selection of appropriate artifacts in complex module ecosystems.
 
-## 实践
+## Practice
 
-以下是在 HCP Terraform/Terraform Enterprise 中启用和使用这些新功能的典型场景与配置路径。
+The following are typical scenarios and configuration paths for enabling and using these new features in HCP Terraform/Terraform Enterprise.
 
-### 实施成本可见性
-任何付费 HCP Terraform 用户均可在组织的**用量（Usage）** 页面访问新的分析视图。管理员可以按项目和工作空间查看当前周期的可计费托管资源数量，用于分析成本分布和识别优化点。
+### Implementing Cost Visibility
+Any paying HCP Terraform user can access the new analytics view on the organization's **Usage** page. Administrators can view the number of billable managed resources for the current period by project and workspace, used for analyzing cost distribution and identifying optimization opportunities.
 
-### 配置项目级状态共享
-1.  进入目标工作空间的 **设置** &gt; **常规**。
-2.  找到 **远程状态共享** 部分。
-3.  选择选项 **“与本项目内所有工作空间共享”** 并保存。
-此后，本项目内的其他工作空间即可通过 `terraform_remote_state` 数据源访问此状态。**最佳实践**：优先考虑使用更安全的 [`tfe_outputs` 数据源](https://registry.terraform.io/providers/hashicorp/tfe/latest/docs/data-sources/outputs) 来访问输出值。
+### Configuring Project-Level State Sharing
+1.  Navigate to the target workspace's **Settings** > **General**.
+2.  Find the **Remote State Sharing** section.
+3.  Select the option **"Share with all workspaces in this project"** and save.
+After this, other workspaces within this project can access this state via the `terraform_remote_state` data source. **Best Practice**: Prioritize using the more secure [`tfe_outputs` data source](https://registry.terraform.io/providers/hashicorp/tfe/latest/docs/data-sources/outputs) to access output values.
 
-### 建立标准化的项目级通知
-1.  进入一个项目（如 `prod` 项目）的 **设置** &gt; **通知**。
-2.  添加并配置所需的通知目的地（如 PagerDuty 集成、Slack Webhook）和触发器（如运行失败）。
-3.  保存后，该项目下的所有现有及未来工作空间将自动继承这些告警配置。
+### Establishing Standardized Project-Level Notifications
+1.  Navigate to a project's (e.g., `prod` project) **Settings** > **Notifications**.
+2.  Add and configure the desired notification destinations (such as PagerDuty integration, Slack Webhook) and triggers (such as run failures).
+3.  After saving, all existing and future workspaces under this project will automatically inherit these alert configurations.
 
-### 在模块测试中启用动态凭证
-1.  确保运行 `terraform test` 的工作空间已为**动态凭证**进行配置（例如，配置了 OIDC 信任关系）。
-2.  更新模块测试文件（`*_test.tf`），在云提供商或 HCP Vault 的配置块中使用默认的认证方式（不指定静态凭据）。
-测试运行时，框架将自动交换 OIDC 令牌以获取临时凭证。
+### Enabling Dynamic Credentials in Module Testing
+1.  Ensure the workspace running `terraform test` is configured for **dynamic credentials** (e.g., OIDC trust relationship is configured).
+2.  Update module test files (`*_test.tf`) to use the default authentication method in the cloud provider or HCP Vault configuration block (without specifying static credentials).
+When tests run, the framework will automatically exchange OIDC tokens for temporary credentials.
 
-### 为注册表制品打标签
-1.  在 HCP Terraform 的注册表界面，导航至具体的模块或提供商版本。
-2.  使用 **标签** 功能为其添加标签，例如 `environment: non-prod`。
-3.  经过充分测试后，可更新标签为 `environment: prod`，明确指示其可用于生产环境。
+### Tagging Registry Artifacts
+1.  In HCP Terraform's registry interface, navigate to the specific module or provider version.
+2.  Use the **Tags** feature to add tags, such as `environment: non-prod`.
+3.  After thorough testing, update the tag to `environment: prod` to clearly indicate it is ready for production use.
 
-## SRE 要点
+## SRE Key Points
 
-这些功能直接增强了 SRE 在成本、可靠性、安全和效率方面的能力。
+These features directly enhance SRE capabilities in cost, reliability, security, and efficiency.
 
-- **成本管理与 SLO**：**可计费资源分析**为基础设施成本提供了细粒度的度量（SLI），是制定和跟踪**基础设施成本 SLO/SLA** 的基础。它使 SRE 能够与财务团队合作，基于数据进行容量规划和成本优化，避免资源浪费，将节省的资源投入错误预算（Error Budget）相关的可靠性改进。
-- **可观测性与事件响应**：**项目级通知**实现了**可观测性策略的强制执行**。它确保了所有生产环境工作空间都自动接入统一的告警渠道，减少了因监控缺失导致的 MTTR（平均修复时间）延长。这符合 SRE “自动化一切”和“为失败做计划”的原则。
-- **安全与合规**：**动态凭证测试**和**项目级状态共享**共同加强了**最小权限原则**。它们从部署和测试两个阶段，基于身份（OIDC）和项目边界实施精细的访问控制，减少了密钥泄露风险，简化了合规审计。注册表标签则有助于管理供应链安全，确保使用经过批准的制品版本。
-- **运维效率与反模式避免**：这些功能本质上减少了**运维苦差事（Toil）**。项目级的自动化继承（通知、状态共享）避免了手动管理成百上千个工作空间配置的繁重工作，是规模化运维的必要演进。**常见反模式**：继续采用“多组织”模型来模拟项目隔离，或在测试中使用静态密钥，都会带来不必要的管理复杂性和安全风险，应避免。
-- **最佳实践**：
-    1.  **基于项目组织资源**：将按业务单元、环境或应用划分的工作空间放入同一项目，以统一应用治理策略（状态共享、通知）。
-    2.  **标准化通知路由**：为不同项目（如 `prod`, `staging`, `dev`）配置不同的通知端点，确保事件路由准确。
-    3.  **测试即代码**：为模块编写集成测试，并确保测试工作空间配置了动态凭证，将其作为 CI/CD 流水线的一部分。
-    4.  **版本标签化**：为所有官方模块和关键第三方模块维护清晰的环境标签（`prod`, `non-prod`），并建立版本晋级流程。
+- **Cost Management and SLO**: **Billable Resource Analytics** provides granular measurement (SLI) of infrastructure costs, forming the basis for establishing and tracking **infrastructure cost SLO/SLA**. It enables SRE to collaborate with finance teams for data-driven capacity planning and cost optimization, avoiding resource waste, and channeling saved resources into reliability improvements related to the Error Budget.
+- **Observability and Incident Response**: **Project-Level Notifications** enforce **observability policy**. They ensure all production environment workspaces are automatically connected to unified alert channels, reducing MTTR (Mean Time to Resolve) extension caused by monitoring gaps. This aligns with SRE principles of "automate everything" and "plan for failure."
+- **Security and Compliance**: **Dynamic Credential Testing** and **Project-Level State Sharing** jointly strengthen the **Principle of Least Privilege**. They implement fine-grained access control based on identity (OIDC) and project boundaries from both deployment and testing phases, reducing secret leakage risk and simplifying compliance audits. Registry tagging helps manage supply chain security, ensuring the use of approved artifact versions.
+- **Operational Efficiency and Anti-Pattern Avoidance**: These features essentially reduce **Toil**. Project-level automated inheritance (notifications, state sharing) avoids the heavy work of manually managing hundreds or thousands of workspace configurations, and is a necessary evolution for scaled operations. **Common Anti-Patterns**: Continuing to use "multi-organization" models to simulate project isolation, or using static keys in testing, both bring unnecessary management complexity and security risks, and should be avoided.
+- **Best Practices**:
+    1.  **Organize Resources by Project**: Group workspaces divided by business unit, environment, or application into the same project to uniformly apply governance policies (state sharing, notifications).
+    2.  **Standardize Notification Routing**: Configure different notification endpoints for different projects (e.g., `prod`, `staging`, `dev`) to ensure accurate event routing.
+    3.  **Testing as Code**: Write integration tests for modules and ensure test workspaces are configured with dynamic credentials, making it part of the CI/CD pipeline.
+    4.  **Version Tagging**: Maintain clear environment tags (`prod`, `non-prod`) for all official modules and critical third-party modules, and establish a version promotion process.

@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Dashboard: Populate storedVersion from Decoded Object GVK"
+category: "API Design and Management"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/pull/124707
+    title: "Grafana PR: Populate storedVersion from decoded object GVK"
+tags: [grafana, dashboard, storage, api-versioning, reliability]
+---
+
+# Dashboard: Populate storedVersion from Decoded Object GVK
+
+## Overview
+
+In complex systems like Grafana, the stored version (`storedVersion`) of a resource is critical metadata for clients to identify the resource's on-disk format, ensure backward compatibility, and perform version conversion. This fix (from PR #124707) resolves an issue where the `status.conversion.storedVersion` field in the dashboard API response failed to accurately reflect the resource's actual storage version. Before the fix, regardless of the version a dashboard was stored in, this field might always show an older version (such as `v0alpha1`), severely impacting API consumers' ability to determine the true state of data, potentially causing migration tools to make incorrect judgments or data conversion logic to fail. From an SRE perspective, accurate metadata is the cornerstone of system observability, diagnosability, and API contract reliability.
+
+## Core Concepts
+
+This fix revolves around several key concepts:
+
+*   **GVK (Group-Version-Kind)**: An API object's identifier, composed of the API Group, Version, and Kind. The storage layer determines the GVK when decoding the byte stream, which is the authoritative source for populating `storedVersion`.
+*   **`status.conversion.storedVersion` Field**: A string field embedded in the dashboard API response status, declaring the API version used by the resource in persistent storage. Clients rely on this field to infer the on-disk encoding format.
+*   **Storage Layer Fix (Primary Path)**: Introduces a generic optional interface called `apistore.DecodedVersionAware`. When the API storage layer (e.g., `Storage.convertToObject`) finishes decoding the stored byte stream, it checks whether the decoded object implements this interface. If so, it calls its `SetDecodedVersion(version string)` method to write the real GVK version determined during decoding into the `storedVersion` field. This ensures data obtained through standard Get/List/Watch paths has accurate version information, can overwrite stale values that might exist in the stored bytes, while preserving other conversion state fields (such as `failed`, `error`).
+*   **DTO Builder Fix (Defense in Depth)**: As a supplement, when building the data transfer object (DTO) for the API response, the existing `conversion.EnsureStoredVersion` helper function is still called. This function follows "fill only when empty" semantics. Under normal storage read paths, since the storage layer has already populated the field, this operation is a no-op. It serves as a defense layer, ensuring that any code bypassing the standard storage path (e.g., directly constructing dashboard objects in unit tests or specific logic) can also generate a reasonable, well-founded `storedVersion` value.
+
+## Practice
+
+This fix is implemented through two cooperating layers:
+
+1.  **Storage Layer Injects Decoded Version**:
+    *   Define the `apistore.DecodedVersionAware` interface in the API storage layer's generic code.
+    *   In the `Storage.convertToObject` method, after the `codec.Decode` call, obtain the GVK reported by the decoder.
+    *   Check whether the decoded object implements `SetDecodedVersion`; if so, call the method with the obtained version string.
+    *   All five dashboard versions (v0alpha1, v1, v1beta1, v2alpha1, v2beta1, v2) implement this interface on the `Dashboard` type, writing the version string to `status.conversion.storedVersion`.
+
+2.  **Preserve Existing DTO Build Logic**:
+    *   The six version DTO builder closures registered in `DashboardsAPIBuilder.UpdateAPIGroupInfo`, after assigning `*dash` to `dto.Dashboard`, continue to call `conversion.EnsureStoredVersion(d, fallback)`.
+    *   This call becomes a "no-op" under normal read paths, since the storage layer has ensured `storedVersion` has a value, avoiding overwriting. But under other paths, it provides fallback logic.
+
+**Verification Steps (Based on Test Plan)**:
+*   Run specific unit test suites to verify storage layer and DTO builder behavior:
+    ```bash
+    go test ./pkg/storage/unified/apistore/... \
+            ./pkg/registry/apis/dashboard/... \
+            ./apps/dashboard/pkg/migration/conversion/... \
+            ./apps/dashboard/pkg/apis/dashboard/...
+    ```
+*   Manual verification: In a development instance, create a v2beta1 version dashboard, retrieve it via both `dashboard.grafana.app/v2beta1` and `dashboard.grafana.app/v1` endpoints, and confirm both responses' `status.conversion.storedVersion` fields are `v2beta1`.
+
+## SRE Key Points
+
+*   **Relation to Reliability**: This fix directly improves API response accuracy and is a key step in building reliable system contracts. Incorrect `storedVersion` can cause version-based automation tools (such as migration scripts, validators) to make incorrect decisions, affecting data consistency or upgrade process reliability.
+*   **Best Practices**:
+    *   **Authoritative Source Principle**: Version information should be obtained from the decoding process, rather than relying on values that may be statically written in stored data or have expired during cross-version reads.
+    *   **Defense in Depth**: Implementing corrections simultaneously at the storage layer (primary path) and DTO build layer (defense path) ensures behavioral consistency across different code paths.
+    *   **Minimality of Change**: The fix preserves the existing `conversion.EnsureStoredVersion` helper function and its "fill when empty" semantics, only supplementing a reliable assignment source upstream, reducing regression risk.
+*   **Common Anti-Pattern**: Not providing version-aware callbacks or interfaces at the storage/decoding layer, instead letting upper-layer application code guess or hardcode version information, causing version information to become distorted across the delivery chain.
+*   **Related Metrics (SLI/SLO)**: While not directly corresponding to a standard SLI, this fix supports **API metadata correctness**. Consider establishing an SLI to monitor the match rate of the `storedVersion` field in dashboard API responses against expectations (based on actual storage version), as a measure of API quality.

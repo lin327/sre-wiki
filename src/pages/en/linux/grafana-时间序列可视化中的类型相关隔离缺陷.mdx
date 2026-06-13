@@ -1,0 +1,71 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Type-Related Isolation Defect in Grafana Time Series Visualization"
+category: "Visualization & Dashboards"
+confidence: low
+---
+
+# Type-Related Isolation Defect in Grafana Time Series Visualization
+
+## Overview
+
+When building observability systems, accurate, interactive dashboards are critical interfaces for incident response and system health assessment. As a widely used visualization tool, Grafana's time series panels allow users to isolate specific data series through legends to focus analysis. This document describes a known defect: when a panel simultaneously contains Numeric and Boolean type data series, the "isolation" operation (via `Ctrl/Cmd-click`) on numeric series unexpectedly affects the visibility of all boolean series, breaking the user's expected independent control logic based on field type. This is particularly important for SRE scenarios that rely on boolean status indicators (such as service health status, feature flags).
+
+## Core Concepts
+
+### Time Series Visualization and Series Isolation
+
+Time series panels display query results in chart form, with each data series typically corresponding to a metric or state. **Series Isolation** is an enhanced legend interaction feature that allows users to dynamically filter which series are displayed in the chart, tooltip, and legend by clicking (isolate single) or `Ctrl/Cmd-click` (isolate multiple). The underlying implementation mechanism dynamically adds a temporary **Field Override** to the panel.
+
+### Root Cause: Missing Field Type Awareness
+
+The core of this defect is that the series isolation logic fails to correctly handle fields of different data types when processing `Ctrl/Cmd-click` operations. Specifically:
+
+1.  When a user `Ctrl/Cmd-click`s a **numeric** series, the system intends to update the override rule to only remove the selected series from the "hidden list" (i.e., display it).
+2.  However, the current implementation ignores **boolean** type fields. This causes boolean fields to not be added to or removed from the override rule's "field list," triggering two abnormal behaviors:
+    *   **Unexpected Hiding**: When first isolating a numeric series, all boolean series are hidden along with it because they are excluded from the override rule.
+    *   **Unexpected Display**: When subsequently restoring another hidden numeric series via `Ctrl/Cmd-click`, the system removes the entire override rule, causing previously hidden boolean series to also be restored, rather than only restoring the selected numeric series.
+
+This behavior breaks the user's intuitive expectation that operations should strictly affect only the selected data series, regardless of its type.
+
+## Practice
+
+### Problem Reproduction Steps
+
+1.  Create a time series panel containing the following data fields:
+    *   `Number1` (type: number)
+    *   `Number2` (type: number)
+    *   `Boolean1` (type: boolean)
+    *   `Boolean2` (type: boolean)
+2.  Ensure all four series are visible in the panel.
+3.  **Single-click** `Number1` in the legend. The expected result is `Number1` being isolated and displayed, with the other three series hidden. This step actually works correctly.
+4.  Next, **hold `Ctrl` (Windows/Linux) or `Cmd` (macOS) and click** `Number2` in the legend.
+5.  **Actual Result**: `Number1` and `Number2` are displayed again, **and `Boolean1` and `Boolean2` are also unexpectedly displayed again**, even though they were never individually selected.
+6.  **Expected Result**: Only `Number2` should be added back to the display list, and `Boolean1` and `Boolean2` should remain hidden.
+
+### Temporary Solutions and Workarounds
+
+As an SRE, when tools have such known defects, you can take the following temporary measures:
+
+*   **Manual Field Overrides**: In panel edit mode, manually create permanent override rules for boolean fields to control their visibility, bypassing the unpredictable legend interaction behavior.
+*   **Separate Panels**: Place numeric metrics and boolean status indicators in different panels, fundamentally isolating interaction logic and ensuring their respective legend controls do not interfere with each other.
+*   **Monitor Official Updates**: Track Grafana's release notes to confirm whether this issue has been fixed in subsequent versions.
+
+## SRE Key Points
+
+### Relationship with Reliability
+
+*   **Incident Response Accuracy**: During incident response, SREs need to quickly focus on critical metrics. If isolating an error rate metric causes the related service health status (boolean) to be unexpectedly hidden or displayed, it interferes with judging the incident's impact scope and extends diagnosis time.
+*   **Dashboard Credibility**: Such UI/UX inconsistencies reduce the team's trust in the monitoring system. When tool behavior doesn't match expectations, engineers may spend extra time determining whether it's a data issue or a tool issue.
+
+### Observability Perspective
+
+*   **Data Presentation Integrity**: Observability is not just about collecting data, but about how to effectively present it. This defect damages data presentation integrity, making visualization results of mixed-type data difficult to precisely control through standard interaction methods.
+*   **Metric (SLI/SLO) Monitoring**: Many Service Level Indicator (SLI) and Objective (SLO) dashboards mix numeric metrics (such as latency, error rate) and boolean states (such as deployment status, alert status). This defect affects the availability of such critical dashboards.
+
+### Best Practices and Anti-Patterns
+
+*   **Type-Aware Design**: When developing tools or custom panels involving data visualization, you must ensure interaction logic has complete awareness of underlying data types. This is an important anti-pattern -- ignoring the impact of data Schema on UI behavior.
+*   **UI/UX Consistency**: For core interaction features (such as isolation, filtering), behavior should be clear and predictable to users, and should not produce unexpected variations due to differences in data content. This is the foundation for building reliable monitoring interfaces.
+*   **Related Reading**: Understanding Grafana's [[g11y-and-observability]] practices helps build more robust monitoring systems. Also ensure dashboard design can effectively support [[sli-slo-sla]] tracking and presentation.

@@ -1,0 +1,62 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana 12.3.1 Filter Query Variable Missing Quotes Issue"
+description: "Grafana 12.3.1 regression causing filter variables in SQL queries to not be properly quoted, resulting in query failures."
+category: Issues and Incidents
+order: 0
+lastUpdated: 2025-12-30
+confidence: high
+---
+
+# Grafana 12.3.1 Filter Query Variable Missing Quotes Issue
+
+## Overview
+
+Grafana is one of the core tools SRE uses to build observability dashboards. In version 12.3.1, a critical regression defect was reported that affects the interaction between filters and query variables in dashboards. When users select one or more values in a panel's filter for querying, the variable values in the backend-generated query statement are not properly wrapped in quotes, causing SQL query failures and preventing the entire monitoring panel from displaying data. This issue significantly impacts operations teams relying on dynamic filters for troubleshooting and performance analysis, as it directly undermines data availability and operational fluency.
+
+## Core Concepts
+
+1.  **Grafana Filter**: An interactive control at the top of dashboard panels (especially tables, charts). It allows users to select one or more values from a predefined dataset for dynamic filtering and drill-down viewing of data in specific dimensions (such as hostname, service name, region).
+2.  **Query Variable**: A dynamic dashboard variable whose values come from data source query results. Filters are typically bound to a query variable, and variable values (e.g., `$Instance`) are referenced in user query statements.
+3.  **Variable Substitution and Escaping**: When Grafana executes queries containing variables (such as `$Instance`) on the backend, it performs string substitution. For string-type variable values, the correct approach is to wrap them in quotes (e.g., `'Server1'`) to prevent them from being misinterpreted as column names or reserved words, especially in languages like SQL. The core of this bug is the failure of this escaping mechanism.
+4.  **Regression**: Refers to a situation where in a new software version, a feature that worked correctly in the old version fails due to code modifications. This issue is a typical regression bug.
+
+## Practices
+
+### Problem Reproduction
+
+This bug manifests in Grafana version 12.3.1 as follows:
+- **Configuration**: A panel (such as a table panel) uses a SQL query containing variables, e.g., `SELECT insdate, sql FROM v_collector_cpu WHERE displayname IN ($Instance)`, where `$Instance` is a query variable associated with the filter.
+- **Operation**: The user switches from "All" values to selecting a specific instance (such as `Server1`) in the filter at the top of the panel.
+- **Expected Result**: The query should return data where `displayname` is `Server1`.
+- **Actual Result**: The query execution fails, returning the error: `db query error: pq: column "Server1" does not exist`. This indicates the generated query may be similar to `... WHERE displayname IN (Server1)`, rather than the correct `... WHERE displayname IN ('Server1')`.
+
+### Temporary Solutions and Workarounds
+
+1.  **Downgrade Grafana Version**: The most direct and effective temporary solution is to downgrade Grafana to a known stable version (such as version 12.3.0 confirmed in reports). Operations should be performed according to the installation method (package manager, Docker, etc.).
+2.  **Modify Query Statement**: Theoretically, users can manually modify queries to add escape quotes at variable references, but this introduces hardcoding, reducing dashboard flexibility and maintainability, and is not a long-term solution.
+3.  **Wait for Official Fix**: Continuously monitor Grafana's official [GitHub Issue #115745](https://github.com/grafana/grafana/issues/115745) page, tracking fix status and new version releases.
+
+### Monitoring and Upgrade Strategy
+
+For production environments, this event highlights the importance of **rigorous application upgrade testing processes**. Before introducing any new version of Grafana or any monitoring component, SRE teams should perform verification testing on core dashboard functionality (especially critical panels involving dynamic variables and filters) in pre-production or canary environments before rolling out to production.
+
+## SRE Key Points
+
+### Connection to Reliability Practices
+- **Availability Impact**: This bug directly causes monitoring data to be invisible, reducing Grafana dashboard reliability and affecting operations personnel's ability to perceive system state, potentially delaying fault discovery and response.
+- **Change Management Risk**: It is a defect introduced by software version upgrade, emphasizing that in SRE change management processes, changes to monitoring infrastructure itself also require thorough evaluation and testing.
+- **Troubleshooting**: When monitoring panels fail, SREs need to be able to quickly diagnose whether the issue is with the monitoring system itself (such as this bug) rather than the underlying service. Checking Grafana's logs and error messages is a key step.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**:
+    - **Version Locking and Incremental Upgrades**: On critical infrastructure components (such as Grafana), avoid direct major version jump upgrades; adopt a phased, incremental upgrade strategy.
+    - **Automated Testing**: Establish automated health check tests for critical Grafana dashboards and API endpoints to automatically verify core functionality after upgrades.
+    - **Follow Official Release Notes**: Before upgrading, be sure to carefully read Release Notes, paying attention to `breaking changes` and known `bugs`.
+- **Common Anti-Patterns**:
+    - **Untested Direct Production Upgrades**: Directly executing commands like `apt upgrade grafana` in production without verifying in test environments.
+    - **Ignoring Downgrade Plans**: Not preparing and verifying component downgrade plans in advance, leading to panic when new versions cause problems.
+
+### Related Metrics
+- This issue does not directly produce SLIs (Service Level Indicators), but it affects **data source query success rates** or **dashboard error rates** used to calculate SLIs. If core SLI dashboards are damaged by this bug, it is equivalent to temporary "blindness," affecting reliability management. Related **Error Budget** consumption may accelerate during the problem's duration.

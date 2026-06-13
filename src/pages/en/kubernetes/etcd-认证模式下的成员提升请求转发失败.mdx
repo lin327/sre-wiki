@@ -1,0 +1,78 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd Member Promote Request Forwarding Failure with Auth Enabled"
+description: "Analysis of the issue where submitting a member promote operation to a follower in an auth-enabled etcd cluster causes request failure and timeout, along with best practices."
+category: "etcd"
+order: 0
+lastUpdated: "2025-10-12"
+confidence: "medium"
+sources:
+  - url: "https://github.com/etcd-io/etcd/issues/20757"
+    title: "Cannot promote member from follower when auth is enabled"
+tags: [etcd, authentication, cluster-management, SRE-failure, forwarding-mechanism]
+---
+
+# etcd Member Promote Request Forwarding Failure with Auth Enabled
+
+## Overview
+
+In the operation of the distributed key-value store etcd, managing cluster members (such as adding, removing, or promoting members) is a critical operation for ensuring cluster horizontal scalability and high availability. This knowledge page focuses on a specific issue discovered in etcd clusters with authentication (auth) enabled: when an operator submits a "member promote" request to a follower node in the cluster, the operation fails and times out, rather than being automatically forwarded to the leader as expected. This issue directly impacts etcd cluster manageability and reliability, and is a typical failure mode that SREs need to be vigilant about when planning and executing etcd cluster maintenance tasks.
+
+## Core Concepts
+
+To understand this issue, the following basic etcd cluster concepts need to be clarified:
+
+1.  **Cluster Roles**: etcd cluster nodes have three main roles: **Leader** handles all write requests and some read requests, and replicates logs to followers; **Follower** receives data replicated from the leader and participates in elections; **Observer** or **Learner** only participates in data synchronization, not elections or voting, typically used as a transitional state during scaling.
+2.  **Member Promote**: Refers to formally promoting a learner member to a voting member of the cluster. This is the necessary step for fully integrating a new node into the cluster's consensus process.
+3.  **Request Forwarding Mechanism**: etcd clients can send requests to any node in the cluster. For requests that must be handled by the leader (such as write operations, member changes, etc.), non-leader nodes should automatically forward them to the current leader upon receipt, transparent to the client.
+4.  **Authentication (Auth)**: etcd's built-in authentication mechanism for identity verification and authorization of client operations. When enabled, every request must carry valid credentials (such as username and password or certificates).
+
+The core of the issue is that when authentication is enabled, during the forwarding of the "member promote" request from a follower to the leader, the **authentication context is lost**. The leader cannot obtain the original request's authenticated user information upon receiving the forwarded request, so it returns `auth: user name is empty` error, causing the entire operation to fail.
+
+## Practice
+
+### Problem Reproduction
+
+Based on the reported steps, this issue can be precisely reproduced:
+1.  **Create cluster**: Initialize an etcd cluster with at least two nodes.
+2.  **Enable authentication**: Enable the cluster's authentication feature via `etcdctl auth enable` and create at least one user with appropriate permissions.
+3.  **Locate follower**: Use commands like `etcdctl member list -w table` to determine which node is currently a follower.
+4.  **Add learner**: Use `etcdctl member add <name> --learner=true` to add a new learner member.
+5.  **Submit promote request to follower**: Programmatically (using etcd client library) or by constructing a request, initiate a "member promote" operation for the learner to the follower node identified in step 3.
+
+At this point, the follower node attempts to forward the request to the leader, but the leader rejects it due to inability to parse authentication information, and the client ultimately fails with a timeout.
+
+### Current Workarounds and Impact
+
+*   **Workaround**: Before an official fix is released, operators should ensure `member promote` requests are **sent directly to the known leader node**. This can be achieved by first querying cluster status to obtain the leader address.
+*   **Impact Analysis**:
+    - **Increased operational complexity**: Automation scripts need to first identify the leader, adding steps and potential failure points.
+    - **Reduced cluster reliability**: Member management is a core operation for recovering from single points of failure and performing rolling upgrades. This defect makes rapid recovery through followers difficult during leader unavailability or network partitions.
+
+## SRE Essentials
+
+### Relationship with Reliability, Observability, and Incident Response
+
+*   **Reliability**: This issue directly reduces etcd cluster "manageability." It prevents critical operational operations from completing during specific failure scenarios, potentially extending MTTR.
+*   **Observability**: SREs need to monitor member management operation success rates and error rates. When timeouts are frequent or logs show `failed to promote a member error="auth: user name is empty"`, alerts should trigger immediately.
+*   **Incident Response**: In incident response runbooks, explicitly check whether requests were sent to followers, and provide clear guidance to "retry on leader node" or "wait for official patch."
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    1.  **Explicit operational entry point**: Require all cluster configuration change operations to target the leader by default.
+    2.  **Monitor cluster status**: Continuously monitor role changes across nodes.
+    3.  **Follow official updates**: Monitor fix progress and plan upgrades promptly.
+
+*   **Common Anti-Patterns**:
+    - **Assuming request forwarding is always transparent**: Ignoring that some operations may have boundary issues under specific roles or configurations.
+    - **Ignoring context propagation in authenticated environments**: Not adequately considering security context preservation during inter-component forwarding.
+
+### Related Metrics (SLI/SLO/SLA)
+
+*   **SLI**: `member_promote_operation_success_rate`, `member_promote_operation_latency_p99`.
+*   **SLO**: 99.9% success rate for member promote operations during normal operations.
+*   **SLA**: For managed etcd services, "normal availability of cluster member management API" should be included in the SLA.
+
+> **Related pages**: [[etcd-authentication]], [[etcd-cluster-management]], [[distributed-systems-failure-modes]], [[error-budget]]

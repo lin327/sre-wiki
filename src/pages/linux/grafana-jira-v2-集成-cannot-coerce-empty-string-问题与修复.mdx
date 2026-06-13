@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana Jira v2 集成 'Cannot coerce empty String' 问题与修复"
 description: "在 Grafana 12.x 版本中，Jira v2 联系点集成因序列化问题导致警报去重工作流完全失效，需升级至 13.1.x 版本解决。"
@@ -11,6 +12,8 @@ sources:
     title: "grafana/grafana Issue #124518 - Alerting module: Backport Jira v2 fix to Grafana 12.4.x"
 tags: [alerting, jira, contact-point, bugfix, reliability, backport]
 ---
+
+# Grafana Jira v2 集成
 
 ## 概述
 本文档描述了 Grafana 12.x 系列版本中存在的一个严重缺陷，该缺陷导致 Jira v2 联系点集成完全失效。具体而言，当 Grafana 的警报模块通过 Jira REST API 执行问题搜索（例如用于警报去重）时，会因序列化一个不合规的空字符串字段而被 API 拒绝，返回 **"Cannot coerce empty String"** 错误。此问题直接影响所有依赖 Grafana 12.x 版本管理警报并寻求与 Jira 事件单系统深度集成的 SRE 或运维团队，破坏了核心的自动化事件响应和去重工作流。

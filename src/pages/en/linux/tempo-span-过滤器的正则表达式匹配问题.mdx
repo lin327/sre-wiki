@@ -1,0 +1,71 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Tempo Span Filter Regex Matching Issue"
+category: "Observability"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/125351
+    title: "Temp: regex in filter does not work as expected"
+tags: [grafana-tempo, traceql, span-filters, regex, bug]
+---
+
+# Tempo Span Filter Regex Matching Issue
+
+## Overview
+
+Grafana Tempo is a highly scalable storage and query backend designed specifically for distributed tracing. In SRE practice, engineers frequently use Tempo's Explorer to analyze trace data, filtering spans through Span Filters to quickly locate performance bottlenecks or root causes of errors. A properly functioning filter is fundamental to efficient incident response and performance analysis. This page documents a known issue where the **Span Filter regex matching feature is broken** in the Tempo Explorer.
+
+## Core Concepts
+
+*   **Span Filters**: In the Tempo Explorer interface, users can add one or more filters to narrow down trace query results. Filters can match based on service name, span name, tags, and their values.
+*   **Regex Matching (`=~`)**: In Tempo's query language [TraceQL](https://grafana.com/docs/tempo/latest/traceql/) and in the UI filters, the `=~` operator denotes **regular expression matching**. Its intent is to match values that conform to a specified regex pattern.
+*   **Issue Nature**: According to the provided issue, when users use a regex expression in the Span Filter's value field (e.g., `=~store-gateway.*`), Tempo returns zero results (`0`), when a large number of matching spans should be returned. For comparison, using an exact match (e.g., `=store-gateway-zone-a`) correctly returns results. This indicates that **the Span Filter UI component has a defect in constructing or executing regex queries**.
+
+## Practice
+
+### Reproduction Steps
+
+Based on the original issue description, the steps to reproduce this problem are as follows:
+
+1.  In Grafana Explore, select the **Tempo** data source.
+2.  Execute a basic trace query (e.g., via TraceID).
+3.  In the query results or trace details view, locate the **Span Filters** (`spanFilters`) area.
+4.  Add a new filter, or in an existing filter's (e.g., `k8s.statefulset.name`) value field, set the match operator to `=~`.
+5.  Enter a regex expression, such as `.+` or `store-gateway.*`.
+6.  Observe the query results -- the number of returned spans will be `0`.
+7.  Switch the match operator to `=` and enter a specific exact value (e.g., `store-gateway-zone-a`), and matching spans should be returned normally.
+
+### Example Query Expressions (for reference)
+
+In the UI filter, a broken configuration might look like:
+```traceql
+{k8s.statefulset.name=~"store-gateway.*"}
+```
+A valid workaround is to use an exact match:
+```traceql
+{k8s.statefulset.name="store-gateway-zone-a"}
+```
+Note that using regex directly in the TraceQL query bar works fine. The issue is specifically with the **Span Filters** UI component in the Explorer interface.
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+
+*   **Observability Impaired**: Span Filters are a key part of Tempo's fine-grained query capabilities. Their broken regex functionality directly weakens the ability to quickly filter and aggregate information from massive trace data, hindering observability goals.
+*   **Incident Response Efficiency Decreased**: When troubleshooting microservice chain performance issues or errors, SRE often needs to perform fuzzy matching based on patterns in service names, paths, and other fields. If multiple exact match statements must be used to simulate regex queries, it significantly increases MTTD/MTTR, especially in environments where service names follow common naming conventions (e.g., `service-{version}`).
+*   **Reliability Risk**: This tool defect may mislead engineers into believing that no trace data exists for a given pattern, causing them to incorrectly rule out fault points and delay root cause identification.
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    1.  **Verify tool functionality**: Before relying on a critical query feature (such as regex matching), perform a simple validation test to confirm it works as expected.
+    2.  **Workaround**: When encountering this bug, the **temporary workaround** is to manually write queries containing `=~` in the TraceQL query bar, rather than relying on the UI filter component.
+    3.  **Monitor official updates**: Closely follow Grafana's official fix progress for this issue, and promptly verify and apply patches after new versions are released.
+*   **Common Anti-Patterns**:
+    1.  **Blind trust in UI functionality**: Assuming all graphical operations correctly translate to the underlying query language without basic cross-validation.
+    2.  **Ignoring tool limitations**: When a tool has known defects, not seeking alternative work paths, causing work efficiency to stagnate.
+
+### Related Metrics (SLI/SLO/SLA)
+
+This issue itself does not directly define SLIs/SLOs, but it affects the SRE **efficiency of querying and analyzing trace data**. A relevant indirect SLI could be "success rate of regex filter requests for spans in Tempo", whose SLO should be close to 100%, and the current defect clearly causes this SLI to drop. Resolving this issue is key to restoring this metric to expected levels.

@@ -1,0 +1,84 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Mixed Version Proxy (MVP) Beta: Enhancing Cluster Upgrade Reliability"
+description: "In Kubernetes 1.36, Mixed Version Proxy upgrades to Beta and is enabled by default, improving cluster rolling upgrade safety and reliability by proxying unhandleable requests to peer API servers."
+category: Cluster Management
+order: 0
+lastUpdated: 2026-07-10
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/15/kubernetes-1-36-feature-mixed-version-proxy-beta/
+    title: "Kubernetes v1.36: Mixed Version Proxy Graduates to Beta"
+tags: [Kubernetes, API Server, High Availability, Upgrade, Proxy, SRE]
+---
+
+# Kubernetes Mixed Version Proxy (MVP) Beta: Enhancing Cluster Upgrade Reliability
+
+## Overview
+
+Mixed Version Proxy (MVP) is a key feature introduced by Kubernetes to address control plane reliability during cluster rolling upgrades. In a high-availability control plane composed of multiple API servers, upgrades cannot complete instantly, resulting in different API server versions coexisting within the cluster, each supporting different API sets (resource groups, versions, kinds). MVP ensures client requests are handled by the correct API server through an intelligent proxy mechanism, even if the initially contacted server does not support the requested resource version. This feature was introduced as Alpha in Kubernetes 1.28 and now graduates to Beta in 1.36 with **default enabled**, marking its maturity and importance for production environments. For SREs performing regular upgrades, understanding and leveraging MVP is critical for ensuring cluster reliability during upgrades and avoiding unexpected errors.
+
+## Core Concepts
+
+MVP's core goal is **to prevent erroneous 404 responses caused by version mismatches** and provide a **unified API view** to clients. Its working principle and evolution involve several key concepts:
+
+1.  **Proxy Mechanism**: When an API server receives a request it cannot serve locally (e.g., requesting a new API version), it does not immediately return an error. Instead, it queries its "discovery cache" to find a peer API server that can handle the resource and proxies the request there. The response returns along the same path. Proxied request headers include the `x-kubernetes-peer-proxied` identifier.
+
+2.  **From StorageVersion API to Aggregated Discovery**: The Alpha version relied on the `StorageVersion API` to discover peer server capabilities, but this API does not support CRDs and aggregated APIs. The Beta version modernized this, switching to **Aggregated Discovery** data. API servers now dynamically learn peer capabilities through aggregated discovery data, providing a broader, more accurate information source.
+
+3.  **Peer-Aggregated Discovery**: This is a major missing feature completed in 1.36. Previously, clients (like `kubectl`) performing API discovery (listing available APIs) could only see what the API server they connected to knew. Now, API servers merge their local view with all active peers' discovery data, returning a **unified discovery document covering all available APIs across the cluster**. This ensures clients see the same complete API list regardless of which API server they connect to.
+
+## Practice
+
+To leverage the MVP feature enabled by default in Kubernetes 1.36, API servers need correct configuration. Below is a detailed configuration guide.
+
+### Required Configuration Flags
+
+Even with the feature gate enabled by default, flags need configuration to allow secure inter-peer communication. Key API server startup parameters:
+
+*   `--feature-gates=UnknownVersionInteroperabilityProxy=true`: Default true in 1.36, but explicit setting ensures consistency.
+*   `--peer-ca-file=<path-to-ca>`: **Required and critical parameter**. Must provide a CA certificate bundle that the source API server uses to verify the target peer API server's presented certificate. Missing this parameter causes proxy failure due to TLS verification errors.
+*   `--peer-advertise-ip` and `--peer-advertise-port`: Set the address and port this API server advertises on the network for other peers to connect. If unset, falls back to `--advertise-address` or `--bind-address` values. **Strongly recommended** to explicitly set these in complex network topologies (e.g., API servers communicating through specific internal interfaces).
+
+### Configuration with `kubeadm`
+
+For clusters managed with `kubeadm`, configure in the `ClusterConfiguration` file's `apiServer.extraArgs` section:
+
+```yaml
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+    # Ensure feature gate is enabled (default true in 1.36, can be explicit)
+    # feature-gates: "UnknownVersionInteroperabilityProxy=true"
+    peer-ca-file: "/etc/kubernetes/pki/ca.crt"
+    # Uncomment and set if network topology requires
+    # peer-advertise-ip: "10.0.1.10"
+    # peer-advertise-port: 6443
+```
+
+### Obtaining the Unified API View
+
+After configuration, clients performing standard API discovery (e.g., accessing `/apis`) will receive **peer-aggregated discovery** results by default. To debug or view only a specific API server's capabilities, add `profile=nopeer` to the request's `Accept` header:
+```
+Accept: application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;profile=nopeer
+```
+
+## SRE Essentials
+
+Mixed Version Proxy directly relates to SRE's core goal -- **improving system reliability and managing change risk**.
+
+*   **Relationship with Reliability**: MVP is an important safety net during **cluster rolling upgrades**. It eliminates "temporary inconsistency" errors (like 404s) caused by API server version differences, which can trigger dependency failures (e.g., controllers behaving abnormally due to missing resources) or even data corruption (e.g., erroneous garbage collection triggering). It makes the upgrade process more transparent and reliable for client applications.
+
+*   **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Incorporate MVP as a verified reliability guarantee when planning upgrade paths. Pre-verify MVP functionality in staging environments before upgrades. Monitor API server logs for proxy-related errors or warnings.
+    - **Anti-Pattern**: Assuming `--peer-ca-file` configuration is unimportant and omitting it; relying on default advertise addresses in complex network environments causing peer communication failure; forgetting to verify `kubectl` and other client tools can correctly obtain aggregated complete API lists after upgrades.
+
+*   **Related Metrics**:
+    - While MVP itself may not directly expose SLI metrics, its successful operation affects related reliability metrics:
+        - **API server error rate**: During upgrades, 4xx errors (especially 404s) should remain stable or decrease.
+        - **Upgrade duration and success rate**: A successful, fault-free rolling upgrade demonstrates MVP's value.
+    - SREs can monitor MVP operation by checking API server logs related to `aggregated_discovery` and `mixed_version_proxy`.
+
+Related cluster components include [[api-server]], [[rolling-upgrades]], and [[discovery]]. Understanding its working principle helps quickly locate upgrade-related issues during troubleshooting.

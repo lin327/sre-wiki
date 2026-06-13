@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Inter-Panel Datasource Refresh Failure"
+description: "Analysis and troubleshooting of Grafana dashboard panels failing to refresh data when the upstream panel-as-datasource's dataset existence changes."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-09-18
+confidence: high
+---
+
+# Inter-Panel Datasource Refresh Failure
+
+## Overview
+
+When building complex Grafana monitoring dashboards, for modularity and query logic reuse, a common pattern is to configure a panel as the **data source** for other panels. This "panel-to-panel" dependency creates dynamic data pipelines and is key to implementing powerful, flexible visualization views. However, this dependency also introduces complexity in data state management and refresh mechanisms. When the upstream data source panel's data structure (such as column existence) changes due to query variables, downstream dependent panels may fail to correctly respond and refresh their views, resulting in monitoring data being distorted or stale, directly affecting SRE's accurate judgment of system state and timeliness of incident response. This article will analyze the causes, impact, and response strategies for such issues based on a specific Grafana bug case.
+
+## Core Concepts
+
+### Panel as Data Source
+In Grafana, a panel can be configured as a "data source" for other panels. Downstream panels obtain data by specifying the upstream panel's ID and can perform secondary queries or filtering on this basis (for example, using the "Filter fields by name" feature to select specific columns). This mechanism avoids repeating the same base query in each downstream panel, achieving centralized query logic management.
+
+### Data Caching and Frontend State Management
+Grafana's frontend (primarily a React application) caches panel query results. When dashboard variable changes trigger re-queries, the frontend requests data from the data source based on new query parameters and updates the cache. Ideally, all panels depending on that data should be able to obtain the latest cached content. However, when the data structure changes significantly (for example, a column goes from returning specific values to returning null, then back to having values), the caching mechanism or frontend component state management may become inconsistent, causing downstream panels to fail to sense data source changes and remain in an old state.
+
+### Refresh Mechanisms
+Grafana provides multiple ways to refresh data:
+1.  **Automatic Refresh**: Executed at intervals set by the dashboard or panel refresh settings.
+2.  **Manual Refresh**: Clicking the refresh button at the top of the dashboard.
+3.  **Time Range Change**: Dragging the time selector or using quick time ranges.
+4.  **Browser Force Refresh (F5)**: Reloads the entire dashboard page, completely resetting frontend state and cache.
+
+The fault described in this document indicates that the first three conventional refresh mechanisms fail in specific scenarios, and only the fourth can forcibly resolve the issue, strongly pointing to a defect in frontend state management or cache invalidation logic.
+
+## Practices
+
+### Problem Reproduction Path
+According to the problem report, the following steps can reliably reproduce the fault:
+1.  **Prepare Data**: Prepare a dataset containing variable `var` in the data source (such as QuestDB). Ensure that for variable value `A`, all columns (such as `cola`, `colb`) have data; for variable value `B`, some columns (such as `colb`) have empty (`null`) data.
+2.  **Build Dashboard**:
+    - **Main Query Panel**: Create a panel whose query uses the dashboard variable `var` and returns all columns (`time`, `cola`, `colb`). This panel itself can display partial columns.
+    - **Dependent Panel**: Create a second panel, set its data source to the first panel. In this panel, use the "Filter fields by name" feature to select and display only the `colb` column.
+3.  **Trigger Fault**:
+    - Select variable `var` as `A` (`colb` has data); both panels display data normally.
+    - Switch variable `var` to `B` (`colb` is empty). Main query panel is normal; dependent panel is cleared because `colb` column is empty (as expected).
+    - Switch variable `var` back to `A`. At this point, **the fault appears**: the main query panel data refreshes successfully, but the dependent panel still displays as empty, failing to load the valid `colb` data.
+4.  **Verify Refresh**: In this fault state, trying to click the refresh button or modify the time range still cannot restore the dependent panel's data. Only pressing **F5** to force refresh the entire browser page can restore normal display.
+
+### Temporary Solutions
+Before an official fix is released, SRE teams can take the following temporary measures:
+- **Avoid Complex Dependencies**: Minimize the use of the "panel as data source" pattern. For data requiring secondary processing, consider using more complex query statements directly at the data source layer (such as PromQL, SQL), or use the **Grafana Transformations** feature for data reshaping, which is typically more stable.
+- **Force Refresh Workflow**: If you must use this pattern and observe data anomalies after variable switching, update the operational workflow to: **habitually press F5** after switching critical variables to ensure all panel data initializes correctly.
+- **Monitor Panel Metadata**: You can create an auxiliary panel that directly queries the upstream data source panel's status or cached data summary (if its data source supports it) for cross-validating data freshness.
+
+## SRE Key Points
+
+### Connection to Reliability and Observability
+This fault directly undermines the **data freshness** and **accuracy** of the monitoring system. SREs rely on real-time, accurate dashboards to monitor Service Level Objectives (SLOs), diagnose faults, and manage incident response. If critical metric panels display stale data due to frontend refresh issues, it may delay alerts, incorrectly assess system load, or lead to misdiagnosis of fault root causes. This reduces the reliability of the monitoring system itself (i.e., reliability as a critical infrastructure).
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    - **Simplify Data Flows**: Minimize nested dependencies between panels, preferring Transformations for data processing.
+    - **Explicitly Test Boundaries**: When building complex dashboards, specifically test scenarios where variable switching causes data structure changes (such as column additions/removals, null value appearance).
+    - **Consider Using Shared Libraries**: For queries that need to be reused across multiple dashboards, using Grafana's **Library Panels** is typically more stable and easier to manage than using them as data source panels.
+- **Common Anti-Patterns**:
+    - **Over-Reliance on Frontend Logic**: Placing important data filtering and aggregation logic entirely in downstream panel processing rather than completing it in upstream data source queries.
+    - **Ignoring Cache Consistency**: Assuming Grafana's frontend cache can always perfectly handle all data structure changes.
+
+### Related Metrics (SLI/SLO)
+- **SLI (Service Level Indicator)**: Can define "dashboard data refresh success rate," for example, monitoring the proportion of panel data successfully loaded within X seconds after users switch variables. Or, more specifically, use "panel data staleness rate" — counting the number of panels displaying data timestamps later than expected refresh time.
+- **SLO (Service Level Objective)**: Set targets for the internal monitoring dashboard platform, such as "99.9% of variable switching operations should have all associated panel data correctly updated within 5 seconds."
+- **Error Budget**: Such frontend refresh issues consume the monitoring platform reliability service's error budget. The frequency and impact scope of such events need to be recorded to assess fix priority.

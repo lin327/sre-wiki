@@ -1,0 +1,76 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Alertmanager Selector Failure After Grafana Upgrade Analysis"
+category: "issue"
+confidence: low
+---
+
+# Alertmanager Selector Failure After Grafana Upgrade Analysis
+
+## Overview
+
+In Grafana alert management, `Alertmanager` is the core component for receiving, processing, and routing alerts. Grafana allows users to configure built-in or external `Alertmanager` data sources (such as Prometheus Alertmanager, VictoriaMetrics Alertmanager) and manage them through a unified interface. The fault described in this article involves a critical user interface feature -- the "Choose Alertmanager" dropdown menu -- becoming non-functional after a Grafana version upgrade, severely affecting alert switching and operations in multi-`Alertmanager` environments, posing a direct challenge to monitoring system availability and user experience. In SRE practices, the stability and functional completeness of monitoring tools themselves are critical, and such issues require timely identification and mitigation.
+
+## Core Concepts
+
+- **Alertmanager Data Source**: In Grafana, in addition to the built-in `Alertmanager` handling native Grafana alerts, external `Alertmanager` instances can be configured as data sources for unified viewing and management of alerts from different systems.
+- **Version Upgrade Regression**: Refers to software unintentionally causing previously working functionality to fail or behave abnormally when releasing a new version. This is a key risk point in software quality control.
+- **User Interface (UI) Consistency**: For operations and SRE teams, the stability and predictability of monitoring tool interface elements (such as dropdown menus, buttons) are critical for daily operational efficiency and reducing error risk.
+
+## Practice
+
+### Symptoms and Reproduction
+1. **Initial State**: In Grafana 12.3.1, with an external `vmalertmanager` data source configured (`implementation: prometheus`), accessing the "Active notifications" page (`/alerting/groups`) correctly displays the "Choose Alertmanager" dropdown in the upper right corner, allowing users to switch between built-in and external `Alertmanager`.
+2. **Post-Upgrade Failure**: After upgrading Grafana to 12.4.0 or higher (tested up to 13.0.1), using the exact same configuration:
+    - The "Choose Alertmanager" dropdown disappears.
+    - External `Alertmanager` alerts are still visible on the page, but context switching is impossible.
+    - In "Alerting -> Settings," the external data source may show "Not receiving Grafana-managed alerts," even disabling and re-enabling the built-in `Alertmanager` is ineffective.
+    - In version 13.0.1, attempting to access this page may also result in 404 errors.
+
+### Configuration Example (for Reproduction)
+This YAML snippet shows the external `Alertmanager` data source configuration used to reproduce the issue:
+```yaml
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - access: proxy
+        isDefault: false
+        name: alertmanager
+        type: alertmanager
+        url: http://vmalertmanager.monitoring:9093
+        jsonData:
+          handleGrafanaManagedAlerts: true
+          implementation: prometheus
+```
+
+### Temporary Workaround
+According to the issue report, an experimental "voodoo" operation is:
+1. Go to `Alerting -> Settings`.
+2. Click to disable Grafana's built-in `Alertmanager`.
+3. Re-enable it.
+This operation may change the external data source status to "Receiving Grafana-managed alerts" and may restore partial alert visibility in version 13.0.1, but **cannot restore the missing dropdown** and may trigger other unexpected behavior. This is not a reliable solution.
+
+## SRE Essentials
+
+### Impact on Reliability and Observability
+- **Observability Gap**: The missing dropdown means SRE engineers cannot conveniently switch between different alert source contexts, potentially missing critical alerts or being unable to quickly locate problem sources, undermining the alert system's **end-to-end observability**.
+- **Workflow Disruption**: Operations processes relying on this feature for daily alert patrols, troubleshooting, and notification rule management are interrupted, increasing operational complexity and time costs, reducing **incident response efficiency**.
+- **Highlighted Upgrade Risk**: This issue reveals the necessity of thorough functional regression testing during critical infrastructure software (such as monitoring platform) upgrades, especially for features related to core workflows.
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    - **Phased Upgrades and Testing**: Before upgrading Grafana in production, comprehensive functional verification must be performed in a pre-production environment using a copy of production configuration.
+    - **Monitor the Monitoring System**: Include availability of Grafana's key interface elements (such as dropdown menus, settings pages) in its own health monitoring.
+    - **Retain Rollback Paths**: Ensure monitoring system upgrades can be quickly rolled back.
+- **Common Anti-Patterns**:
+    - **Blind Upgrades**: Directly upgrading core tools in production without sufficient testing.
+    - **Ignoring UI Changes**: Treating UI changes as "minor" and not considering them as potential factors affecting reliability.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: Availability of monitoring interface core features (such as `Alertmanager` switching), page error rate (404).
+- **SLO (Service Level Objective)**: After monitoring tool version upgrades, its core UI functions should be 100% available and behave as expected.
+- **SLA (Service Level Agreement)**: For internally used monitoring tools, ensure upgrade operations have clear plans and rollback strategies to avoid impacting other services' operational efficiency.
+
+This issue ([Grafana Issue #123002](https://github.com/grafana/grafana/issues/123002)) is a typical software version upgrade regression bug requiring an upstream project fix. Before the fix is released, SRE teams are advised to exercise extreme caution when upgrading Grafana versions and to monitor related change logs and community updates.

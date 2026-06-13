@@ -1,0 +1,56 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Explore View Loki Log Entry Overlap or Duplication Issue"
+category: "Troubleshooting"
+confidence: medium
+---
+
+# Explore View Loki Log Entry Overlap or Duplication Issue
+
+## Overview
+
+In SRE daily work, accurate and clear presentation of log data is fundamental for troubleshooting, performance analysis, and incident response. Grafana's Explore view provides a powerful interface for interactive log querying and analysis. However, users have reported that when viewing logs from the Loki data source in the Explore view, log entries display anomalies such as overlapping or duplication. Such display issues directly interfere with analysts' correct interpretation of log streams, potentially leading to misjudgment and extending incident response time (MTTR). This page analyzes the background, possible causes, and mitigation strategies for this issue.
+
+## Core Concepts
+
+*   **Explore View**: A dedicated interface in Grafana for dashboard-less, interactive ad-hoc querying and data exploration. For logs, it displays query results in real time.
+*   **Log Panel**: The visualization component in the Explore view that renders log entries. It needs to efficiently render structured log lines as a readable list.
+*   **Overlapping vs. Duplicate**:
+    *   **Overlapping**: Multiple log entries' rendering areas visually cover each other, causing some content to be obscured and difficult to read. This is typically related to frontend CSS layout or virtualized list calculation errors.
+    *   **Duplicate**: The same log content is displayed multiple times. This may stem from the query returning duplicate data, or errors in the frontend's data processing/pagination logic.
+*   **Query Filters**: Label or keyword filter conditions added in Loki queries. The issue report notes that this bug is more easily reproduced when using filters for search, suggesting the problem may be related to complex query response handling or frontend rendering logic.
+
+## Practice
+
+According to the issue report, the following steps can be taken to diagnose and document such issues:
+
+1.  **Reproduce and Document**:
+    *   In the Grafana Explore view, build a query with filter conditions for a Loki data source (e.g., `{job="xxx"} |= "error"`).
+    *   Carefully observe the log panel output to confirm whether it is visual overlapping or content duplication. Take clear screenshots and annotate the problem areas.
+    *   Record the specific query statement, time range, and Grafana and Loki versions at the time of reproduction.
+
+2.  **Environment Information Collection**:
+    *   **Grafana Version**: Precise to patch version (e.g., `12.3.0` as in the report).
+    *   **Loki Version**: Also needs precise version number (e.g., `3.5.5`).
+    *   **Deployment Method**: Record the deployment platform (e.g., Kubernetes) and tools used (e.g., Helm chart and its version). This helps confirm whether the issue is caused by a specific deployment configuration.
+    *   **Reproduction Frequency**: Try to summarize the reproduction pattern (e.g., "appears with specific time ranges or specific filter conditions").
+
+3.  **Initial Troubleshooting and Workarounds**:
+    *   **Check Browser**: Try accessing in another browser or incognito mode to rule out local cache or browser extension interference.
+    *   **Simplify Query**: Gradually remove filter conditions from the query to observe whether the problem disappears, to determine if it is caused by specific filters or is a general issue.
+    *   **Check Data**: Execute the same query directly through the Loki API or other tools (such as `logcli`) to confirm whether the returned log data itself contains duplicates, thereby isolating the issue to the Grafana frontend.
+    *   **Version Rollback/Upgrade**: If conditions allow, try deploying the "working" version mentioned in the issue report (e.g., Grafana `12.1.0`) to confirm whether it is a version regression. Also monitor the GitHub issue for official fix patches or upgrade recommendations.
+
+## SRE Takeaways
+
+*   **Reliability and Observability Impact**: The Explore view is the core tool for SRE initial incident investigation. Its display accuracy directly relates to the effectiveness of "observability." An unreliable log display interface introduces "observation noise," causing SREs to make incorrect judgments during the golden window of incident response.
+*   **Best Practices and Anti-patterns**:
+    *   **Best Practice**: Pin critical Grafana and Loki versions in production deployment configurations and perform thorough pre-upgrade testing. Actively participate in relevant open-source project communities (such as Grafana GitHub) to track known issues in a timely manner.
+    *   **Anti-pattern**: Ignoring display issues in the tool itself and forcing incident analysis based on potentially incorrect views. Blaming all UI display anomalies on upstream data without confirming whether the data source itself is correct.
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   While this is a frontend display issue, it indirectly affects **user experience SLIs** related to log queries, such as "query result rendering accuracy rate."
+    *   At the SLO level, we expect core observability tools (such as Explore) to provide **correct and complete** data views in over 99% of queries. The existence of this bug erodes the Error Budget for this SLO.
+    *   Ensuring **low latency** and **high accuracy** of log queries is a critical link in maintaining overall system diagnosability. See practices in `[[log-aggregation]]` and `[[grafana]]`.
+
+[[log-aggregation]] [[grafana]] [[loki]]

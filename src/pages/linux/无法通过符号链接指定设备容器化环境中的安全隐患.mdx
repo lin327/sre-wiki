@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "无法通过符号链接指定设备：容器化环境中的安全隐患"
 description: "分析containerd无法处理设备符号链接的问题，及其对安全性和设备一致性的潜在影响。"
@@ -11,6 +12,8 @@ sources:
     title: "Unable to specify device by symlink (GitHub Issue)"
 tags: [containerd, 设备管理, udev, 符号链接, 安全, 容器运行时]
 ---
+
+# 无法通过符号链接指定设备：容器化环境中的安全隐患
 
 ## 概述
 在容器化环境中，将主机设备安全、可靠地传递给容器是一项常见但关键的需求。通常，我们依赖 udev 生成的稳定符号链接（如 `/dev/serial/by-id/...`）来指代物理设备，以避免内核设备名称（如 `/dev/ttyUSB0`）在重启或设备变动后发生不一致的问题。此问题报告揭示了 containerd v2.0.0 在处理此类符号链接时存在缺陷，不仅阻碍了预期的设备挂载，更引入了可被恶意利用的安全风险，对依赖设备透传的 SRE 实践构成了挑战。

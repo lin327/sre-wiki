@@ -1,0 +1,61 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus UI Autocompletion Issue: Incorrect Label Suggestions After Vector Selector"
+category: "Prometheus"
+confidence: high
+---
+
+# Prometheus UI Autocompletion Issue: Incorrect Label Suggestions After Vector Selector
+
+## Overview
+
+The PromQL editor built into the Prometheus Web UI is based on CodeMirror with specific language support (codemirror-promql). This page documents and analyzes a known UI interaction issue: when writing a vector selector expression, if the cursor is placed after the closing curly brace `}`, the editor incorrectly suggests label name autocompletion. This is a front-end editor logic defect that does not directly affect Prometheus data query correctness or backend reliability, but it interferes with the workflow of SREs and developers writing accurate query expressions, reducing efficiency.
+
+## Core Concepts
+
+To understand this issue, the following terms need to be clarified:
+
+- **PromQL Editor**: The code editor component in the Prometheus Web UI used for writing and executing PromQL queries.
+- **Autocompletion**: The editor predicts and suggests possible input items (such as metric names, label names, function names) based on the current syntax context to improve writing speed and accuracy.
+- **Vector Selector**: A core PromQL concept for selecting time series. The basic syntax is `metric_name{label_name="label_value", ...}`. The part inside curly braces `{}` defines label filter conditions.
+- **Syntax Context**: The editor's interpretation of the current input position's stage in the grammar rules (e.g., currently inputting a metric name, label name, label value, etc.). Correct context awareness is key to providing accurate autocompletion suggestions.
+
+## Practice
+
+### Reproduction Steps
+
+1.  Open the Prometheus Web UI query page.
+2.  Type `up{job="prometheus"}` in the query box.
+3.  Move the cursor after the closing curly brace `}`, i.e., at the position `up{job="prometheus"}<cursor here>`. Alternatively, manually delete and re-type the closing curly brace `}`, ensuring the cursor is directly after it.
+4.  At this point, type any character (such as a space) and observe the autocompletion popup suggestions.
+
+### Expected vs. Actual Behavior
+
+- **Expected Behavior**: When the cursor is after the closing curly brace `}`, the syntax context has already ended the current vector selector. The editor should no longer suggest "label name" completions belonging inside the selector. Possible completions at this point should be related to syntax outside the selector (e.g., if followed by an operator, suggest operators; if at the end of the query, no suggestions).
+- **Actual Behavior**: The editor incorrectly determines the context is still at a "label name" position, displaying all available label names (such as `__name__`, `instance`, `job`, etc.) as autocompletion suggestions. This is misleading.
+
+### Technical Root Cause
+
+This issue stems from the `codemirror-promql` plugin's syntax parsing logic failing to accurately delineate the end boundary of a vector selector's label list. When parsing `up{job="prometheus"}`, the closing curly brace `}` should be treated as a definitive terminator for the label list. However, the current logic may incorrectly allow the cursor to remain in a "label name expected" state.
+
+## SRE Essentials
+
+### Impact on SRE Workflow
+
+While this is a front-end UI issue, SREs heavily rely on the Prometheus Web UI daily for ad-hoc queries, debugging, and dashboard construction. An inaccurate, misleading editor prompt can cause:
+
+1.  **Writing Incorrect Queries**: Under incorrect context prompts, users may inadvertently introduce syntax errors or logically incorrect queries.
+2.  **Reduced Efficiency**: Constantly clearing or ignoring incorrect suggestions interrupts flow, affecting troubleshooting speed.
+3.  **Reduced Tool Credibility**: Repeated tool imperfections reduce SRE confidence in the monitoring toolchain's details.
+
+### Correlations and Best Practices
+
+- **Connection to Observability**: Smooth query writing is the foundation for deep understanding and exploration of system observability data. Small editor issues can become "friction" for in-depth analysis.
+- **Significance in Incident Response**: In time-critical incident response, any factor that hinders quick, accurate query construction should be taken seriously and eliminated. An ideal tool should provide zero-interference, precise assistance.
+- **Best Practice**: SREs should be aware of known limitations when using any GUI tool. For this specific issue, after entering a complete vector selector, you can **press the `Esc` key once** to close the autocompletion popup, or move the cursor to an unrelated position (such as the beginning of the expression or after an operator) to avoid this interference.
+- **Related Metrics/Terminology**: This issue does not involve SLI/SLO directly, but tool efficiency and accuracy are part of engineering effectiveness, indirectly affecting the "soft" metrics of ensuring service reliability.
+
+### Common Anti-Pattern
+
+An anti-pattern in this issue context is: **habitually ignoring all autocompletion suggestions because the tool prompts are sometimes wrong**. This loses the opportunity to leverage the tool for improved efficiency and accuracy. The correct approach is: understanding this specific boundary condition while still trusting and using the editor's autocompletion in correct contexts.

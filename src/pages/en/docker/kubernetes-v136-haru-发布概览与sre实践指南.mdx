@@ -1,54 +1,56 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
-title: "'Kubernetes v1.36: ハル (Haru)'"
-category: "平台与基础设施"
-confidence: medium
+title: "Kubernetes v1.36: ハル (Haru)"
+category: "Platform and Infrastructure"
+confidence: high
 ---
 
+# Kubernetes v1.36: ハル (Haru)
 
-## 概述
+## Overview
 
-Kubernetes v1.36（代号“ハル / Haru”）于2026年4月发布，延续了项目季度发布的稳定节奏，本次包含70项增强功能。对于Site Reliability Engineering（SRE）团队而言，此版本的多项更新直接影响集群的安全态势、可观测性深度、资源调度效率以及长期运维的可靠性基础。本指南旨在从SRE实践视角，梳理v1.36中值得关注的关键变更，特别是那些达到稳定状态的功能，帮助团队规划升级、强化安全配置并优化运维工作流。
+Kubernetes v1.36 (codename "Haru") was released in April 2026, continuing the project's stable quarterly release cadence with 70 enhancements included. For Site Reliability Engineering (SRE) teams, several updates in this release directly impact cluster security posture, observability depth, resource scheduling efficiency, and the long-term reliability foundation of operations. This guide aims to highlight the key changes in v1.36 from an SRE practice perspective, particularly those features that have reached stable status, helping teams plan upgrades, strengthen security configurations, and optimize operational workflows.
 
-## 核心概念
+## Core Concepts
 
-Kubernetes的版本发布遵循其功能成熟度模型，新特性会经历Alpha（实验性）、Beta（默认禁用但功能完整）和Stable（正式可用，承诺向后兼容）阶段。v1.36的发布主题“Haru”寓意春天、晴朗的天空与遥远的地平线，象征着项目持续演进、迈向更广阔前景的愿景。理解本次发布的各项功能，需要关注以下核心概念：
+Kubernetes releases follow a feature maturity model where new features progress through Alpha (experimental), Beta (disabled by default but feature-complete), and Stable (generally available with backward compatibility guarantees) stages. The release theme "Haru" evokes spring, clear skies, and distant horizons, symbolizing the project's continuous evolution toward broader prospects. Understanding the features in this release requires attention to the following core concepts:
 
-*   **动态资源分配（Dynamic Resource Allocation, DRA）**：一个旨在提供更灵活、声明式的硬件资源（如GPU、网络设备）分配框架。v1.36中多项DRA相关特性达到Beta或Stable，标志着Kubernetes对异构计算资源管理的支持走向成熟，这对运行AI/HPC工作负载的SRE团队至关重要。
-*   **工作负载感知调度（Workload Aware Scheduling, WAS）**：通过`PodGroup` API将一组相关Pod视为单一逻辑实体进行原子调度，解决了分布式作业中Pod调度碎片化的问题。Alpha阶段的此特性预示着未来复杂批处理工作负载调度的可靠性将得到提升。
-*   **声明式策略（Declarative Policies）**：例如达到Stable的`MutatingAdmissionPolicies`，允许使用通用表达式语言（CEL）在API服务器内定义资源变更逻辑，减少了对外部Webhook的依赖，从而降低了网络延迟、运维复杂性和攻击面。
+*   **Dynamic Resource Allocation (DRA)**: A framework designed to provide more flexible, declarative allocation of hardware resources (such as GPUs, network devices). In v1.36, several DRA-related features have reached Beta or Stable status, signaling that Kubernetes support for heterogeneous compute resource management is maturing, which is critical for SRE teams running AI/HPC workloads.
+*   **Workload Aware Scheduling (WAS)**: Uses the `PodGroup` API to treat a group of related Pods as a single logical entity for atomic scheduling, solving the problem of Pod scheduling fragmentation in distributed jobs. This Alpha-stage feature signals that the reliability of complex batch workload scheduling will improve in the future.
+*   **Declarative Policies**: For example, the now-Stable `MutatingAdmissionPolicies` allows defining resource mutation logic using Common Expression Language (CEL) within the API server, reducing dependency on external Webhooks and thereby lowering network latency, operational complexity, and attack surface.
 
-## 实践
+## Practices
 
-面对v1.36的更新，SRE团队应采取一系列主动措施，将新特性转化为可靠的运维能力。
+In response to the v1.36 updates, SRE teams should take a series of proactive measures to convert new features into reliable operational capabilities.
 
-### 升级规划与安全加固
-v1.36的发布是审计和加固集群安全的绝佳时机。首先，应评估并计划迁移到**细粒度的Kubelet API授权**（`KubeletFineGrainedAuthz`，已稳定），以替代宽泛的`nodes/proxy`权限，遵循最小权限原则。其次，注意**`Service.spec.externalIPs`字段已被弃用**（计划在v1.43移除），因其存在中间人攻击风险（CVE-2020-8554），应迁移到LoadBalancer、NodePort或Gateway API。同时，**`gitRepo`卷驱动已被永久移除**，必须确保工作负载不依赖此功能，应改用Init容器或`git-sync`等工具。
+### Upgrade Planning and Security Hardening
+The v1.36 release is an excellent opportunity to audit and harden cluster security. First, evaluate and plan migration to **fine-grained Kubelet API authorization** (`KubeletFineGrainedAuthz`, now stable) to replace the broad `nodes/proxy` permissions, following the principle of least privilege. Second, note that the **`Service.spec.externalIPs` field has been deprecated** (scheduled for removal in v1.43) due to man-in-the-middle attack risks (CVE-2020-8554); migrate to LoadBalancer, NodePort, or Gateway API instead. Meanwhile, the **`gitRepo` volume driver has been permanently removed**; ensure workloads do not depend on this feature and use Init containers or tools like `git-sync` instead.
 
-### 可观测性增强
-提升节点与组件的内部可见性是故障排查的关键。v1.36中稳定的**节点日志查询**（NodeLogQuery）功能允许通过`kubectl`直接查看节点上的kubelet/kube-proxy日志，无需SSH登录，简化了节点问题的初步诊断。此外，已进入Beta的**组件状态zpage**（`/statusz`）和**标志位zpage**（`/flagz`）端点，为核心组件提供了实时的构建版本、启动参数等低开销可见性信息，可集成到监控和审计流程中。
+### Observability Enhancement
+Improving internal visibility into nodes and components is key to troubleshooting. The now-stable **Node Log Query** (`NodeLogQuery`) feature in v1.36 allows viewing kubelet/kube-proxy logs directly on nodes via `kubectl` without SSH login, simplifying initial node problem diagnosis. Additionally, the now-Beta **component status zpage** (`/statusz`) and **flag zpage** (`/flagz`) endpoints provide real-time build version, startup parameters, and other low-overhead visibility information for core components, which can be integrated into monitoring and audit workflows.
 
-### 资源与存储管理优化
-对于依赖持久化存储的工作负载，稳定的**卷组快照**（VolumeGroupSnapshot）功能允许对多个PVC进行一致性快照，为关键应用提供了更可靠的备份与恢复点。同时，**可变卷挂载限制**（Mutable CSINode Allocatable）已稳定，允许CSI驱动动态更新节点的卷容量限制，避免因信息过时导致调度失败。对于硬件资源，关注**资源健康状态**（Beta）的Pod状态报告，可快速识别Pod崩溃是否因设备故障（`Unhealthy`/`Unknown`状态）引起，加速硬件问题定位。
+### Resource and Storage Management Optimization
+For workloads relying on persistent storage, the now-stable **Volume Group Snapshot** feature allows consistent snapshots across multiple PVCs, providing more reliable backup and recovery points for critical applications. Meanwhile, **Mutable CSINode Allocatable** is now stable, allowing CSI drivers to dynamically update node volume capacity limits, preventing scheduling failures due to stale information. For hardware resources, the **Resource Health Status** (Beta) Pod status reporting can quickly identify whether Pod crashes are caused by device failures (`Unhealthy`/`Unknown` status), accelerating hardware problem identification.
 
-### 调度与自动化的未来准备
-虽然**工作负载感知调度（WAS）** 和**基于自定义指标的HPA缩容到零**尚处于Alpha阶段，但SRE团队应开始评估其与现有批处理作业、队列系统或成本优化策略的集成潜力。这些特性有望在未来提升资源利用效率和系统弹性。
+### Preparing for Scheduling and Automation
+Although **Workload Aware Scheduling (WAS)** and **HPA scaling to zero based on custom metrics** are still in Alpha, SRE teams should begin evaluating their integration potential with existing batch jobs, queue systems, or cost optimization strategies. These features promise to improve resource utilization efficiency and system resilience in the future.
 
-## SRE 要点
+## SRE Key Points
 
-Kubernetes v1.36的发布深刻体现了SRE文化中“自动化、可观测性、渐进式变更”的核心理念。
+The Kubernetes v1.36 release profoundly embodies the core principles of SRE culture: "automation, observability, and incremental change."
 
-*   **与可靠性、可观测性、事件响应的关联**：稳定的PSI指标支持（基于cgroupv2）为SRE提供了比传统利用率更精细的资源压力视图，有助于区分系统繁忙与资源耗尽，从而更准确地设置SLO和进行垂直自动扩缩容。组件级别的zpage端点（`/statusz`, `/flagz`）则在事件响应中提供了快速、标准化的组件健康信息快照，减少了排查路径。节点日志查询功能直接简化了节点层面故障的现场信息收集。
+*   **Connection to Reliability, Observability, and Incident Response**: Stable PSI metrics support (based on cgroupv2) provides SREs with a more granular view of resource pressure than traditional utilization metrics, helping distinguish between system busy states and resource exhaustion, enabling more accurate SLO setting and vertical autoscaling. Component-level zpage endpoints (`/statusz`, `/flagz`) provide fast, standardized component health snapshots during incident response, reducing troubleshooting paths. The Node Log Query feature directly simplifies on-site information collection for node-level failures.
 
-*   **最佳实践与常见反模式**：
-    *   **最佳实践**：在升级到v1.36后，应积极启用并利用`KubeletFineGrainedAuthz`和`NodeLogQuery`以提升安全与运维效率。规划存储操作时，评估采用`VolumeGroupSnapshot`来保护有状态应用。关注DRA和WAS的进展，为未来管理GPU等特殊硬件资源做好准备。
-    *   **常见反模式**：忽视`Service.externalIPs`的弃用警告，继续使用该字段将暴露安全风险。在升级后不清理或迁移依赖已移除的`gitRepo`卷驱动的工作负载，会导致Pod无法调度。在节点上运行高密度容器时，未利用PSI指标或DRA的资源状态反馈，可能无法及时感知资源争用或硬件故障。
+*   **Best Practices and Common Anti-Patterns**:
+    *   **Best Practices**: After upgrading to v1.36, actively enable and utilize `KubeletFineGrainedAuthz` and `NodeLogQuery` to improve security and operational efficiency. When planning storage operations, evaluate adopting `VolumeGroupSnapshot` to protect stateful applications. Track the progress of DRA and WAS to prepare for future management of special hardware resources like GPUs.
+    *   **Common Anti-Patterns**: Ignoring deprecation warnings for `Service.externalIPs` and continuing to use that field exposes security risks. Failing to clean up or migrate workloads that depend on the removed `gitRepo` volume driver after upgrading will cause Pods to fail scheduling. When running high-density containers on nodes, not utilizing PSI metrics or DRA resource status feedback may prevent timely detection of resource contention or hardware failures.
 
-*   **相关指标（SLI/SLO/SLA）**：v1.36为定义更精准的SLI提供了新工具。例如，利用新的**原生直方图**（Alpha）支持，可以更高效、准确地采集kube-apiserver的延迟分布，为API响应时间SLO提供高保真数据。`ComponentStatusz`端点可作为组件版本一致性的SLI数据源。而`allocatedResourcesStatus`则为Pod因硬件故障重启的频率提供了直接指标，可用于定义硬件可靠性的SLO。
+*   **Related Metrics (SLI/SLO/SLA)**: v1.36 provides new tools for defining more precise SLIs. For example, the new **native histogram** (Alpha) support enables more efficient and accurate collection of kube-apiserver latency distributions, providing high-fidelity data for API response time SLOs. The `ComponentStatusz` endpoint can serve as an SLI data source for component version consistency. Meanwhile, `allocatedResourcesStatus` provides a direct metric for Pod restart frequency due to hardware failures, which can be used to define hardware reliability SLOs.
 
-## 其他重要更新与弃用
+## Other Important Updates and Deprecations
 
-除了上述亮点，v1.36还包括其他对SRE有意义的更新：
-*   **Ingress NGINX退役**：该控制器已于2026年3月退役，停止安全更新。SRE应计划迁移至其他Ingress方案，如Gateway API实现或云原生负载均衡器。
-*   **SELinux卷标签加速（稳定）**：该功能通过`mount -o context=XYZ`方式应用SELinux标签，提升了挂载性能，但可能在未来引入破坏性变更（如在同一节点共享卷时）。需要审计集群中SELinux策略的使用情况。
-*   **受约束的冒充（Constrained Impersonation，Beta）**：收紧了用户冒充机制，要求冒充者需同时具备冒充权限和操作权限，防止权限过度放大，增强了多租户环境的安全性。
+In addition to the highlights above, v1.36 includes other updates significant for SRE:
+*   **Ingress NGINX Retirement**: This controller was retired in March 2026 and has stopped receiving security updates. SREs should plan migration to other Ingress solutions, such as Gateway API implementations or cloud-native load balancers.
+*   **SELinux Volume Labeling Acceleration (Stable)**: This feature applies SELinux labels via `mount -o context=XYZ`, improving mount performance, but may introduce breaking changes in the future (such as when sharing volumes on the same node). Audit SELinux policy usage in your cluster.
+*   **Constrained Impersonation (Beta)**: Tightens the user impersonation mechanism by requiring impersonators to have both impersonation permissions and operation permissions, preventing privilege escalation and enhancing security in multi-tenant environments.

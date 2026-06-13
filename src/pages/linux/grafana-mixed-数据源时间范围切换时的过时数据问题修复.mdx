@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana Mixed 数据源时间范围切换时的过时数据问题修复"
 description: "修复了 Mixed 数据源面板在时间范围变更后，因上游 ReplaySubject 保留旧状态导致数据无法更新的关键缺陷。"
@@ -8,9 +9,11 @@ lastUpdated: 2024-05-23
 confidence: high
 sources:
   - url: https://github.com/grafana/grafana/pull/124665
-    title: "'PR #124665: Fix Mixed panels not updating on time-range change with stale upstreams'"
+    title: "PR #124665: Fix Mixed panels not updating on time-range change with stale upstreams"
 tags: [Grafana, Mixed-datasource, ReplaySubject, Time-Range, Race-Condition, Dashboard, SRE]
 ---
+
+# Grafana Mixed 数据源时间范围切换时的过时数据问题修复
 
 ## 概述
 

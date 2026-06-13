@@ -1,50 +1,52 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "GitHub Issue"
-category: "可观测性工具"
-confidence: medium
+category: "Observability Tools"
+confidence: high
 ---
 
+# GitHub Issue
 
-## 概述
+## Overview
 
-在构建基于地理位置的可观测性仪表板时，Grafana 的 Geomap 插件是一个常用工具，用于在地图上可视化服务器、网络节点或移动设备的地理分布与状态。然而，当地理坐标数据跨越国际日期变更线（经度从180°跳回-180°）时，一个常见的渲染问题便可能出现：插件并非在地图的东、西半球分别绘制断开的路径，而是绘制了一条直接穿过地图大部分区域（通常穿过极地或地图边缘）的错误连接线。这种问题不仅影响数据的准确解读，也对依赖地理视图进行快速故障定位的 SRE 团队构成了直接的可用性与可靠性挑战。本页面将分析该问题的技术成因，并探讨在 SRE 实践中的应对策略。
+When building location-based observability dashboards, Grafana's Geomap plugin is a commonly used tool for visualizing the geographic distribution and status of servers, network nodes, or mobile devices on a map. However, when geographic coordinate data crosses the International Date Line (longitude jumping from 180 degrees back to -180 degrees), a common rendering problem may appear: instead of drawing separate paths on the eastern and western hemispheres of the map, the plugin draws an erroneous connecting line that directly crosses most of the map area (typically through the polar regions or map edges). This problem not only affects accurate data interpretation but also poses a direct availability and reliability challenge for SRE teams that rely on geographic views for rapid fault localization. This page analyzes the technical causes of this problem and discusses response strategies in SRE practice.
 
-## 核心概念
+## Core Concepts
 
-**地理坐标系与经度边界**：地理坐标系统通常使用经度（Longitude）和纬度（Latitude）来定义地球表面的点。经度范围通常为[-180°， 180°]。180°经线，也称为反子午线（Antimeridian），是与0°经线（本初子午线）相对的经线，它是国际日期变更线的近似基准。当一条路径的连续数据点在经度上从小于180°的值（如179°）变为小于-180°的值（如-179°），或者反之，即跨越了这条边界。
+**Geographic Coordinate System and Longitude Boundaries**: Geographic coordinate systems typically use Longitude and Latitude to define points on the Earth's surface. The longitude range is typically [-180 degrees, 180 degrees]. The 180-degree meridian, also known as the Antimeridian, is the meridian opposite to the 0-degree meridian (Prime Meridian) and serves as the approximate baseline for the International Date Line. When a path's consecutive data points change in longitude from a value less than 180 degrees (e.g., 179 degrees) to a value less than -180 degrees (e.g., -179 degrees), or vice versa, the path has crossed this boundary.
 
-**地图投影与连接线**：地图是将三维球面投影到二维平面的结果。在处理连续路径（如 Route 图层）时，可视化库（如 Geomap 底层使用的库）需要连接两个相邻的数据点。标准的连接算法会简单地连接两点在投影平面上的坐标。当两点在地理上实际相距很近（例如，从179°E 到 179°W），但在未正确处理边界回绕的坐标系中，它们的经度差值会被计算为358°，从而导致连接线被绘制为一条横跨几乎整个地图的直线。
+**Map Projections and Connecting Lines**: A map is the result of projecting a three-dimensional sphere onto a two-dimensional plane. When handling continuous paths (such as Route layers), visualization libraries (such as the one underlying Geomap) need to connect two adjacent data points. The standard connection algorithm simply connects the coordinates of two points on the projection plane. When two points are geographically very close (e.g., from 179 degrees E to 179 degrees W), but in a coordinate system that does not correctly handle boundary wrapping, their longitude difference is calculated as 358 degrees, causing the connecting line to be drawn as a straight line spanning almost the entire map.
 
-## 实践
+## Practice
 
-尽管这是一个已报告的插件缺陷，但 SRE 团队在构建和维护基于 Geomap 的仪表板时，可以采取以下实践来规避问题或进行有效排查：
+Although this is a reported plugin defect, SRE teams can adopt the following practices when building and maintaining Geomap-based dashboards to work around the problem or perform effective troubleshooting:
 
-1.  **数据预处理与清洗**：
-    *   **识别与分段**：在将数据送入 Grafana 之前，在数据管道（如 InfluxDB 查询、Telegraf 处理器）中添加逻辑，检测经度是否发生大于180°的跳变。一旦检测到，意味着路径跨越了反子午线。
-    *   **坐标拆分**：对于跨越边界的路径，将其拆分为两条独立的路径记录。例如，一条路径从起点到180°，另一条从-180°到终点。在 InfluxQL 或 Flux 查询中，可以通过条件语句和多次查询来实现。
-    *   **坐标偏移**：另一种方法是将所有经度值统一调整到一个连续的数值范围内，例如全部转换为[0°， 360°]，然后再进行可视化，这可以避免边界跳变。但需注意这可能会改变地图的默认视图中心。
+1.  **Data Preprocessing and Cleaning**:
+    *   **Identification and Segmentation**: Before sending data to Grafana, add logic in the data pipeline (such as InfluxDB queries, Telegraf processors) to detect whether longitude undergoes a jump greater than 180 degrees. Once detected, it means the path has crossed the Antimeridian.
+    *   **Coordinate Splitting**: For paths that cross the boundary, split them into two independent path records. For example, one path from the starting point to 180 degrees, and another from -180 degrees to the endpoint. This can be achieved through conditional statements and multiple queries in InfluxQL or Flux queries.
+    *   **Coordinate Offset**: Another approach is to uniformly adjust all longitude values to a continuous numerical range, for example converting all to [0 degrees, 360 degrees], before visualization, which can avoid boundary jumps. However, note that this may change the map's default view center.
 
-2.  **使用替代或增强的可视化方案**：
-    *   **标记点视图**：如果路径的精确连线不是必须的，可以考虑使用“标记点”视图，它只显示数据点的位置，而不绘制连接线，从而完全避免此问题。
-    *   **利用插件配置**：关注 Grafana Geomap 插件的版本更新。在某些版本或配置中，可能存在选项来控制路径的连接行为（例如，设置最大连接距离）。
-    *   **自定义可视化**：对于关键任务仪表板，如果内置插件无法满足需求，可以考虑开发自定义的 Grafana 面板插件，使用如 Leaflet、Mapbox GL JS 等库，并在其中明确实现反子午线边界回绕的逻辑。
+2.  **Use Alternative or Enhanced Visualization Approaches**:
+    *   **Marker Point View**: If precise path connections are not necessary, consider using the "marker" view, which only displays data point positions without drawing connecting lines, completely avoiding this problem.
+    *   **Leverage Plugin Configuration**: Follow Grafana Geomap plugin version updates. In certain versions or configurations, options may exist to control path connection behavior (e.g., setting maximum connection distance).
+    *   **Custom Visualization**: For mission-critical dashboards, if built-in plugins cannot meet requirements, consider developing a custom Grafana panel plugin using libraries like Leaflet or Mapbox GL JS, explicitly implementing Antimeridian boundary wrapping logic.
 
-3.  **仪表板与故障排查**：
-    *   **版本控制与复现**：记录仪表板和 Grafana 的具体版本（如本例中的 v11.6.0）。当问题出现时，首先尝试在最新稳定版 Grafana 中复现，以确认是否是已修复的已知问题。
-    *   **隔离数据源**：验证问题是否与特定数据源（如 InfluxDB v1）的数据格式有关。可以尝试将数据导出为静态 GeoJSON 并在外部工具中查看，以隔离问题范围。
+3.  **Dashboard and Troubleshooting**:
+    *   **Version Control and Reproduction**: Record the specific version of the dashboard and Grafana (such as v11.6.0 in this case). When a problem appears, first try to reproduce it in the latest stable version of Grafana to confirm whether it is a known issue that has been fixed.
+    *   **Isolate Data Source**: Verify whether the problem is related to the data format of a specific data source (such as InfluxDB v1). Try exporting data as static GeoJSON and viewing it in external tools to isolate the problem scope.
 
-## SRE 要点
+## SRE Key Points
 
-*   **与可靠性、可观测性、事件响应的关联**：此问题直接影响了**仪表板的可用性**这一 SRE 核心关注点。一个显示错误地图连接的仪表板，会导致 SRE 人员在事件响应期间对服务的地理分布、故障范围产生误判，从而延长 MTTR（平均修复时间）。它是**数据完整性** SLI（服务级别指标）的一个反面案例——可视化未能准确反映底层数据的真实空间关系。
+*   **Reliability, Observability, and Incident Response Association**: This problem directly affects **dashboard availability**, a core SRE concern. A dashboard displaying incorrect map connections can cause SRE personnel to misjudge the geographic distribution and fault scope of services during incident response, thereby extending MTTR (Mean Time to Resolve). It is a negative example of a **data integrity** SLI (Service Level Indicator)—the visualization fails to accurately reflect the true spatial relationships of the underlying data.
 
-*   **最佳实践与常见反模式**：
-    *   **最佳实践**：将地理空间数据视为需要特殊处理的“脏数据”。在可观测性流水线中增加数据质量检查环节，特别是针对边界值。在创建关键地理视图前，先在小数据集上进行测试，确保其在边界条件下的表现符合预期。
-    *   **常见反模式**：直接假设可视化工具能智能处理所有坐标边界情况，而不对数据进行任何预处理或验证。忽略用户报告的显示异常，未能将其追溯到底层数据或插件的特定行为。
+*   **Best Practices and Common Anti-Patterns**:
+    *   **Best Practices**: Treat geospatial data as "dirty data" requiring special handling. Add data quality checks in the observability pipeline, especially for boundary values. Before creating critical geographic views, first test on small datasets to ensure behavior under boundary conditions meets expectations.
+    *   **Common Anti-Patterns**: Assuming the visualization tool can intelligently handle all coordinate boundary cases without any data preprocessing or validation. Ignoring user-reported display anomalies and failing to trace them to underlying data or specific plugin behavior.
 
-*   **相关指标（SLI/SLO/SLA）**：
-    *   **SLI**：地理空间数据可视化准确性（例如，地图上路径渲染正确率）、仪表板加载时间（处理复杂地理数据查询和渲染的时间）。
-    *   **SLO**：确保关键地理监控仪表板在99%的时间内提供准确、可读的视图，用于支持故障定位。
-    *   **SLA**：向内部用户（如运维团队）承诺的仪表板功能可用性与准确性保证，可包含对已知显示限制的说明。
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   **SLI**: Geospatial data visualization accuracy (e.g., path rendering correctness rate on maps), dashboard load time (time to process complex geographic data queries and rendering).
+    *   **SLO**: Ensure critical geographic monitoring dashboards provide accurate, readable views 99% of the time to support fault localization.
+    *   **SLA**: Dashboard functionality availability and accuracy guarantees promised to internal users (such as operations teams), which can include descriptions of known display limitations.
 
-处理此类地理边界问题体现了 SRE 工作中对**细节和边界条件**的重视。通过主动的数据治理和对可视化工具局限性的深刻理解，可以有效提升整个可观测性系统的可靠性与效用。
+Handling such geographic boundary issues reflects the SRE emphasis on **details and boundary conditions**. Through proactive data governance and deep understanding of visualization tool limitations, the reliability and utility of the entire observability system can be effectively improved.

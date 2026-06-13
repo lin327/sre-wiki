@@ -1,0 +1,51 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Mobile Observability: Reliable Interaction with Dashboard Variables"
+category: "Observability and Dashboards"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/98419
+    title: "Dashboards: unpredictable behavior with select variables on mobile"
+tags: [grafana, mobile, dashboard-variables, observability]
+---
+
+# Mobile Observability: Reliable Interaction with Dashboard Variables
+
+## Overview
+
+In modern SRE practice, accessing and diagnosing system state anytime and anywhere is a critical part of incident response and daily operations. Observability tools on mobile devices (such as Grafana dashboards) are an important pathway for achieving this goal. However, interaction differences brought by different platforms and input methods (touch vs. keyboard and mouse) may introduce unpredictable behaviors, directly affecting operational efficiency. This document focuses on a mobile dashboard select variable interaction consistency issue found in Grafana 11.x, exploring its root cause, impact, and SRE team response strategies.
+
+## Core Concepts
+
+- **Dashboard Variables**: In tools like Grafana, variables allow users to dynamically filter and modify panel query datasets through dropdown controls. They are a core feature for achieving dashboard reuse and rapid drill-down. Common types include query variables, custom variables, etc.
+- **Mobile Interaction Model**: Mobile devices primarily rely on touch operations, with event trigger sequences (such as "select -> confirm") significantly differing from desktop (such as "hover -> click"). Browser autocomplete, touch delays, or event propagation mechanisms can cause frontend interaction logic to fail as expected.
+- **Data Refresh Mechanism**: Typically, when a variable value changes, Grafana re-executes associated queries and refreshes panel data through frontend events (such as `onChange` callbacks). The reliability of this mechanism depends heavily on events being correctly captured and triggered.
+
+## Practice
+
+**Issue Manifestation**: After upgrading from Grafana 10.x to 11.4, when operating multi-value select variables on mobile devices (such as Android 15, Chrome browser), selecting entries does not refresh dashboard data as expected, and behavior becomes unpredictable. This suggests the frontend event flow or state management may have changed in the new version.
+
+**Mitigation and Diagnosis Strategies**:
+1.  **Version Rollback and Impact Assessment**: For teams relying on mobile dashboards for critical operations, evaluate the feasibility and risks of rolling back to a known stable version (such as 10.x). Simultaneously, document the specific affected use cases and frequency in the current version.
+2.  **Platform-Specific Testing**: Establish a dashboard compatibility test matrix covering mainstream mobile operating systems (iOS, Android) and browsers (Chrome, Safari, Firefox). After each Grafana upgrade, mobile interaction must be a core regression test item.
+3.  **Interaction Logic Review**: For highly customized dashboards, check their variable configuration and query logic. Avoid relying on complex frontend interactions where browser implementations differ significantly; prefer using explicit "update" buttons (such as "Apply variables") to trigger data refresh, providing a more controllable user experience.
+4.  **Browser Settings Troubleshooting**: Guide users to check mobile browser accessibility settings (such as touch delay, hover simulation), which sometimes affect web application interaction behavior.
+
+**Architectural Considerations**:
+- **Progressive Enhancement**: When designing core operational dashboards, ensure core functionality is fully usable on desktop while providing degraded but reliable core views and operations on mobile.
+- **State Management and Diagnostics**: Add controls displaying currently effective variable values (such as a "variable status" textbox) in dashboards, making it easy for users to confirm whether the system received their operations. This is an internal practice for enhancing observability.
+
+## SRE Key Points
+
+- **Relation to Reliability**: The availability of operational tools directly relates to overall system reliability. Mobile dashboards, as one of the "lifelines" for troubleshooting, may experience interaction failures that delay incident response time (MTTR) or even cause misjudgments based on incorrect data. While this is a frontend defect, its impact needs to be measured from the **SLO** perspective regarding the potential impact on operational efficiency.
+- **Best Practices**:
+    - **Complete Testing of Toolchain**: Include the reliability of "observability tools themselves" in the scope of assurance. Establish cross-platform, cross-version operational tool testing processes.
+    - **Focus on User Experience Consistency**: Ensure operations personnel receive similar, predictable operation experiences across different devices, which is the foundation for improving team collaboration efficiency and reducing operational errors.
+    - **Clear Issue Reporting and Tracking**: As this case demonstrates, reporting issues to tool maintainers (such as the Grafana community) through detailed reproduction steps and screen recordings is an effective way to drive ecosystem fixes.
+- **Common Anti-Patterns**:
+    - **Ignoring Mobile Scenarios**: Assuming all operations are performed on desktop, causing critical dashboards to be unusable or have extremely poor experience on mobile.
+    - **Blind Upgrades**: Upgrading without fully testing new version observability platform functionality and compatibility in non-production environments may accidentally break existing operational workflows.
+-   **Related Metrics**:
+    - **Error Budget Consumption**: While such tool failures do not directly cause user service interruptions, they consume the operations team's own "capability budget", reducing their mental capacity and time for maintaining system reliability.
+    - **Operations Success Rate**: Attempt to track the proportion of successful dashboard query operations completed on mobile as a micro-level metric for measuring internal tool effectiveness.

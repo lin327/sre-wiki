@@ -1,0 +1,84 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Implementing Custom Service Discovery with etcd"
+category: "Service Discovery and Target Management"
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2015/08/17/service-discovery-with-etcd/
+    title: "Prometheus Blog: Custom service discovery with etcd"
+tags: [etcd, Prometheus, service-discovery, file-sd, custom-integration]
+---
+
+# Implementing Custom Service Discovery with etcd
+
+## Overview
+
+In SRE practice, service discovery is a key component for achieving system observability and automated operations. Monitoring systems (such as Prometheus) must be able to dynamically and accurately detect changes to service instances to ensure monitoring coverage completeness and data freshness. While many mainstream platforms and cloud providers offer native service discovery mechanisms, enterprises may run custom service directories based on specific technology stacks (such as `etcd`). This article describes how to build a lightweight tool that integrates an `etcd`-based custom service discovery system with Prometheus, enabling automatic synchronization of monitoring targets and avoiding human errors and configuration lag introduced by manual monitoring target configuration.
+
+## Core Concepts
+
+Understanding this solution requires knowledge of the following core concepts:
+
+*   **etcd**: A distributed, strongly consistent key-value store commonly used for service configuration, discovery, and coordination. In this example, it serves as the reliable data source for service instance information.
+*   **File-based Service Discovery**: A discovery mechanism supported by Prometheus. It monitors one or more JSON files whose content defines target groups organized as lists. When file content changes, Prometheus automatically reloads monitoring targets.
+*   **Target Group**: A JSON object containing `targets` (list of instance addresses) to be scraped and associated `labels`. Labels are appended to all time series data obtained from that target, for example, to distinguish different `jobs`.
+*   **Watch Mechanism**: A feature provided by etcd that allows clients to listen for change events on a key or directory. This is more efficient than polling and can respond in real-time to service instance additions, deletions, and modifications.
+
+The core idea of this solution is: write a resident program (daemon) that connects to the `etcd` cluster, monitors all changes under a specific path (e.g., `/services`). When service instances are added, deleted, or modified, the program converts the latest instance information into the "target group" JSON format required by Prometheus and writes it to a specified file. Prometheus then monitors this file through the file-based service discovery mechanism to automatically complete monitoring target updates.
+
+## Practice
+
+Implementing a tool that connects `etcd` with Prometheus file-based service discovery involves the following main steps:
+
+### 1. Define Data Model and Program Entry
+The program needs to accept the `etcd` server address and output file path as parameters. Internally, it uses a `map` structure to maintain the current service and instance state synchronized from `etcd`. For example, an instance `10.0.33.1:54423` of a service named `node_exporter` would be stored in `services["node_exporter"]["10.0.33.1:54423"]`. The main function initializes the client and performs the initial sync by recursively reading all subtrees under `/services`.
+
+### 2. Implement Real-Time Watching and State Synchronization
+To achieve real-time synchronization, the program should use etcd's Watch feature. Start recursive watching in a separate goroutine, sending all change events (create, update, delete) to a channel. The main loop reads events from this channel and calls the corresponding handler function (`update` or `delete`) to update the in-memory service state based on the event type. After each state change, the persist method must be called to write the latest state to the file.
+
+### 3. Core Method Implementation
+*   **handle(node, handler)**: Recursively traverses the etcd node tree, calling the passed handler function (`update` or `delete`) for each node matching the `/services/<service_name>/<instance_id>` path format.
+*   **update(node)**: Parses the node key, updating the instance address (`node.Value`) in the in-memory service state. If the service does not exist, creates a new service entry.
+*   **delete(node)**: Parses the node key. If the deleted node is an instance node, removes that instance from the corresponding service; if the deleted node is an entire service directory node, removes all instance information for that service.
+*   **persist()**: Converts the in-memory service state into a `TargetGroup` slice. Each service corresponds to a `TargetGroup`, with its `targets` being a list of all instance addresses for that service, and `labels` containing a `job` label (value is the service name). Finally, writes this slice in JSON format to the configured output file (e.g., `tgroups.json`).
+
+### 4. Deployment and Configuration
+*   **Run the tool**: Execute `./etcd_sd -target-file /etc/prometheus/tgroups.json` to start the tool monitoring `etcd` and maintaining the target file.
+*   **Configure Prometheus**: Enable file-based service discovery in `prometheus.yml`, pointing to the same file generated by the tool.
+
+```yaml
+scrape_configs:
+- job_name: 'default' # job label will be overridden by labels in target groups
+  file_sd_configs:
+  - names: ['/etc/prometheus/tgroups.json']
+```
+
+After completing the above steps, any changes to service instances in `etcd` will be reflected in Prometheus's scrape targets nearly in real-time.
+
+## SRE Key Points
+
+Applying this custom service discovery solution to production requires considering its impact on system reliability and operational efficiency.
+
+### Relation to Reliability
+*   **Reducing Configuration Drift**: Automated synchronization eliminates the step of manually updating monitoring configuration, reducing the risk of monitoring blind spots caused by configuration omissions or errors, directly improving monitoring system reliability.
+*   **Tool's Own High Availability**: This synchronization tool itself becomes a critical auxiliary component. It should be deployed as a daemon managed by a process manager (like systemd) or container orchestration platform, ensuring automatic restart after crashes. Its failure should not affect existing monitoring data collection but will pause automatic target updates.
+*   **`etcd` Dependency**: The solution introduces a strong dependency on the `etcd` cluster. The stability and high performance of the `etcd` cluster must be ensured to avoid service discovery interruption caused by `etcd` failures. Consider adding connection retry and caching mechanisms to the tool.
+
+### Best Practices and Common Anti-Patterns
+*   **Best Practices**:
+    *   Design robust error handling and logging for the tool to facilitate troubleshooting synchronization issues.
+    *   In the change management process, treat changes to service information in `etcd` as part of "Infrastructure as Code".
+    *   Consider combining with other service discovery mechanisms (such as `consul_sd_configs`, `kubernetes_sd_configs`) as supplements, forming a multi-source target discovery strategy.
+*   **Common Anti-Patterns**:
+    *   **Ignoring Tool Monitoring**: Not monitoring the health of the synchronization tool itself (e.g., whether it is running, whether the last sync was successful, whether there are error logs).
+    *   **High-Frequency Polling Instead of Watch**: Using scheduled tasks to frequently read all `etcd` data and overwrite the file, causing unnecessary load on `etcd` with poor real-time performance. Always use the `Watch` mechanism.
+    *   **Insufficient File Write Atomicity**: Directly writing to a file being read by Prometheus may cause incomplete content to be read. Use the "write to temporary file, then atomic rename" pattern.
+
+### Related Metrics (SLI/SLO/SLA)
+While this tool does not directly produce business metrics, its functionality is a prerequisite for monitoring data reliability. Service level objectives (SLOs) can be defined from the following perspectives:
+*   **SLI**: Service discovery latency (time difference from `etcd` state change to Prometheus target list update), sync success rate (proportion of successful `persist` method executions).
+*   **SLO**: Given a healthy `etcd` cluster, 99% of instance changes should be synchronized to the target file within 5 seconds; fewer than 1 sync failure per month.
+*   **SLA**: Can be based on internal SLOs, committing to provide continuously available service discovery synchronization within specific time windows.
+
+Through this custom integration approach, even if an organization uses a non-mainstream service registry, it can be seamlessly incorporated into the Prometheus-centric observability ecosystem, ensuring monitoring targets automatically and accurately reflect the real online topology.

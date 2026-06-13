@@ -1,0 +1,61 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana API Data Source UID Validation Enhancement"
+description: "In PUT requests for updating data sources, the API now returns a 400 error when the JSON payload UID does not match the URL path parameter UID, instead of silently failing and causing a subsequent 500 internal server error."
+category: Grafana
+order: 0
+lastUpdated: 2026-06-01
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/pull/125771
+    title: "[release-13.0.2] Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid"
+tags: [grafana, api, datasource, validation, error-handling]
+---
+
+# Grafana API Data Source UID Validation Enhancement
+
+## Overview
+
+This change is an important hardening of REST API security and robustness in Grafana's release-13.0.2. It fixes a silent error handling defect in the `PUT /api/datasources/uid/:uid` endpoint. In SRE practice, clear and predictable API error responses are the cornerstone of system observability and rapid fault recovery. Inconsistent request parameters causing unexpected internal errors (500) at the application layer greatly increase the complexity of Incident Response and Mean Time to Repair (MTTR). This fix converts ambiguous internal errors into explicit client errors (400), improving the API's contract adherence.
+
+## Core Concepts
+
+1. **UID (Unique Identifier)**: In Grafana, each data source has a globally unique string identifier (UID) used to precisely reference specific resources in API routing and configuration. The `PUT /api/datasources/uid/:uid` endpoint's semantics are to update the data source specified by the `:uid` in the URL path.
+
+2. **HTTP Status Codes 400 and 500**:
+    - **400 Bad Request**: Indicates the client's request has a semantic error that the server cannot understand or process. This is an error "the client should be responsible for."
+    - **500 Internal Server Error**: Indicates the server encountered an unexpected situation while processing the request, typically caused by an internal program defect. This is an error "the server side needs to investigate."
+    - **Best Practice**: For errors directly caused by invalid client input (such as UID mismatch), 4xx errors should be returned early to avoid polluting server-side logs and provide clear corrective feedback to the client.
+
+3. **Defensive Programming and Input Validation**: This fix embodies the principle of strict input validation at the API processing layer (Controller Layer). Validating the internal consistency of request parameters before executing any business logic (such as database queries) can block numerous invalid or malicious requests from penetrating deeper into the system, thereby protecting service stability.
+
+## Practice
+
+### Issue Reproduction (Before Fix)
+When sending a JSON payload to the `PUT /api/datasources/uid/datasource-uid-A` endpoint with an internal `uid` field value of `datasource-uid-B`, older versions of Grafana would ignore this mismatch and continue executing lookup and update logic. This inconsistency would ultimately trigger an internal error at the Service Layer, returning a `500 Internal Server Error` that was uninformative to both clients and operators, and potentially leaving ambiguous trace information in logs.
+
+### Correct Behavior After Fix
+According to [PR #125771](https://github.com/grafana/grafana/pull/125771), the changed API processing logic is as follows:
+
+1. In `pkg/api/datasources.go`, an explicit validation step was added: before looking up the data source, first compare the URL path parameter `:uid` with the `uid` field in the request body JSON.
+2. If they don't match, the API immediately terminates processing and returns a clear `400 Bad Request` response containing an error message indicating the UID inconsistency.
+3. The corresponding unit test `TestUpdateDataSourceByUID_UIDMismatch` was added to `pkg/api/datasources_test.go` to ensure this validation logic does not regress in future versions.
+
+### Impact on SRE Operations
+- **Log Analysis**: Error logs will no longer contain hard-to-correlate 500 error stacks caused by UID mismatches. Instead, 400 error logs containing explicit request context (URL UID vs. Payload UID) will appear. This makes automated log analysis and alerting more efficient.
+- **Monitoring Metrics**: By monitoring the `4xx` error rate returned by the API, client configuration errors (such as scripts, integration tools) can be quickly identified rather than being misdiagnosed as Grafana stability issues.
+- **Troubleshooting**: When receiving reports of data source update failures, SRE teams can first check UID consistency in request logs, quickly isolating the issue to client configuration without needing to dig into server-side code.
+
+## SRE Key Points
+
+- **Relationship to Reliability**: Strictly distinguishing between explicit client errors (400) and internal server errors (500) is key to building **operable** systems. It reduces noise from false positives caused by client errors, allowing operations teams to focus more on genuine system failures, thereby improving overall service reliability.
+- **Best Practices**:
+    - **API Contract First**: When modifying API behavior, follow the "fail fast" and "explicit error" principles. Requests that violate API semantics should be intercepted at the boundary.
+    - **Defensive Validation**: All inputs should be thoroughly validated before any critical business logic execution, consistent with the "trust but verify" security and reliability principle.
+    - **Observability**: Error responses should include sufficient context information (such as which parameter doesn't match) to support rapid problem diagnosis.
+- **Related Metrics**:
+    - **SLI**: API request success rate (can be segmented by status code). This fix helps more accurately calculate failure rates caused by client errors.
+    - **SLO**: Availability or error rate SLOs for core APIs (such as data source management). Clear error classification helps distinguish SLO compliance (e.g., a large number of 400 errors may not count as SLO violations, but 500 errors would).
+- **Common Anti-Pattern**: Ignoring API parameter consistency validation and relying on the service layer or data layer to catch such errors leads to unclear error messages, increased response latency, and difficult-to-debug issues. This fix avoids exactly this anti-pattern.
+- **Related Concepts**: This practice is a concrete implementation of [[api-security]] and [[graceful-degradation]]. By rejecting invalid requests early, backend service resources are protected, enabling them to handle legitimate requests more gracefully.

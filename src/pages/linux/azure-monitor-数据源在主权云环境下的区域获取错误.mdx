@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Azure Monitor 数据源在主权云环境下的区域获取错误"
 description: "解决在 Azure 主权云（如美国政府云、中国云）中运行 Grafana 时，Azure Monitor 数据源因硬编码的区域列表而产生“区域不可用”错误的问题。"
@@ -11,6 +12,8 @@ sources:
     title: "Grafana Issue #124864 - Azure Monitor data source: Errors from fetching prod Azure regions when running Grafana in sovereign clouds"
 tags: [azure-monitor, grafana, sovereign-cloud, error-handling, ux]
 ---
+
+# Azure Monitor 数据源在主权云环境下的区域获取错误
 
 ## 概述
 在使用 Grafana 监控运行于 Azure 主权云（例如 US Government 或 China）上的资源时，管理员可能遇到一个看似奇怪的问题：在 Azure Monitor 数据源的资源选择器中会弹出关于“区域不可用”的错误提示。这个问题源于 Grafana 对 Azure 区域列表的硬编码实现，它与公共 Azure 云的区域不匹配，导致在主权云环境下产生非致命但影响用户体验的错误。理解其根本原因和潜在解决方案对于维护监控系统的可用性和用户体验至关重要。

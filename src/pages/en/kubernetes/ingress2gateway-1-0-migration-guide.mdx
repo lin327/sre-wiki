@@ -1,0 +1,103 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Ingress2Gateway 1.0 Migration Guide"
+description: "Official migration assistant tool for safely migrating from Ingress controllers (like Ingress-NGINX) to Kubernetes Gateway API, with the 1.0 release and usage guide."
+category: Kubernetes
+order: 0
+lastUpdated: 2026-03-21
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/03/20/ingress2gateway-1-0-release/
+    title: "Announcing Ingress2Gateway 1.0: Your Path to Gateway API"
+tags: [ingress2gateway, gateway-api, migration, ingress-nginx, kubernetes-networking, sre-tooling]
+---
+
+# Ingress2Gateway 1.0 Migration Guide
+
+## Overview
+
+With the planned retirement of Ingress-NGINX controller in March 2026, the Kubernetes networking ecosystem is undergoing a major transformation. For many organizations, migration to [[gateway-api]] has become inevitable. However, migrating from traditional Ingress resources and controllers (like Ingress-NGINX) to Gateway API involves a fundamental design shift from a simple but non-standard annotation model to a modular, standardized API -- a process that is complex and full of risks. **Ingress2Gateway** is an official migration assistant tool launched by SIG Network in this context, designed to help teams complete this modernization transition safely and confidently. For SRE teams, using such proven automation tools is a key practice for reducing migration risks, ensuring service reliability, and achieving smooth transitions.
+
+## Core Concepts
+
+### Ingress to Gateway API Transition
+
+The Ingress API is simple by design, but its functionality highly depends on controller-specific extensions, such as Ingress-NGINX's various proprietary annotations, ConfigMaps, and CRDs. This model leads to vendor lock-in and configuration fragmentation. In contrast, Gateway API provides a modular, role-separated, native Kubernetes RBAC-integrated standardized API, aiming for better portability and richer functionality.
+
+### Ingress2Gateway's Role
+
+Ingress2Gateway's core function is **translation**. It reads existing Ingress resource manifests and converts them to corresponding Gateway API resources (primarily `Gateway` and `HTTPRoute`). Key capabilities include:
+1.  **Annotation conversion**: Maps controller-specific annotations (like `nginx.ingress.kubernetes.io/*`) to Gateway API standard features or filters. Version 1.0 supports over 30 common Ingress-NGINX annotations (CORS, regex path matching, timeouts, etc.).
+2.  **Behavioral equivalence**: Conversions are verified through rigorous controller-level integration tests, ensuring the generated Gateway API configuration matches original Ingress-NGINX behavior at runtime (routing, redirects, rewrites, etc.), not just YAML structure correspondence.
+3.  **Diagnostics and suggestions**: For configurations that cannot be perfectly converted (like `configuration-snippet` annotations), the tool emits warnings and suggests possible alternatives or items requiring manual review.
+
+## Practice
+
+Ingress2Gateway is an interactive assistant, not a one-click replacement tool. Its goal is to guide teams through migration, identify unsupported configurations, and re-evaluate existing settings. Here is its standard workflow:
+
+### 1. Installation
+
+Install Ingress2Gateway v1.0.0 via multiple methods:
+```bash
+# Install with Go
+go install github.com/kubernetes-sigs/ingress2gateway@v1.0.0
+
+# Install with Homebrew (macOS/Linux)
+brew install ingress2gateway
+
+# Or download binary from GitHub Releases, or build from source
+```
+
+### 2. Run Translation
+
+The tool can process local manifest files or read directly from the cluster.
+```bash
+# Process local file
+ingress2gateway print --input-file my-ingress.yaml --providers=ingress-nginx > gateway-api.yaml
+
+# Process all Ingress in a specific namespace
+ingress2gateway print --namespace my-app --providers=ingress-nginx > gateway-api.yaml
+
+# Process all Ingress across the cluster (use with caution)
+ingress2gateway print --providers=ingress-nginx --all-namespaces > gateway-api.yaml
+```
+
+Output can be specified for implementation-specific extensions via `--emitter`, e.g., `--emitter envoy-gateway`.
+
+### 3. Review Output (Critical Step)
+
+After running the command, besides generating the `gateway-api.yaml` file, warnings and info logs are output. These must be carefully reviewed.
+*   **Successful conversion example**: `nginx.ingress.kubernetes.io/enable-cors: "true"` is converted to a `CORS` filter in `HTTPRoute`.
+*   **Warnings requiring manual handling**:
+    - `Unsupported annotation nginx.ingress.kubernetes.io/configuration-snippet`: This annotation cannot be auto-converted; consult target Gateway API implementation docs for alternatives.
+    - `Using case-insensitive regex path matches`: Indicates the tool generated case-insensitive regex, may need adjustment.
+    - Warnings about timeouts (`proxy-read/send-timeout`) and request body size (`proxy-body-size`) as "best-effort conversion" or "not supported," indicating need for manual verification.
+
+### 4. Verify and Deploy
+
+Generated Gateway API manifests must be thoroughly tested in development environments before deployment. After verification, a progressive deployment strategy is recommended: deploy Gateway API configuration alongside existing Ingress, gradually switching traffic via weighted DNS, cloud load balancers, or platform traffic splitting. After all traffic is stably migrated to the new controller, decommission the old Ingress resources and controller.
+
+## SRE Essentials
+
+### Relationship with Reliability, Observability, and Incident Response
+*   **Risk Management**: Network configuration changes are a major source of service disruptions. Using well-tested tools like Ingress2Gateway significantly reduces configuration drift and failures from manual conversion errors. It shifts risks from production "black swan" events to development-phase "known issues."
+*   **Progressive Release and Error Budget**: Tool supports generating parallel configurations, facilitating progressive release (canary/blue-green). SRE teams can combine [[error-budget]] strategies for finer risk control during migration, quickly rolling back if the new path shows stability issues.
+*   **Incident Response**: Detailed rollback plans should be pre-established during migration. When issues are detected through observability signals (error rate increase, latency increase), teams should be able to quickly switch back to the original Ingress path.
+
+### Best Practices and Common Anti-Patterns
+*   **Best Practices**:
+    1.  **Phased migration**: Migrate by service, namespace, or domain.
+    2.  **Complete testing**: Test not only translated functionality in development, but also failover, monitoring, and alerting.
+    3.  **Code-managed**: Incorporate generated Gateway API manifests into GitOps workflows for version control.
+    4.  **Heed warnings**: All warning messages from the tool should be treated as "action items," confirmed and resolved individually.
+*   **Common Anti-Patterns**:
+    1.  **"One-click migration" fantasy**: Ignoring tool output warnings, expecting the tool to perfectly handle all non-standard configurations.
+    2.  **Skipping verification**: Directly applying unverified manifests in production.
+    3.  **Ignoring implementation differences**: Assuming different Gateway API implementations (Istio, Envoy Gateway) behave identically to Ingress-NGINX, ignoring URL normalization, default timeout, and other behavioral differences.
+
+### Related Metrics (SLI/SLO/SLA)
+During and after migration, focus on these network-level reliability metrics:
+*   **SLI**: HTTP request success rate, latency (especially p95/p99), 5xx error rate. Compare pre- and post-migration metrics to ensure the new path performs no worse than the old.
+*   **SLO**: Set temporary, stricter error budgets during migration (e.g., raising availability target from 99.9% to 99.95% temporarily) to incentivize greater caution.
+*   **Change Management SLA**: Establish end-to-end time SLA from change application through verification to full effect, ensuring migration windows are controllable.

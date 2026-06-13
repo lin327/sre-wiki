@@ -1,0 +1,101 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Heatmap Data Link Field Parsing Error with Multi-Frame Queries and Add Field Transformation"
+description: "Grafana heatmap components may resolve data link variables to wrong fields after using multi-frame queries and 'Add field from calculation' transformation, causing tooltip display anomalies."
+category: observability-tools
+order: 0
+lastUpdated: 2025-03-20
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/125093
+    title: "Heatmap: Datalinks resolve to wrong field after add field from calculation transformation on multi-frame queries"
+tags: [grafana, heatmap, bug, datalink, transformation]
+---
+
+# Grafana Heatmap Data Link Field Parsing Error with Multi-Frame Queries and Add Field Transformation
+
+## Overview
+
+In Grafana's observability practice, [[heatmap]] panels are key tools for visualizing time series data distribution and density. When operations or SRE engineers need to quickly navigate from specific data points in a heatmap to associated dashboards, the Data Links feature provides great convenience. This document details a defect introduced in Grafana 12.x: when heatmap data sources involve multi-frame queries and the "Add field from calculation" transformation is applied, data link variables using `${__field.*}` or `${__data.fields[...]}` syntax may resolve to incorrect fields, causing anomalous link information in tooltips. This issue directly impacts the navigability of monitoring data and the efficiency of incident investigations.
+
+## Core Concepts
+
+Understanding this issue requires mastering several core concepts:
+
+1. **Multi-Frame Queries**: Some data sources (such as Prometheus's `... by (host)` queries) return an independent data frame for each time series (e.g., each host). Each data frame typically contains a time column (Time) and a value column (Value), along with unique labels for that series.
+
+2. **"Add Field from Calculation" Transformation**: This transformation allows users to create new columns by performing mathematical operations on existing columns. For example, in `binary` mode, you can subtract a fixed value (such as 86400000 milliseconds, i.e., one day) from the `Time` column to create a new column named `prev_bucket_ms`.
+
+3. **Data Link Variables**: Grafana allows using variables in data link URLs to dynamically populate context information.
+    - `${__field.labels.host}`: Resolves the `host` label value of the data series the current field belongs to.
+    - `${__data.fields["prev_bucket_ms"]}`: Directly references the value of the field named `prev_bucket_ms` in the current data frame.
+
+4. **Core Mechanism of the Issue**: Before Grafana 12.x, when performing the "Add field from calculation" transformation, Grafana would pre-join the input multi-frame data, ensuring all frames shared the same set of calculated columns. In 12.x, an optimization for the `binary` + `fixed` mode ([#93602](https://github.com/grafana/grafana/pull/93602)) caused this pre-join step to be skipped. Each input frame retained its own copy of the calculated column. Subsequently, the heatmap panel internally performs an `outerJoinDataFrames` operation, generating an interleaved wide frame with a column order similar to: `[Time, Value(SeriesA), prev_bucket_ms, Value(SeriesB), prev_bucket_ms, ...]`.
+
+5. **Incorrect Parsing**: The heatmap's tooltip component (`HeatmapTooltip.tsx`) uses simple positional index logic (`data.series?.fields[yValueIdx + 1]`) when extracting fields for data links. This causes certain Y-axis rows (i.e., certain data series) to resolve to the calculated column (`prev_bucket_ms`) instead of the expected value column (Value), triggering variable resolution errors.
+
+## Practice
+
+### Reproduction Steps
+
+1. **Prepare data source**: Use a query that returns multiple frames, such as: `rate(metric_total{job="..."}[5m]) by (host)`. This generates an independent data frame for each `host`, containing `[Time, Value]` columns and the `host` label.
+
+2. **Apply transformation**:
+    - In the panel's `Transform` tab, add the `Add field from calculation` transformation.
+    - Configure parameters: `Mode: binary`, `Left: Time`, `Operator: -`, `Right: fixed`, `Fixed value: 86400000`, `Alias: prev_bucket_ms`.
+
+3. **Configure data links**:
+    - In the heatmap panel's `Data links` settings, add or modify the default data link.
+    - Link URL example: `/d/<targetDashboardUid>?var-host=${__field.labels.host}&from=${__data.fields["prev_bucket_ms"]}&to=${__value.time}`.
+
+4. **Verify behavior**: Enter the dashboard, use mouse pin on the heatmap tooltip, and check the generated link parameters row by row (i.e., per series).
+    - **Expected behavior**: For all rows, the `var-host` parameter should correctly resolve to the corresponding hostname.
+    - **Actual behavior**: Some rows' `var-host` parameter displays as empty, or displays as the literal `prev_bucket_ms`.
+
+### Root Cause Analysis
+
+As described in the "Core Concepts" section above, the issue stems from a mismatch between the `calculateField` transformation optimization in Grafana 12.x and the heatmap component's internal field selection logic. The interleaved arrangement of calculated columns and value columns in the wide frame, combined with the heatmap's position-based (rather than semantic-based, i.e., field name/type) field selection, is the root cause of the error.
+
+### Recommended Solutions and Workarounds
+
+The Grafana development team has confirmed this issue and proposed two fix directions:
+1. Modify the heatmap component to index based on Value fields rather than positions in the original `fields` array.
+2. Modify the `calculateField` transformation logic to ensure stable column append order or perform pre-joining in multi-input frame scenarios.
+
+Before an official fix is released, the following **workaround** can be used:
+
+1. **Before** the `Add field from calculation` transformation, add a `Join by field` transformation.
+    - Transformation type: `Join by field`
+    - Operation field: `Time`
+    - Mode: `Outer join` (default)
+
+2. **Effect**: This operation pre-joins all independent data frames into a single wide frame, restoring the data structure from older versions, allowing subsequent `calculateField` transformations and heatmap data link parsing to work correctly.
+
+**Application order**:
+`Raw multi-frame data` -> `Join by field (Time)` -> `Add field from calculation (binary - fixed)` -> `Heatmap Panel`
+
+## SRE Key Points
+
+### Relationship to Reliability, Observability, and Incident Response
+
+- **Monitoring Reliability**: This defect directly impacts the reliability of monitoring tools. Data links are critical paths for SRE teams to quickly perform context switches during incident response (e.g., jumping from an overview chart to specific host details). Broken links slow down fault localization (MTTI) and repair (MTTR) processes.
+- **Observability**: Heatmaps are important visualization tools for understanding system load distribution and anomaly patterns. The accuracy of their interactive features (such as tooltips and links) is a critical part of ensuring observability data is "usable" and "actionable."
+- **Incident Response**: During emergencies, relying on preset data links for quick navigation is a common operation. Such issues may prevent engineers from obtaining expected context information at critical moments, impacting decision-making.
+
+### Best Practices and Common Anti-Patterns
+
+- **Best Practices**:
+    1. **Version Awareness**: After upgrading Grafana major versions (e.g., 11.x -> 12.x), perform regression testing on critical dashboard core interactive features (including data links).
+    2. **Transformation Order Design**: When combining multiple data transformations, understand their interaction logic. When dealing with multi-frame data and calculated fields, pre-joining (such as `Join by field`) can avoid many layout and indexing issues.
+    3. **Variable Reference Verification**: When configuring data links using `${__data.fields[...]}` syntax, use tooltip previews or inspect the actual generated URLs to verify variable resolution is correct.
+
+- **Common Anti-Patterns**:
+    1. **Over-reliance on Positional Indexing**: In Dashboard-as-Code or templates, avoid assuming the absolute position of specific fields in data frames; instead, use field names or semantic references where possible.
+    2. **Ignoring Inter-Transformation Dependencies**: After adding complex calculated field transformations, failing to check whether downstream visualization components (such as heatmaps, tables) can correctly interpret the data structure.
+
+### Related Metrics (SLI/SLO/SLA)
+
+While this issue doesn't directly correspond to a specific SLI, its fix quality can be correlated with the following observability dimensions:
+- **Monitoring Panel Feature Availability (SLO)**: An internal SLO can be defined such as "99% of heatmap data links should correctly resolve their target parameters," used to measure the user experience reliability of the monitoring interface.
+- **Incident Investigation Efficiency**: The workaround for this issue itself is a "reliability engineering" practice for tool defects, aimed at restoring the engineering team's established work efficiency.

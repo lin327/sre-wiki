@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Conformance Program: First Round of Compatibility Test Results"
+category: "Prometheus Monitoring"
+confidence: medium
+---
+
+# Prometheus Conformance Program: First Round of Compatibility Test Results
+
+## Overview
+
+The Prometheus Conformance Program is an initiative launched by the Prometheus community aimed at ensuring interoperability between different projects and vendor software within the Prometheus monitoring ecosystem. For SREs, this program is critical because it provides objective criteria for evaluating and selecting monitoring components, helping build a standardized, reliable, and seamlessly integrable monitoring technology stack, thereby reducing operational complexity and vendor lock-in risk.
+
+## Core Concepts
+
+The program revolves around three key terms whose definitions help facilitate clear communication:
+
+- **Conformance**: Refers to the program itself.
+- **Compliant**: Refers to software that has passed a specific category's test suite.
+- **Compatibility**: Refers to the compatibility rating software receives based on test results.
+
+To better test and categorize various software, the program introduces four new categories:
+
+1.  **Metrics Exposers**: Software libraries or applications that can expose metrics in Prometheus format.
+2.  **Agents/Collectors**: Components responsible for collecting, forwarding, or processing metric data.
+3.  **Prometheus Storage Backends**: Systems capable of storing and querying Prometheus time series data.
+4.  **Full Prometheus Compatibility**: Complete solutions providing highly compatible core Prometheus functionality (such as PromQL queries, data ingestion).
+
+## Practice
+
+Participation in the program is relatively straightforward:
+
+1.  **Registration**: Projects or vendors wishing to participate in testing can register through Prometheus official community channels (such as mailing lists, Slack) by contacting the maintenance team.
+2.  **Testing**: The maintenance team or designated working groups (such as the planned WG Conformance) will evaluate registered software based on predefined test suites.
+3.  **Result Publication**: Software that passes testing will be listed on the official compatibility list and receive corresponding ratings. Initial testing may include some manual or semi-automated components, such as using Julius Volz's PromQL compatibility tests to evaluate remote write functionality.
+
+As of October 2021, the first round of test results showcases the ecosystem's current state:
+
+- **Full Compatibility Projects**: Cortex, M3, Promscale, Thanos passed; VictoriaMetrics did not pass and does not plan to.
+- **Full Compatibility Services (aaS)**: Chronosphere, Grafana Cloud passed; AWS Managed Service for Prometheus, Google Cloud Managed Service for Prometheus, New Relic, Sysdig Monitor did not pass (the AWS service is based on Cortex and may pass after future updates).
+- **Agents/Collectors**: Grafana Agent, OpenTelemetry Collector, Prometheus itself passed; Telegraf, Vector, VictoriaMetrics Agent did not pass.
+
+## SRE Essentials
+
+**Connection to SRE Core Areas**
+
+- **Reliability**: Using certified (Compliant) components helps build more reliable, behavior-predictable monitoring systems. For example, confirming a storage backend is compatible with Prometheus ensures data format and query behavior consistency during failover or migration, reducing operational risk.
+- **Observability**: The program strengthens observability standards based on the Prometheus ecosystem. When collectors, storage, and query layers all follow the same compatibility specification, the entire observability pipeline is more stable, reducing the possibility of data loss or parsing errors.
+- **Incident Response**: During incident response, using standardized toolchains reduces context switching. If SRE teams and development teams use compatible monitoring tools, they can collaborate more efficiently to troubleshoot issues.
+
+**Best Practices and Anti-Patterns**
+
+- **Best Practice**: During technology evaluation, make "passing Prometheus compatibility tests" an important technical selection criterion; actively track and participate in working groups like WG Conformance to promote ecosystem health.
+- **Common Anti-Pattern**: Blindly trusting software that claims to be "Prometheus compatible" or a "direct Prometheus replacement" without referencing official certification results and test scope (as in the VictoriaMetrics case). Ignoring compatibility differences may lead to subtle query errors or data inconsistencies during long-term operations.
+
+**Related Metrics (SLI/SLO/SLA)**
+
+The program directly impacts SLI/SLO definitions related to monitoring system reliability:
+
+- **SLI (Service Level Indicator)**: Can be "percentage of requests returning correct results from Prometheus-certified storage backends."
+- **SLO (Service Level Objective)**: Can set the internal goal of "100% use of software versions that passed Conformance testing" for core components on the critical monitoring data path.
+
+Adopting certified components helps ensure that the data metrics (SLIs) provided by the monitoring system are themselves accurate and reliable, which is the foundation for defining and achieving upper-level business SLOs. For more on observability and SRE fundamentals, see [[reliability-engineering]] and [[observability]].
+
+- To explore how to define SLIs based on reliable monitoring data, see [[slis-and-slos]].
+- For core concepts in the Prometheus ecosystem, refer to [[prometheus-core-concepts]].

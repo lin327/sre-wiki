@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "仪表板配置持久化问题分析"
 description: "分析Grafana仪表板因嵌套默认值清除后无法保存的根因与规避方法"
@@ -11,6 +12,8 @@ sources:
     title: "“PanelEdit: Dashboard not saved after clearing nested default value” GitHub Issue"
 tags: [Grafana, Dashboard, Serialization, StateManagement, Configuration]
 ---
+
+# 仪表板配置持久化问题分析
 
 ## 概述
 在 SRE 实践中，监控仪表板（Dashboard）是承载服务级别目标（SLO）、关键 SLI 指标和运行状况的核心载体。其配置的准确性和可持久性直接影响故障响应效率与事后复盘质量。本文档基于一个具体的 Grafana 仪表板保存失败案例，深入分析前端状态管理与配置序列化之间的差异问题，并提供相应的规避方法与最佳实践。此类问题若不加以重视，可能导致精心调优的监控视图在关键时刻“丢失”，严重影响团队的态势感知能力。

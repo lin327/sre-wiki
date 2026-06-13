@@ -1,0 +1,122 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Linux Network Stack"
+---
+
+# Linux Network Stack
+
+Packets travel from user-space applications through the socket layer, transport layer, network layer, netfilter hooks, and finally to the network card driver. Understanding this path is critical for troubleshooting latency, packet loss, and connectivity issues.
+
+## Network Stack Layers
+
+```
+User-space applications (nginx, redis ...)
+  |
+Socket layer (BSD socket API)       <- connect/accept/read/write
+  |
+Transport layer (TCP / UDP)         <- Port numbers, reliable transport, congestion control
+  |
+Network layer (IPv4 / IPv6)         <- Routing, fragmentation
+  |
+netfilter (iptables/nftables)       <- Filtering, NAT, mangle
+  |
+Neighbor subsystem (ARP / NDP)      <- MAC address resolution
+  |
+Device driver (NIC)                 <- ring buffer, DMA
+```
+
+## Core Concepts
+
+**Sockets** -- The interface between user space and the kernel network stack. Each TCP connection corresponds to a socket; the kernel maintains send/receive buffers and a state machine.
+
+**Network Namespaces** -- Network stack isolation units. Each namespace has its own independent interfaces, routing tables, and iptables rules. Docker and Kubernetes Pods rely on this mechanism.
+
+**veth pair** -- Virtual ethernet device pairs. Data sent from one end is received from the other, used to connect different namespaces. **Bridge** is a virtual switch that bridges multiple interfaces together. Docker uses the `docker0` bridge by default.
+
+```bash
+ss -s                                    # Socket statistics overview
+ss -tnp                                  # All TCP connections and states
+ss -tlnp                                 # Listening ports
+ip netns list                            # List all namespaces
+ip netns exec test-ns ip addr            # Execute command within a namespace
+```
+
+## iptables / nftables
+
+netfilter is the kernel packet filtering framework. Users configure rules through iptables or nftables.
+
+**Four tables**: `filter` (filtering), `nat` (address translation), `mangle` (modify packet headers), `raw` (connection tracking exemption)
+
+**Five chains**: `PREROUTING` -> `INPUT` / `FORWARD` -> `OUTPUT` -> `POSTROUTING`
+
+```bash
+iptables -L -n -v --line-numbers         # View filter table rules
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -j DROP
+
+nft list ruleset                         # nftables view ruleset
+nft add rule inet filter input tcp dport 22 accept
+```
+
+## Network Troubleshooting Tools
+
+```bash
+# ss -- Socket statistics
+ss -tan state time-wait | wc -l          # TIME_WAIT connection count
+ss -tnp | grep :8080                     # Connections on specific port
+ss -tmi                                  # Socket buffer usage
+
+# ip -- Network configuration
+ip addr show                             # Interfaces and addresses
+ip route show                            # Routing table
+ip -s link show eth0                     # Interface statistics (drops, errors)
+
+# tcpdump -- Packet capture
+tcpdump -i eth0 port 80 -nn             # Traffic on specific port
+tcpdump -i eth0 host 10.0.0.5 -w /tmp/capture.pcap
+tcpdump -i eth0 'tcp[tcpflags] & tcp-syn != 0' -nn  # SYN only
+```
+
+## Common SRE Network Issues
+
+### TIME_WAIT Accumulation
+
+In short-lived connection scenarios, the active closer enters TIME_WAIT, consuming port resources:
+
+```bash
+ss -tan state time-wait | wc -l          # Count
+sysctl -w net.ipv4.tcp_tw_reuse=1        # Allow reuse
+sysctl -w net.ipv4.tcp_fin_timeout=30    # Shorten FIN_WAIT_2 timeout
+```
+
+### Port Exhaustion
+
+A large number of outbound client connections may exhaust ephemeral ports:
+
+```bash
+sysctl net.ipv4.ip_local_port_range      # View range
+sysctl -w net.ipv4.ip_local_port_range="1024 65535"
+```
+
+### conntrack Table Full
+
+When the netfilter connection tracking table is full, new connections are dropped:
+
+```bash
+cat /proc/sys/net/netfilter/nf_conntrack_count
+cat /proc/sys/net/netfilter/nf_conntrack_max
+sysctl -w net.netfilter.nf_conntrack_max=262144
+conntrack -L | head -20                  # View tracking table
+```
+
+### Latency Troubleshooting Path
+
+```
+1. ping          -- Basic connectivity and RTT
+2. mtr           -- Per-hop latency localization
+3. ss -tnp       -- Confirm connection state
+4. tcpdump       -- Packet capture to analyze handshake
+5. ip -s link    -- NIC drop counters
+6. dmesg | grep net -- Kernel network alerts
+```

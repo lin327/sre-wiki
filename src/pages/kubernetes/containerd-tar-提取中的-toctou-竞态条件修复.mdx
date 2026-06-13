@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "containerd tar 提取中的 TOCTOU 竞态条件修复"
 description: "通过加固文件操作来防止在容器镜像层解压过程中出现 TOCTOU 竞态漏洞，提升了容器运行时安全性。"
@@ -11,6 +12,8 @@ sources:
     title: "[release/2.0] Fix TOCTOU race bug in tar extraction"
 tags: [security, TOCTOU, race-condition, containerd, container-runtime]
 ---
+
+# containerd tar 提取中的 TOCTOU 竞态条件修复
 
 ## 概述
 在容器生态系统中，安全地解压镜像层（通常是 tar 归档文件）是构建容器文件系统的基础且关键的步骤。一个在文件系统操作中常见的漏洞是 **TOCTOU（Time-of-Check to Time-of-Use）竞态条件**。本次 containerd 项目的修复，正是针对 tar 提取过程加固，旨在消除此类潜在的安全风险，确保从镜像到容器文件系统的转换过程更加可靠和安全。

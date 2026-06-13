@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Portal 嵌套渲染顺序修复与 UI 可靠性"
 description: "解决 React Portal 嵌套时因 DOM 提交顺序导致的 z-index 与视觉层级错乱问题，提升前端组件可靠性。"
@@ -11,6 +12,8 @@ sources:
     title: "Portal: Fix nested portals to overlay correctly"
 tags: [react, portal, z-index, frontend-reliability, ui]
 ---
+
+# Portal 嵌套渲染顺序修复与 UI 可靠性
 
 ## 概述
 在 Grafana 等复杂前端应用中，组件库（如 Portal、Combobox、Modal）的可靠渲染是用户体验的基础。`Portal` 组件常用于将子元素渲染到 DOM 树的其他位置（如模态框容器），以解决 CSS 上下文（如 `overflow: hidden`）或层级问题。然而，当多个 `Portal` 组件嵌套并指向同一目标容器时，React 的渲染机制会导致视觉层级错乱，这直接构成了一个 **UI 层面的可靠性问题**。本页面总结了该问题的成因、通用解决方案及其在 SRE 实践中的意义。

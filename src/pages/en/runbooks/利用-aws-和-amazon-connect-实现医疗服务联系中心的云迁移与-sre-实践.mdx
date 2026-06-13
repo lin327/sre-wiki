@@ -1,0 +1,81 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Cloud Migration and SRE Practices for Healthcare Contact Centers with AWS and Amazon Connect"
+description: "Analysis of how New York Cancer and Blood Specialists achieved 54% patient registration time improvement by migrating to Amazon Connect cloud contact center."
+category: SRE Case Studies
+order: 0
+lastUpdated: 2025-04-18
+confidence: high
+---
+
+# Cloud Migration and SRE Practices for Healthcare Contact Centers with AWS and Amazon Connect
+
+## Overview
+
+This document details how New York Cancer and Blood Specialists (NYCBS) modernized their healthcare customer experience by migrating their traditional call center to an AWS cloud-native solution based on [[Amazon-Connect]]. This case demonstrates how to apply SRE principles and modern cloud architecture in the healthcare domain, which has strict requirements for reliability, compliance, and performance, to handle over 250,000 patient calls annually and successfully reduce patient registration time by 54%. The solution not only improves operational efficiency but, through automated and intelligent routing and processing, directly enhances patient access to care and timeliness.
+
+## Core Concepts
+
+Before diving into this case, several key technical concepts need to be understood:
+
+1.  **Amazon Connect**: A cloud-based Contact Center as a Service (CCaaS) providing omnichannel customer experiences. Unlike traditional on-premises call centers, it offers native elasticity, scalability, and pay-as-you-go pricing.
+2.  **HIPAA Compliance**: The U.S. Health Insurance Portability and Accountability Act imposes strict security and privacy requirements on the handling and storage of Protected Health Information (PHI). Building HIPAA-compliant systems on AWS requires correct configuration and use of AWS HIPAA-eligible services, along with implementation of strict access controls, encryption, and logging.
+3.  **Contact Trace Records (CTR)**: Detailed metadata logs of calls, including caller number, handling agent, call duration, disposition codes, etc. CTRs are critical data for performance analysis, quality monitoring, and troubleshooting.
+4.  **Microservices Architecture**: An approach to building applications as a collection of small, independent services. Each service is built around specific business capabilities and communicates through lightweight APIs. This architecture improves flexibility, maintainability, and independent deployability.
+5.  **Infrastructure as Code (IaC)**: Using code (such as AWS CloudFormation) to automate and manage cloud infrastructure configuration, version control, and deployment processes, ensuring environment consistency and repeatability.
+
+## Practices
+
+The NYCBS migration project was assisted by AWS Partner Pronetx (now Caylent), spanning 13 weeks and divided into three phases: Discovery and Foundation, Build and Implementation, and Acceptance Testing and Go-Live. The final architecture is a layered cloud solution that considers HIPAA compliance.
+
+### Architecture Design
+
+The core of the solution is a three-layer architecture, each responsible for handling specific aspects of customer experience operations:
+
+1.  **CTR Management Microservice Layer**:
+    -   **Function**: Handles post-call data flows. Uses Amazon API Gateway as a unified entry point, with backend AWS Lambda functions (such as `Get Disposition Code` and `Update CTRs`) responsible for retrieving and processing call disposition codes. Amazon DynamoDB serves as a fast, scalable NoSQL database for storing disposition code data, supporting low-latency queries.
+    -   **SRE Perspective**: This layer achieves decoupling and automation of post-call processing workflows, reducing manual work and ensuring data consistency. Lambda's serverless nature provides high availability and automatic scaling, reducing operational burden.
+
+2.  **Core Contact Center Service Layer**:
+    -   **Function**: This is the "brain" of the system. The central Amazon Connect instance manages all inbound agent flows and call routing across more than 100 specialized queues. AWS Secrets Manager securely stores sensitive information such as database credentials and API keys. Amazon Polly provides text-to-speech capabilities for Interactive Voice Response. Complex routing logic is managed through DynamoDB configuration tables and Lambda functions, as well as Lambda functions handling IVR workflows.
+    -   **SRE Perspective**: Amazon Connect provides the core elasticity and reliability of the contact center. Storing configuration logic in DynamoDB and managing it through Lambda achieves "configuration as code," making routing policy changes versioned, auditable, and easy to roll back. Secrets Manager avoids hardcoded credentials, representing security operations best practices.
+
+3.  **Call Recording and AI/ML Pipeline Layer**:
+    -   **Function**: Call recordings and related artifacts are stored in Amazon S3. A dedicated Lambda function processes voicemail, then calls Amazon Transcribe to convert voicemail content to text. Subsequent Lambda functions create tickets based on transcribed text. Amazon Lex provides conversational chatbot capabilities. The entire pipeline also integrates with the Order Management System (OMS) queries.
+    -   **SRE Perspective**: This layer transforms unstructured data (recordings) into actionable structured tickets, achieving end-to-end automation. Using S3 for recording storage leverages its high durability (11 nines of durability) to ensure critical business data safety. The introduction of AI services (Transcribe, Lex) improves service efficiency and user experience.
+
+### Key Technical Highlights and Compliance Implementation
+
+-   **From Multi-Tenant to Dedicated Instance**: Migrating from a shared environment to a dedicated Amazon Connect instance was a key decision for gaining advanced features (such as multilingual routing) and better performance isolation.
+-   **Multilingual and Intelligent Routing**: Implemented automatic language detection routing for English, Spanish, Russian, and Mandarin, with specialized queue priorities for urgent cases such as oncology.
+-   **HIPAA Compliance Pillars**:
+    -   **Encryption**: Uses AWS KMS to encrypt data at rest (such as recordings in S3, data in DynamoDB) and data in transit.
+    -   **Access Control**: Implements Role-Based Access Control (RBAC), strictly controlling who can access which resources through IAM.
+    -   **Credential Management**: Uses AWS Secrets Manager for secure storage and rotation of third-party system credentials.
+    -   **Audit Logging**: Records all API activity and resource access through Amazon CloudWatch Logs and AWS CloudTrail to meet audit requirements.
+-   **Automated Operations**: Uses AWS CloudFormation for Infrastructure as Code, deploying through CI/CD pipelines, eliminating third-party management fees, reducing operational costs, and improving deployment speed and reliability.
+
+## SRE Key Points
+
+This case is an exemplary application of SRE principles in the healthcare customer experience domain:
+
+-   **Connection to Reliability**:
+    -   **SLO/SLI**: For a contact center, key SLOs may include call connection success rate, average handling time, IVR interaction success rate, etc. Cloud-native architecture (such as Amazon Connect's elasticity) provides a solid foundation for meeting these SLOs.
+    -   **Error Budget Management**: Through insights from real-time monitoring (CloudWatch, Operata), teams can make changes more safely (such as new feature releases, routing policy adjustments) because the cloud platform provides more controllable fault isolation and rollback capabilities.
+-   **Best Practices**:
+    -   **Decoupling and Microservices**: Decoupling CTR processing, core routing, AI analysis, and other capabilities allows each part to be independently developed, deployed, and scaled, consistent with SRE maintainability principles.
+    -   **Observability**: The entire architecture deeply integrates CloudWatch for monitoring, logging, and alerting, combined with Operata's call quality analysis, achieving deep insight into system health and performance.
+    -   **Automate Everything**: From infrastructure deployment (CloudFormation) to post-call processing (Lambda) to voicemail-to-ticket conversion (Transcribe + Lambda), minimizing human intervention, reducing operational errors, and improving efficiency.
+    -   **Security and Compliance as Baseline**: Treating HIPAA compliance requirements (encryption, access control) as a foundational part of architecture design rather than an afterthought embodies the SRE principle of "secure by default."
+-   **Common Anti-Pattern Avoidance**:
+    -   Avoid directly managing underlying servers or databases in the cloud environment; instead use managed services (such as Amazon Connect, DynamoDB, S3), transferring operational responsibility to AWS.
+    -   Avoid creating tightly coupled monolithic applications; instead build microservices that can independently scale and isolate failures.
+-   **Related Metrics**:
+    -   **Business SLI**: Patient registration time, first-call resolution rate.
+    -   **Technical SLI**: Call connection latency, Lambda function execution time, API response time, system error rate.
+    -   **Cost Metrics**: Cost per call, infrastructure utilization.
+
+## Summary
+
+The New York Cancer and Blood Specialists case demonstrates that by migrating a traditional, manual contact center to a modern, cloud-native Amazon Connect architecture, healthcare organizations can not only significantly improve operational efficiency and patient satisfaction but also gain architectural elasticity, scalability, and automation capabilities while ensuring strict compliance requirements like HIPAA. The core of this transformation lies in adopting a layered microservices design, comprehensive encryption and access control, and Infrastructure as Code automated operations practices. For any organization facing the modernization challenge of high-volume, complex routing, and high-compliance contact centers, this provides valuable architectural reference and implementation guidance.

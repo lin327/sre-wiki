@@ -1,0 +1,76 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Panel Paste Bug Causes Configuration Data Loss"
+description: "A known issue in Grafana where pasting a panel directly into a dashboard may cause the panel's original configuration (such as queries, visualization settings) to be lost."
+category: bugs
+order: 0
+lastUpdated: 2024-03-10
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/119936
+    title: "Bug: When pasting panel directly into the dashboard, it loses config data"
+tags: [grafana, dashboard, configuration, bug, panels]
+---
+
+# Grafana Panel Paste Bug Causes Configuration Data Loss
+
+## Overview
+
+In Grafana, the configuration of dashboards and panels is central to monitoring observability. Users frequently need to copy and paste panels to quickly reuse existing query and visualization settings. According to Grafana official Issue [#119936](https://github.com/grafana/grafana/issues/119936), the current version (at least as reported on 2024-03-10) has a critical defect: when users **directly paste** a panel onto the dashboard canvas, the panel's original configuration data may be lost. This bug has a direct impact on the workflows of SRE and monitoring engineers, potentially causing unexpected configuration drift and troubleshooting difficulties.
+
+## Core Concepts
+
+The core of this issue lies in the inconsistent logic between two different internal Grafana components handling panel paste operations.
+
+1. **`DashboardScene`'s `pastePanel()`**: This function handles top-level dashboard paste operations. According to the issue description, this function fails to completely preserve all configuration data of the source panel during pasting. This function may be responsible for handling scenarios where a panel is pasted onto the dashboard "root" level without a specific layout manager context.
+2. **`DefaultGridLayoutManager`'s `pastePanel()`**: This function handles paste operations within a specific grid layout manager. The issue notes that panels pasted through this path do **not** lose configuration data. This indicates that this function's implementation is more robust, correctly serializing and deserializing the panel's complete JSON model.
+
+In short, paste operations triggered by different methods (e.g., pasting onto canvas whitespace vs. pasting into a row container) may produce different results. This inconsistency is a clear software defect. Panel configuration data typically contains critical information such as data source queries, variable references, visualization types (such as graphs, tables), thresholds, aliases, etc.
+
+## Practice
+
+### Bug Manifestation
+
+SRE or monitoring engineers using Grafana to build and adjust dashboards may encounter the following scenario:
+1. Copy a carefully configured panel from one dashboard.
+2. Switch to another dashboard, or to a different location in the same dashboard.
+3. Use `Ctrl+V` (or the corresponding paste operation) to paste the panel directly onto the canvas.
+4. **Observe**: The newly pasted panel may display in a default state, or be missing specific data source queries, query conditions, graph override settings, etc., requiring manual reconfiguration.
+
+### Temporary Solutions and Verification
+
+Before this bug is fixed upstream, the following temporary measures can be taken:
+1. **Use Internal Paste Paths**: Try pasting the panel into a specific Row or layout container rather than the absolute blank area of the canvas, which may trigger the `DefaultGridLayoutManager`'s correct processing logic.
+2. **Import/Export JSON**: As a more reliable but slightly more cumbersome alternative, export the panel's JSON model through its "Inspect" menu, then use the "Import" function in the target dashboard to import the JSON, which ensures configuration integrity.
+3. **Pre-Upgrade Verification**: When planning a Grafana version upgrade, verify in the test environment whether this issue has been fixed in the new version.
+
+## SRE Key Points
+
+### Impact on Reliability and Observability
+
+*   **Configuration Drift Risk**: Unexpectedly losing panel configuration directly leads to inaccurate monitoring views, potentially causing critical metrics to not be correctly displayed or alert rules to become ineffective, impacting system observability.
+*   **Troubleshooting Efficiency**: During emergency incidents, SREs need to quickly adjust dashboards to focus on issues. If paste operations are unreliable, manual configuration time increases, delaying response.
+*   **Infrastructure as Code (IaC) Challenges**: Many teams use JSON or code (such as Terraform) to manage dashboards. This bug highlights the potential risks when synchronizing with codified versions after UI operations, emphasizing that review and verification must be performed after changes.
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    *   **Post-Change Verification**: After any UI modification to production dashboards (including paste operations), immediately check whether the new panel configuration is correct.
+    *   **Version Control**: Strongly recommended to include critical dashboard JSON definitions in version control systems (such as Git) as the "single source of truth." This way, even if UI operations have issues, you can quickly recover to a known good state.
+    *   **Use API/CLI**: For programmatic or batch operations, prefer Grafana API or `grafana-cli` tools, which are typically more stable and predictable than UI operations.
+*   **Anti-Patterns**:
+    *   **Blindly Trusting the UI**: Believing all operations on the UI are idempotent and reliable without secondary confirmation can allow configuration errors to silently enter production.
+    *   **Isolated Debugging**: When encountering panel display anomalies, don't just suspect data sources or queries; also consider whether the panel's own configuration was compromised by an operational bug.
+
+### Related Metrics (SLI/SLO/SLA)
+
+This bug itself doesn't directly correspond to an SLI, but it affects dashboard configuration accuracy. It can be viewed as a factor impacting the reliability of the **configuration management process**.
+
+*   **Indirect SLI**: Consider defining "critical dashboard configuration accuracy rate," which is the proportion of panels whose configuration is completely consistent with the codified definition version in random spot checks. This bug would degrade that metric.
+*   **Incident Correlation**: If configuration loss leads to monitoring blind spots, which in turn affects the Mean Time to Detect (MTTD) of faults, this bug can be considered a Root Cause factor.
+
+### Related Pages
+
+*   When encountering panel configuration loss, consult the `[[grafana-panel-configuration]]` page to understand the components of the panel model.
+*   This issue also relates to the practical importance of `[[dashboard-version-control]]`, i.e., managing dashboard changes through version control.

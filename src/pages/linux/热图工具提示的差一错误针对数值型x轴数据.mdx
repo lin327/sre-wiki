@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "热图工具提示的差一错误（针对数值型X轴数据）"
 description: "在Grafana热图中，当X轴为数值型时，工具提示显示的值与坐标轴标签存在差一错误。"
@@ -11,6 +12,8 @@ sources:
     title: "Heatmap: off-by-one error in tooltip for data with numeric X-axis"
 tags: [grafana, heatmap, visualization, bug-fix]
 ---
+
+# 热图工具提示的差一错误（针对数值型X轴数据）
 
 ## 概述
 在站点可靠性工程中，准确的数据可视化是故障诊断和系统健康监控的基石。Grafana的热图（Heatmap）面板是一种强大的工具，用于可视化数据随时间或另一维度的分布密度。然而，一个影响数据解读准确性的问题——**工具提示差一错误**——在特定条件下被报告。此问题会导致运维人员在分析监控数据时产生混淆，特别是在处理非时间序列的数值型数据时，可能影响事件响应的判断效率。虽然它本身是一个可视化工具的缺陷，但其修复体现了SRE对监控系统“可观测性准确性”这一核心原则的坚持。

@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana ConfigFromQuery Decimals Mapping Out-of-Range Causes Panel Crash"
+description: "Unchecked query result values written to field.config.decimals cause Number.toFixed to throw a RangeError exception during rendering, resulting in blank panels."
+category: grafana-panel-visualization
+order: 0
+lastUpdated: 2024-06-11
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/125688
+    title: "ConfigFromQuery: 'Use as: Decimals' crashes panel on out-of-range values"
+tags: [grafana, transformer, fieldConfig, decimals, RangeError, toFixed, input-validation, error-budget]
+---
+
+# Grafana ConfigFromQuery Decimals Mapping Out-of-Range Causes Panel Crash
+
+## Overview
+
+In Grafana, "Config from query results" is a powerful transformation feature that allows using one query's results to dynamically set field configurations (such as units, colors, decimal places, etc.) for another query's results. However, when the value used to set "Decimals" in this transformation falls outside a reasonable range (e.g., negative numbers or values far exceeding 100), insufficient defensive programming in downstream components causes the panel rendering to crash and display blank. This is a typical reliability issue caused by **failure to effectively validate user/data input**, highlighting the importance of implementing input validation and range clamping at every level of the data processing pipeline.
+
+## Core Concepts
+
+- **Config from query results transformer**: A Grafana data transformer that allows mapping field values from one data frame to another data frame's FieldConfig. For example, setting a field's value as the target field's color, minimum value, or decimal places.
+- **FieldConfig**: A metadata object describing how data fields are displayed in Grafana, containing properties such as `unit`, `color`, `decimals`, `min`, `max`, etc.
+- **Decimals Mapping**: In the "Config from query results" transformer, selecting to use the query value as the target field's `field.config.decimals` property to control the precision (number of decimal places) of numeric display.
+- **Display Processor**: Part of Grafana's panel rendering pipeline, responsible for calling formatting functions to convert raw numeric values into final display strings. It reads `field.config.decimals` and passes it to the formatting function.
+- **toFixed()**: JavaScript's native `Number.prototype.toFixed()` method for converting a number to a string with a specified number of decimal places. Its `digits` parameter (i.e., `decimals`) must be between 0 and 100, otherwise it throws a `RangeError` exception.
+
+## Practice
+
+### Issue Reproduction and Troubleshooting
+1. **Build the trigger scenario**: Create a Grafana dashboard containing a query result for providing configuration (config frame). Ensure this frame contains a numeric field with a value less than 0 or greater than 100 (e.g., `-3`).
+2. **Apply transformation**: Apply the "Config from query results" transformation to the target query result that needs configuration. Set the "Use as" option of the config frame field from step 1 to "Decimals."
+3. **Trigger crash**: In the data of the panel affected by this transformation (such as time series, stats, table, etc.), ensure at least one rendered value is exactly `0`. At this point, the panel will render blank and throw a `RangeError: toFixed() digits argument must be between 0 and 100` error in the browser console.
+4. **Key troubleshooting point**: This crash is **data-dependent**. It only triggers when the rendered value is `0` due to `toFixed`'s short-circuit path. For non-zero values, even with `decimals` of `-3`, although it silently produces incorrect precision output due to `Math.max(0, decimals)`, it typically doesn't throw an exception causing the panel to be completely blank.
+
+### Fix and Defense
+Based on the root cause, the fix strategy is to validate at the data processing pipeline's entry point rather than remediating at the exit point (formatting function).
+1. **Source validation (required fix)**: In `fieldToConfigMapping.ts`'s `decimals` processor, replace `toNumericOrUndefined`. The new logic should validate that the value is an integer between 0 and 20 (consistent with Grafana editor UI's standard "Decimals" field limitation). For any value not meeting these conditions (negative, non-integer, over 20), the processor should return `undefined`, thereby not modifying the target field's `field.config.decimals`, leaving it at its original or default value. **Prefer skipping the mapping over silent clamping** to avoid confusing users.
+2. **Defense in depth (optional hardening)**: As an additional defense layer, add parameter clamping before the `toFixed` call in `baseFormatters.ts`, e.g., `Math.max(0, Math.min(100, decimals))`. This protects all code paths calling this formatting function, even when invalid values are passed.
+3. **Audit extension**: It is recommended to quickly audit other numeric processors (such as `min`, `max`) in the same file during this fix. While they won't crash with `-3`, they accept semantically unreasonable values (e.g., `max = -3` would compress the Y-axis).
+
+### Testing Strategy
+- **Unit tests**: Write unit tests for the `decimals` processor to ensure that when negative, non-integer, or values greater than 20 are passed, `field.config.decimals` is not set (or is correctly clamped).
+- **Regression tests**: Write end-to-end or integration tests simulating the scenario where a config frame with `config.decimals = -3` is combined with a data frame containing the value `0` for rendering, ensuring the panel doesn't throw a `RangeError` exception.
+
+## SRE Key Points
+
+### Relationship to Reliability
+This bug is a direct manifestation of the **Unvalidated Input** anti-pattern, breaking the system's **fault isolation** capability. An invalid value from the data transformation layer (possibly user-configured) can pass through unimpeded to the display rendering layer, causing front-end JavaScript runtime errors and complete panel functionality loss. This directly impacts Grafana's core **Availability** as a monitoring and visualization platform. In SRE practice, we emphasize "everything is configurable, but everything must be validated" to prevent configuration errors from escalating into production incidents.
+
+### Best Practices and Common Anti-Patterns
+- **Best practice: Layered validation and defense in depth**. Perform strict type and range validation at data ingress boundaries (such as API entry points, transformation processors). Simultaneously, perform necessary defensive checks within critical downstream components (such as rendering engines, formatters) to achieve defense in depth.
+- **Best practice: Clear error feedback**. When invalid input is detected, provide clear, actionable error messages (e.g., prompting "Decimals must be between 0 and 20" in the transformer configuration interface) rather than letting the system silently fail or produce hard-to-trace downstream errors.
+- **Common anti-pattern: Trusting upstream data**. Directly using external or user-provided data without assuming it might be invalid. In this case, the `decimals` processor trusted the query results, and the formatter trusted the processor.
+- **Common anti-pattern: Handling errors at the wrong level**. While adding clamping in `toFixed` is a remediation, the optimal fix point should be at the source of the problem. Postponing validation logic to the final rendering stage increases debugging complexity and may mask other earlier potential issues.
+
+### Related Metrics (SLI/SLO/SLA)
+While this bug itself doesn't directly correspond to an SLI, resolving such issues is critical for maintaining the following SLOs:
+- **Panel rendering success rate**: A valid SLI could be "the percentage of panel requests that render successfully without throwing unhandled exceptions." Such crashes would degrade this metric.
+- **Dashboard error rate**: As a more macro SLO, "the proportion of users who successfully view their configured dashboards without functional errors" would be impacted by such issues.
+Fixing such defects helps maintain the **Error Budget**, ensuring sufficient budget space is reserved for genuine infrastructure or network issues.

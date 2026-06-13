@@ -1,0 +1,68 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana CSV Export Chinese Character Encoding Issue Analysis"
+description: "Analysis of Chinese character garbling in Grafana dashboard CSV downloads, exploring causes, temporary solutions, and SRE data reliability implications."
+category: Issues and Incidents
+order: 0
+lastUpdated: 2024-12-13
+confidence: high
+---
+
+# Grafana CSV Export Chinese Character Encoding Issue Analysis
+
+## Overview
+
+In Grafana version 11.1.4, users discovered that CSV files exported from dashboards (especially through the "Excel version" option) displayed Chinese characters as garbled text when opened with applications like Microsoft Excel. This is an interface-layer bug affecting data readability and portability. From a Site Reliability Engineering (SRE) perspective, while this is a specific frontend feature defect, it directly concerns the reliability of users obtaining reliable, accurate data from monitoring systems. Data export failures break user trust and may lead to errors in downstream data analysis or reporting, so it needs to be incorporated into the system's observability and quality assurance scope.
+
+## Core Concepts
+
+**1. CSV Files and Character Encoding:**
+CSV (Comma-Separated Values) is a plain text file format that does not specify character encoding by itself. Therefore, correctly displaying non-ASCII characters (such as Chinese) depends on:
+*   **BOM (Byte Order Mark)**: A special byte sequence (`﻿`) at the beginning of a file, used to identify the file's Unicode encoding and byte order. For UTF-8 encoded CSV files, BOM is not required, but it helps some older software (such as Excel) correctly identify the file as UTF-8 encoded.
+*   **Software Default Encoding**: Software opening CSV files (such as Excel), without explicit encoding indicators, will attempt to use the system default encoding (on Simplified Chinese Windows, typically GBK/GB2312) to parse the file. If the file is actually UTF-8 encoded, this will result in garbled characters.
+
+**2. Causes of Garbled Characters:**
+According to reports, Grafana already added a UTF-8 BOM via the code `String.fromCharCode(0xfeff)` when generating CSV. The garbled characters may stem from:
+*   **Incorrect BOM Addition**: While the intent was to add BOM, certain steps in JavaScript string processing, Blob construction, or file download workflows may have resulted in incorrect byte sequences being written to the file.
+*   **Content Encoding Mismatch with BOM**: The file body content was not written in standard UTF-8 without BOM format, but was incorrectly processed in another encoding (such as Latin-1), causing subsequent bytes to fail decoding as Unicode characters even with BOM present.
+
+**3. Version Regression:**
+This issue does not exist in version v9.3.0, indicating this is a regression defect introduced in newer versions, possibly related to subsequent refactoring of CSV export logic, dependency library upgrades, or changes in internationalization handling approaches.
+
+## Practices
+
+**1. Temporary Solutions and User Workarounds:**
+For SRE or user teams affected by this issue, before an official fix is released, the following methods can be used to ensure data readability:
+*   **Open with UTF-8 Encoding**: When opening CSV in Excel, use the "Data" -> "From Text/CSV" import wizard and explicitly specify the file encoding as **UTF-8 (65001)** in the first step.
+*   **Use Other Tools**: Use text editors that support encoding selection (such as VS Code) or data analysis tools (such as Python's pandas library) to open CSV files. These tools typically auto-detect or allow manual specification of UTF-8 encoding.
+*   **Choose Other Export Formats**: If business requirements allow, switch to JSON or Excel (XLSX) format exports, which have better built-in support for multi-byte characters.
+
+**2. Monitoring and Automated Verification (SRE Practice):**
+*   **Data Export Health Check**: Build a simple automation script that periodically simulates downloading CSV from key Grafana dashboards and parses whether the first few bytes of the file contain the correct UTF-8 BOM (`\xEF\xBB\xBF`), and attempts UTF-8 decoding to check for failures. If failure occurs, trigger an alert.
+*   **User Experience Monitoring**: Instrument the Grafana frontend to monitor the frequency of "Download CSV" operations and potential errors (such as capturing download failure events) to quantify the impact scope of this issue on users.
+*   **Integration Testing**: In CI/CD pipelines, add regression test cases for Grafana's CSV export functionality containing non-ASCII characters (such as Chinese, Japanese) to ensure encoding is always correct.
+
+**3. Issue Tracking and Mitigation:**
+As an SRE, when receiving user reports:
+1.  **Confirm Version**: Verify whether the user's Grafana version falls within the known issue scope (such as 11.1.4).
+2.  **Provide Above Workarounds**: Guide users to use alternative methods to open files.
+3.  **Track Upstream Fixes**: Subscribe to the corresponding [GitHub Issue #97896](https://github.com/grafana/grafana/issues/97896), follow official fix progress, and promptly recommend users upgrade after the fix version is released.
+
+## SRE Key Points
+
+**Connection to Reliability:**
+This case highlights the **extended meaning of "reliability"** — not just whether the service is online (availability), but also whether the output of its core functions (such as data export) is always correct and trustworthy. A functionally defective export is equivalent to breaking the reliability of the data pipeline endpoint. SREs need to incorporate the functional correctness of critical applications into reliability objectives.
+
+**Best Practices and Common Anti-Patterns:**
+*   **Anti-Pattern**: Treating internationalization/encoding issues as "minor problems only affecting specific languages." In reality, it breaks data interoperability, affecting all multilingual users of the feature.
+*   **Best Practices**:
+    *   **Comprehensive Data Validation**: Implement data format and content validation at various stages of the data pipeline (including final human-machine interfaces like CSV downloads).
+    *   **Fault Prevention**: Through versioning, regression testing, and pre-release environment testing, prevent such user experience defects from reaching production.
+    *   **Transparency**: When such data-affecting incidents occur, clearly disclose the issue status, impact scope, and workarounds through official channels (such as GitHub Issues).
+
+**Related Metrics (SLI/SLO/SLA):**
+While this issue is difficult to directly define as an SLI, it can be correlated at a higher level:
+*   **Functional SLI**: "Dashboard CSV export success rate" or "exported file format readability rate." Defined as: the proportion of CSV files attempted to download that can be correctly opened by standard tools (such as Excel) and display non-ASCII characters, assuming no user operation errors.
+*   **SLO**: For example, ensure the above SLI is greater than 99.5% within 30 days.
+*   **Related Metrics**: The persistence of this issue directly affects **user experience** and **data trust**, which are soft metrics but critical for monitoring system adoption and impact. SREs need to measure its impact through indirect means such as user feedback and support ticket volume.

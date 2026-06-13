@@ -1,0 +1,58 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Service Startup Failure: OpenAPI Model Generation Error"
+category: "Monitoring & Observability"
+confidence: low
+---
+
+# Grafana Service Startup Failure: OpenAPI Model Generation Error
+
+## Overview
+
+In Grafana 11.5.x and newer versions, enabling a specific feature flag `queryLibrary` causes the service to terminate abnormally during startup due to internal OpenAPI model generation failure. The core error manifests as Grafana's backend service (`appregistry.Service`) failing to transition from the expected `Running` state, with the root cause being missing OpenAPI model definitions for Kubernetes API extensions. For SREs responsible for monitoring platform reliability, this is a critical fault that directly causes complete unavailability of the core observability tool, violating Service Level Agreement (SLA) commitments.
+
+The troubleshooting and resolution of this fault is a typical case in SRE practice for handling "systemic failures caused by configuration changes." It highlights the tight coupling between feature flags, code generation, API definitions, and service lifecycle management in complex distributed systems. Correctly understanding and managing these dependencies is critical for ensuring platform stability and recoverability.
+
+## Core Concepts
+
+Understanding this issue requires grasping the following key concepts:
+
+*   **OpenAPI Model Generation**: Grafana integrates Kubernetes-style API extension mechanisms. To provide API documentation and type validation, `+k8s:openapi-gen=true` annotations need to be added to Go structs (`type`), and code generation tools are run. These tools generate OpenAPI model definitions for these types. At startup, Grafana validates whether these definitions exist, reporting errors if they don't.
+*   **Feature Flags**: `queryLibrary` is a toggle for gradual rollout or controlling experimental features. In microservice architectures, SREs need to understand how feature flags affect service dependency graphs and startup paths.
+*   **Service State Machine**: Grafana's core services follow a clear state lifecycle (e.g., `Starting` -> `Running` -> `Stopping`). The error log's `invalid service state: Failed, expected: Running` indicates the service encountered a fatal error during initialization and failed to reach the healthy `Running` state.
+*   **Kubernetes Deployment Environment**: This issue was reported on the Kubernetes platform, possibly related to Grafana's integration with the API Server in that environment or its deployment method, but the root cause is incomplete code generation in the Grafana binary itself.
+
+## Practice
+
+**Reproduction Steps:**
+1.  Deploy Grafana version 11.5.x or 11.6.x.
+2.  In the Grafana configuration file (such as `grafana.ini`) or startup parameters, enable the feature flag `queryLibrary`.
+3.  Start the Grafana service.
+4.  Observe the logs -- error messages identical to the issue description will appear.
+
+**Solution (Temporary):**
+The most direct temporary solution is to disable the feature flag causing the issue.
+1.  Locate the Grafana configuration file.
+2.  Comment out or remove `enable = queryLibrary` under the `[feature_toggles]` section, or remove it entirely.
+3.  Restart the Grafana service. The service should start normally.
+
+**Solution (Fundamental):**
+According to the error message, the fundamental fix requires correcting the code generation process.
+1.  **Wait for Official Fix**: Monitor Grafana GitHub Issue #104738 and wait for a version containing the correct code generation patch.
+2.  **Manual Fix (if needed)**: If you need to use this feature immediately, try adding the `+k8s:openapi-gen=true` annotation to the `QueryTemplate` type in the corresponding package of the Grafana source code (`github.com/grafana/grafana/pkg/apis/query/v0alpha1/template`), then re-run the code generation process according to Grafana's development documentation, and finally recompile Grafana. This method requires Go development and Grafana build environment.
+
+## SRE Key Points
+
+*   **Relationship with Reliability**: This fault directly causes Grafana service to be completely unavailable, making it a **P0-level reliability incident**. SREs must include "startup success rate after feature flag enablement" as a key monitoring metric. Any change causing core service startup failure should trigger an alert and be treated as a severe incident.
+*   **Best Practices**:
+    *   **Progressive Rollout**: For new feature flags, adopt canary releases or per-instance ratio enablement strategies, monitoring data (such as startup error logs, API availability) before full rollout.
+    *   **Rollback Mechanism**: Establish processes and automation scripts for quickly rolling back configuration (including feature flag state) to rapidly recover service when similar startup issues occur.
+    *   **Startup Health Checks**: In Kubernetes, configure strict `readinessProbe` and `livenessProbe` to ensure only fully ready and healthy Pods receive traffic. In this fault, Pods would remain in a not-ready state.
+*   **Common Anti-Patterns**: Avoid enabling feature flags in production without understanding the full impact chain. When upgrading major Grafana versions, thoroughly test all enabled feature combinations in pre-production environments first.
+*   **Related Metrics**:
+    *   **SLI**: `grafana_startup_success_total` (counter), `grafana_service_state{state="Running"}` (boolean).
+    *   **SLO**: Grafana service availability SLO, e.g., 99.9% of time in `Running` state per month.
+    *   **Alerts**: Configure immediate alerts based on startup failure logs or service state anomalies.
+
+[[grafana-feature-flags]] [[kubernetes-health-checks]]

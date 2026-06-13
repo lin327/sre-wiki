@@ -1,0 +1,171 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "CrashLoopBackOff Troubleshooting"
+description: "Standardized troubleshooting procedure for Kubernetes Pods in CrashLoopBackOff state, covering symptom identification, root cause analysis, and remediation steps."
+---
+
+# CrashLoopBackOff Troubleshooting Guide
+
+CrashLoopBackOff is one of the most common Pod failure states in Kubernetes. When a container repeatedly crashes and exceeds the backoff limit defined by `restartPolicy`, kubelet enters an exponential backoff restart cycle, with wait times increasing from 10 seconds up to 5 minutes.
+
+## Symptom Identification
+
+When a Pod is in CrashLoopBackOff state, you will observe the following:
+
+- `kubectl get pods` shows `STATUS` as `CrashLoopBackOff` with the `RESTARTS` count continuously increasing
+- `kubectl describe pod` Events repeatedly show `Back-off restarting failed container`
+- The Pod exits within seconds of each startup, then enters progressively longer wait cycles
+- The service is unavailable, and the related Deployment's Ready replica count is below the desired count
+
+```bash
+# Quickly list all CrashLoopBackOff Pods across all namespaces
+kubectl get pods -A | grep CrashLoopBackOff
+
+# View restart history for a specific Pod
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[*].lastState}'
+```
+
+## Root Cause Analysis
+
+CrashLoopBackOff is fundamentally a container process exiting with a non-zero exit code. Common root causes, ordered by frequency:
+
+1. **Application startup failure** -- missing configuration files, unset environment variables, database connection timeouts, unreachable dependency services
+2. **OOMKilled** -- container memory usage exceeds `resources.limits.memory`, terminated by the kernel OOM Killer (exit code 137)
+3. **Health check failure** -- Liveness Probe misconfigured, application killed before it becomes ready
+4. **Permission issues** -- SecurityContext restrictions prevent the container from accessing required resources, such as write failures on a read-only filesystem
+5. **Image issues** -- incorrect ENTRYPOINT script in the image, missing dependency libraries, architecture mismatch
+6. **Insufficient resources** -- node CPU/memory exhaustion prevents Pod scheduling or causes repeated eviction and restart
+
+## Diagnostic Steps
+
+### Step 1: Obtain Exit Code and Recent Logs
+
+The exit code is the most important clue for determining root cause.
+
+```bash
+# View container exit code
+kubectl describe pod <pod-name> | grep -A5 "Last State"
+
+# View logs from the previous crash (critical!)
+kubectl logs <pod-name> --previous
+
+# For multi-container Pods, specify the container name
+kubectl logs <pod-name> -c <container-name> --previous
+
+# View the last N lines
+kubectl logs <pod-name> --previous --tail=100
+```
+
+Exit code quick reference:
+
+| Exit Code | Meaning | Direction |
+|-----------|---------|-----------|
+| 0 | Normal exit (but will still restart when restartPolicy is Always) | Check restartPolicy configuration |
+| 1 | Application error | Review application logs |
+| 137 | OOMKilled or SIGKILL | Check memory limits |
+| 139 | SIGSEGV (segmentation fault) | Check image compatibility |
+| 143 | SIGTERM (graceful termination) | Check for PreStop Hook timeout |
+
+### Step 2: Check Resource Usage and Limits
+
+```bash
+# View Pod resource limits
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].resources}'
+
+# View actual memory usage (requires metrics-server)
+kubectl top pod <pod-name>
+
+# View node resource pressure
+kubectl describe node <node-name> | grep -A10 "Conditions"
+```
+
+### Step 3: Check Liveness / Readiness Probe
+
+```bash
+# View Probe configuration
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].livenessProbe}' | jq .
+
+# View Probe failure events
+kubectl describe pod <pod-name> | grep -i "unhealthy\|probe\|liveness\|readiness"
+```
+
+### Step 4: Debug In Place
+
+If the container crashes immediately on startup and cannot be entered, use debug mode:
+
+```bash
+# Create a debug Pod with the same configuration but overridden entrypoint
+kubectl debug <pod-name> -it --copy-to=<pod-name>-debug --container=<container-name> -- /bin/sh
+
+# If the image has no shell, use an ephemeral container
+kubectl debug -it <pod-name> --image=busybox --target=<container-name>
+```
+
+## Remediation Steps
+
+Choose the appropriate fix based on the diagnostic results:
+
+### Application Configuration Error
+
+```bash
+# Check if ConfigMap / Secret exists and has correct content
+kubectl get configmap <name> -o yaml
+kubectl get secret <name> -o yaml
+
+# Verify environment variable injection
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].env}' | jq .
+```
+
+After fixing the configuration, recreate the Pod:
+
+```bash
+kubectl delete pod <pod-name>
+# The Deployment will automatically create a new Pod
+```
+
+### OOMKilled
+
+```bash
+# Increase memory limits
+kubectl patch deployment <deployment-name> -p \
+  '{"spec":{"template":{"spec":{"containers":[{"name":"<container-name>","resources":{"limits":{"memory":"512Mi"},"requests":{"memory":"256Mi"}}}]}}}}'
+```
+
+Also investigate whether the application has a memory leak rather than simply increasing limits.
+
+### Misconfigured Probe
+
+```bash
+# Increase initialDelaySeconds to give the application more startup time
+# Increase failureThreshold to tolerate occasional failures
+kubectl patch deployment <deployment-name> --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/initialDelaySeconds","value":30},
+  {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/failureThreshold","value":5}
+]'
+```
+
+### Verify the Fix
+
+```bash
+# Observe new Pod status
+kubectl get pod -w
+
+# Confirm Pod enters Running and Ready state
+kubectl get pod <pod-name> -o wide
+
+# Verify restart count is no longer increasing
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[0].restartCount}'
+```
+
+<div class="admonition admonition--error">
+  <p class="admonition-title">Warning: Data Loss Risk</p>
+  <p>If the crashing container uses emptyDir volumes for data storage, deleting the Pod will cause permanent data loss. Before deleting the Pod, confirm whether persistent storage (PV/PVC) is correctly configured. For stateful applications (such as databases), always perform a data backup before restarting or migrating.</p>
+</div>
+
+## Preventive Measures
+
+- Set appropriate `resources.requests` and `resources.limits` for all containers
+- Liveness Probe `initialDelaySeconds` should exceed the application's expected startup time
+- Readiness Probe should only return success after the application is fully ready
+- Use Pod Disruption Budget (PDB) to limit the number of simultaneously crashing Pods
+- Include image startup tests in CI/CD pipelines to catch ENTRYPOINT issues early

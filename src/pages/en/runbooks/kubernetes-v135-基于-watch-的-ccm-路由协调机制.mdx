@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.35: Watch-Based CCM Route Reconciliation"
+description: "Introduction to Kubernetes v1.35's watch-based route reconciliation feature, replacing fixed-interval polling with event-driven approach to reduce unnecessary cloud API calls."
+category: SRE Practices
+order: 0
+lastUpdated: 2025-12-31
+confidence: medium
+---
+
+# Kubernetes v1.35: Watch-Based CCM Route Reconciliation
+
+## Overview
+In Kubernetes clusters，云控制器管理器（CCM）负责管理与云提供商交互的各类资源，其中路由控制器（Route Controller）负责为集群节点创建和管理云平台上的网络路由。自 v1.34 及之前版本，路由协调机制采用固定时间间隔轮询的方式，无论路由是否发生变化，都会向云平台 API 发起请求。这种机制在大规模集群中会产生大量不必要的 API 调用，不仅浪费云资源，也可能触及 API 速率限制，影响系统稳定性。Kubernetes v1.35 引入了一个新的特性门控（Feature Gate），允许将路由协调行为切换为基于 `Watch` 的事件驱动模式，从根本上优化了这一过程。
+
+## 核心概念
+要理解此特性，需先明确以下关键概念：
+*   **路由控制器（Route Controller）**：CCM 的一个组件，负责同步 Kubernetes 节点与云提供商（如 AWS、GCP、Azure）上的路由表，确保 Pod 网络能够正确通信。
+*   **固定间隔协调（Poll-based Reconciliation）**：旧版（v1.34 及之前）的工作方式。控制器每隔一个固定时间（例如 1 分钟）就主动调用云 API 查询所有路由状态，即使没有任何变更。这在云环境中是典型的“拉取（Pull）”模式，效率低下。
+*   **基于 Watch 的协调（Watch-based Reconciliation）**：新特性采用的工作方式。控制器利用 Kubernetes API 的 `Watch` 机制（通过 informer），监听节点对象的变化。仅当节点被添加、删除，或其关键字段（`.spec.podCIDRs`、`.status.addresses`）更新时，才触发协调循环。这是更高效的“推送（Push）”模式。
+*   **特性门控（Feature Gate）**：`CloudControllerManagerWatchBasedRoutesReconciliation` 是此新行为的开关。它允许用户或管理员选择启用或禁用此功能，为平滑升级和测试提供了灵活性。
+
+## 实践
+此特性作为 Alpha 功能引入，需要在 CCM 实现中手动启用。启用后，路由控制器的行为将发生如下变化：
+
+1.  **启用特性门控**：在启动 CCM 时，通过命令行参数启用该特性。
+    ```bash
+    # 示例启动参数
+    --feature-gate=CloudControllerManagerWatchBasedRoutesReconciliation=true
+    ```
+    具体启用方式取决于您使用的 CCM 发行版（如 `cloud-provider-aws`, `cloud-provider-gcp` 等）。
+
+2.  **触发机制**：
+    *   **事件驱动触发**：当以下任何事件发生时，控制器会立即开始协调循环：
+        *   新节点加入集群。
+        *   现有节点从集群中删除。
+        *   节点的 `podCIDRs` 或 `addresses` 字段发生更新。
+    *   **定期兜底协调**：为了应对潜在的边缘情况（如事件丢失），控制器还会在启动时随机选择一个 **12 至 24 小时** 之间的间隔，执行一次额外的协调循环。
+
+3.  **逻辑兼容性**：该特性门控**仅改变触发协调的机制**，而**不改变协调循环内部的具体逻辑**。这意味着已有的路由创建、更新和删除策略保持不变，对用户的现有路由配置是透明的。
+
+## SRE 要点
+对于 SRE 团队，此特性的引入直接影响集群的**可靠性**、**性能**和**可观测性**。
+
+### 与可靠性、可观测性、事件响应的关联
+*   **可靠性与性能提升**：减少对云平台 API 的无意义调用，降低了因达到 API 速率限制而导致控制平面故障的风险。这在拥有数百甚至数千节点的大型集群中尤为重要，直接提升了集群的整体可扩展性和稳定性。
+*   **可观测性**：协调事件的触发变得更具因果性。SRE 可以更清晰地将一次路由同步操作与具体的节点变更事件关联起来，便于故障排查和审计。
+*   **事件响应**：当节点因故障被替换或进行维护时，路由更新能更快地被触发，减少了网络中断的时间窗口。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    *   在非生产环境或测试集群中首先启用并验证此特性。
+    *   监控启用后 CCM 的日志和指标，确认协调仅在预期事件发生时触发。
+    *   了解兜底协调间隔的随机性，它不应作为主要的健康检查机制。
+    *   参考 [KEP-5237](https://kep.k8s.io/5237) 获取详细的实现设计和未来演进计划。
+*   **常见反模式**：
+    *   在生产环境未经充分测试的情况下直接启用 Alpha 特性。
+    *   假设禁用此特性后系统行为会回滚，而忽略了可能已经存在的基于 Watch 的性能依赖。
+
+### 相关指标（SLI/SLO/SLA）
+启用此特性后，可以定义和监控新的 SLI 来衡量其效果：
+*   **SLI 1：协调效率**。例如，“每次路由协调的云 API 调用次数”。
+*   **SLI 2：事件响应延迟**。例如，“从节点对象变更到路由开始协调的间隔时间”。
+*   **SLO 示例**：可设定“在节点变更后 60 秒内开始路由协调”的 SLO，这在事件驱动模式下更容易保障。
+
+相关概念请参阅 [[kubernetes-reliability]] 与 [[cloud-controller-manager]]。

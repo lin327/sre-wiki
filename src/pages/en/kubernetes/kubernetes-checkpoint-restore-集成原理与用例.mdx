@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Checkpoint/Restore Integration: Principles and Use Cases"
+description: "Kubernetes integrates CRIU technology through the Checkpoint/Restore Working Group, enabling container runtime state saving and restoration to improve resource utilization and application reliability."
+category: Container & Orchestration
+order: 0
+lastUpdated: 2024-07-16
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/01/21/introducing-checkpoint-restore-wg/
+    title: "Announcing the Checkpoint/Restore Working Group"
+tags: [Kubernetes, CRIU, Checkpoint, Restore, SRE, Reliability, Resource-Optimization]
+---
+
+# Kubernetes Checkpoint/Restore Integration: Principles and Use Cases
+
+## Overview
+
+In the Kubernetes ecosystem, efficiently managing application lifecycle and state is key to achieving Site Reliability Engineering (SRE) goals. `Checkpoint/Restore` technology provides the ability to capture an application's complete runtime state and later restore it at any location, which has revolutionary significance for improving system resilience, optimizing resource utilization, and simplifying operational tasks. The Kubernetes community has established a dedicated **Checkpoint Restore Working Group (WG)** to drive deep integration of functionality based on the userspace checkpoint and restore (CRIU) project into Kubernetes, providing SREs with more powerful tools to ensure service reliability.
+
+## Core Concepts
+
+**Checkpoint/Restore** is a system-level snapshot technology that allows saving the complete state of a running process (or container) -- including memory, CPU registers, network connections, and file handles -- to persistent storage, a process called "checkpointing." Subsequently, the process can be restored to its exact previous running state from this snapshot file, a process called "restoring." In Kubernetes environments, the application unit for this technology is typically a Pod or its containers.
+
+**CRIU (Checkpoint/Restore In Userspace)** is the core open-source tool implementing this functionality. It runs in userspace, injecting into processes and using kernel interfaces (like `ptrace`) to precisely capture process state for checkpoint and restore operations. Kubernetes' Checkpoint/Restore WG works around CRIU and its ecosystem tools (like `checkpointctl` for analyzing snapshots, `criu-coordinator` for coordinating distributed application checkpoints, `checkpoint-restore-operator` for cluster management), aiming to provide native, transparent, and reliable integration.
+
+The WG's core work is driving standardization of CRIU capabilities through Kubernetes APIs (extending `kubectl` commands or defining new CRDs) and the Container Runtime Interface (CRI), enabling users to conveniently checkpoint and restore Pods without deep knowledge of underlying tools.
+
+## Practice
+
+According to WG discussions, typical Checkpoint/Restore practice scenarios in Kubernetes include:
+
+1.  **Optimizing interactive workload resource utilization**: For intermittently active workloads like Jupyter Notebooks or AI chatbots, checkpoints can be taken when users are inactive and resources released, then quickly restored when activity resumes. This significantly improves cluster resource utilization.
+2.  **Accelerating application startup**: For applications with long startup times (large Java apps or LLM inference services), a pre-checkpointed initialized template image can be created, allowing new Pods to start from the snapshot in seconds, greatly reducing deployment and scaling time.
+3.  **Providing fault tolerance for long-running workloads**: For distributed model training tasks running days or weeks, periodic automatic checkpoints can be set. When underlying hardware fails or Pods are evicted, tasks can resume from the latest checkpoint, avoiding restart from scratch.
+4.  **Implementing disruption-aware scheduling**: Allows the scheduler to preempt low-priority Pods for high-priority Pods, provided low-priority Pod state can be transparently checkpointed.
+5.  **Supporting Pod disruption-free migration**: For node maintenance or load balancing, Pods can be checkpointed on one node and restored on another, transparent to applications.
+6.  **Forensic checkpointing**: When security events (attacks, data breaches) are detected, related Pods can be immediately checkpointed to preserve evidence for analysis without affecting ongoing investigation.
+
+**Related tool ecosystem** is taking shape:
+-   **CRIU**: Core engine, interacting with the Linux kernel for checkpoint and restore.
+-   **checkpointctl**: CLI tool for analyzing container checkpoint files (`dump.criu.img`).
+-   **criu-coordinator**: Coordinates checkpoints and restores for distributed applications composed of multiple containers/services.
+-   **checkpoint-restore-operator**: A Kubernetes Operator for simplifying deployment and management of Checkpoint/Restore control plane and worker node configurations.
+
+## SRE Essentials
+
+-   **Relationship with Reliability**: Checkpoint/Restore is a powerful technology for achieving higher reliability levels. It directly reduces data or state loss risk during fault recovery, shortens **Recovery Time Objective (RTO)**, and enables disruption-free maintenance and migration, reducing availability risks introduced by operational tasks. This aligns highly with SRE's goal of balancing reliability with iteration speed through **Error Budget** management.
+-   **Best Practices**:
+    -   **Determine appropriate checkpoint strategy**: For critical long-running tasks, configure automatic periodic checkpoints, balancing storage overhead and RTO.
+    -   **Test restore processes**: Regularly rehearse restoring from checkpoints to ensure feasibility and performance meet expectations.
+    -   **Focus on state consistency**: For stateful services or distributed systems, use tools like `criu-coordinator` to ensure related component states can be consistently checkpointed and restored.
+    -   **Monitor checkpoint operations**: Monitor checkpoint creation/restore operation duration, success rate, and failure reasons as important **Service Level Indicators (SLIs)**.
+-   **Common Anti-Patterns**:
+    -   Treating checkpoints as a panacea while ignoring application startup time optimization and stateless design.
+    -   Over-relying on checkpoints as fault tolerance without verifying restore capability.
+    -   Ignoring checkpoint file security -- they contain application memory snapshots that may include sensitive information.
+-   **Related Metrics (SLI/SLO)**:
+    -   **SLI**: Checkpoint operation success rate, average checkpoint creation time, Pod startup time from checkpoint restore, checkpoint storage space usage.
+    -   **SLO**: For critical tasks, targets like "weekly automatic checkpoint success rate > 99.9%" or "Pod startup time from checkpoint restore P99 < 30 seconds."
+
+Related topics: [[container-orchestration]], [[site-reliability-engineering]], [[fault-tolerant-design]], [[resource-optimization]]

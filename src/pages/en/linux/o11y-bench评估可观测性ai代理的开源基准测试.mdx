@@ -1,0 +1,92 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "o11y-bench: Open Benchmark for Evaluating Observability AI Agents"
+category: "Observability and Monitoring"
+confidence: high
+---
+
+# o11y-bench: Open Benchmark for Evaluating Observability AI Agents
+
+## Overview
+
+In SRE and observability practice, AI agents are gradually becoming powerful tools for assisting with troubleshooting, performance analysis, and dashboard management. However, evaluating whether an agent is truly "reliable" -- especially in complex, dynamic production system environments -- is far more difficult than evaluating its coding or general tool-calling capabilities. `o11y-bench` is an open-source benchmark framework by Grafana Labs, specifically designed to solve this evaluation challenge. It enables developers to run AI agents through a series of observability workflow tasks in a real Grafana technology stack (including Metrics, Logs, Traces), scoring them based on observable results rather than just fluent text. This is critical for filtering trustworthy AI agents that can genuinely help engineers in production environments.
+
+## Core Concepts
+
+### Why Does Observability Need a Dedicated Benchmark?
+
+Observability tasks are fundamentally different from standard tool-calling problems. For example, investigating a root cause failure or fixing a dashboard requires the agent to:
+
+- **Correlate multiple signals**: Establish connections between Metrics, Logs, and Traces.
+- **Understand time context**: Correctly handle time range queries.
+- **Handle stateful operations**: For example, when modifying a dashboard, ensure it does not affect configurations other engineers depend on.
+- **Distinguish noise from symptoms**: Determine whether a metric spike is random noise or a sign of a problem.
+
+Therefore, merely generating a syntactically correct query or successfully rendering a dashboard is not enough. A query might select the wrong data series, and a dashboard might save incorrect variable configurations. `o11y-bench` simulates these complexities to distinguish between an agent that "looks useful" and one that is "trustworthy in real workflows."
+
+### Evaluation Metrics: Consistency Over Occasional Success
+
+`o11y-bench` introduces two core scoring metrics to comprehensively measure agent performance:
+
+- **Pass^3**: Measures **consistency**. Calculates the agent's average score across three independent attempts. Higher scores indicate a more stable, reliable agent.
+- **Pass@3**: Measures **best result**. Represents whether the agent successfully completed the task at least once in three attempts. This reflects the agent's potential capability ceiling.
+
+In SRE scenarios, **consistency (Pass^3) is more important than occasional success (Pass@3)**. An agent that gives correct answers most of the time is far more valuable than one that is inconsistent. A single mistake from the latter can lead engineers in the wrong investigation direction.
+
+## Practice
+
+### Benchmark Environment and Tasks
+
+`o11y-bench` is built on the **Harbor** framework, which launches a sandbox environment containing a Grafana Docker container running synthetic metrics, logs, and trace data. Agents interact with this environment through the **Grafana MCP Server**.
+
+The initial public release contains **63 tasks**, covering core observability workflows:
+
+- **Prometheus and PromQL Queries**: For example, querying CPU metrics for a specific service, identifying retry queue backlog.
+- **Loki and LogQL Queries**: For example, analyzing error log patterns.
+- **Tempo and TraceQL Queries**: For example, tracing specific request paths.
+- **Multi-step Incident Investigation**: Requiring correlation analysis across multiple signals and steps.
+- **Dashboard Editing and Repair**: Modifying panels, variables, or data sources in existing dashboards.
+
+For example, the task `promql-retry-backlog-triage` requires the agent to diagnose the service with the worst retry backlog in the past six hours. This requires the agent to precisely construct PromQL queries rather than collecting too much irrelevant information causing timeouts.
+
+### Verification Mechanism: Fact-Based Scoring
+
+`o11y-bench`'s key innovation lies in its strict verification logic. It does not rely on the agent's natural language explanation as the basis for evaluation, but instead executes the following steps:
+
+1.  **Run reference queries**: For query tasks, the benchmark runs a predefined "standard answer" query on the same dataset.
+2.  **Compare results**: Compares the agent's query results with the reference query results to verify the accuracy of values or data points.
+3.  **Check stateful changes**: For dashboard tasks, it checks the saved Grafana dashboard state (such as panel JSON, variable bindings) and executes the saved queries to confirm their behavior meets expectations.
+4.  **Comprehensive scoring**: Combines result correctness (primary basis) with the agent's explanation for scoring, ensuring evaluation is based on verifiable facts.
+
+### How to Run
+
+Getting started is simple. After cloning the [grafana/o11y-bench](https://github.com/grafana/o11y-bench) repository, you can run a single task with:
+
+```bash
+mise run bench:job -- --model openai/gpt-5.4-nano --task-name query-cpu-metrics --agent opencode
+```
+
+This command runs the `query-cpu-metrics` task on the specified model and agent, outputting results (including the agent's execution trace, LLM judge, and heuristic scores) to the `/jobs` directory for analysis.
+
+## SRE Essentials
+
+### Connection to Reliability Engineering
+
+`o11y-bench` directly serves the improvement of **automated observability workflow reliability**. Its results can help SRE teams:
+
+- **Filter reliable AI tools**: Select agents that perform best in consistency and accuracy for automated inspection, initial incident triage, or common problem diagnosis.
+- **Identify potential risks**: Understand the weaknesses of different model/agent combinations on specific tasks (such as dashboard modification) to avoid using them for high-risk operations.
+- **Measure improvements**: Provide an objective evaluation baseline for future development or fine-tuning of observability-focused AI models.
+
+### Best Practices and Common Anti-Patterns
+
+- **Best Practice**: Before considering integrating AI agents into incident response workflows, rigorously evaluate them using benchmarks like `o11y-bench`. Prioritize their **Pass^3 score** to ensure stable and reliable output.
+- **Anti-Pattern**: Trusting an agent for production investigations based solely on demo environments or a few successful cases. In observability tasks, the gap between "almost correct" and "completely correct" can lead to serious investigation deviations.
+- **Monitor Cost and Efficiency**: The benchmark also records the agent's token consumption and execution time. High-reasoning models may ultimately arrive at correct answers, but if they take too long or cost too much, they may not be suitable for actual incident response.
+
+### Related Metrics and Further Reading
+
+`o11y-bench`'s scoring philosophy aligns closely with the **reliability** definition in [[observability-slis-slos]]: it focuses on whether a system (in this case, an AI agent) can consistently and stably perform its expected function. Evaluating AI agent performance is becoming a new frontier in building reliable AI systems.
+
+For deeper exploration of the evaluation methodology, refer to Anthropic's blog post on agent evaluation. `o11y-bench` itself is also an evolving open project, welcoming community contributions of new tasks, model evaluation results, and improvement suggestions.

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "使用 etcd 实现自定义服务发现"
 description: "介绍如何通过自定义工具连接etcd与Prometheus的文件服务发现机制，实现监控目标的自动发现与更新。"
@@ -11,6 +12,8 @@ sources:
     title: "Prometheus Blog: Custom service discovery with etcd"
 tags: [etcd, Prometheus, 服务发现, 文件服务发现, 自定义集成]
 ---
+
+# 使用 etcd 实现自定义服务发现
 
 ## 概述
 在SRE实践中，服务发现（Service Discovery）是实现系统可观测性和自动化运维的关键环节。监控系统（如Prometheus）必须能够动态、准确地感知服务实例的变更，才能确保监控覆盖的完整性和数据的新鲜度。虽然许多主流平台和云服务商提供了原生的服务发现机制，但企业内部可能运行着自定义的、基于特定技术栈（如`etcd`）的服务目录。本文介绍如何构建一个轻量级工具，将基于`etcd`的自定义服务发现系统与Prometheus集成，从而实现监控目标的自动同步，避免因手动配置监控目标而引入的人为错误和配置滞后。

@@ -1,0 +1,64 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Heatmap Tooltip Off-by-One Error (Numeric X-Axis Data)"
+category: "Visualization and Monitoring"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123991
+    title: "Heatmap: off-by-one error in tooltip for data with numeric X-axis"
+tags: [grafana, heatmap, visualization, bug-fix]
+---
+
+# Heatmap Tooltip Off-by-One Error (Numeric X-Axis Data)
+
+## Overview
+
+In site reliability engineering, accurate data visualization is the cornerstone of fault diagnosis and system health monitoring. Grafana's Heatmap panel is a powerful tool for visualizing the distribution density of data over time or another dimension. However, an issue affecting data interpretation accuracy -- the **tooltip off-by-one error** -- has been reported under specific conditions. This issue can cause confusion among operations personnel when analyzing monitoring data, particularly when handling non-time-series numeric data, potentially affecting the efficiency of incident response judgments. While it is a visualization tool defect itself, its fix reflects SRE's commitment to the core principle of "observability accuracy" in monitoring systems.
+
+## Core Concepts
+
+**Off-by-one Error** is a programming error where the result is one unit less or more than expected when looping or bounding a range. In the context of this issue, it manifests as:
+
+*   **X-Axis Range Representation**: The heatmap divides X-axis data (such as port numbers, version numbers, etc.) into consecutive bins, each representing a data range.
+*   **Tooltip Logic**: When hovering over a data cell, the tooltip should display the X-axis label value corresponding to that cell. However, the current implementation incorrectly displays the value of the bin's **upper bound**.
+*   **Visual Inconsistency**: This causes the value displayed in the tooltip (e.g., "8080") to be inconsistent with the scale label visible on the X-axis (e.g., "8081"), creating interpretation confusion. This inconsistency may go unnoticed in time-series data (X-axis is time) due to timestamp continuity, but is very obvious in discrete numeric data (like port numbers).
+
+The issue stems from the heatmap component's design, where the tooltip logic may have focused more on displaying a data range rather than precisely matching axis labels, exposing the defect when handling non-continuous, discrete numeric axes.
+
+## Practice
+
+### Reproduction Steps
+According to the issue report, this error can be reproduced in Grafana through the following steps:
+1.  Create a Heatmap panel.
+2.  Use Table data as the data source, ensuring the first column of data is **numeric** (e.g., port numbers), not timestamps.
+3.  In the panel configuration, set the X-axis to the corresponding first column numeric data.
+4.  Hover over a data cell in the chart and observe the X value displayed in the tooltip.
+5.  Compare this tooltip value with the adjacent scale label on the X-axis to discover the off-by-one error.
+
+### Issue and Fix
+*   **Affected Version**: Grafana 13.0.1 (released on Kubernetes platform).
+*   **Fix Direction**: The community has submitted a pull request (PR #115055) to fix this issue. The fix approach is to adjust the tooltip logic to display the cell's corresponding **lower bound** or **nearest label value**, ensuring consistency with X-axis labels.
+*   **Solution**: Upgrade to a subsequent Grafana version containing this fix, or monitor the PR's merge status.
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+*   **Observability Accuracy**: Monitoring dashboards are the direct manifestation of system observability. Tooltip data errors directly undermine dashboard credibility, causing SRE engineers to potentially make assumptions based on incorrect information when troubleshooting.
+*   **Incident Response Efficiency**: When alert events occur, quickly and accurately understanding monitoring data is key to identifying root causes. Any ambiguity in data presentation extends investigation time (MTTD/MTTR).
+*   **Best Practice**: This case emphasizes the importance of validating monitoring tools themselves. SRE teams should periodically check whether data display on critical dashboards meets expectations, especially for custom or advanced visualization panels.
+
+### Best Practices and Common Anti-Patterns
+*   **Best Practices**:
+    *   **Test Monitoring Configuration**: After deploying important monitoring panels, perform basic interaction tests (such as hovering to view tooltips).
+    *   **Keep Tools Updated**: Stay informed about monitoring platform (like Grafana) updates and known issues, and evaluate their impact on existing dashboards.
+    *   **Clarify Data Semantics**: When building dashboards, clearly define the data meaning and expected range for each axis, which helps identify such display errors.
+*   **Common Anti-Patterns**:
+    *   **Fully Relying on Automatic Display**: Accepting all default behaviors of visualization tools without verification, assuming they are always correct.
+    *   **Ignoring UI Bugs**: Considering minor issues in the visualization layer as insignificant, ignoring their potential impact on data interpretation.
+
+### Related Metrics (SLI/SLO/SLA)
+While this issue does not directly affect SLI calculations, it is indirectly related to the SLO of **monitoring system reliability**.
+*   **SLI**: An indirect SLI can be defined, such as "percentage of monitoring dashboard data consistency with raw data source". The off-by-one error would reduce this SLI.
+*   **SLO**: An SLO can be established, such as "99% of critical monitoring panel data displays accurately". Fixing this bug helps achieve that SLO.
+*   **Relation**: Ensuring visualization accuracy is the foundation for achieving "system monitorability", a non-functional requirement that is an important support for overall service SLA.

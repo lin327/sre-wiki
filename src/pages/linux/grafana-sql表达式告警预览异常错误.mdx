@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana SQL表达式告警预览异常错误"
 description: "在配置基于SQL表达式的Grafana告警规则时，预览功能可能抛出“An unexpected error happened”错误，通常与复杂查询结果解析有关。"
@@ -11,6 +12,8 @@ sources:
     title: "“Alerting Editor / SQL Expressions: Uncaught Error”"
 tags: [grafana, alerting, sql, troubleshooting, error-handling]
 ---
+
+# Grafana SQL表达式告警预览异常错误
 
 ## 概述
 在 SRE 实践中，告警规则的准确配置与验证是保障系统可靠性的第一道防线。Grafana 的告警编辑器提供了强大的“预览”功能，允许工程师在保存规则前查看其查询结果和计算后的状态。本文描述了当使用特定 SQL 表达式作为告警查询源（例如 `gdev-loki` 数据源）并点击“预览”时，系统可能返回 “An unexpected error happened” 这一未捕获异常的场景。了解此问题的表现和潜在原因，有助于 SRE 人员快速进行故障排查与规避，确保告警规则的有效部署。

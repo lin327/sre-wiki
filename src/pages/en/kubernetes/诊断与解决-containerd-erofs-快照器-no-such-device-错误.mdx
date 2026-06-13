@@ -1,0 +1,68 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Diagnosing and Resolving containerd erofs Snapshotter 'no such device' Error"
+description: "Container startup failures when using erofs snapshotter due to insufficient kernel support causing overlay mount failure."
+category: "Storage & Filesystem"
+order: 0
+lastUpdated: 2026-01-20
+confidence: high
+sources:
+  - url: "https://github.com/containerd/containerd/issues/12796"
+    title: "Failed to run container: erofs snapshotter no such device error"
+tags: ["containerd", "erofs", "overlay", "snapshotter", "kernel", "storage"]
+---
+
+# Diagnosing and Resolving containerd erofs Snapshotter
+
+## Overview
+
+In container runtime environments, filesystem snapshotter plugins manage container image layers and writable layers. erofs (Enhanced Read-Only File System) as a containerd snapshotter implementation aims to provide better storage efficiency and performance. However, when enabling this feature, SRE teams may encounter container startup failures due to underlying OS or kernel configuration mismatches. This document analyzes a typical `no such device` error, explores root causes, and provides diagnostic and resolution best practices.
+
+## Core Concepts
+
+- **containerd Snapshotter**: Plugin managing container image and instance filesystem layers. The `erofs` snapshotter uses Linux kernel erofs filesystem for storing and merging image layers.
+- **Overlay Mount**: Union filesystem mount method. containerd uses overlay to merge read-only base image layers (lowerdir) with writable work layers (upperdir/workdir).
+- **Error Analysis**: Core error `mount source: "overlay", ..., err: no such device` indicates kernel returned "device not found" when attempting `mount -t overlay ...` system call. Usually means: kernel not compiled with `overlay` filesystem module, or specifically for erofs snapshotter, kernel may lack necessary erofs support or erofs-overlay integration has issues.
+- **Root Cause**: Error appears after enabling erofs snapshotter while default `overlayfs` snapshotter works fine, strongly pointing to erofs-specific kernel functionality or configuration.
+
+## Practice
+
+### 1. Confirm Error Scope and Reproduce
+Use `ctr` directly to isolate the problem:
+```bash
+ctr pull <image>
+ctr run --snapshotter erofs <image> test
+```
+
+### 2. Diagnose Kernel Configuration
+Check kernel version and configuration:
+- erofs may require specific kernel version
+- Required configs: `CONFIG_OVERLAY_FS=y`, `CONFIG_EROFS_FS=y`, `CONFIG_EROFS_FS_XATTR=y`, `CONFIG_EROFS_FS_ZIP=y`
+
+```bash
+lsmod | grep -E 'overlay|erofs'
+grep -E 'CONFIG_(OVERLAY_FS|EROFS_FS)' /boot/config-$(uname -r)
+```
+
+### 3. Adjust containerd Configuration
+Check erofs snapshotter plugin config in `/etc/containerd/config.toml`. Try setting `max_unmerged_layers = 1`:
+```toml
+[plugins."io.containerd.snapshotter.v1.erofs"]
+  enable_fsverity = false
+  max_unmerged_layers = 1
+```
+
+### 4. Check System Calls and Permissions
+Ensure containerd environment allows necessary system calls. In containerized or highly restricted environments, seccomp or AppArmor policies may block `mount` system calls.
+
+## SRE Essentials
+
+- **Reliability**: Such storage layer errors directly cause Pods to fail starting (`FailedCreatePodSandBox`), affecting deployment and elastic scaling. Quick, accurate diagnosis is core SRE skill for ensuring service SLA.
+- **Observability**:
+    1. **Logs**: Ensure containerd and kubelet logs collected to centralized systems.
+    2. **Metrics**: Monitor container startup success rate, image pull failure rate.
+    3. **Events**: Watch for `Warning` events, especially `FailedCreatePodSandBox`.
+- **Best Practices**: Thoroughly validate new storage technologies (like erofs snapshotter) in test environments matching production before large-scale deployment. Establish standardized node deployment and validation processes including kernel configuration checks.
+- **Anti-Patterns**: Ignoring startup errors (like DaemonSet pods) thinking they auto-recover. These may expose fundamental environment configuration issues.
+- **Related Metrics**: Service startup success rate; maintain core service Pod startup success rate above 99.9%.

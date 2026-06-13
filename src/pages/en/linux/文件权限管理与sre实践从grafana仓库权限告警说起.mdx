@@ -1,0 +1,85 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "File Permissions Management and SRE Practice: Starting from Grafana Repository Permission Alerts"
+category: "Security and Configuration Management"
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/100782
+    title: "Source on git: wrong permissions warning"
+tags: [security, git, file-permissions, configuration-management, grafana]
+---
+
+# File Permissions Management and SRE Practice: Starting from Grafana Repository Permission Alerts
+
+## Overview
+
+In SRE (Site Reliability Engineering) practice, ensuring the security of systems and applications is one of the core responsibilities. File permissions are the most fundamental security control mechanism at the operating system level. A seemingly simple file permission issue -- for example, incorrectly granting executable permissions to static resource files -- may not only trigger warnings from build tools, but also reveal potential security risks, operational standard gaps, and code quality assurance process vulnerabilities. This article uses a [specific case from the Grafana repository](https://github.com/grafana/grafana/issues/100782) as a starting point to explore the importance, core concepts, practice methods, and reliability considerations of file permission management in SRE work.
+
+## Core Concepts
+
+In Linux/Unix-like systems, file permissions are represented and controlled through three groups of characters: `r` (read), `w` (write), `x` (execute). Common permission patterns include:
+
+- **644 (-rw-r--r--)**: The file owner has read and write permissions, while the group and others have only read permissions. This is the standard, secure permission setting for data files (such as images, documents).
+- **755 (-rwxr-xr-x)**: The file owner has read, write, and execute permissions, while the group and others have read and execute permissions. This is suitable for executable programs or scripts.
+
+In software development and deployment processes, correct file permissions are critical:
+1.  **Security**: Unnecessary executable permissions can be exploited maliciously as an attack vector.
+2.  **Build Reliability**: Strict build tools (such as some package managers, security scanners) validate file permissions; inconsistent permissions may cause build warnings or even failures.
+3.  **Operational Standards**: Unified permission standards are the foundation of configuration management and Infrastructure as Code (IaC), helping achieve environment idempotency and predictability.
+4.  **Version Control**: Git can track file permission changes (via `git diff --raw` or `git ls-files -s`). Improper permission commits pollute version history and may propagate to developers' local environments when cloning the repository.
+
+## Practice
+
+According to Grafana issue #100782, multiple SVG icon files in the `public/img/transformations/` directory and a Markdown file in the documentation directory were set to `755` permissions, when the correct permissions should be `644`.
+
+### 1. Problem Diagnosis and Verification
+After cloning the repository locally, the following commands can quickly discover files with permission anomalies:
+```bash
+# Find all files with permissions not 644 in the current directory (excluding directories)
+find . -type f ! -perm 644 -print
+# Or use the tree command (as shown in the issue)
+tree -pf | grep -v "drwxr-xr-x\|-rw-r--r--"
+```
+
+### 2. Fix and Commit
+Fixing permission issues is typically straightforward -- use the `chmod` command to set correct permissions and commit the changes.
+```bash
+# Batch fix all files in a directory to 644 permissions
+chmod 644 path/to/directory/*
+# Single file
+chmod 644 path/to/file.md
+# Verify and commit
+git add path/to/file
+git commit -m "fix: correct file permissions from 755 to 644"
+```
+For this specific case, the correct commit should include changing the affected files' permissions to `644`.
+
+### 3. Prevention Mechanisms (SRE Perspective)
+To prevent similar issues from recurring, permission checks should be integrated into the CI/CD pipeline.
+- **CI Pipeline Integration**: Add a Job that uses `find` or `audit` tools to scan the codebase; if regular files with `755` permissions are found (especially non-executable files like SVG, PNG, Markdown, YAML), fail the build.
+- **Git Hooks or Pre-commit Framework**: Use tools like `pre-commit` to automatically check file permissions before local commits by developers.
+- **Documentation and Standards**: Specify file permission standards in the project's contribution guidelines or operational documentation, for example, "all static resource files must be set to 644".
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+- **Security as the Foundation of Reliability**: File permissions are one layer of defense in depth. Incorrect permission settings can become an entry point for system compromise, directly affecting service **availability** and data **confidentiality** and **integrity**.
+- **Observability**: While this case does not directly produce metrics, permission anomalies should be monitored as **Configuration Drift**. For example, checking critical file permissions during base image build or post-deployment audit phases can serve as a security SLI (Service Level Indicator).
+- **Incident Response**: If a permission-related build failure or security alert triggers an incident, SRE needs to be able to quickly diagnose the root cause (e.g., by checking commit history). This case can serve as a low-impact incident, with its root cause analysis (RCA) pointing to improving automated checking processes.
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    1.  **Principle of Least Privilege**: Do not grant executable permissions unless necessary.
+    2.  **Automated Checking**: Make permission validation a mandatory step in the CI/CD pipeline.
+    3.  **Repository Hygiene**: Regularly audit file permissions in the repository, keeping it clean.
+    4.  **Clear Documentation**: Specify standard permissions for different file types.
+- **Common Anti-Patterns**:
+    1.  **Manual Operations Without Verification**: Developers modify file attributes locally and directly commit without noticing permission changes.
+    2.  **Ignoring Build Warnings**: Considering build tool permission warnings as insignificant and choosing to ignore them.
+    3.  **Lack of Preventive Controls**: Relying solely on post-incident fixes rather than setting up automated interception in the process.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI**: `File permission compliance rate in codebase`, i.e., `Number of files with 644 permissions (for non-executable data files) / Total number of non-executable data files`. Target value should be 100%.
+- **SLO**: Ensure permission compliance rate is no less than 100% before each code release.
+- **SLA**: This is typically not directly committed to end users, but internally it can be agreed that if critical build failures caused by file permission issues exceed a threshold, improvement measures must be triggered.

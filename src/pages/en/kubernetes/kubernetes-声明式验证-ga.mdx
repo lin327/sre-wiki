@@ -1,0 +1,70 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Declarative Validation (GA)"
+description: "Kubernetes v1.36 promotes Declarative Validation to GA, defining API validation rules through marker tags, improving reliability, maintainability, and toolchain integration."
+category: Kubernetes
+order: 0
+lastUpdated: 2026-05-05
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/05/kubernetes-v1-36-declarative-validation-ga/
+    title: "Kubernetes v1.36: Declarative Validation Graduates to GA"
+tags: [kubernetes, api, validation, sre, sre-implementation, technical-debt]
+---
+
+# Kubernetes Declarative Validation (GA)
+
+## Overview
+
+In the Kubernetes ecosystem, API reliability, consistency, and maintainability are critical for services running on it. In Kubernetes v1.36, **Declarative Validation** graduates from beta to **GA**. This marks the migration of Kubernetes native type validation from tens of thousands of error-prone handwritten Go lines to a unified, maintainable framework based on marker tags. For SRE teams, this means a more stable, predictable API surface with fewer unexpected behaviors and stronger toolchain integration.
+
+## Core Concepts
+
+Declarative Validation's core idea is declaring validation rules directly in type definitions (`types.go` files) through structured IDL marker tags (specifically `+k8s:` prefixed tags), rather than implementing them as imperative logic in separate Go functions.
+
+**Key Components**:
+
+1.  **`+k8s:` Marker Tags**: Attached directly above Go struct fields. Examples:
+    - **Existence**: `+k8s:optional`, `+k8s:required`
+    - **Basic constraints**: `+k8s:minimum=0`, `+k8s:maximum=100`, `+k8s:maxLength=16`, `+k8s:format=k8s-short-name`
+    - **Collection types**: `+k8s:listType=map`, `+k8s:listMapKey=type`
+    - **Union types**: `+k8s:unionMember`, `+k8s:unionDiscriminator`
+    - **Immutability**: `+k8s:immutable`, `+k8s:update=[NoSet, NoModify, NoClear]`
+
+    These tags make validation rules **self-documenting**.
+
+2.  **`validation-gen` Code Generator**: Parses `+k8s:` tags and automatically generates corresponding Go validation functions, seamlessly registered into the API Scheme.
+
+3.  **Ambient Ratcheting**: A built-in safety mechanism. When users update existing objects, the framework compares incoming objects with old ones. For semantically unchanged field values, new validation rules are **bypassed**. This allows API maintainers to safely tighten or relax validation rules without writing additional manual ratcheting code.
+
+## Practice
+
+**Using Declarative Validation in `types.go`**:
+
+```go
+type ReplicationControllerSpec struct {
+ // +k8s:optional
+ // +k8s:minimum=0
+ Replicas *int32 `json:"replicas,omitempty"`
+}
+```
+
+**Toolchain Integration**:
+*   **`kube-api-linter`**: Can directly parse marker tags, automatically checking if API types follow Kubernetes conventions.
+*   **Client-side validation**: Since rules are part of OpenAPI schema, future `kubectl`, client libraries, and IDEs can perform rich client-side validation before sending requests to clusters.
+
+## SRE Essentials
+
+*   **Reliability**: Declarative Validation directly addresses technical debt causing API inconsistency and unpredictable behavior. By eliminating handwritten code errors and enforcing unified validation frameworks, it improves overall API **reliability** and **stability**.
+
+*   **Best Practices**: For SREs developing Kubernetes operational tools or extensions (Operators), adopt similar declarative validation approaches. Define clear, predictable validation rules for CRDs.
+
+*   **Anti-Patterns**: Avoid scattering validation logic across imperative functions throughout the codebase.
+
+*   **Observability/Incident Response**: Clear validation rules reduce unexpected failures from client error input, lowering alert noise and incident response complexity.
+
+*   **Related Metrics**:
+    - **SLI**: API request success rate -- improved by earlier, more consistent interception of invalid requests.
+    - **SLO**: Higher API reliability and predictability enable teams to confidently set and achieve higher SLOs.
+    - **SLA**: A more stable, well-documented API surface is a solid foundation for fulfilling SLAs.

@@ -1,70 +1,72 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "'Kubernetes Blog: Cluster API v1.12: Introducing In-place Updates and Chained"
-category: "容器编排"
-confidence: medium
+category: "Container Orchestration"
+confidence: high
 ---
 
+# 
 
-## 概述
+## Overview
 
-Cluster API 通过声明式管理方式，为 Kubernetes 集群的完整生命周期提供支持，允许平台团队定义集群的期望状态，并依靠控制器持续进行调和，确保实际状态与期望状态一致。类似于 Kubernetes 中使用 `Deployment` 或 `StatefulSet` 管理 Pod，Cluster API 使用 `KubeadmControlPlane` 管理控制面节点，使用 `MachineDeployment` 管理工作节点。在 SRE 实践中，安全、可控地管理大量集群的生命周期（如创建、更新、升级）是保障服务[[reliability|可靠性]]和[[operational-efficiency|运营效率]]的核心挑战。
+Cluster API supports the complete lifecycle of Kubernetes clusters through declarative management, allowing platform teams to define the desired state of clusters and relying on controllers to continuously reconcile, ensuring the actual state matches the desired state. Similar to using `Deployment` or `StatefulSet` to manage Pods in Kubernetes, Cluster API uses `KubeadmControlPlane` to manage control plane nodes and `MachineDeployment` to manage worker nodes. In SRE practice, safely and controllably managing the lifecycle of large numbers of clusters (such as creation, updates, upgrades) is a core challenge for ensuring service [[reliability]] and [[operational-efficiency]].
 
-Cluster API v1.12.0 的发布，引入了**原地更新**和**链式升级**两大特性，旨在减少常见生命周期操作中的摩擦，让用户和 SRE 团队能更轻松、更安全地管理 Kubernetes 集群。这些改进体现了项目在保持[[immutable-infrastructure|不可变基础设施]]原则优势的同时，持续降低工作负载中断的演进方向。
+The release of Cluster API v1.12.0 introduces two major features — **In-place Updates** and **Chained Upgrades** — aimed at reducing friction in common lifecycle operations, making it easier and safer for users and SRE teams to manage Kubernetes clusters. These improvements reflect the project's evolutionary direction of continuously reducing workload disruption while maintaining the advantages of the [[immutable-infrastructure|immutable infrastructure]] principle.
 
-## 核心概念
+## Core Concepts
 
-### 原地更新 (In-Place Updates)
+### In-Place Updates
 
-传统上，Cluster API（和 Kubernetes `Deployment`）采用不可变滚动更新策略：当机器的规格（Spec）发生变更时，会创建一台新的机器并销毁旧的机器，从而实现滚动发布。这种方法的优点在于简单、可预测且不依赖于机器的具体配置（如操作系统或启动机制）。
+Traditionally, Cluster API (and Kubernetes `Deployment`) uses an immutable rolling update strategy: when a machine's Spec changes, a new machine is created and the old one is destroyed, achieving a rolling release. This approach has the advantages of being simple, predictable, and not dependent on the machine's specific configuration (such as operating system or boot mechanism).
 
-v1.12.0 引入的**原地更新**功能，扩展了这一模型。它允许用户在**不删除和重建机器**的情况下，对现有机器直接应用某些更改。Cluster API 控制器现在拥有了一个决策点：当检测到规格变更时，它会自动选择是采用传统的滚动更新（创建新机器），还是调用新的**更新扩展**（Update Extension）来在现有机器上原地执行更改。
+The **In-place Updates** feature introduced in v1.12.0 extends this model. It allows users to apply certain changes to existing machines **without deleting and recreating them**. Cluster API controllers now have a decision point: when detecting a spec change, they automatically choose between using the traditional rolling update (creating a new machine) or calling the new **Update Extension** to execute changes in-place on the existing machine.
 
-选择哪种方式取决于变更的性质。Cluster API 的维护者建议，对于不会导致节点驱逐或 Pod 重启的变更（例如修改机器的用户凭证），使用原地更新更为合适；而对于必然会引起工作负载中断的变更，则继续使用滚动更新。
+The choice of which approach to use depends on the nature of the change. Cluster API maintainers recommend that for changes that do not result in node eviction or Pod restarts (such as modifying machine user credentials), in-place updates are more appropriate; for changes that will inevitably cause workload disruption, continue using rolling updates.
 
-### 链式升级 (Chained Upgrades)
+### Chained Upgrades
 
-在 Kubernetes 的发布周期中，用户通常需要逐个次要版本（例如 1.32 -&gt; 1.33 -&gt; 1.34）进行升级。`ClusterClass` 和托管拓扑功能为 Kubernetes-as-a-Service 平台提供了强大的抽象。
+In Kubernetes' release cycle, users typically need to upgrade one minor version at a time (for example, 1.32 -> 1.33 -> 1.34). The `ClusterClass` and managed topology features provide powerful abstractions for Kubernetes-as-a-Service platforms.
 
-v1.12.0 引入的**链式升级**功能，允许用户在一次操作中声明一个跨多个次要版本的目标版本（例如，从 1.32 直接升级到 1.35）。Cluster API 会负责安全地编排所需的**中间升级步骤**，自动计算升级计划并按正确的顺序（先控制面，后工作节点）执行。它还会根据 Kubernetes 版本偏差策略，尽可能优化工作节点的升级路径，可能跳过某些中间版本。
+The **Chained Upgrades** feature introduced in v1.12.0 allows users to declare a target version spanning multiple minor versions in a single operation (for example, upgrading directly from 1.32 to 1.35). Cluster API will handle safely orchestrating the required **intermediate upgrade steps**, automatically calculating the upgrade plan and executing it in the correct order (control plane first, then worker nodes). It will also optimize the worker node upgrade path based on the Kubernetes version skew policy, potentially skipping certain intermediate versions.
 
-## 实践
+## Practice
 
-对于集群操作者和 SRE 团队而言，这些新特性直接体现在更新 Kubernetes 资源定义上。
+For cluster operators and SRE teams, these new features are directly reflected in updating Kubernetes resource definitions.
 
-1.  **原地更新实践**：
-    *   确保你的 Cluster API 版本为 v1.12.0 或更高。
-    *   对于需要原地更新的特定更改类型（如机器凭证更新），你需要实现或使用已有的**更新扩展**。
-    *   当你修改 `Machine` 或 `KubeadmControlPlane` 的 `.spec` 时，Cluster API 会根据变更内容自动判断。如果变更适合原地更新且存在相应的扩展，它将执行原地更新而非滚动创建。
-    *   该特性支持在 `KubeadmControlPlane` 和 `MachineDeployment` 上使用。
+1.  **In-place Update Practice**:
+    *   Ensure your Cluster API version is v1.12.0 or higher.
+    *   For specific types of changes requiring in-place updates (such as machine credential updates), you need to implement or use an existing **Update Extension**.
+    *   When you modify the `.spec` of a `Machine` or `KubeadmControlPlane`, Cluster API will automatically determine based on the change content. If the change is suitable for in-place update and a corresponding extension exists, it will perform an in-place update rather than a rolling creation.
+    *   This feature supports use on both `KubeadmControlPlane` and `MachineDeployment`.
 
-2.  **链式升级实践**：
-    *   此功能基于 `ClusterClass` 和托管拓扑。
-    *   在声明集群资源的 YAML 文件中，将 `.spec.topology.version` 字段直接设置为你期望的**最终 Kubernetes 版本**（例如 `v1.35.0`），无需关心中间版本。
-    *   Cluster API 控制器将自动：
-        a.  计算从当前版本到目标版本的最优升级计划（包括控制面和工作节点的顺序）。
-        b.  执行控制面升级（可能多次滚动）。
-        c.  按计划升级工作节点。
-    *   你可以通过**升级计划运行时扩展**来定制升级计划的计算逻辑，或通过**生命周期钩子**在升级的特定阶段（如控制面升级完成后）执行自定义任务，例如升级集群插件。
+2.  **Chained Upgrade Practice**:
+    *   This feature is based on `ClusterClass` and managed topologies.
+    *   In the YAML file declaring the cluster resource, set the `.spec.topology.version` field directly to your desired **final Kubernetes version** (for example, `v1.35.0`), without worrying about intermediate versions.
+    *   The Cluster API controller will automatically:
+        a.  Calculate the optimal upgrade plan from the current version to the target version (including the order for control plane and worker nodes).
+        b.  Execute control plane upgrades (potentially multiple rolling updates).
+        c.  Upgrade worker nodes according to the plan.
+    *   You can customize the upgrade plan calculation logic through **Upgrade Plan Runtime Extensions**, or use **Lifecycle Hooks** to execute custom tasks at specific stages of the upgrade (such as after control plane upgrade completes), such as upgrading cluster add-ons.
 
-## SRE 要点
+## SRE Key Points
 
-*   **与可靠性的关联**：
-    *   **原地更新**减少了因滚动更新而导致的不必要 Pod 重调度和节点驱逐，从而降低了升级期间的[[pod-disruption-budget|Pod 中断]]风险，提升了服务的可用性。
-    *   **链式升级**将复杂的多版本升级过程自动化，减少了人工操作步骤和潜在的配置错误，使得大规模集群的版本演进更加安全、可预测。
-    *   两者共同减少了集群生命周期管理的“操作摩擦”，使 SRE 团队能将精力更多地集中在架构优化和故障根治上。
+*   **Connection to Reliability**:
+    *   **In-place Updates** reduce unnecessary Pod rescheduling and node eviction caused by rolling updates, thereby lowering the [[pod-disruption-budget|Pod disruption]] risk during upgrades and improving service availability.
+    *   **Chained Upgrades** automate the complex multi-version upgrade process, reducing manual operational steps and potential configuration errors, making version evolution of large-scale clusters safer and more predictable.
+    *   Both together reduce the "operational friction" of cluster lifecycle management, allowing SRE teams to focus more on architectural optimization and root cause resolution.
 
-*   **最佳实践与反模式**：
-    *   **最佳实践**：对于不涉及容器运行时或内核升级、不会影响工作负载的机器配置变更，优先考虑使用原地更新。将原地更新作为“轻量级”变更的工具，滚动更新作为“重量级”变更的工具。
-    *   **最佳实践**：即使是链式升级提供了便利，也**必须**遵循 Kubernetes 的发布生命周期策略，及时应用补丁版本。不应因有链式升级能力就完全推迟所有次要版本的升级。
-    *   **反模式**：将原地更新用于可能导致内核或容器运行时不兼容的底层变更，这可能超出扩展的处理能力，导致节点故障。
-    *   **反模式**：忽略[[kubernetes-upgrades|版本升级]]前的兼容性检查和[[chaos-engineering|混沌工程]]验证，完全依赖 Cluster API 的自动化流程。
+*   **Best Practices and Anti-patterns**:
+    *   **Best Practice**: For machine configuration changes that do not involve container runtime or kernel upgrades and will not affect workloads, prioritize using in-place updates. Treat in-place updates as a tool for "lightweight" changes and rolling updates as a tool for "heavyweight" changes.
+    *   **Best Practice**: Even though chained upgrades provide convenience, you **must** follow Kubernetes' release lifecycle policy and apply patch versions in a timely manner. Do not completely defer all minor version upgrades just because chained upgrade capability exists.
+    *   **Anti-pattern**: Using in-place updates for underlying changes that may cause kernel or container runtime incompatibilities, which may exceed the extension's handling capability and lead to node failures.
+    *   **Anti-pattern**: Ignoring compatibility checks and [[chaos-engineering|chaos engineering]] verification before [[kubernetes-upgrades|version upgrades]], completely relying on Cluster API's automation process.
 
-*   **相关指标 (SLI/SLO/SLA)**：
-    *   监控**集群升级耗时**（从开始到目标版本完全就绪）。
-    *   监控升级过程中的**节点 NotReady 时长**和**Pod 重调度次数**。
-    *   可以将**“重大版本升级期间的服务错误率”**作为一个 SLI，并设定相应的 SLO，以确保升级过程不会显著影响用户体验。
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   Monitor **cluster upgrade duration** (from start to target version fully ready).
+    *   Monitor **node NotReady duration** and **Pod rescheduling count** during upgrades.
+    *   Define **"Service error rate during major version upgrades"** as an SLI with a corresponding SLO to ensure the upgrade process does not significantly impact user experience.
 
-*   **可观测性与事件响应**：
-    *   密切关注 Cluster API 控制器自身的日志和指标，以了解升级计划的制定与执行状态。
-    *   为升级过程中的关键事件（如控制面升级开始/完成、工作节点批量升级开始）设置告警，便于事件响应和过程审计。
+*   **Observability and Incident Response**:
+    *   Closely monitor Cluster API controller logs and metrics to understand the upgrade plan's formulation and execution status.
+    *   Set up alerts for key events during the upgrade process (such as control plane upgrade start/completion, worker node batch upgrade start) to facilitate incident response and process auditing.

@@ -1,0 +1,83 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "LITHOLENS Platform: ML-Based Automated Core Logging Cloud Architecture"
+category: "Cloud-Native Architecture"
+confidence: low
+---
+
+# LITHOLENS Platform: ML-Based Automated Core Logging Cloud Architecture
+
+## Overview
+
+In the mining industry, precise geological analysis of drill hole cores is key to optimizing mine design and development. Traditional methods rely on geologists traveling to remote sites for manual inspection, which is time-consuming, labor-intensive, and suffers from subjectivity, data inconsistency, and low historical data utilization. The **LITHOLENS** platform developed by ALS GeoAnalytics automates the core logging process by integrating deep learning and machine vision technologies, significantly improving data quality and work efficiency.
+
+From an SRE perspective, the successful delivery of such AI/ML platforms depends not only on algorithm accuracy but also on the **reliability, scalability, and cost efficiency** of the underlying infrastructure. LITHOLENS's hybrid architecture built on Amazon EKS provides an excellent case study for designing machine learning workloads that can elastically scale, iterate rapidly, and maintain cost control. The architecture demonstrates how to achieve fine-grained resource management and dynamic cost optimization through containerization and serverless technologies while meeting high-performance computing demands.
+
+## Core Concepts
+
+### 1. Core Logging and Geological Modeling
+Creating 3D maps of ore bodies (geological or resource models) is the foundation of mine development. This model drives all subsequent design decisions and requires drilling thousands of holes and examining extracted sample structures. LITHOLENS aims to address pain points in this process, such as difficult site access, subjective interpretation, wasted historical data, sample degradation, opaque processes, and dependence on scarce experts.
+
+### 2. Machine Learning Pipeline
+At LITHOLENS's core is an ML pipeline that processes high-resolution core images, with main modules including:
+- **Color Extraction Module**: Scans image pixels and stores color data in Amazon S3.
+- **Color Clustering Module**: Uses algorithms like K-Means or Gaussian Mixture Models (GMM) to cluster color data, reducing image complexity and highlighting mineralogical differences.
+- **Percentage Report Module**: Segments images into user-defined intervals (e.g., every 20 centimeters) and calculates the proportion of each color cluster, enabling quantitative spatial analysis of lithological patterns.
+
+### 3. Deep Learning Models
+The platform deploys deep learning models customized for geological and geotechnical analysis:
+- **RoQE Net**: A neural network for extracting geotechnical parameters, excelling at computing Rock Quality Designation (RQD) and extracting alpha angles.
+- **VeinNet and CobbleNet**: For high-precision identification and mapping of complex veins, cobbles, and lithological structures. These models surpass traditional methods in accuracy and scalability.
+
+## Practice
+
+LITHOLENS is built on AWS using a **hybrid architecture** combining containerized workloads with serverless components, balancing performance and cost.
+
+### Solution Architecture
+- **Compute and Orchestration**: Uses **Amazon EKS** to run compute-intensive ML training and inference tasks. Leverages GPU-accelerated G6 instances for compute power, with automatic scaling based on job queue depth.
+- **Lightweight API Operations**: Uses **AWS Lambda** as the API backend, handling job submission, status queries, and result retrieval requests, avoiding the overhead of maintaining always-on servers for sporadic requests.
+- **Data Storage**: **Amazon S3** stores raw images, intermediate results, and final output data. **Amazon RDS** manages structured metadata.
+- **Unified Interface**: Provides a unified REST API through **Amazon API Gateway**, allowing users to submit jobs, monitor progress, and retrieve results, simplifying complex cross-department, cross-data-source workflows.
+
+### Architecture Flow
+1. **Request Ingress**: Users submit jobs via API Gateway with job parameters and EKS configuration in the payload.
+2. **Job Orchestration**: The Lambda-based API backend provisions EKS containers based on configuration. User data scripts guide instances through required setup and command execution.
+3. **Execution and Data Flow**:
+    - Retrieve input data from S3.
+    - Execute computation on EKS Pods (G6 instances).
+    - Continuously track logs and intermediate results.
+    - Store results to S3 or persist to RDS via dedicated API calls.
+4. **Resource Management**: After job completion, EKS container instances automatically shut down, avoiding idle resource costs.
+
+### Key Architectural Decisions and Optimizations
+- **Compute-Optimized Container Images**: Using pre-configured Amazon Machine Images (AMIs) containing all dependencies and model artifacts reduces container startup time from minutes to under 30 seconds, significantly improving job throughput and reducing compute costs.
+- **Zero-Scaling EKS Cluster**: When no jobs are queued, the EKS cluster can automatically scale to zero, ensuring compute resources are consumed only during active processing.
+- **Separation of Duties**: Heavy ML tasks are handled by scalable EKS, while lightweight API logic is served by serverless Lambda. This design perfectly matches the unpredictable workload patterns of the geological industry.
+
+## SRE Essentials
+
+### Relationship to Reliability and Observability
+This architecture provides a good paradigm for ML system reliability:
+- **Elastic Scaling**: Through EKS queue-depth-based autoscaling and Lambda's inherent elasticity, the system handles load fluctuations, avoiding request failures due to insufficient resources, improving service **availability**.
+- **Resource Efficiency**: Pre-configured AMIs and automatic container instance shutdown reduce cold start times and resource waste, directly optimizing **latency** and **cost**, two key SRE concerns.
+- **Observability Foundation**: The architecture explicitly mentions "continuous tracking of logs and intermediate results," laying the foundation for comprehensive observability (logs, metrics, traces), critical for monitoring ML pipeline health and diagnosing anomalies in training or inference.
+
+### Best Practices and Anti-Patterns
+- **Best Practices**:
+    - **Design for workload patterns**: Identify the different characteristics of jobs (heavy compute) and APIs (light interaction) and select the most appropriate compute primitives (EKS vs. Lambda) for each.
+    - **Invest in startup speed**: Optimizing container startup time through custom AMIs is key to improving batch processing system efficiency.
+    - **Serverless management plane**: Moving API logic to Lambda reduces operational complexity and enables pay-per-use.
+- **Anti-Pattern Warning**: Avoid using a single compute type for all workloads (e.g., deploying always-on EC2 clusters for lightweight APIs), which leads to idle resources and increased costs. Similarly, in ML training scenarios, avoid startup delays caused by dynamically installing dependencies.
+
+### Related Metrics (SLI/SLO/SLA)
+For SRE teams operating this architecture, the following metrics should be tracked:
+- **SLI (Service Level Indicator)**:
+    - **Job Success Rate**: Proportion of submitted ML jobs that complete successfully.
+    - **End-to-End Latency**: Total time from job submission to result readiness (percentiles, e.g., P95).
+    - **Resource Utilization**: Average CPU/GPU utilization and idle rate of EKS clusters.
+    - **Infrastructure Cost**: Per-unit cost related to processed job volume or data volume.
+- **SLO (Service Level Objective)**: For example, "95% of standard core analysis jobs should complete within 1 hour."
+- **Error Budget**: Based on SLO, quantify the allowed failure time or failed job count to meet reliability objectives, and use this to make trade-offs between new feature release velocity and system stability.
+
+The success of the LITHOLENS platform demonstrates that through carefully designed cloud-native architecture, complex ML applications can be transformed into reliable, efficient, and cost-controlled services. Its core principles -- **elastic scaling, separation of duties, on-demand resource usage** -- are principles that SRE can broadly adopt when building and operating modern AI platforms.

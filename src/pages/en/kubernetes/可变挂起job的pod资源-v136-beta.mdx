@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Mutable Pod Resources for Suspended Jobs (v1.36 Beta)"
+description: "Allows modifying Pod template resource requests and limits for Jobs in suspended state, improving scheduling flexibility for batch and ML workloads."
+category: "Kubernetes Core Features"
+order: 0
+lastUpdated: 2026-04-28
+confidence: high
+sources:
+  - url: "https://kubernetes.io/blog/2026/04/27/kubernetes-v1-36-mutable-pod-resources-for-suspended-jobs/"
+    title: "Kubernetes v1.36: Mutable Pod Resources for Suspended Jobs (beta)"
+tags: [kubernetes, job, suspend, resources, batch, scheduling]
+---
+
+# Mutable Pod Resources for Suspended Jobs (v1.36 Beta)
+
+## Overview
+
+In Kubernetes v1.36, an optimization for `Job` resources enters Beta: allowing modification of Pod template resource requests and limits for Jobs in suspended (`suspend: true`) state. This greatly enhances scheduling flexibility for batch and ML workloads in dynamic cluster environments, allowing queue controllers (like [Kueue](https://kueue.sigs.k8s.io/)) or administrators to optimize resource allocation based on current cluster capacity, priority, and hardware (GPU) availability before tasks actually run.
+
+## Core Concepts
+
+- **Job Suspended State**: When `spec.suspend` is `true`, the Job creates no new Pods; running Pods are terminated. It's in a "waiting" state managed by external controllers.
+- **Pod Template Resources**: `resources.requests` and `resources.limits` in Job's `spec.template.spec.containers` and `spec.initContainers`. Traditionally immutable after Job creation.
+- **Queue Controller**: Controllers managing batch job queues (e.g., Kueue). This feature provides key flexibility for them.
+- **Feature Gate**: `MutablePodResourcesForSuspendedJobs`. Enabled by default in v1.36.
+
+## Practice
+
+### Workflow
+1.  **Create suspended Job**: Create Job with `spec.suspend: true` and initial resource requirements.
+2.  **Modify resources**: While suspended and meeting conditions, safely update Pod template resource fields via `kubectl edit`, `kubectl patch`, or API calls.
+3.  **Resume Job**: Set `spec.suspend` to `false`; Kubernetes creates Pods with updated resource configuration.
+
+### Conditions for Modification
+API Server accepts updates only when:
+1.  Job's `spec.suspend` is `true`.
+2.  If previously run, all active Pods must be fully terminated (`status.active` equals 0).
+
+### Modifiable Fields
+Limited to resource fields in Pod templates:
+- `spec.template.spec.containers[*].resources.requests/limits`
+- `spec.template.spec.initContainers[*].resources.requests/limits`
+
+Standard validation rules still apply (e.g., `limits` must be at least `requests`).
+
+## SRE Essentials
+
+### Reliability and Incident Response
+This feature directly improves batch job reliability and throughput by avoiding job failures or delays from insufficient resources. In incident response, SREs can quickly adjust resource quotas for critical suspended jobs rather than deleting and recreating Jobs (losing state and history).
+
+### Best Practices and Anti-Patterns
+**Best Practices**:
+1.  **Integrate with queue systems**: Combine with Kueue for automated, cluster-state-based dynamic resource adjustment.
+2.  **Set Pod replacement policy**: For potentially failing Jobs, set `podReplacementPolicy: Failed`.
+3.  **Monitor resource changes**: Log Job resource modifications for auditing.
+
+**Anti-Patterns**:
+1.  Attempting to modify resources of running Jobs.
+2.  Setting invalid `limits < requests` or non-integer extended resources.
+3.  Confusing with ResourceClaim -- this feature doesn't apply to DRA's `resourceClaimTemplates`.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI**: Job completion time from `Created` to `Succeeded`; Job failure/retry rate due to insufficient resources.
+- **SLO**: "95% of batch jobs obtain resources and start within 5 minutes of suspension."
+- **SLA**: Supports model training task delivery rate SLAs for ML platforms.

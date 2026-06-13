@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "容器运行时任务状态查询的健壮性修复"
 description: "修复在容器运行时任务进程状态查询中，当任务已删除时未正确返回Deleted状态的bug。"
@@ -11,6 +12,8 @@ sources:
     title: "fix: return Deleted status on ‘not found’ when fetching task process state"
 tags: [containerd, 任务管理, 错误处理, 可靠性]
 ---
+
+# 容器运行时任务状态查询的健壮性修复
 
 ## 概述
 

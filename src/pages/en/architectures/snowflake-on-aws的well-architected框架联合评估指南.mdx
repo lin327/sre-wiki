@@ -1,0 +1,134 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Snowflake on AWS Well-Architected Framework Joint Review Guide"
+category: "Reliability Architecture"
+confidence: high
+---
+
+# Snowflake on AWS Well-Architected Framework Joint Review Guide
+
+## Overview
+
+When running Snowflake on AWS, teams often need to reference two separate sets of best practices: AWS Well-Architected guidance for AWS infrastructure, and the Snowflake Well-Architected Framework for Snowflake compute, data organization, and governance. This separation leads to disjointed security control mapping, extended production readiness timelines, and difficult compliance attestation. The joint Custom Well-Architected Framework Lens from Snowflake and AWS fills this gap. It provides a unified review view combining AWS's seven pillars (Security, Reliability, Performance Efficiency, Cost Optimization, Operational Excellence, Sustainability) with Snowflake's specialized practices, helping SRE teams efficiently identify and remediate cross-service architectural risks.
+
+## Core Concepts
+
+The joint lens integrates AWS Well-Architected Framework's seven pillars with Snowflake's guidance into a seven-pillar review model. Each pillar contains recommendations at both the AWS infrastructure layer and the Snowflake data platform layer, with the core value of providing **integrated recommendations** showing how the two layers work together to build robust production architectures.
+
+Here is a detailed breakdown of the seven pillars:
+
+### 1. Security and Identity
+
+Security requires coordination between the AWS infrastructure layer (VPC, IAM, KMS) and the Snowflake data platform layer (network policies, RBAC, OAuth). Joint recommendations emphasize:
+
+- **Networking**: Use AWS PrivateLink between Amazon VPC and Snowflake, and layer Snowflake network policies on top of EC2 security groups for defense in depth.
+- **Identity and access**: Federate Snowflake authentication through AWS IAM Identity Center, mapping identity provider groups to Snowflake database roles for consistent RBAC.
+- **Authentication**: Use AWS Secrets Manager to store Snowflake RSA private keys with automatic rotation; use SAML federation to provide a unified IdP for both systems.
+
+### 2. Data Governance and Compliance
+
+Protecting data itself requires coordination across two complementary layers: AWS infrastructure (S3 encryption, lifecycle policies) and the Snowflake query layer (dynamic data masking, row access policies, Tri-Secret Secure). Joint recommendations include:
+
+- **Data protection**: Combine AWS KMS and Snowflake Tri-Secret Secure for dual-managed encryption, and apply Snowflake masking policies for column-level protection.
+- **Audit and compliance**: Stream Snowflake audit logs through Amazon S3 and Amazon EventBridge to Amazon CloudWatch or OpenSearch Service for unified compliance monitoring.
+
+### 3. Reliability
+
+Reliability depends on the coordination capabilities of both systems during failure scenarios. Key integration areas include:
+
+- **Disaster recovery**: Configure Snowflake cross-region replication to a secondary AWS region and use Snowflake client redirect for automatic failover.
+- **Data durability**: Align Snowflake Time Travel retention with Amazon S3 versioning policies; use zero-copy cloning for pre-deployment testing to avoid storage overhead.
+- **Recovery objectives**: Define joint RTO and RPO targets that account for both Snowflake replication latency and AWS infrastructure recovery time.
+
+### 4. Performance Optimization
+
+Performance tuning needs to happen at both the infrastructure and application layers.
+
+- **Compute resource sizing**: Right-size Snowflake virtual warehouses based on query profiling, aligning them with auto-scaling multi-cluster warehouses at the application layer.
+- **Data organization**: Optimize Amazon S3 staging file sizes for Snowpipe ingestion; apply clustering keys on frequently filtered columns following lowest-to-highest cardinality order (a requirement specific to Snowflake's micro-partition architecture).
+- **Caching and latency**: Design query patterns to maximize Snowflake result cache hit rates; use Amazon ElastiCache at the application layer to cache frequently accessed Snowflake results.
+
+### 5. Cost Optimization and FinOps
+
+Managing costs across two billing models (AWS infrastructure consumption and reservations vs. Snowflake compute credits and storage).
+
+- **Cost visibility**: Combine AWS Cost Explorer data and Snowflake credit consumption in an integrated FinOps dashboard, using matched cost center tags for resource tagging.
+- **Compute efficiency**: Pair Snowflake capacity commitments with AWS Savings Plans for predictable baselines; aggressively use auto-suspend for development warehouses.
+- **Storage efficiency**: Align Snowflake Time Travel retention (1 day for development, 90 days for regulated data) with Amazon S3 lifecycle transitions to Glacier.
+
+### 6. Operational Excellence
+
+Build observability, automation, and incident response workflows across both platforms.
+
+- **Monitoring**: Export Snowflake metrics to Amazon CloudWatch using Amazon S3 integration to build unified operational dashboards.
+- **Automation and IaC**: Manage Snowflake objects and AWS infrastructure in the same Terraform state; use CI/CD pipelines for database migration workflows.
+- **Incident response**: Trigger AWS Lambda automated remediation from Snowflake resource monitor alerts through notification integration and Amazon SNS.
+
+### 7. Sustainability
+
+This is the first joint ISV-AWS WAF Lens to feature sustainability as a first-class pillar.
+
+- **Region selection**: Choose AWS regions aligned with sustainability goals for non-latency-sensitive Snowflake workloads; prefer secondary regions with higher renewable energy percentages for disaster recovery.
+- **Data lifecycle**: Minimize storage footprint by aligning Time Travel retention with actual recovery needs; use zero-copy cloning instead of full data copies for development and testing.
+
+## Practice
+
+The lens provides three access methods to accommodate different workflows and team preferences:
+
+### 1. AWS Well-Architected Tool Console
+
+Best for structured, formal reviews. Steps:
+
+1. Download the [Snowflake AWS Custom Lens JSON file](https://snowflake-corp-se-workshop.s3.us-west-1.amazonaws.com/AWS-Snowflake-Joint-WAF/Snowflake-WAF-Lens.json).
+2. Log in to the [AWS Well-Architected Tool console](https://console.aws.amazon.com/wellarchitected) and select **Custom lenses** in the navigation pane.
+3. Select **Create custom lens**, upload the downloaded JSON file, then select **Submit**.
+
+This tool generates an improvement plan with prioritized actions and documentation links, supporting PDF/JSON export for compliance reporting.
+
+### 2. Kiro (AI-Assisted IDE)
+
+Best for conversational, AI-assisted reviews within an IDE. Steps:
+
+1. Download [Snowflake WAF Power](https://snowflake-corp-se-workshop.s3.us-west-1.amazonaws.com/AWS-Snowflake-Joint-WAF/snowflake-WAF-powers.zip) and extract it.
+2. In Kiro, select **Open Folder** and choose the extracted folder.
+3. Type "Run a Snowflake and AWS WAF review" in the chat to begin.
+
+Output includes recommendations categorized by timeframe (Now/Next/Later) with automated mappings.
+
+### 3. Snowflake Cortex Code
+
+Allows completing the review within the Snowflake ecosystem, with both CLI and browser-based Snowsight options.
+
+- **Option A (CLI)**:
+    1. Download and extract the [Cortex Code zip file](https://snowflake-corp-se-workshop.s3.us-west-1.amazonaws.com/AWS-Snowflake-Joint-WAF/joint-waf-aws-lens.zip).
+    2. Run `cortex skill add <extraction-path>` in the terminal to add the skill.
+    3. Start the `cortex` CLI and type `invoke the joint-waf-aws-lens skill` to begin.
+
+- **Option B (Snowsight)**:
+    1. In Snowsight, navigate to **Projects > Workspaces**, open or create a workspace.
+    2. Open the Cortex Code assistant panel, select **+ Add context** > **Upload Skill Folder(s)** and upload the skill folder.
+    3. Type `run the joint-waf skill` in the message box to begin the review.
+
+## SRE Takeaways
+
+This joint lens has direct practical value for SRE teams, treating two independent platforms as a unified system for optimization.
+
+- **Reliability design connection**: The lens's "Reliability" pillar directly guides SREs on designing disaster recovery, failover, and recovery objectives (RTO/RPO) across Snowflake and AWS. It drives SRE teams to define **joint SLOs**, where SLIs must account for both Snowflake query performance and AWS infrastructure availability.
+- **Observability integration**: In the "Operational Excellence" pillar, the lens explicitly recommends integrating Snowflake monitoring data (such as query history, resource monitor alerts) into AWS-native observability tools (CloudWatch, OpenSearch). This enables SREs to build **unified observability dashboards** correlating application performance (Snowflake) with infrastructure health (AWS).
+- **Incident response automation**: SREs can leverage the lens's guidance to build automated response workflows from Snowflake alerts (such as resource exhaustion, query failures) to AWS automated remediation mechanisms (Lambda functions, SNS notifications), reducing **toil**.
+- **Automation and IaC governance**: The lens emphasizes using IaC tools like Terraform to manage both AWS and Snowflake resources. This lays the foundation for SREs to achieve **infrastructure as code**, version control, and consistent deployments -- a key step toward GitOps.
+- **FinOps and cost predictability**: The cost pillar helps SREs understand and optimize cross-platform spending through integrated cost views and joint optimization strategies (such as combining Snowflake auto-suspend with AWS Spot instances), enabling more precise capacity planning and cost forecasting -- an important modern SRE responsibility.
+- **Sustainability (GreenOps)**: As the first lens to include a sustainability pillar, it guides SREs to incorporate carbon footprint optimization into architectural decisions, such as choosing low-carbon regions and optimizing compute and storage efficiency, expanding the traditional SRE boundary of ensuring service reliability.
+
+**Best practices and common anti-patterns**:
+
+- **Best practice**: Start with the Security and Reliability pillars for the initial review; use the improvement plan to prioritize tasks across teams; export review results as compliance evidence.
+- **Common anti-patterns**:
+    1. **Siloed optimization**: Only optimizing Snowflake queries while ignoring underlying EC2 instance selection, or only optimizing S3 storage while ignoring Snowflake's data lifecycle policies.
+    2. **Loose credential management**: Duplicating or inconsistently managing service account credentials in Snowflake and AWS, rather than using unified identity federation and Secrets Manager.
+    3. **Fragmented monitoring**: Relying on separate monitoring views for Snowflake and AWS without establishing a global view for correlated failures, making root cause analysis difficult.
+
+**Relevant metrics (SLI/SLO)**:
+
+The lens's review results directly impact the definition of SLIs and SLOs for joint workloads. For example, an end-to-end query latency SLO must cover the full path from AWS networking to Snowflake compute. SRE teams should translate the lens's recommendations into measurable **reliability metrics** and **error budget policies** based on its findings.

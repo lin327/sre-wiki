@@ -1,0 +1,53 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "macOS 27 Beta Update Causing Asahi Linux Partition Visibility Loss Event Analysis"
+category: "Incident Response and Fault Management"
+confidence: low
+---
+
+# macOS 27 Beta Update Causing Asahi Linux Partition Visibility Loss Event Analysis
+
+## Overview
+
+Asahi Linux is an open-source project dedicated to providing Linux support for Apple Silicon (Arm architecture) Mac computers. Its users need to create separate boot partitions to run Linux alongside macOS. The project recently issued an important warning advising users **not to upgrade** to the macOS 27 "Golden Gate" beta. While this event targets a specific project, it vividly demonstrates how operating system updates can unexpectedly impact multi-system environments, serving as a classic teaching case for [[change-management]] and [[system-reliability]] principles in SRE practice.
+
+## Core Concepts
+
+The core issue of this event is the unexpected loss of **boot partition visibility**.
+
+1. **Boot Selector Detection Logic Change**: macOS 27 modified how the Startup Manager (boot selector) and "Startup Disk" application detect legitimate boot volumes. The new logic fails to correctly recognize boot partitions created by Asahi Linux, causing these partitions to "disappear" from the selection interface.
+2. **Data Intact, Access Blocked**: The Asahi Linux project confirmed the change is a logical recognition error, not physical deletion or corruption. Users' Asahi Linux partitions and data remain safely on disk; macOS boot tools simply cannot "see" and boot them temporarily.
+3. **Installer Precautions**: To prevent new users from being trapped, the Asahi Linux installer has been temporarily patched to prohibit use when macOS 27 is detected. This is a proactive risk avoidance measure.
+4. **Rollback Path**: For users who have already upgraded and been affected, the clear recovery path is using macOS 26 (current stable version) installation media or recovery features to restore access to Asahi Linux partitions by resetting the bootloader.
+
+## Practice
+
+### Guidance for Asahi Linux Users
+
+1. **Preventive Measures (Preferred)**:
+    - **Defer Upgrade**: Avoid updating the macOS system to version 27 Beta until the official macOS 27 release and Asahi Linux project confirmation that the issue is resolved.
+
+2. **Recovery Steps for Affected Users**:
+    - **Prepare Media**: Obtain a macOS 26 installation USB drive or ensure access to macOS Recovery Mode (via `Command + R` or similar shortcuts).
+    - **Boot to macOS Environment**: Boot the Mac via macOS Recovery or installer.
+    - **Reset Bootloader**: In the macOS environment, use built-in tools or specific commands to reset NVRAM/PRAM and boot records. This process forces macOS to rescan all boot partitions. After restoring Asahi Linux partition visibility, reselect the default boot option through "Startup Disk" preferences.
+    - **Important**: Always back up important data before operating. While this event does not involve data deletion, any operations involving boot areas carry risk.
+
+### System Design Insights
+
+For systems designed to support multi-OS boot (e.g., managing heterogeneous devices in hybrid clouds or test environments), this event highlights:
+- **Boot environments are fragile critical paths**: Any change in the boot chain can have widespread and unexpected side effects.
+- **Dependencies must be explicitly managed**: Third-party systems' (such as Asahi Linux) implicit dependencies on the host system's (macOS) internal implementation details (such as partition detection logic) are dangerous.
+
+## SRE Essentials
+
+- **Relationship to Reliability and Observability**: This event directly impacts the **availability** SLI of Macs running Asahi Linux. Users cannot boot into the Linux system as expected, causing service disruption. It emphasizes the importance of **bootability** as a foundational reliability indicator.
+- **Best Practices and Common Anti-Patterns**:
+    - **Anti-Pattern: Untested Breaking Changes**. Apple's change is a breaking update without sufficient backward compatibility testing, affecting unofficial but widely used configurations.
+    - **Best Practice: Phased Updates and Change Control**. SRE practices require any system-impacting update to follow strict change management processes, including thorough pre-production testing, phased canary releases, and clear rollback plans. The Asahi Linux project's rapid warning issuance and installer fix demonstrate good incident response.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: System boot success rate, average time to boot to target system.
+    - **SLO**: For multi-system development environments, agree on SLOs like "within X business days of a major OS update, secondary OS remains bootable."
+    - **SLA**: This event itself does not directly involve SLAs, but highlights the challenges of maintaining such SLOs when running critical services on consumer hardware.
+- **Related Pages**: This event is an excellent case for the [[incident-response]] process and profoundly reflects [[change-management]]'s core role in ensuring system reliability. For multi-system environments, boot partition stability is a key aspect of system design; see [[boot-partition-visibility]] for related concepts.

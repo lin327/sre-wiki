@@ -1,0 +1,84 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Provisioning Folder Hierarchy Failure"
+category: "Configuration Management"
+confidence: low
+---
+
+# Grafana Dashboard Provisioning Folder Hierarchy Failure
+
+## Overview
+
+Dashboard Provisioning is a critical feature in Grafana that allows operations teams to manage dashboard and folder creation and synchronization through declarative YAML files. This is essential for achieving Infrastructure as Code (IaC), automated deployment, and maintaining large-scale, standardized dashboard environments. In SRE practices, it helps ensure consistency and reproducibility of monitoring views.
+
+However, Grafana introduced a behavioral change in v11.6.0 that broke the previously working folder nesting (subfolder) provisioning functionality. All configured folders are created under the Grafana root directory, destroying the intended hierarchy. This can impact existing monitoring organization logic and operational workflows.
+
+## Core Concepts
+
+### Dashboard Provisioning
+Refers to the process of automatically creating, updating, or deleting dashboards and folders by reading specified YAML/JSON configuration files when the Grafana server starts. Configuration files are typically located in the `etc/grafana/provisioning/dashboards/` directory.
+
+### Folder Hierarchy
+Dashboards in Grafana are organized through folders. In v11.5.x and earlier, provisioning supported creating nested folders (subfolders). This was achieved by using the `folder` property in folder definitions to specify the parent folder name.
+
+### Configuration Model Change
+After upgrading from v11.5.3 to v11.6.0, the provisioning engine's folder handling logic changed. The core issue is: even when subfolders already exist in the system and have been manually moved to the correct position, the provisioning process erroneously attempts to recreate the folder at the root directory, indicating that its reconciliation loop fails to correctly identify and maintain existing hierarchical relationships.
+
+## Practice
+
+Based on the scenario described in the issue, here is an example of the problematic configuration and its behavior:
+
+**Configuration structure valid in Grafana v11.5.3 (simplified example):**
+```yaml
+# provisioning/dashboards/structure.yaml
+apiVersion: 1
+providers:
+  - name: 'default'
+    folder: 'SERVICES AND SYSTEMS'
+    folderUid: 'services'
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+
+# provisioning/dashboards/folders.yaml
+apiVersion: 1
+folders:
+  - orgId: 1
+    title: "SERVICES AND SYSTEMS"
+    uid: services
+  - orgId: 1
+    title: "BEMTEVI"
+    uid: bemtevi
+    # Parent folder specified via folder property
+    folder: SERVICES AND SYSTEMS
+```
+
+With this configuration, Grafana creates two folders: `SERVICES AND SYSTEMS` as the top-level folder, and `BEMTEVI` as its subfolder.
+
+**Abnormal behavior in Grafana v11.6.0:**
+- The user configures the `BEMTEVI` folder as a subfolder via `folder: SERVICES AND SYSTEMS`.
+- After upgrading, when the provisioning script runs, regardless of whether the `BEMTEVI` folder already exists within `SERVICES AND SYSTEMS`, it recreates an **empty folder** named `BEMTEVI` (without any dashboards) at the **Grafana root directory**.
+- Manually moving this newly created root folder back under `SERVICES AND SYSTEMS` does not resolve the issue; the next provisioning execution creates another root directory folder.
+
+**Current Workarounds:**
+Until an official fix is available, possible workarounds include:
+1. **Downgrade or stay on stable version**: Do not upgrade to the affected Grafana versions.
+2. **Adjust provisioning strategy**: Temporarily abandon the nested structure, flatten all folders at the root directory, and wait for an official patch.
+3. **Post-processing via API or script**: After Grafana starts, use scripts to call the Grafana API to correct the folder hierarchy, but this increases complexity and maintenance costs.
+
+## SRE Essentials
+
+- **Relationship to Reliability**: Provisioning failures directly impact the **manageability** and **reproducibility** of the monitoring system. During disaster recovery or environment rebuilds, the expected dashboard organization structure may not be automatically restored, reducing operational efficiency. This is a classic **Configuration Drift** problem.
+
+- **Best Practices and Preventive Measures**:
+    1. **Thorough testing before upgrades**: Any infrastructure component upgrade should undergo comprehensive regression testing in a pre-production environment with the complete configuration set, especially verifying automated configuration management processes.
+    2. **Version-controlled configuration management**: Include dashboard provisioning files in Git version control alongside application code, and record the associated Grafana version constraints.
+    3. **Implement configuration consistency checks**: Write scripts or use CI/CD pipelines to verify that the folder/dashboard structure in Grafana matches the expected configuration after deployment.
+    4. **Monitoring and alerting**: Monitor the provisioning process itself for success/failure. Set alerts for critical organizational structure changes.
+
+- **Related Metrics (SLI/SLO)**:
+    - **SLI**: Monitor "correctness rate of critical folder hierarchy after provisioning" or "percentage of dashboards successfully deployed through automation."
+    - **SLO**: Set "after each Grafana version upgrade, all core folders achieve 100% structural correctness after provisioning."
+
+- **Related Issues**: This issue reflects the importance of **backward compatibility** and **configuration interface stability** in software upgrades. When implementing change management processes, attention must be paid to the risks of such behavioral changes. Related topics can be found in [[change-management]] and [[configuration-management]].

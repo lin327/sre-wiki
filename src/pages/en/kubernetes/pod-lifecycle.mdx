@@ -1,0 +1,80 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Pod Lifecycle"
+description: "Comprehensive understanding of Kubernetes Pod lifecycle phases, container state transitions, and lifecycle hooks, mastering the complete Pod scheduling and termination flow."
+---
+
+# Pod Lifecycle
+
+Pods are the smallest deployable units in Kubernetes. A Pod can contain one or more containers sharing network namespaces and storage volumes. Understanding the complete Pod lifecycle is critical for troubleshooting scheduling failures, startup anomalies, and termination timeouts.
+
+## Pod Phases
+
+Kubernetes describes Pod macro-state through `status.phase`. This field is mutually exclusive -- a Pod can only be in one Phase at a time.
+
+| Phase | Meaning | Typical Scenarios |
+|-------|---------|-------------------|
+| **Pending** | Pod accepted by API Server but not yet running. May be waiting for scheduling or image pull. | Insufficient resources, node affinity mismatch, PVC binding |
+| **Running** | Pod bound to node, at least one container running. | Normal serving Pods |
+| **Succeeded** | All containers terminated successfully, no restarts. | Job / CronJob task completion |
+| **Failed** | All containers terminated, at least one with non-zero exit code. | Application crash, OOMKilled |
+| **Unknown** | Pod status unobtainable, usually node communication failure. | Node network partition, kubelet down |
+
+```bash
+# View Pod current phase
+kubectl get pod <pod-name> -o jsonpath='{.status.phase}'
+
+# Count all Pods by phase
+kubectl get pods -A -o json | jq -r '.items[].status.phase' | sort | uniq -c
+```
+
+## Container States
+
+Each container in a Pod has independent state described by `containerStatuses`.
+
+### Waiting
+Container not yet started. Most common cause: pulling image or executing init container.
+
+Common Waiting reasons:
+- `ContainerCreating` -- Pulling image, mounting volumes
+- `ImagePullBackOff` -- Image pull failed, in backoff retry
+- `CrashLoopBackOff` -- Container repeatedly crashing
+- `PodInitializing` -- Init container not complete
+
+### Running
+Container executing. If `postStart` lifecycle hook configured, it has completed before the main process started.
+
+### Terminated
+Container finished. Includes exit code, reason, and timestamps. If `preStop` hook configured, it executes before SIGTERM.
+
+## Init Containers
+
+Init containers run before application containers for prerequisite checks and environment preparation. Typical uses:
+- Waiting for dependent services (database, message queue)
+- Pulling configuration files from ConfigMap or Secret to shared volumes
+- Database schema migration
+- Service registration to discovery systems
+
+## Pod Termination Flow
+
+When deleting a Pod (`kubectl delete pod` or Deployment rolling update):
+
+1. **Marked Terminating** -- API Server sets `deletionTimestamp`, removes Pod from Endpoints
+2. **Execute preStop hook** -- If configured, kubelet executes it in the container
+3. **Send SIGTERM** -- To container main process (PID 1); application should perform graceful shutdown
+4. **Wait grace period** -- Default 30 seconds (`terminationGracePeriodSeconds`)
+5. **Send SIGKILL** -- After grace period expires, force-kill all remaining processes
+6. **Cleanup** -- Delete Pod object from API Server
+
+```bash
+# View Pod graceful termination time
+kubectl get pod <pod-name> -o jsonpath='{.spec.terminationGracePeriodSeconds}'
+```
+
+## SRE Practice Checklist
+
+- Configure Readiness Probes for all Deployments
+- Set appropriate `terminationGracePeriodSeconds`
+- Use `preStop` hooks for connection draining and cache flushing
+- Init containers should have timeout and retry limits
+- Monitor `kube_pod_container_status_restarts_total` for repeatedly restarting Pods

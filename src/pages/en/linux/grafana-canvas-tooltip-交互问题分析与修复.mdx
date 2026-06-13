@@ -1,0 +1,79 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Canvas Tooltip Interaction Issue Analysis and Fix"
+category: "Grafana"
+confidence: medium
+---
+
+# Grafana Canvas Tooltip Interaction Issue Analysis and Fix
+
+## Overview
+
+In Grafana's Canvas panel, tooltips are core interactive components that display detailed data for elements to users. This page analyzes and documents a specific interaction failure. The issue causes abnormal hover behavior on other interactive elements after clicking a Canvas element that has **no** tooltip configured, preventing their tooltips from being displayed. As a key tool for building monitoring dashboards, the stability and smooth interaction of Grafana's own UI components directly affect the daily work efficiency and experience of SRE teams. Documenting this issue and sharing fix solutions helps maintain the reliability of the observability platform.
+
+## Core Concepts
+
+In the context of Grafana Canvas, a tooltip is an **information layer component**. It typically appears when a user hovers over a data point or graphical element, displaying more detailed data information (such as timestamps, values, labels, etc.). Its interaction logic is typically managed by front-end JavaScript/React state.
+
+The core technical point of this issue is **internal state management failure (such as hover state)**. A healthy state machine should guarantee:
+1. When the mouse enters an interactive element's area, an `onMouseEnter` event triggers, updating internal state to display that element's tooltip.
+2. When the mouse leaves that area, an `onMouseLeave` event triggers, updating internal state to hide the tooltip.
+3. Click operations should not disrupt the above hover state machine logic.
+
+According to the issue description, clicking a **non-interactive (no tooltip configured) element** may incorrectly modify or reset the global hover state flag, causing subsequent hover events to not be properly recognized and processed. This is a typical **state pollution** or **improper event bubbling/capturing handling** front-end defect.
+
+## Practice
+
+**Reproduction Path (based on report):**
+1. In a Canvas panel, multiple elements exist, some configured with tooltips and some without.
+2. The user first hovers over an element with a tooltip, which displays normally.
+3. The user clicks an element that has **no** tooltip configured.
+4. After this, hovering over other elements that should display tooltips no longer shows them.
+
+**Fix Strategy (general front-end fix approach):**
+The fundamental fix lies in **the Canvas panel's front-end codebase (located in the Grafana main repository's `public/app/plugins/panel/canvas` directory)**. The fix should ensure:
+
+1. **Event Isolation**: Add proper conditional checks to Canvas element click event (`onClick`) handlers. If the target element has no tooltip-related configuration, the event handler should return early, avoiding interference with hover state.
+2. **State Reset**: At the end of necessary interactions (e.g., clicking a "neutral" area or deselecting), actively reset the internal `hoveredElement` state to `null`, rather than relying on potentially flawed implicit logic.
+3. **Event Propagation Control**: Review whether event listeners are bound through bubbling or capturing phases, and ensure click events do not prevent subsequent mouseover/mouseout events from firing normally.
+
+A conceptual code fix example (pseudocode) might look like:
+```javascript
+// In the Canvas component's event handler
+const handleElementClick = (element, event) => {
+  // Only process if the element has a configured click action
+  if (element.onClick) {
+    element.onClick(event);
+    // May need to prevent default events, but should not clear hover state
+  }
+  // Key: ensure hoverState is not polluted
+  // event.stopPropagation(); // Use with caution, may cause other issues
+};
+
+// In hover state management
+const handleMouseOver = (element) => {
+  if (element.tooltip) { // Only update state for elements with tooltips
+    setHoveredElement(element);
+  }
+};
+
+const handleMouseOut = () => {
+  setHoveredElement(null); // Reset on leave
+};
+```
+
+**Deployment Verification**: After the fix code is merged and released with a new Grafana version, SRE teams should verify in the test environment following the above reproduction path that tooltip interaction has been restored and no other regressions have been introduced.
+
+## SRE Takeaways
+
+- **Relationship to Reliability and Observability**: Grafana is one of the core toolchains for achieving observability. The **availability** and **interaction reliability** of its interface directly impacts the efficiency with which SRE teams discover issues and analyze faults through visualized data. While a flawed tooltip interaction is not a data error, it hinders rapid access to critical information and constitutes a form of "availability degradation."
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: When developing custom Grafana panels or plugins, treat UI component interaction state management as a critical feature. Using mature state management libraries (such as Redux, Zustand) or React's Context/Hooks can reduce such state bugs.
+    - **Anti-Pattern**: Over-relying on DOM event default behavior or implicit global state without designing clear, independent state flows for different interactions (such as click, hover, drag). This leads to interactions interfering with each other.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: While this issue does not directly produce traditional operational metrics, a soft metric of "**critical UI operation success rate**" can be abstracted for SRE attention. For example, "in a Canvas panel, the ratio of 10 consecutive hover operations successfully displaying tooltips should be 100%."
+    - **SLO (Service Level Objective)**: For teams using Grafana as infrastructure, an internal SLO can be established, such as "Grafana's core interactive features (including Canvas Tooltip) must achieve 99.9% monthly availability."
+    - **Incident Response**: When UI issues affecting user experience are raised multiple times through internal feedback channels (such as tickets, Slack), SRE teams should be able to quickly correlate them with known Grafana issues, assess their impact scope, and drive issue escalation or provide temporary solutions (such as suggesting users roll back to a previous stable version or modify dashboard layout as a workaround).
+
+Related Pages: [[observability]], [[incident-response]], [[frontend-monitoring]]

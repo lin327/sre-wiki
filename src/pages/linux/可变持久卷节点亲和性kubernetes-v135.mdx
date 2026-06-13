@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "可变持久卷节点亲和性（Kubernetes v1.35）"
 description: "允许在运行时修改PV的节点亲和性，为在线存储迁移和更新提供了灵活性。"
@@ -11,6 +12,8 @@ sources:
     title: "Kubernetes Blog: Mutable PersistentVolume Node Affinity (alpha)"
 tags: [kubernetes, persistent-volume, node-affinity, storage, sre]
 ---
+
+# 可变持久卷节点亲和性（Kubernetes v1.35）
 
 ## 概述
 在 Kubernetes 生态系统中，`PersistentVolume`（PV）的节点亲和性（`nodeAffinity`）用于声明哪些节点可以访问特定的卷，这对于有状态应用的存储部署至关重要。历史上，PV 的节点亲和性在创建后是不可变的，这在存储基础设施演进时（如从可用区磁盘迁移到区域磁盘）带来了限制。Kubernetes v1.35 引入了“可变持久卷节点亲和性”（Alpha）特性，允许集群管理员在不重建卷或中断服务的情况下，动态更新 PV 的节点亲和性。这一变更极大地提升了在线存储管理的灵活性，是 SRE 实践中实现存储层弹性和灵活性的重要一步。

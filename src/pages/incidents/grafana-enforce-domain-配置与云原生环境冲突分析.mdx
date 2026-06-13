@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana enforce_domain 配置与云原生环境冲突分析"
 description: "分析 Grafana enforce_domain 安全配置在 Kubernetes 等云原生环境中导致本地 API 调用被错误重定向的问题、根本原因及应对策略。"
@@ -11,6 +12,8 @@ sources:
     title: "GitHub Issue #93773: enforce_domain shouldn't apply to localhost API calls or redirect with 308"
 tags: [grafana, security, configuration, kubernetes, dns-rebinding, sre-practices]
 ---
+
+# Grafana enforce_domain 配置与云原生环境冲突分析
 
 ## 概述
 

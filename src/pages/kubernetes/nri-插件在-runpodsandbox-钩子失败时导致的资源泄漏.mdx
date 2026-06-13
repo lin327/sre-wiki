@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "NRI 插件在 RunPodSandbox 钩子失败时导致的资源泄漏"
 description: "当NRI插件在RunPodSandbox钩子执行失败时，由于缺少必要的清理逻辑，containerd会泄漏Shim进程和文件系统挂载等资源。"
@@ -11,6 +12,8 @@ sources:
     title: "[Bug] When NRI plugin fails on RunPodSandbox, containerd leaks resources"
 tags: [containerd, NRI, resource-leak, sandbox, shim]
 ---
+
+# NRI 插件在 RunPodSandbox 钩子失败时导致的资源泄漏
 
 ## 概述
 

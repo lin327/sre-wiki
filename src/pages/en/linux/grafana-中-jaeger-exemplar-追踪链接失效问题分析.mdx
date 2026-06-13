@@ -1,0 +1,53 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Jaeger Exemplar Trace Link Failure Analysis"
+description: "Troubleshooting and mitigation for Jaeger TraceID tab not auto-selecting when navigating from Grafana metric exemplar links."
+category: observability
+order: 0
+lastUpdated: 2025-09-22
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/111448
+    title: "Jaeger datasource: link to trace broken"
+tags: [Grafana, Jaeger, Exemplars, tracing, metrics, observability]
+---
+
+# Grafana Jaeger Exemplar Trace Link Failure Analysis
+
+## Overview
+
+In modern observability practice, correlating Metrics with Traces is a critical capability for quickly identifying performance bottlenecks and root causes of failures. Grafana implements this correlation through the Exemplars feature, allowing users to jump directly to the corresponding trace chain when viewing metrics. However, under specific configurations and versions (such as Grafana 12.1.1 as reported), when clicking an Exemplar link from a metric panel to jump to Jaeger, the target page's **TraceID** tab fails to activate or be selected correctly, preventing trace data from being displayed directly. This breaks the continuity of the diagnostic workflow, increases troubleshooting costs, and is an integration issue that SRE teams need to be aware of when maintaining monitoring system reliability.
+
+## Core Concepts
+
+Understanding this issue requires clarifying the following concepts:
+
+- **Exemplars**: An Exemplar is a high-cardinality sample data point with a timestamp and TraceID. It is attached to a specific value of a metric (such as request latency), representing a concrete instance that produced that metric value. Clicking an Exemplar allows "drilling down" from the macro metric view to the micro distributed tracing view.
+- **Metrics to Trace Correlation**: One of the core capabilities provided by observability platforms. In Grafana, by configuring tracing data sources like Jaeger as the target for Exemplars, hyperlinks from Prometheus/Grafana metrics to Jaeger traces can be created.
+- **TraceID Tab**: In the Jaeger UI, users can search for traces by TraceID, Service Name, and Operation Name. When jumping from an Exemplar link, the expected behavior is that the Jaeger UI should automatically switch to the "TraceID" tab, auto-fill and search for that TraceID, and directly display the trace results.
+
+## Practice
+
+According to the issue report, the reproduction and impact are as follows:
+
+1. **Issue Manifestation**: Users configured Jaeger as an Exemplar data source in Grafana and enabled Exemplar display in metric panels (such as Prometheus queries). When hovering over an Exemplar point on the metric chart and clicking the "See trace" link, the browser opens a new Jaeger UI tab. **The issue is that the newly opened Jaeger page does not automatically activate the "TraceID" search tab**, but remains on the default search interface (such as the "Search" tab). Users need to manually copy the TraceID and paste it into the correct input field to query.
+2. **Temporary Workaround**: Before an official fix is released, SREs or developers can use the following temporary measures to maintain their workflow:
+    - **Manual operation**: After clicking the link, manually switch to the TraceID tab in the Jaeger UI and copy the TraceID from Grafana's Exemplar tooltip to search.
+    - **Version rollback**: If the impact is severe, evaluate rolling back to a confirmed working Grafana version (the issue mentions "Did this work before? Yes").
+3. **Fundamental Fix**: After this issue was reported to the Grafana team, it is expected to be fixed as a bug in a subsequent version. The fix direction may involve adjusting the Jaeger data source plugin's generated link URL parameters to ensure the correct instructions for activating the TraceID tab are passed (e.g., the URL may be missing or incorrectly setting the `search` query parameter, such as `?search=true` or `?traceId=xxx`).
+
+## SRE Key Points
+
+- **Relationship to Reliability**: This issue directly impacts **Mean Time to Diagnose (MTTD)**. When production alerts occur, SRE teams rely on quickly jumping from metric anomalies to traces to locate service bottlenecks or error sources. Broken links force engineers to perform multiple manual steps, delaying Mean Time to Repair (MTTR) and reducing monitoring system effectiveness.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: After monitoring system integration, regularly perform end-to-end health checks to verify that the complete diagnostic path from alerts, metrics, logs, to traces is unobstructed. Incorporate such integration testing into the "self-reliability" assurance scope of the monitoring system.
+    - **Common Anti-Pattern**: Ignoring integration breakpoints between monitoring tools, assuming each subsystem (Grafana, Jaeger) works independently. In reality, the connectivity of the toolchain itself is an SLI that needs monitoring.
+- **Related Metrics (SLI/SLO)**:
+    - **SLI Example**: Define a metric "success rate of jumping from metric alerts to viewing complete trace chains," monitoring the jump and load success rate of Exemplar links.
+    - **SLO Example**: Ensure the critical diagnostic path from Grafana to the tracing system functions normally and automatically locates the correct trace view 99.9% of the time.
+
+## References
+
+- Original issue report: [[grafana-issue-111448]]
+- Related technologies: [[exemplars]], [[distributed-tracing]], [[grafana-data-sources]]

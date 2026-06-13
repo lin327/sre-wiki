@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana TestData Plugin Navigation to Configuration Page Shows 404/Blank Page"
+description: "Description of the issue where clicking 'Add new data source' for TestData from the Grafana Connections page navigates to a 404 or blank page instead of the expected configuration page."
+category: Troubleshooting
+order: 0
+lastUpdated: 2026-04-21
+confidence: medium
+---
+
+# Grafana TestData Plugin Navigation to Configuration Page Shows 404/Blank Page
+
+## Overview
+
+In the Grafana monitoring platform，数据源（Data Source）的配置是建立可观测性基础的关键步骤。本页面详细记录了一个在 Grafana v13.1.0 版本中，与内置 **TestData** 插件交互时发现的特定软件缺陷（Bug）。该缺陷导致用户无法通过图形用户界面（GUI）正常创建新的 TestData 数据源实例，从而可能阻碍快速搭建测试环境或进行功能验证。对于 SRE 团队而言，确保监控工具自身的可靠性与功能完备性至关重要，此类界面故障会直接影响运维效率和用户体验。
+
+## 核心概念
+
+- **TestData 数据源**：Grafana 内置的一个特殊数据源插件，主要用于测试、演示和调试。它不连接真实的外部数据，而是生成模拟的时间序列数据、日志或其他格式的测试数据，是验证仪表盘（Dashboard）和警报规则的理想工具。
+- **连接页面**：Grafana 中用于集中管理所有数据源配置的页面（通常位于 `/connections` 路径下）。用户可以在此浏览、添加、编辑或删除数据源。
+- **前端路由**：指 Grafana 单页应用（SPA）内部的 URL 路径映射逻辑。当用户点击“添加新数据源”按钮时，应用应根据数据源插件的标识符（slug）路由到对应的配置表单页面。
+
+## 实践
+
+### 故障复现步骤
+
+根据提交的 Issue 报告，可以按照以下步骤重现该问题：
+
+1.  **访问数据源列表**：导航至 Grafana 的“连接”页面，找到 **TestData** 数据源条目（URL 通常为 `/connections/datasources/grafana-testdata-datasource`）。
+2.  **触发故障操作**：在 TestData 数据源的详情页面，点击位于右上角的 **“Add new data source”**（添加新数据源）按钮。
+3.  **观察现象**：浏览器导航至一个形如 `/connections/datasources/grafana-testdata-datasource/new` 的新 URL，但页面内容为空白或直接显示 404 Not Found 错误。
+
+### 环境信息
+
+- **Grafana 版本**：13.1.0-24556818486 (Cloud Trial, commit 7da094c5)
+- **平台**：Grafana Cloud
+- **浏览器**：Google Chrome
+- **操作系统**：未具体说明，但使用环境为 Grafana Cloud 试用版。
+
+### 临时缓解方案
+
+在官方修复发布之前，可以尝试以下方法绕过此 GUI Bug：
+- 通过 **Grafana API** 直接创建 TestData 数据源实例，而不是依赖前端界面。
+- 在仪表盘或警报规则中直接使用默认的 TestData 数据源（如果它已存在），而不是创建一个新的实例。
+
+## SRE 要点
+
+### 对可靠性与可观测性的影响
+
+此故障直接影响 Grafana 平台的**用户体验可靠性**。虽然 TestData 数据源不承载生产监控数据，但其作为快速验证监控管道（Pipeline）的关键工具，其配置功能的失效会拖慢 SRE 团队构建原型、测试新仪表盘或调试告警规则的效率。在实施全面的可观测性策略时，确保工具链自身所有辅助功能正常工作是建立信心的第一步。
+
+### 事件响应与最佳实践
+
+1.  **问题上报与追踪**：对于在内部工具中发现的 UI/UX 问题，应立即在相应的官方问题跟踪系统（如 GitHub Issues）中上报，并清晰提供复现步骤、环境信息和截图/录屏。
+2.  **根本原因分析**：此类问题通常属于**前端路由逻辑**或**插件注册**缺陷。可能原因包括路由规则缺失、URL slug 不匹配、或新版本中引入的路由守卫错误地拦截了访问。需要检查 Grafana 前端代码中关于 `/connections/datasources/:pluginId/new` 路由的处理逻辑。
+3.  **最佳实践**：
+    - 在升级 Grafana 主版本前，在预发布环境中全面测试核心功能，包括数据源的增删改查。
+    - 为 Grafana 关键用户交互路径（如数据源管理、仪表盘创建）设置 **合成监控（Synthetic Monitoring）** 或 **端到端测试**，以便在版本更新后自动检测此类回归故障。
+
+### 相关指标
+
+虽然这是一个界面缺陷，但可以关联到以下 SRE 关注的指标：
+- **用户任务完成率**：衡量 SRE/DevOps 用户能否成功完成“创建 TestData 数据源”这一任务。
+- **内部工具故障率**：作为组织内部工具链可靠性的一个数据点。
+- **Mean Time to Identify (MTTI)**：从用户报告问题到 SRE 团队在问题跟踪系统中确认并分类该问题的时间。清晰的 Issue 报告有助于缩短 MTTI。
+
+## 关联页面
+
+- [[grafana-data-source-management]]
+- [[grafana-plugin-architecture]]
+- [[synthetic-monitoring]]

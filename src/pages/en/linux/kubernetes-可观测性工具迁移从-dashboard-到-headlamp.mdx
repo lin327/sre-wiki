@@ -1,0 +1,75 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Observability Tool Migration: From Dashboard to Headlamp"
+category: "Observability"
+confidence: medium
+---
+
+# Kubernetes Observability Tool Migration: From Dashboard to Headlamp
+
+## Overview
+
+Kubernetes Dashboard has long served as a visualization window for clusters, helping developers and operators understand cluster state. With the project being archived, its official successor **Headlamp** has become an important front-end tool for modern Kubernetes cluster management and observability. For SRE teams, understanding this migration is not just a tool replacement but an opportunity to leverage a more powerful, extensible interface to enhance cluster observability, simplify troubleshooting, and streamline daily operations. Headlamp retains the familiarity of existing workflows while introducing multi-cluster support, application views, and a plugin system, aiming to meet the needs of scaled and complex Kubernetes operations.
+
+## Core Concepts
+
+### Dashboard Archival and Headlamp's Rise
+
+The archival of the Kubernetes Dashboard project marks the iteration of the community's official UI tool. **Headlamp**, as its spiritual successor, builds upon Dashboard's core concepts and aims to address the complexity of modern Kubernetes environments. It is not a simple replacement but provides a more feature-rich platform suitable for various scenarios from single-cluster to multi-cluster, from resource lists to application context.
+
+### Headlamp's Key Features
+
+- **Multi-Cluster Management**: Headlamp supports connecting and managing multiple Kubernetes clusters from a single interface, which is critical for SRE teams managing development, staging, and production environments, eliminating the need to switch between multiple tools or contexts.
+- **Application-Centric View (Projects)**: This feature allows grouping related resources such as Deployments, Services, and ConfigMaps by application logic, providing a higher-level contextual view beyond individual resource lists, helping quickly understand application architecture and perform impact analysis.
+- **Plugin-Based Extensibility**: Headlamp supports extension through plugins (such as Flux GitOps plugin, AI assistant plugin). This enables teams to integrate GitOps workflows, intelligent troubleshooting, and other capabilities directly into a unified observability interface, reducing tool-switching costs.
+- **Flexible Deployment Options**: Headlamp can be deployed as an **in-cluster application**, following the cluster's RBAC policies, suitable for shared environments; or run as a **desktop application**, allowing developers to use local kubeconfig to connect to clusters without deploying any components in the cluster.
+
+## Practice
+
+### Migration Steps from Kubernetes Dashboard to Headlamp
+
+The core of migration lies in verifying existing workflow compatibility and gradually exploring new features. The following is a migration preparation framework based on official recommendations:
+
+1.  **Audit Current Usage**: Document which clusters and namespaces the team currently accesses through Dashboard, as well as primary interaction patterns (such as viewing logs, editing YAML, scaling).
+2.  **Verify RBAC and Authentication**: Headlamp relies on standard Kubernetes authentication and RBAC. Ensure that permissions held by users through `kubeconfig` or service accounts can be correctly mapped to Headlamp, with expected behavior matching Dashboard.
+3.  **Identify Critical Workflows**: Clearly define which workflows are critical to the team, such as Pod monitoring in specific namespaces, quick event viewing, etc. After migration, prioritize verifying the accessibility and usability of these core flows in Headlamp.
+4.  **Trial and Exploration**: Deploy Headlamp in a test environment (desktop app mode can be used for quick experience) and let team members familiarize themselves with the interface. First verify basic functionality (resource view/edit), then explore `Projects` view and `Plugins` marketplace to evaluate efficiency improvements.
+5.  **Planning and Deployment**: Based on evaluation results, decide on in-cluster deployment, desktop app deployment, or a combination. Create a formal migration timeline and notify relevant users.
+
+### Configuration and Usage Notes
+
+- **In-Cluster Deployment**: Typically installed via Helm Chart, accessible after deployment through Ingress or port forwarding. A correct ServiceAccount must be configured to grant the UI appropriate API access permissions.
+- **Desktop Application**: Users download the application from the Headlamp official website, launch it, and import their `kubeconfig` file to connect to the corresponding cluster. This approach is particularly suitable for local development and debugging.
+- **Plugin Usage**: Community plugins can be browsed and installed in the plugin directory within the Headlamp interface, or internal plugins can be developed to integrate company-specific monitoring or operational toolchains.
+
+## SRE Essentials
+
+### Connection to Reliability Engineering
+
+Headlamp, as an enhanced observability frontend, directly serves SRE's core goals -- improving system reliability and operational efficiency:
+
+- **Enhanced Root Cause Analysis**: Through "Projects" view and resource relationship visualization, SREs can faster trace issues from services to their dependency configurations or underlying Pods, reducing MTTR (Mean Time To Repair).
+- **Supporting Incident Response**: Accessing multi-cluster resources, managing resources, viewing events and logs in a unified interface greatly simplifies information gathering and operational steps during emergencies.
+- **Promoting Collaboration**: Application-centric views help development, testing, and operations teams communicate around the same application context, reducing information gaps.
+
+### Best Practices and Common Anti-Patterns
+
+**Best Practices**:
+- **Apply Least Privilege Principle**: Create a dedicated ServiceAccount for Headlamp, granting only the permissions necessary to perform required operations, avoiding overly privileged accounts.
+- **Choose Appropriate Deployment Mode**: For production clusters, prioritize in-cluster deployment for security and consistency; for development and debugging, desktop app mode provides greater flexibility.
+- **Standardize Plugin Usage**: Evaluate and officially recommend core plugins (such as logging, monitoring integration) as standard extensions for the team's toolchain, avoiding security risks from unreviewed plugins.
+
+**Common Anti-Patterns**:
+- **Over-Reliance on Centralized UI**: Headlamp should not be the sole way to interact with clusters. SREs should maintain proficiency in command-line tools like `kubectl` for scenarios where the UI is unavailable or for complex automation.
+- **Ignoring RBAC Verification**: Deploying directly after migration without carefully verifying permission mappings may cause users to see resources they shouldn't or be unable to perform necessary operations, creating security or operational risks.
+
+### Related Metrics (SLI/SLO/SLA)
+
+While Headlamp itself does not directly define SLIs, as a critical operational tool, its availability and performance impact SRE team workflows. Teams can consider incorporating the following into internal tool SLO considerations:
+
+- **Tool Availability**: The uptime of the Headlamp instance itself (as an internal service SLI).
+- **Information Retrieval Efficiency**: The time from initiating troubleshooting to locating critical resource information in Headlamp (an indirect metric for improving operational efficiency).
+- **Operation Execution Success Rate**: The success rate of resource editing, scaling, and other operations executed through the UI, reflecting the tool's interaction reliability with the cluster control plane.
+
+Through this migration, SRE teams can seize the opportunity to upgrade their observability infrastructure, making Kubernetes cluster management more intuitive, efficient, and extensible. Related fundamental concepts can be referenced in [[kubernetes-overview]] and [[multi-cluster-observability]], while SLO best practices can be found in [[slo-best-practices]].

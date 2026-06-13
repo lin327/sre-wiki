@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana 自定义查询头部编码问题导致 WAF 拦截"
 description: "Grafana 在转发仪表盘和面板标题到数据源查询时，未对非 ASCII 字符进行 URL 编码，导致请求被 Web 应用防火墙拦截。"
@@ -11,6 +12,8 @@ sources:
     title: "grafana/grafana#114102 - Custom Grafana Query headers are not URL encoded"
 tags: [grafana, waf, encoding, reliability, http-headers]
 ---
+
+# Grafana 自定义查询头部编码问题导致 WAF 拦截
 
 ## 概述
 

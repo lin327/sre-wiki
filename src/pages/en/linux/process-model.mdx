@@ -1,0 +1,125 @@
+---
+layout: ../../../layouts/BaseLayout.astro
+title: "Linux Process Model"
+---
+
+# Linux Process Model
+
+In Linux, everything is a file, and a process is the fundamental unit of resource allocation and scheduling. As an SRE, understanding the process model is the first step in troubleshooting system faults and analyzing performance bottlenecks.
+
+## What Is a Process
+
+A Process is an instance of a program's execution. Each process has its own independent virtual address space, file descriptor table, signal handling table, and scheduling context. The kernel manages all processes through the `task_struct` structure, forming doubly linked lists and hash tables for fast lookup.
+
+From a user perspective, a process is uniquely identified by a PID. PID 1 is the system's init process (usually `systemd` on modern Linux), which is the ancestor of all user-space processes.
+
+```bash
+# View all processes in a tree structure
+ps auxf
+
+# Use pstree to view parent-child relationships (recommended)
+pstree -p
+
+# View current shell's PID
+echo $$
+
+# View detailed information about PID 1
+cat /proc/1/status | head -20
+```
+
+## Process States
+
+The Linux kernel defines the following core process states. Understanding these states is critical for troubleshooting issues like `D` state deadlocks and zombie processes.
+
+| State Code | Name | Meaning | Typical Scenario |
+|------------|------|---------|------------------|
+| `R` | Running / Runnable | Currently running or waiting in the run queue for scheduling | CPU-intensive tasks |
+| `S` | Sleeping (Interruptible) | Interruptible sleep, waiting for an event or signal | Normal service processes most of the time |
+| `D` | Disk Sleep (Uninterruptible) | Uninterruptible sleep, usually waiting for I/O completion | NFS mount timeout, disk failure |
+| `Z` | Zombie | Terminated but parent has not reaped exit status | Parent did not call `wait()` |
+| `T` | Stopped / Traced | Stopped by signal or traced by debugger | `SIGSTOP`, `gdb attach` |
+
+```bash
+# Count processes by state
+ps -eo state | sort | uniq -c | sort -rn
+
+# Find all D state (uninterruptible sleep) processes
+ps aux | awk '$8 ~ /D/ {print}'
+```
+
+## Parent-Child Relationships and Orphan Processes
+
+Every process (except PID 1) has a parent process. When a parent exits before its child, the child becomes an orphan process and is adopted (reparented) by PID 1 (init/systemd). This mechanism ensures every process has a valid parent.
+
+When a process exits, the kernel sends a `SIGCHLD` signal to its parent. The parent needs to call `wait()` or `waitpid()` to read the child's exit status, after which the child's PCB (Process Control Block) is fully released.
+
+## Zombie Processes
+
+<div class="admonition admonition--warning">
+  <p class="admonition-title">Warning</p>
+  <p>A small number of zombie processes is usually harmless, but a large number of zombies may indicate that the parent process has a bug or is blocked. Zombie processes do not consume memory or CPU, but they occupy PID table space. When PIDs are exhausted, the system cannot create new processes.</p>
+</div>
+
+A Zombie Process is a process that has finished execution but whose parent has not called `wait()` to reap its exit status. It appears as `Z` state in `ps` output.
+
+```bash
+# Find zombie processes
+ps aux | awk '$8=="Z" {print}'
+
+# Find the parent of a zombie process
+ps -o pid,ppid,state,cmd -p <zombie_pid>
+
+# Send SIGCHLD to the parent to remind it to reap
+kill -SIGCHLD <parent_pid>
+
+# If the parent is unresponsive, terminate the parent (zombie will be adopted by init and cleaned up)
+kill -9 <parent_pid>
+```
+
+The key approach to troubleshooting zombie processes: find the parent process and determine why it has not called `wait()`. Common reasons include the parent being stuck in I/O, the parent's code lacking signal handling logic, or the parent itself being in `D` state.
+
+## Process Creation: fork + exec
+
+Linux uses a two-step model of `fork()` + `exec()` to create new processes:
+
+1. **`fork()`** -- Copies the current process, creating an almost identical child process. The child gets a new PID but shares the code segment (optimized through Copy-on-Write).
+2. **`exec()` family** -- Replaces the current process's address space with a new executable file, preserving attributes like PID and file descriptors.
+
+```bash
+# Trace process creation
+strace -f -e trace=clone,execve bash -c "ls /tmp"
+
+# View fork children of a process
+pstree -p <pid>
+```
+
+This model is the foundation for understanding container init processes, signal propagation, and PID namespaces.
+
+## Signal Mechanism
+
+Signals are the oldest form of inter-process communication. The kernel notifies processes of specific events through signals. The signals SREs encounter most frequently include:
+
+| Signal | Number | Default Behavior | Common Usage |
+|--------|--------|------------------|--------------|
+| `SIGTERM` | 15 | Terminate | Graceful service stop |
+| `SIGKILL` | 9 | Terminate (uncatchable) | Force kill unresponsive processes |
+| `SIGHUP` | 1 | Terminate | Reload configuration (Nginx, HAProxy) |
+| `SIGCHLD` | 17 | Ignore | Child process exit notification |
+| `SIGSTOP` | 19 | Stop (uncatchable) | Suspend process |
+
+```bash
+# Gracefully stop a process (allow resource cleanup)
+kill -SIGTERM <pid>
+
+# Send SIGHUP to Nginx to reload configuration
+kill -HUP $(cat /var/run/nginx.pid)
+```
+
+## SRE Practice Essentials
+
+In daily operations, knowledge of the process model directly applies to the following scenarios:
+
+- **Service Startup Failure** -- Check port occupation (`ss -tlnp`), whether the process is already running (`systemctl status`), cgroup resource limits
+- **Abnormal CPU Usage** -- Locate high CPU processes via `top` / `htop`, analyze system calls with `strace` or `perf`
+- **Process Unresponsive** -- Distinguish between `S` (normal wait) and `D` (I/O blocked); D state processes cannot be terminated with `kill -9`
+- **PID 1 in Containers** -- PID 1 in containers needs to correctly handle signal forwarding, otherwise `docker stop` will timeout and force SIGKILL

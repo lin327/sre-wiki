@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Alert Rules Grouped View Pagination Issue"
+description: "Analysis of a front-end performance issue in Grafana's alert rules grouped view where the 'Show More' button requires multiple clicks to load additional data."
+category: observability
+order: 0
+lastUpdated: 2026-05-13
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/124836
+    title: "Alerting: alert rules grouped view 'show more' requires multiple clicks"
+tags: [grafana, alerting, UI, performance, usability]
+---
+
+# Grafana Alert Rules Grouped View Pagination Issue
+
+## Overview
+
+This document analyzes a front-end user experience (UX) issue in the Grafana observability platform, specifically involving the "Grouped View" feature on the alert rules management page. When users attempt to load more collapsed rule groups by clicking the "Show More..." link, the interface behaves unexpectedly, typically requiring multiple clicks to load successfully. Although this appears to be a simple front-end defect, it directly impacts the efficiency and experience of SRE engineers and operations teams in their daily management of large numbers of alert rules. It highlights the importance of front-end reliability and performance in observability toolchains for maintaining efficient operational workflows.
+
+## Core Concepts
+
+1. **Alert Rules Grouped View**: A method in Grafana for organizing and displaying large numbers of alert rules. It groups rules by folders or other dimensions, with most groups collapsed by default to keep the interface clean. Users need to manually expand or click "Show More" to view all content.
+2. **Alert Fatigue**: When the number of alerts is excessive and critical information is drowned out by noise, operations personnel may become desensitized to alerts, causing important notifications to be overlooked. An intuitive, responsive alert rules management interface is the first step in alleviating alert fatigue and helping teams effectively maintain and review rule definitions.
+3. **Front-End Performance and User Experience**: In SRE practice, the reliability of internal toolchains is equally critical. A sluggish, behaviorally anomalous management interface slows down incident response and daily maintenance, increases operational costs, and may indirectly affect the effectiveness of the entire monitoring system. This issue is a typical front-end performance and interaction logic bug.
+
+## Practice
+
+**Reproduction Steps:**
+1. Log in to a Grafana instance.
+2. Navigate to the "Alerting" -> "Alert rules" page.
+3. Ensure the view mode is set to "Grouped."
+4. In the rule list, find the rule group that needs to be expanded and click the "Show More..." link.
+5. Observe: The first click may have no response, or may not load the expected number of groups. Typically, a second click is needed to successfully load more folders/groups.
+
+**Optimization Suggestions and Workarounds (for SRE/Tool Maintainers):**
+
+*   **Client-Side Optimization**:
+    *   **Immediate Feedback**: When clicking "Show More," a loading indicator (such as a spinner) should appear immediately to let the user know the action has been received by the system.
+    *   **Debugging and Logging**: Check for JavaScript errors in the browser developer tools console. In the Network tab, verify whether clicking the button correctly initiates an API request to fetch more data (e.g., `/api/prometheus/grafana/api/v1/rules`) and check its status code and response time.
+    *   **User Communication**: If the issue is intermittent, suggest team members try a hard refresh (Ctrl+Shift+R) or clear the browser cache to rule out local cache interference.
+*   **Server-Side and Platform Optimization**:
+    *   **Upgrade Grafana Version**: This issue may have been fixed in a subsequent Grafana release. Check Grafana's official release notes and issue tracker for related patches. Planning a platform upgrade is the most thorough way to resolve known bugs like this.
+    *   **Configuration Adjustment**: Consider adjusting the default group count or page size for alert rules in Grafana configuration to reduce the frequency with which users must click "Show More." This is a temporary mitigation measure.
+    *   **Alternative Monitoring Paths**: If the UI is difficult to use, alert rules can be managed via API scripting or command-line tools like `grafana-toolkit` for batch operations, serving as a fallback when the interface fails.
+
+## SRE Key Points
+
+*   **Relevance**: This issue directly relates to the **observability** platform's user experience and **incident response** efficiency. A smooth alert rules management interface is the foundation for SRE teams to quickly adjust alerting strategies and optimize SLO monitoring. A sluggish interface increases maintenance costs and is a form of internal "technical debt."
+*   **Best Practices**:
+    1. **Monitor Internal Tools**: Monitoring the front-end performance of core operational tools like Grafana (e.g., page load times, key interaction response times) can help detect such issues proactively.
+    2. **Establish Feedback Channels**: Encourage team members to promptly report UI/UX issues that affect work efficiency, and actively submit or follow issues upstream (e.g., on Grafana GitHub).
+    3. **Version Management**: Staying informed about Grafana versions and planning upgrades systematically can fix known defects and deliver performance improvements.
+*   **Common Anti-Patterns**:
+    *   **Ignoring UI/UX Issues**: Believing "as long as it works" while ignoring the long-term erosion of response speed and interaction smoothness on operational efficiency.
+    *   **Relying on Unstable Interfaces for Critical Operations**: When the interface is unreliable, still forcing batch rule modifications through it can easily lead to widespread alert failures or noise spikes due to operational errors.
+*   **Related Metrics (SLI/SLO)**:
+    *   While this issue does not directly involve business SLOs, SLIs can be defined for internal toolchains, such as:
+        *   **Average response time for critical operations in the alert rules management interface** (e.g., "group expansion").
+        *   **Error rate for critical Grafana management pages**.
+    *   Maintaining these SLIs at a high level is an indirect guarantee of SRE team effectiveness.
+*   **Related Pages**: This issue discusses tool reliability and can be associated with [[observability]] practices. Its manifestation also highlights that beyond avoiding [[alert-fatigue]], managing alert rule definitions themselves is equally important.

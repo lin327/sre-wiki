@@ -1,0 +1,58 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Kiosk Mode UI Element Display Issue"
+description: "Resolving the issue where Grafana Kiosk mode fails to hide variables and time picker since version 11.3."
+category: monitoring-visualization
+order: 0
+lastUpdated: 2026-01-15
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/116370
+    title: "Kiosk Mode: Variables not hiding since 11.2.10"
+tags: [grafana, kiosk-mode, ui-regression, noc, dashboard]
+---
+
+# Grafana Kiosk Mode UI Element Display Issue
+
+## Overview
+
+In Network Operations Center (NOC) environments, Grafana dashboards typically need to display critical data in a full-screen, distraction-free manner. Kiosk mode is designed specifically for this purpose, hiding all unnecessary interface elements and dedicating screen space entirely to data visualization. Starting with Grafana version 11.3, a regression bug prevents Kiosk mode from correctly hiding the variable selectors and time picker at the top of dashboards, severely impacting the viewing experience of large-screen monitoring. This document details the issue, provides temporary solutions, and discusses its impact on SRE reliability practices.
+
+## Core Concepts
+
+*   **Grafana Kiosk Mode**: A full-screen display mode designed for public or unattended displays. Its core goal is to maximize the data visualization area by automatically hiding the navigation bar, sidebar, toolbar, and dashboard top controls (including variables and time picker), providing a clean, read-only view. This is a powerful tool for implementing a "data as truth" monitoring culture.
+*   **Dashboard Variables**: Interactive controls that allow users to dynamically change dashboard query parameters. In NOC scenarios, once default variable values are configured for a specific screen, these controls should be hidden to prevent accidental changes and ensure display consistency.
+*   **Time Picker**: A control used to select the data time range. On 24/7 monitoring screens, a fixed or auto-scrolling time window is typically needed; a manual time picker is both unnecessary and visually distracting.
+
+## Practice
+
+According to community reports, this issue appears in Grafana 11.3 and later versions. In older versions (such as 11.2.10), the "Enable Kiosk Mode" button perfectly hides all control elements.
+
+### Reproduction Steps
+1. Open a Grafana dashboard that contains variables.
+2. Click the `Enable Kiosk Mode` button at the top of the dashboard (or enter via the URL parameter `&kiosk`).
+3. Observe that the variable selectors and time picker remain visible on the screen instead of being hidden as expected.
+
+### Temporary Workarounds
+Before a fix version is released, the following methods can be used to manually hide interface elements, but note that this requires modifying all dashboard links or embed codes that use Kiosk mode.
+
+1. **Modify URL Parameters**: Append specific parameters to the dashboard URL.
+    *   Full format: `&kiosk&_dash.hideTimePicker=true&_dash.hideVariables=true`
+    *   Example: `https://grafana.example.com/d/my-dashboard/my-dashboard?kiosk&_dash.hideTimePicker=true&_dash.hideVariables=true`
+
+2. **Modify Embed Code**: If embedding Grafana dashboards via iframe, the above parameters need to be added to the URL in the `src` attribute.
+
+### Recommended Long-Term Solution
+*   **Upgrade and Monitor**: Continuously monitor this Grafana official issue (GitHub #116370), wait for an official fix, and upgrade to the version containing the fix.
+*   **Feature Request**: The official response mentioned a more elegant solution: adding an option in dashboard settings such as "Hide time picker and variables in Kiosk mode." This is more user-friendly and easier to manage than relying on URL parameters. SRE teams can support this feature request.
+
+## SRE Key Points
+
+*   **Impact on Reliability**: While this issue does not directly affect backend reliability (SLO) of data collection and querying, it severely damages the **readability and accessibility of monitoring data**, which is a key component of observability culture. A cluttered NOC screen may cause on-call personnel to overlook critical alerts or misread data, indirectly affecting incident response speed (MTTI/MTTR).
+*   **Observability and User Experience**: Observability is not just about data collection but also about effective data presentation. A monitoring interface that cannot provide a clear, focused view will be significantly less effective. This bug highlights the importance of **UI/UX regression testing** for operational tools.
+*   **Incident Response Connection**: During major incidents, the NOC screen is the information hub. Anomalous display of interface elements is distracting and不利于 quickly forming situational awareness. Ensuring the stability of monitoring views is part of incident response preparedness.
+*   **Best Practices and Anti-Patterns**:
+    *   **Best Practice**: Establish **standardized dashboard templates** for dedicated display scenarios like NOC, which should include fixed Kiosk mode configurations. Add **automated checks and regression testing** for Grafana version changes in the toolchain, especially for critical UI features.
+    *   **Common Anti-Pattern**: Relying on URL parameters to enforce core display logic increases maintenance complexity. When there are numerous dashboards, batch-modifying parameters is both tedious and error-prone. An even worse anti-pattern is stopping Grafana upgrades over a minor bug, thereby missing important security patches and new features.
+*   **Related Metrics**: This issue primarily affects **user experience SLIs**. For example, "the proportion of time the NOC screen correctly hides non-data elements in Kiosk mode" can be defined as an SLI with an SLO (e.g., 99.9%). When this SLI violates its SLO, a ticket should be triggered to fix it.

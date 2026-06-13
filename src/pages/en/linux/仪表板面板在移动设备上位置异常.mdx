@@ -1,0 +1,69 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Dashboard Panels Position Anomaly on Mobile Devices"
+category: "Observability Tools"
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123172
+    title: "Dashboards: Panels change position on mobile"
+tags: [Grafana, mobile, layout, responsive-design, bug]
+---
+
+# Dashboard Panels Position Anomaly on Mobile Devices
+
+## Overview
+
+After upgrading Grafana from version 12.4.1 to 13.0.1, a layout defect affecting mobile user experience was reported. The defect manifests as: when browsing dashboards in mobile browsers (such as Chrome), after scrolling and simple interactions, panels (such as stats, time series) unexpectedly change their positions, sometimes accompanied by abnormal blue border lines. Refreshing the page restores normal behavior. For SREs who need to troubleshoot and monitor status on mobile devices, this unstable display behavior severely interferes with the quick interpretation of monitoring data, affecting decision-making efficiency and accuracy.
+
+## Core Concepts
+
+*   **Panel Layout**: In Grafana, dashboards consist of one or more rows, each containing one or more panels. Panel positions are typically determined by their grid coordinates and dimensions, designed to maintain logical order and readability across different screen sizes.
+*   **Responsive Design and Mobile Adaptation**: Modern monitoring interfaces need responsive characteristics to ensure clear, usable views across desktop, tablet, and phone devices. This involves dynamically adjusting layout, font size, and interaction methods.
+*   **Frontend Rendering and Interaction Logic**: The defect is likely related to frontend JavaScript state management or DOM redraw logic under specific interaction sequences (scrolling, tapping) and mobile browser environments, causing temporary errors in the coordinate calculations used for panel positioning.
+
+## Practice
+
+### Issue Manifestation
+
+1.  **Abnormal Behavior**: On mobile devices (particularly Android's Chrome/Edge browsers), after scrolling and tapping the dashboard, individual panel positions shift, and blue border lines may appear.
+2.  **Temporary Workaround**: Refreshing the page typically restores the correct panel positions.
+3.  **Trigger Environment**: The issue is related to Grafana version (13.0.1) and did not appear in version 12.4.1.
+
+### Reproduction Steps (Reference)
+
+1.  Create a dashboard with at least two rows of different panel types (e.g., first row is "Stats" panel, second row is "Time Series" panel), ensuring rows do not have auto-layout enabled.
+2.  Open the dashboard on a mobile device (such as a Pixel phone) using Chrome or Edge browser.
+3.  Perform multiple scrolling and tapping operations on the dashboard page.
+4.  Observe whether panels experience position jumping or abnormal styling.
+
+### Temporary Mitigation Measures
+
+Before the official fix is released, the following measures can reduce impact:
+*   **Force Refresh**: When encountering layout anomalies, manually refresh the page to restore normal layout.
+*   **Version Rollback**: If the defect significantly impedes critical mobile monitoring workflows, consider temporarily rolling back to a known stable Grafana version (such as 12.4.1).
+*   **Avoid Complex Interactions**: When viewing on mobile, minimize unnecessary tapping and rapid scrolling operations, performing only essential data browsing.
+
+## SRE Key Points
+
+### Relation to Reliability, Observability, and Incident Response
+
+*   **Observability**: Dashboards are the critical interface for system observability. This defect directly undermines the "user experience" SLI of mobile monitoring, potentially preventing operations personnel from quickly locating problem panels during emergencies, extending MTTR (Mean Time To Repair).
+*   **Reliability**: For teams relying on Grafana for field or mobile operations, this defect introduces unpredictable interface behavior, reducing the reliability of the operational tool itself. An unreliable monitoring interface indirectly reduces the overall operational reliability of the monitored system.
+*   **Incident Response**: During on-call or emergency response scenarios, engineers may rely on phones to quickly check alert dashboards. Disordered panel positions can misdirect fault location, leading to incorrect operations.
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    *   **Version Upgrade Testing**: Before upgrading core monitoring tools like Grafana to new versions, perform **cross-device testing** in a test environment containing critical dashboards, especially mobile verification.
+    *   **Mobile View Verification**: Periodically use real mobile devices to check the rendering of critical dashboards, incorporating this into post-release checklists.
+    *   **Monitor User Feedback**: Actively collect and analyze experience issues from mobile users. Such frontend defects are often only exposed after large-scale user adoption.
+*   **Common Anti-Patterns**:
+    *   **Ignoring Mobile Testing**: Assuming all operations are performed on desktop, ignoring mobile compatibility testing, leading to tool failures at critical moments.
+    *   **Relying on Refresh as a Solution**: Using "refresh page" as a long-term solution while ignoring the underlying fix, increasing user operation costs and error probability.
+
+### Related Metrics (SLI/SLO/SLA)
+
+*   **SLI**: "Mobile dashboard layout first correct render success rate" or "Mobile UI stability after key operations" can serve as related SLIs.
+*   **SLO**: An SLO can be defined for the target mobile device set, such as "In 95% of mobile user sessions, the dashboard core view displays correctly without needing a refresh".
+*   **SLA**: For services providing hosted monitoring, such defects affecting critical user interfaces may need to be reflected in the service level agreement, committing to provide fixes or temporary mitigations within a certain timeframe.

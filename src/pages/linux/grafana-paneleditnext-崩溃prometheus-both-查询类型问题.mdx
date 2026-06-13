@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana PanelEditNext 崩溃：Prometheus “Both” 查询类型问题"
 description: "Grafana面板编辑器v2路径中使用Prometheus “Both” 查询类型时发生的崩溃问题及其解决方案。"
@@ -11,6 +12,8 @@ sources:
     title: "“PanelEditNext crashes with Prometheus ‘Both’ query type” - GitHub Issue"
 tags: [grafana, prometheus, panel-editor, bug, debugging]
 ---
+
+# Grafana PanelEditNext 崩溃：Prometheus “Both” 查询类型问题
 
 ## 概述
 在 Grafana 的可观测性平台中，面板编辑器是构建和调试仪表板的核心组件。当用户尝试编辑一个配置了 Prometheus 数据源且查询类型设置为 **“Both”**（即同时执行范围查询和即时查询）的面板时，在特定的用户界面（UI）路径下会引发前端应用程序崩溃。这个问题影响了仪表板编辑器的稳定性和用户体验，是 SRE 和前端开发者在维护 Grafana 平台可靠性时需要关注和解决的具体故障案例。理解此问题有助于避免类似因组件状态不一致导致的运行时错误。

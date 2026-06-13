@@ -1,0 +1,55 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Repeated Row Panel Query Inspector Failure"
+category: "Monitoring and Visualization"
+confidence: high
+---
+
+# Grafana Repeated Row Panel Query Inspector Failure
+
+## Overview
+
+In modern operations practice, monitoring dashboards are one of the core interfaces for achieving [[observability]]. As a widely used visualization platform, the reliability of Grafana's functionality directly impacts the SRE team's ability to quickly diagnose and respond to [[incident-management|incidents]]. This document analyzes a specific Grafana UI defect: in dashboards containing "repeated rows," the panel's "Query Inspector" functionality fails, displaying a "Panel not found" error when clicked. While this is a front-end interaction defect, it highlights the importance of monitoring tool reliability, especially in advanced feature scenarios.
+
+## Core Concepts
+
+To understand this issue, several key Grafana concepts need to be clarified:
+
+- **Dashboard Row**: A row is a layout container used to organize panels in a dashboard. Users can place multiple panels within a row and perform operations such as collapsing and expanding them.
+- **Repeat**: This is a feature for dynamically generating panels. Through variables and repeat settings, a panel or row of panels can be automatically duplicated based on variable values. For example, a panel row can be created that repeats for each server instance based on the value of a `$instance` variable, generating a row of identical charts for each instance.
+- **Query Inspector**: This is a powerful debugging tool. When entering panel edit mode, SREs or users can use it to view the actual data source queries executed by the panel, the raw returned data, and query performance (execution time, rows scanned, etc.). It is an important means of verifying whether panel data sources and logic are correct.
+- **Panel ID**: Grafana assigns a unique ID to each panel in a dashboard. The Query Inspector functionality relies on this ID to locate the specific panel to inspect.
+
+## Practice
+
+This issue affects a specific Grafana workflow. The following are reproduction steps and analysis based on the original report, along with SRE response recommendations.
+
+### Reproduction Path
+
+1.  Create a **Row** in a Grafana dashboard.
+2.  Configure the row to **repeat** based on a variable (such as `$environment`). This causes multiple identical rows of panels to appear on the dashboard.
+3.  Enter **edit mode** for any panel within the repeated row.
+4.  In the data source query area of the edit interface, click the "**Query Inspector**" button.
+
+**Expected Result**: The Query Inspector window should open, displaying the current panel's query details and raw data.
+
+**Actual Result**: The system displays a "**Panel not found**" error, and the inspector cannot be opened. This issue was reported to exist in Grafana version 11.6.0.
+
+### Workarounds and Troubleshooting Suggestions
+
+Since this is a confirmed defect in the Grafana platform, a permanent fix requires waiting for an official resolution. SRE teams encountering this issue can take the following interim measures:
+
+1.  **Bypass UI Inspection**: Directly access the panel's "**Data**" tab in the "**Panel Edit**" page. While the information is not as detailed as the Query Inspector, it allows viewing the query statements and returned data frame summaries.
+2.  **Check Browser Developer Tools**: Open the browser's developer tools (F12) and check the Console and Network tabs for more detailed error logs or failed API requests, which can help determine whether it is a front-end routing issue or a backend API issue.
+3.  **Use Static Panels**: For critical monitoring items that require frequent debugging, temporarily avoid placing them in repeated rows. Instead, use static panels to ensure all debugging tools are available.
+4.  **Track Official Updates**: Continuously monitor the progress of the GitHub Issue (`#104256`) to promptly obtain fix version information and upgrade.
+
+## SRE Essentials
+
+While this case is a specific software defect, it has universal implications for SRE practice:
+
+- **Reliability of Monitoring Tools Themselves**: SREs rely on monitoring systems to ensure business service reliability, and failures in monitoring tools themselves (even partial UI functionality failures) directly weaken the team's observability and troubleshooting efficiency. This requires us to pay attention to monitoring platform stability, version management, and [[error-budget|error budgets]] just as we would for production services.
+- **Robustness of the Observability Toolchain**: The Query Inspector is a critical entry point for deep debugging of panel data issues. Its failure blocks SREs from verifying the fundamental question of "is the data correct," potentially masking deeper data source failures or configuration errors. Maintaining the availability of every link in the toolchain is crucial.
+- **Collaboration and Feedback with Upstream**: As users of open-source tools, actively reporting issues through official channels (such as GitHub Issues) with reproduction steps is a best practice for driving issue resolution. Meanwhile, SRE teams should establish processes to track known defects in such critical dependencies and mitigate risks before official fixes are available.
+- **Related Metric Considerations**: While this issue does not directly affect the [[SLI|SLI]] or [[SLO|SLO]] of monitored services, it impacts the **monitoring system's own availability metrics**. For example, "Grafana UI core debugging functionality availability" could be an internal monitoring item, ensuring the troubleshooting toolchain is always available.

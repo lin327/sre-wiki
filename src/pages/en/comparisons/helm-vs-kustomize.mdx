@@ -1,0 +1,120 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Helm vs Kustomize"
+category: ""
+confidence: high
+---
+
+# Helm vs Kustomize
+
+## Overview
+
+In the Kubernetes ecosystem, application configuration management is a core component of the continuous delivery pipeline. **Helm** and **Kustomize** are two mainstream configuration management tools, but their design philosophies are fundamentally different. Helm uses a **template rendering** approach, treating configuration as parameterized installable packages. Kustomize uses a **declarative overlay** approach, achieving environment differentiation through base configurations plus patches. Understanding the differences between them is critical for SRE teams when choosing the right deployment tool, as it directly impacts change safety, rollback reliability, and the ability to prevent configuration drift.
+
+## Helm: The Template Approach
+
+Helm is the package manager for Kubernetes, with its core abstraction being the **Chart**. A Chart is a set of predefined Kubernetes resource templates that receive parameters via a `values.yaml` file and are ultimately rendered into deployable manifests.
+
+### Chart Structure
+
+A standard Helm Chart directory structure looks like this:
+
+```text
+my-app/
+├── Chart.yaml          # Chart metadata (name, version, dependencies)
+├── values.yaml         # Default configuration values
+├── templates/          # Go template files
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   └── _helpers.tpl    # Template helper functions
+└── charts/             # Sub-chart dependencies
+```
+
+### Core Mechanisms
+
+- **`values.yaml`**: Defines default values for all configurable parameters. At deploy time, these can be overridden via `-f custom-values.yaml` or `--set key=value`.
+- **Releases**: Each `helm install` or `helm upgrade` creates a Release, recorded in the cluster (stored as Secrets by default), supporting deployment history inspection via `helm history`.
+- **Rollback**: `helm rollback <release> <revision>` can quickly roll back to any historical revision. The Release revision mechanism provides a reliable foundation for rollbacks.
+
+```bash
+# Install
+helm install my-app ./my-app -f production-values.yaml
+
+# Upgrade
+helm upgrade my-app ./my-app -f production-values.yaml --set image.tag=v2.1.0
+
+# Rollback to the previous version
+helm rollback my-app 1
+```
+
+## Kustomize: The Overlay Approach
+
+Kustomize is built into `kubectl` (since v1.14), and its design philosophy is **template-free configuration customization**. It uses a layered structure of Base and Overlay, applying Strategic Merge Patch and JSON Patch to achieve environment differentiation.
+
+### Base/Overlay Structure
+
+```text
+├── base/
+│   ├── kustomization.yaml
+│   ├── deployment.yaml
+│   └── service.yaml
+└── overlays/
+    ├── dev/
+    │   ├── kustomization.yaml
+    │   └── replica-patch.yaml
+    ├── staging/
+    │   └── kustomization.yaml
+    └── production/
+        ├── kustomization.yaml
+        └── resource-patch.yaml
+```
+
+### Core Mechanisms
+
+- **Base**: Contains the original, unmodified Kubernetes resource files. This is the common foundation shared across all environments.
+- **Overlay**: References the Base and defines environment-specific modifications. Overlays do not directly modify Base files; instead, they layer changes through **Patches** (Strategic Merge Patch or JSON 6902 Patch).
+- **Generators**: Support automatic generation of ConfigMaps and Secrets via `configMapGenerator` and `secretGenerator`, with automatic hash suffixes to trigger rolling updates.
+
+```bash
+# Build production environment manifest
+kubectl kustomize overlays/production/
+
+# Apply directly
+kubectl apply -k overlays/production/
+```
+
+## Comparative Analysis
+
+| Dimension | Helm | Kustomize |
+|-----------|------|-----------|
+| **Learning curve** | Steeper, requires Go Template syntax | Gentler, YAML-native, easy to get started |
+| **Template complexity** | High, template logic can become hard to maintain | Low, no template language, configuration is plain YAML |
+| **Secret management** | Relies on external tools (Sealed Secrets, Vault) | `secretGenerator` supports local generation |
+| **Ecosystem** | Rich, Artifact Hub provides many pre-built Charts | Smaller, relies on community Base configurations |
+| **Version management** | Native Release and Revision mechanism | No built-in version management, relies on Git |
+| **Dependency management** | `Chart.yaml` declares dependencies and auto-pulls | No native dependency management |
+| **Template reuse** | Supports Library Charts and sub-charts | Reuse via Base references |
+| **Native integration** | Requires Helm CLI installation | Built into kubectl |
+
+## SRE Perspective
+
+### Upgrade Safety
+
+Helm's Release mechanism provides a built-in upgrade safety net: every upgrade records a complete manifest snapshot, enabling quick rollback when an upgrade fails. However, Helm's template rendering is full-scope, and complex conditional logic can lead to unintended resource changes.
+
+Kustomize's Overlay approach offers more controllable upgrades -- the scope of changes is entirely defined by patches, allowing SREs to precisely review the impact of each change. However, due to the lack of built-in version management, rollback operations depend entirely on Git history and the quality of the CI/CD pipeline.
+
+### Rollback Reliability
+
+Helm's `helm rollback` is a reliable atomic operation, suitable for emergency rollback scenarios. Kustomize's rollback requires `git revert` plus redeployment, which can increase MTTR during time-sensitive incident recovery.
+
+### Configuration Drift Prevention
+
+Configuration drift is a core SRE concern. Helm's `helm diff` plugin allows previewing changes before upgrades, effectively preventing unintended modifications. Kustomize's declarative nature is naturally suited for GitOps workflows; combined with the automatic synchronization mechanisms of Argo CD or Flux, it can prevent configuration drift at the source.
+
+### Recommendation
+
+- **Choose Helm**: When the application itself needs to be managed as a distributable package (e.g., open-source projects, internal platform components), or when the team needs reliable Release management and one-click rollback capabilities.
+- **Choose Kustomize**: When managing multi-environment configuration differences for the same application, or when the team prefers a purely declarative, template-free GitOps workflow.
+- **Hybrid approach**: Many teams adopt a hybrid strategy where Helm renders the base manifest, and Kustomize Overlays handle environment customization, combining the strengths of both.

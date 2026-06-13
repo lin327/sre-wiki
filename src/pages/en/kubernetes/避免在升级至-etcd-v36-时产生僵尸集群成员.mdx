@@ -1,0 +1,65 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Preventing Zombie Cluster Members When Upgrading to etcd v3.6"
+description: "Explanation of the 'zombie member' problem that can occur during etcd upgrade to v3.6 and its solution to ensure cluster reliability."
+category: etcd
+order: 0
+lastUpdated: 2025-12-22
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2025/12/21/preventing-etcd-zombies/
+    title: "Preventing etcd Zombies | Kubernetes Blog"
+tags: [etcd, upgrade, zombie-members, v2store, v3store, data-consistency]
+---
+
+# Preventing Zombie Cluster Members When Upgrading to etcd v3.6
+
+## Overview
+
+When maintaining Kubernetes-based production environments, etcd version upgrades are critical and require careful execution. This document focuses on a specific risk during the etcd v3.5 to v3.6 upgrade: "zombie cluster members." These are nodes that have been removed but reappear and join consensus, potentially rendering the entire etcd cluster unavailable. Understanding the root cause and following the correct upgrade path is key SRE practice for ensuring etcd reliability.
+
+## Core Concepts
+
+### Zombie Cluster Members
+Zombie members are nodes marked as removed in etcd cluster metadata that unexpectedly rejoin the cluster and attempt to participate in Raft consensus after upgrade or restart due to data inconsistency. This disrupts election and log replication, ultimately halting the entire cluster.
+
+### Storage Inconsistency: v2store vs v3store
+The root cause lies in two storage locations for etcd cluster member information:
+- **v2store**: Source of truth in etcd v3.5 and earlier.
+- **v3store**: Source of truth starting from etcd v3.6.
+
+In certain historical operations or failure scenarios, these two stores' member lists may become inconsistent. When upgrading to v3.6 (using v3store as authority), residual old member information in v2store causes zombie members to "resurrect."
+
+### Safe Upgrade Path
+The etcd community introduced a fix in v3.5.26. The only safe upgrade path is **first upgrading to v3.5.26 or higher**. This version automatically detects and fixes inconsistencies between v2store and v3store, ensuring no zombie members during subsequent v3.6 upgrade.
+
+## Practice
+
+### Safe Upgrade Steps
+
+1.  **Step 1: Upgrade to v3.5.26**
+    Upgrade all etcd nodes to `v3.5.26` or higher (e.g., v3.5.27). This triggers the automatic fix mechanism, synchronizing v3store and v2store member data.
+
+2.  **Step 2: Wait and Confirm Cluster Health**
+    After all nodes complete v3.5.26 upgrade, **must wait and verify complete cluster health**. Use `etcdctl endpoint health` to check each member's status, ensuring `healthy` and `leader` election normal.
+
+3.  **Step 3: Upgrade to v3.6**
+    After confirming cluster health, proceed with upgrading to v3.6.x. Member data was already fixed during the v3.5.26 phase.
+
+**Important**: If v3.5.26 is temporarily unavailable, **postpone the v3.6 upgrade** until v3.5.26+ is obtainable. No known safe bypass exists.
+
+### Known Trigger Scenarios
+- **Old `etcdctl snapshot restore` tool (v3.4)**: Failed to properly remove old members during snapshot restore.
+- **Using `--force-new-cluster` flag (before v3.5.22)**: May not fully clean old member info. Fixed in v3.5.22.
+- **Enabling `--unsafe-no-sync` flag**: May cause member changes to only write to v3store without WAL, causing post-crash inconsistency. **Not recommended**.
+
+## SRE Essentials
+
+- **Reliability**: etcd is the Kubernetes control plane core database; its availability directly determines cluster reliability. Zombie member issues from upgrades are typical "Configuration Change Induced Failures" that SREs must prevent through process control.
+- **Observability**: Before and after upgrades, perform thorough etcd health checks including latency, leader election frequency, disk I/O SLIs.
+- **Best Practices**: Always follow version-specific upgrade guides. Perform upgrades within planned windows, phased in production. Verification steps are equally important as upgrade steps themselves.
+- **Anti-Patterns**: Skipping versions directly; ignoring required intermediate versions (v3.5.26); introducing other untested config changes during upgrades.
+- **Related Metrics**: etcd SLO: `p99 API request latency < 50ms`, `cluster availability > 99.9%`. Any change breaking this SLO (including upgrades) is high-risk and needs detailed rollback plans.
+
+**Summary**: For major etcd version upgrades, SRE's core responsibility is **risk avoidance**. Skipping the critical v3.5.26 intermediate version directly causes production failures. Establishing and strictly executing upgrade runbooks with version dependency checks is the cornerstone for ensuring infrastructure component reliability.

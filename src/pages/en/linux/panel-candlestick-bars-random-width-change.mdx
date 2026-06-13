@@ -1,0 +1,51 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Panel: Candlestick Bars Random Width Change"
+category: "Observability"
+confidence: medium
+---
+
+# Panel: Candlestick Bars Random Width Change
+
+## Overview
+
+The Candlestick panel is a commonly used chart in Grafana for visualizing financial time series data (such as open, close, high, low prices). In SRE practice, such charts are often used to monitor critical business metrics (such as transaction latency, throughput) or infrastructure resource utilization. The stability and consistency of chart display is critical for quick and accurate data analysis and troubleshooting. This document describes a known issue: when refreshing the dashboard or panel, the Candlestick chart's bar widths change unexpectedly and randomly, undermining the stability and readability of data visualization.
+
+## Core Concepts
+
+- **Candlestick Chart**: A chart type that uses rectangular "bodies" and "wicks" to represent price movements (or metric value ranges) over a period of time. The body width is typically related to the time interval, and maintaining consistency helps users intuitively understand the time scale.
+- **Grafana Panel**: The fundamental building block of a Grafana dashboard, used to present query results (such as charts, tables, gauges). Panel rendering and update logic directly affects user experience and data interpretation accuracy.
+- **Panel Refresh**: Grafana can re-query data sources and update panel display based on configured intervals or manual user triggers. This process is key to the real-time nature of monitoring systems.
+
+## Practice
+
+According to the submitted issue, the reproduction steps are straightforward:
+
+1.  Create a Candlestick panel.
+2.  Set up a data source and query to display valid candlestick data.
+3.  Refresh the dashboard or wait for auto-refresh.
+
+**Expected Behavior**: After each refresh, the bar width for each time bucket should remain constant, scaling uniformly based on the time range and panel width.
+
+**Actual Behavior**: After refresh, bar widths change in a seemingly random manner, causing chart layout chaos (see screenshot comparisons in the issue). This issue is reproducible across different browsers (Firefox, Chrome) and operating systems (macOS), suggesting the root cause is more likely in Grafana's front-end rendering logic or data processing pipeline rather than a specific environment.
+
+**Troubleshooting and Debugging Suggestions**:
+
+-   **Data Source Verification**: First confirm that the data source returns strictly monotonically increasing and evenly spaced timestamps. Irregular data itself may be a trigger for this issue. Use a debug panel (such as `Table` view) to inspect the raw data.
+-   **Browser Developer Tools**: Check the browser console for JavaScript errors. Also, use Performance profiling or Elements inspector tools to compare DOM structure differences before and after refresh, particularly the size attributes of SVG or Canvas elements representing candlestick bars.
+-   **Grafana Configuration**: Try adjusting the panel's "Time Series" settings, such as modifying "Fill" and "Gap" values, to observe whether this affects width stability. This may reveal defects in the layout calculation logic.
+
+## SRE Essentials
+
+-   **Connection to Observability**: Grafana is one of the core tools for achieving system observability. Any bug in visualization components, such as this random bar width change, directly undermines "dashboard" reliability. Unreliable visual presentation may cause SRE engineers to misjudge trends, miss anomalies, or be distracted by irrelevant visual interference during Incident Response.
+-   **Best Practices**:
+    -   **Version Management and Regression Testing**: Track Grafana version updates (such as v13.0.1 in this case) and perform visual regression testing on critical dashboards after upgrades. Tools like `reg-suit` or Grafana's snapshot testing functionality can be used for automated comparison.
+    -   **Issue Reporting and Community Participation**: When encountering clear UI bugs like this, promptly submit an issue to Grafana's official GitHub repository with detailed reproduction steps, screenshots, and debug information (`debug JSON` files) to help with quick localization and fixing.
+    -   **Dashboard as Code**: Manage dashboards as code using tools like Grafonnet to track configuration changes in version control, facilitating quick rollback or comparison when issues arise.
+-   **Common Anti-Patterns**:
+    -   **Ignoring Front-End Rendering Issues**: Focusing too much on backend metrics while ignoring front-end presentation layer reliability can create blind spots where "data exists but cannot be correctly read."
+    -   **Relying on Single Snapshots**: In fault analysis, relying solely on a dashboard screenshot at a single point in time without considering potential rendering inconsistencies in charts can lead to conclusion deviations.
+-   **Related Metrics (SLI/SLO)**: While this bug does not directly affect backend system SLIs, it impacts the user-level reliability metric of "monitoring data visualization accuracy." Consider establishing a **Visualization SLO** for critical monitoring panel rendering correctness, such as "Core business dashboard Candlestick bar width changes should not exceed threshold X% in 99% of query refreshes." This can be measured through periodic front-end automated visual regression tests.
+
+For specific discussions and fix progress on this issue, refer to the [[grafana-panel-debugging]] and [[candlestick-chart]] pages.

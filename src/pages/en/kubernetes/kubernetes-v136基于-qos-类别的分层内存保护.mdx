@@ -1,0 +1,79 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.36: Tiered Memory Protection with Memory QoS"
+description: "Introduction to Memory QoS updates in Kubernetes v1.36, particularly tiered memory protection based on QoS classes implemented through cgroup v2."
+category: Container & Orchestration
+order: 0
+lastUpdated: 2026-04-29
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/29/kubernetes-v1-36-memory-qos-tiered-protection/
+    title: "Kubernetes v1.36: Tiered Memory Protection with Memory QoS"
+tags: [kubernetes, cgroup-v2, memory-qos, sre, reliability]
+---
+
+# Kubernetes v1.36: Tiered Memory Protection with Memory QoS
+
+## Overview
+
+In Kubernetes environments, memory management is a core element for ensuring workload reliability and performance. Improper memory handling can cause critical services to be OOM-killed or result in low system resource utilization. Kubernetes Memory QoS leverages Linux cgroup v2 memory controllers to allow the kernel to manage container memory more granularly. Since its introduction in v1.22 and update in v1.27, this feature undergoes important evolution in v1.36: on-demand memory reservation, tiered protection based on QoS classes, new observability metrics, and kernel version checks. These updates aim to provide more flexible and reliable memory management strategies, a key tool for optimizing resource efficiency and system stability in SRE practice.
+
+## Core Concepts
+
+Memory QoS maps Kubernetes resource requests and limits to Linux kernel cgroup v2 memory control interfaces, guiding the kernel on how to handle memory reclamation for specific containers.
+
+In v1.36, the `memoryReservationPolicy` configuration separates **memory throttling** from **memory reservation**, providing finer control:
+
+*   **Memory Throttling (`memory.high`)**: When container memory usage exceeds this threshold, the kernel actively reclaims or limits the cgroup's memory allocation, preventing a single container from exhausting system memory. Calculated via `memoryThrottlingFactor` (default 0.9) multiplied by container memory requests.
+*   **Memory Reservation**: Enabled via `memoryReservationPolicy`, providing different levels of memory protection:
+    - **`None` (default)**: No `memory.min` or `memory.low` set. Only `memory.high` throttling enabled.
+    - **`TieredReservation`**: Enables tiered protection based on Pod QoS class:
+        - **Guaranteed Pod**: Gets **hard protection** (`memory.min`). The kernel never reclaims this memory under any circumstances. If unmet, other processes trigger OOM.
+        - **Burstable Pod**: Gets **soft protection** (`memory.low`). Under normal pressure, the kernel avoids reclaiming; under extreme pressure, it can reclaim to prevent global OOM.
+        - **BestEffort Pod**: Gets no reservation protection. Memory is fully reclaimable.
+
+This tiered design is an important improvement over v1.27 behavior. Earlier versions set `memory.min` (hard reservation) for all containers with memory requests, which could lock too much memory when total requests approach node physical memory, increasing system OOM risk. v1.36's tiered strategy significantly reduces hard-reserved memory for Burstable workloads, preserving more headroom for the system and kernel.
+
+## Practice
+
+### Enable and Configure
+
+1.  **Prerequisites**: Kubernetes v1.36+, cgroup v2 enabled (check with `mount | grep cgroup2`), Linux kernel 5.9+ recommended, cgroup v2-compatible container runtime (containerd 1.6+, CRI-O 1.22+).
+
+2.  **KubeletConfiguration**:
+    ```yaml
+    apiVersion: kubelet.config.k8s.io/v1beta1
+    kind: KubeletConfiguration
+    featureGates:
+      MemoryQoS: true
+    memoryReservationPolicy: TieredReservation
+    memoryThrottlingFactor: 0.9
+    ```
+
+3.  **Verification**: Check container cgroup filesystem. For a Guaranteed Pod requesting 512 MiB, `memory.min` should be `536870912` bytes. For a Burstable Pod, `memory.low` should be `536870912` bytes.
+
+### Observability
+
+| Metric | Description |
+|--------|-------------|
+| `kubelet_memory_qos_node_memory_min_bytes` | Total `memory.min` set by all Guaranteed Pods |
+| `kubelet_memory_qos_node_memory_low_bytes` | Total `memory.low` set by all Burstable Pods |
+
+## SRE Essentials
+
+*   **Reliability**: Tiered memory protection is a proactive defense mechanism for node reliability. It ensures critical (Guaranteed) services get stable memory foundations while allowing intelligent reclamation of non-critical (Burstable/BestEffort) memory under pressure, greatly reducing the risk of single workload memory spikes causing node-wide OOM.
+
+*   **Best Practices**:
+    - **Progressive enablement**: Start with `memoryReservationPolicy: None` (throttling only), observe workload behavior, then enable `TieredReservation`.
+    - **Capacity planning**: Monitor `kubelet_memory_qos_node_memory_min_bytes` to ensure total hard reservations don't exhaust node memory.
+    - **Anti-Pattern**: Avoid marking all workloads as `Guaranteed`. While providing strongest protection, it locks excessive hard-reserved memory.
+    - **Kernel version**: Plan kernel upgrades to 5.9+ to avoid known livelock issues.
+
+*   **Related Metrics (SLI/SLO)**:
+    - **SLI**: Node-level OOM Kill frequency, Pod restart rate (especially memory-related).
+    - **SLO**: "Memory request fulfillment rate" or "no memory-related OOM" for critical workloads.
+
+*   **Observability and Incident Response**: New metrics should be integrated into monitoring dashboards and alert rules. Alerting on high `memory.min` helps SREs proactively perform load balancing or capacity expansion.
+
+Related pages: [[pod-qos]], [[cgroup-v2-support]], [[resource-management]]

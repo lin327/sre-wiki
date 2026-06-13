@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid"
 description: "修复了更新数据源API中，当请求体UID与URL路径UID不匹配时静默忽略错误，导致后续500错误的问题。"
@@ -11,6 +12,8 @@ sources:
     title: "Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid"
 tags: [api, validation, error-handling, grafana, datasources]
 ---
+
+# Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid
 
 ## 概述
 

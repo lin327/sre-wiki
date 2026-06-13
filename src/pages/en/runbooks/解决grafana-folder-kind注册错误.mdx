@@ -1,0 +1,72 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Resolving Grafana 'Folder' Kind Registration Error"
+description: "Diagnosis and solution when Grafana dashboards and folders fail to load due to 'Folder' kind not being registered."
+category: Troubleshooting
+order: 0
+lastUpdated: 2026-04-17
+confidence: medium
+---
+
+# Resolving Grafana
+
+## Overview
+
+In Grafana operations，可观测性平台的稳定性和仪表盘的可用性是 SRE 团队的核心关注点。本次讨论的 `Error no kind "Folder" is registered for version "folder.grafana.app/v1"` 错误，直接导致用户无法访问所有仪表盘和文件夹，严重破坏了监控系统的可用性。该问题通常与 Grafana 版本升级、插件兼容性或 Kubernetes API 资源定义（CRD）相关，是 SRE 在维护基于容器的 Grafana 部署时需要警惕的典型故障模式。
+
+## 核心概念
+
+要理解此错误，需要解析错误信息中的关键组成部分：
+1.  **`kind: "Folder"`**: 在 Kubernetes 和 Grafana 的某些扩展架构中，`kind` 用于标识资源类型。这里指的是 `Folder`（文件夹）资源。
+2.  **`version: "folder.grafana.app/v1"`**: 这是该资源的 API 组和版本。`grafana.app` 是 Grafana 自定义资源定义的 API 组，`v1` 表示版本。错误表明 Grafana 的运行时环境无法识别或加载这个特定的资源定义。
+3.  **`scheme "pkg/runtime/scheme.go:111"`**:  `scheme` 是 Kubernetes 客户端库中用于管理已知资源类型注册表的核心组件。错误发生在 `scheme.go` 文件的第111行，意味着在尝试解析或列出资源时，`Folder` 这个资源类型没有在预期的注册表（scheme）中找到。
+
+从本质上讲，这是一个 **资源类型注册失败** 的问题。Grafana 的某个组件（可能是核心或插件）尝试使用一个它自身或其依赖库并未注册的 API 资源类型来操作数据，从而导致整个功能链路中断。
+
+## 实践
+
+根据问题报告，故障的诊断与解决可遵循以下步骤：
+
+### 故障现象与诊断
+1.  **症状确认**：用户登录 Grafana 后，点击“仪表盘”或任何文件夹时，页面加载失败并显示上述错误。
+2.  **数据库验证**：通过直接查询 Grafana 使用的后端数据库（如 SQLite），可以发现 `folder` 表中仍存在数据记录。报告中的查询结果显示了旧的文件夹记录（如 Glances, Prometheus），但这些记录可能已与应用层状态不一致，或者新创建的文件夹记录未能正确写入或被读取。
+    ```sql
+    SELECT * FROM folder;
+    -- 输出示例显示一些旧的、已删除的文件夹记录
+    ```
+
+### 解决方案与规避措施
+1.  **检查 Grafana 版本与镜像标签**：报告指出错误发生在更新到 `latest` 镜像标签后，并回退到具体版本（如 12.4.0-12.4.3）问题依旧。这表明：
+    *   **问题可能存在于这些版本共有的某个变更中**，例如引入了新的、未完全集成的 `folder.grafana.app` API。
+    *   或者，**数据库 schema 与应用程序版本之间出现了不兼容**。可能需要检查 Grafana 的迁移日志。
+2.  **数据库备份与恢复**：
+    *   **紧急回滚**：如果条件允许，最安全的做法是回退到问题发生前的 Grafana 版本（Docker 镜像 Tag）。在回滚前，**务必对数据库文件进行完整备份**。
+    *   **数据库修复尝试**：在非生产环境，可以尝试停止 Grafana 容器，备份数据库文件后，使用 SQL 工具谨慎地操作 `folder` 和 `dashboard` 表，移除可能“损坏”的记录，然后重启 Grafana 让其重新初始化。但这可能导致数据丢失，风险极高。
+3.  **检查插件与配置**：排查是否安装了依赖新文件夹 API 的第三方插件。禁用所有非核心插件后重启，观察问题是否解决。
+4.  **关注官方 Issue 追踪**：此问题已在 Grafana 官方仓库提交为 Issue (#122892)。SRE 应持续监控该 Issue 的讨论和官方回复，以获取官方确认的根本原因分析和修复补丁。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+*   **可观测性中断**：仪表盘是团队消费可观测性数据（指标、日志、追踪）的核心界面。此故障导致监控盲区，使团队无法感知系统健康状况，严重影响事件检测和响应能力。
+*   **事件响应**：该错误本身就是一个 **P1/P2级别的服务事件**。SRE 需立即启动事件响应流程，评估影响范围，并协调开发团队（Grafana 维护者）与基础设施团队（负责 Docker 部署）进行联合排查。
+*   **可靠性度量**：此事件会直接影响 Grafana 服务的 **可用性 SLO**。需要记录故障时长、影响范围，并计入错误预算消耗。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    *   **谨慎使用 `latest` 标签**：在生产或关键监控环境中，避免使用 `latest` 等可变标签部署服务。应使用明确的版本标签（如 `12.4.3`）进行部署，以实现版本锁定和可控回滚。
+    *   **实施变更前备份**：任何重大版本升级（包括 Grafana）前，必须对配置和数据库进行完整备份。
+    *   **分阶段升级**：遵循从开发到预发再到生产的渐进式升级策略，并在每个环境充分测试。
+*   **常见反模式**：
+    *   **直接操作生产数据库**：在未深入理解 schema 和充分备份的情况下，直接修改 Grafana 数据库是高风险操作，极易导致数据永久性损坏。
+    *   **忽视版本变更日志**：在升级前不阅读 Release Notes，可能会错过重要的 breaking changes 或已知问题。
+
+### 相关指标（SLI/SLO/SLA）
+*   **SLI (Service Level Indicator)**：
+    *   `grafana.dashboard.view.success.rate`：用户成功查看仪表盘的请求比例。
+    *   `grafana.api.folder.list.latency`：列出文件夹 API 的延迟。
+*   **SLO (Service Level Objective)**：
+    *   基于上述 SLI，可设定目标如：“99.5% 的仪表盘查看请求在 2 秒内成功返回”。
+*   **SLA (Service Level Agreement)**：
+    *   对于内部使用的 Grafana，SLA 可能定义为“核心监控仪表盘在工作时间内保持 99.9% 可用”。此次事件将直接影响对该承诺的达成。

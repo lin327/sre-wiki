@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Alert Notifications Bypassing Mute Timings"
+description: "A known bug causes Grafana alert notifications to be sent incorrectly when Mute Timings are configured, undermining alert management reliability."
+category: alerting
+order: 0
+lastUpdated: 2024-05-24
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/105839
+    title: "Alerting: Notifications sent to a contact point ignore mute timings"
+tags: [grafana, alerting, mute-timing, bug, reliability]
+---
+
+# Grafana Alert Notifications Bypassing Mute Timings
+
+## Overview
+
+In the Grafana alerting system, **Mute Timings** is a critical feature used to suppress alert notification delivery during specific time windows. This is essential for maintenance periods, reducing irrelevant noise, or meeting compliance requirements. However, as reported in [Grafana Issue #105839](https://github.com/grafana/grafana/issues/105839), a confirmed software bug exists: **configured Mute Timings are ignored by notification Contact Points**, resulting in alert notifications still being sent during expected quiet periods. This issue directly impacts the reliability and predictability of alert management.
+
+## Core Concepts
+
+- **Mute Timings**: A rule in Grafana's alert notification routing that defines a time window (e.g., "every weekday from 2:00 AM to 4:00 AM") during which **no alert notifications** matching the rule are sent. It is one of the mechanisms for implementing alert silence strategies.
+- **Contact Point**: Defines the target channel for alert notifications, such as AWS SNS, Email, Slack, etc. After an alert triggers, the notification is sent to this destination.
+- **Root Cause**: In affected versions (e.g., AWS Managed Grafana 10.4.1), when an alert rule has both a Contact Point and Mute Timing configured, the system **fails to properly check and respect the Mute Timing rules** when evaluating alert state and attempting to send notifications, causing notifications to be sent erroneously.
+
+## Practice
+
+### Reproducing the Issue
+
+According to the report, the reproduction steps are as follows:
+
+1. **Configure a Contact Point**: Set up a notification target in Grafana, such as AWS SNS.
+2. **Configure a Mute Timing**: Create a new Mute Timing whose time window should **only** include the brief period when you want to receive notifications (e.g., May 12, 2024, 13:00 to 13:10).
+3. **Configure an Alert Rule**: Create an alert rule that triggers both before and after the target time window, and attach the Contact Point from step 1 and the Mute Timing from step 2 to this rule.
+4. **Observe Behavior**: Alert notifications are observed being sent outside the Mute Timing window (e.g., at 12:58, 13:16).
+
+### Expected Behavior
+
+The correct flow should be: when an alert rule is evaluated as "firing," the system should first query all attached notification policies (including Mute Timings). If the current time falls within any matching Mute Timing rule, the notification should be suppressed and not sent to the Contact Point. Only alert firings that are **not** within any Mute Timing should actually execute notification delivery.
+
+### Interim Workarounds
+
+Until an official fix is released, SRE teams may consider the following temporary measures:
+- **Use Global Silences**: Set up a temporary Silence for specific alert instances directly, rather than relying on recurring time window rules.
+- **Adjust Alert Evaluation Intervals**: While this does not directly fix the issue, it can help avoid unnecessary triggers around critical maintenance windows.
+- **Monitor Alert Metadata**: Audit sent notifications to identify those dispatched during expected quiet periods, as an indicator of potential system unreliability.
+
+## SRE Key Points
+
+- **Reliability Implications**: This bug represents a failure in **the alert system's own reliability**. A system that cannot reliably suppress notifications leads to "alert fatigue," causing on-call personnel to ignore truly critical alerts, which violates the core SRE principle of "reducing the number of emergencies."
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: After making changes to critical configurations (such as Mute Timings), verify them in non-production or test environments to ensure they work as expected. Incorporate alert configuration integrity testing into CI/CD pipelines.
+    - **Anti-Pattern**: Blindly trusting tool configurations without verification testing. This issue is a textbook case demonstrating that even fundamental features can have defects.
+- **Related Metrics (SLI/SLO/SLA)**:
+    - **SLI**: This issue directly impacts **notification delivery accuracy**. An SLI could be defined as "the proportion of sent alert notifications that fully comply with Mute Timing rules." This bug would cause that SLI to degrade.
+    - **SLO/SLA**: While SLAs are typically not defined directly for alert notification functionality, alert management reliability is an important foundation supporting upper-level service **availability SLOs**. A malfunctioning alert system delays fault detection and response, indirectly impacting service SLOs.
+
+> **Related Pages**: [[alerting-mute-timing]], [[alerting-notification-routing]], [[alert-fatigue]]

@@ -1,0 +1,86 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Optimizing Kubernetes Test Environment Provisioning with Amazon EKS and vCluster"
+category: "Environment and Configuration Management"
+confidence: low
+---
+
+# Optimizing Kubernetes Test Environment Provisioning with Amazon EKS and vCluster
+
+## Overview
+
+In Kubernetes environments, quickly and economically creating isolated environments for development, testing, and QA work is a common challenge. The traditional approach of creating independent Amazon EKS clusters for each ephemeral need brings high costs, complex operational overhead, and lengthy provisioning times. Deloitte, a global professional services firm, faced this problem and addressed it by combining Amazon EKS with vCluster technology to build a virtual cluster platform based on a shared host cluster. This reduced test environment provisioning time from 45 minutes to under 5 minutes, achieving up to 89% efficiency improvement. This approach provides SRE practices with a paradigm for efficiently managing test and pre-production environments, significantly enhancing team agility through resource pooling and self-service.
+
+## Core Concepts
+
+The core of this solution lies in using **vCluster** to create multiple lightweight, fully functional virtual clusters within a single Kubernetes host cluster.
+
+- **vCluster**: An open-source project that allows deploying complete Kubernetes control planes inside existing Kubernetes clusters (host clusters). Each vCluster functions like an independent Kubernetes cluster with its own API server, scheduler, etc., but its workloads are ultimately scheduled by the host cluster. This provides strong isolation (each team or project has its own "cluster") while sharing the host cluster's compute, network, and storage resources, avoiding the overhead of deploying a full cluster per environment.
+- **Amazon EKS Host Cluster**: Serves as the foundation layer of the solution, providing underlying compute, network, and storage resources. With **Auto Mode** enabled, it can dynamically scale compute resources up and down, further optimizing costs.
+- **Resource Synchronization**: vCluster can be configured to synchronize resources (such as `IngressClass`, `StorageClass`) from the host cluster to virtual clusters and synchronize certain resources (such as `Ingress`) from virtual clusters back to the host cluster. This allows virtual clusters to seamlessly use infrastructure services provided by the host cluster, such as shared Application Load Balancers (ALBs) and persistent volume storage.
+- **Shared Control Plane Services**: Key Kubernetes controllers (such as AWS Load Balancer Controller, storage controllers) are deployed only once on the host cluster and serve all virtual clusters. This eliminates the redundancy of deploying these components per environment, simplifying operations.
+
+## Practice
+
+Deloitte's deployment is a multi-phase process aimed at establishing a platform where multiple teams can self-service create isolated test environments. The following outlines the key implementation steps.
+
+### 1. Environment Preparation
+Basic configuration on the Amazon EKS host cluster:
+- **Networking and IAM**: Ensure Amazon VPC, subnets, and necessary IAM roles (cluster roles, node roles) are in place.
+- **Storage and Load Balancer Classes**: Configure default `StorageClass` (using Amazon EBS CSI driver) and `IngressClass` (using AWS Load Balancer Controller) on the host cluster, providing out-of-the-box infrastructure services for virtual clusters.
+- **DNS and Certificates**: Create and verify SSL/TLS certificates for the platform domain in AWS Certificate Manager (ACM).
+
+### 2. Deploy the vCluster Platform
+Deploy the vCluster platform to the host cluster using a Helm Chart. Deployment configuration should specify:
+- **Resource Limits**: Allocate CPU and memory resources for platform components.
+- **Ingress Configuration**: Configure an internet-facing Application Load Balancer (ALB) with an ACM certificate as the unified entry point for all virtual clusters.
+- **Access Control**: Create administrator accounts.
+- **Affinity**: Recommend scheduling platform components on nodes managed by Auto Mode to leverage elastic scaling.
+
+### 3. Create Virtual Clusters
+After platform deployment, users (such as QA engineers) can self-service through the vCluster web console:
+- Log into the platform console.
+- Create a new virtual cluster. During creation, apply specific configuration templates to enable synchronizing `IngressClass`, `StorageClass` from the host cluster and `Ingress` resources from the virtual cluster.
+- Wait for the virtual cluster status to become healthy. This process typically completes within minutes, much faster than creating a new EKS cluster.
+
+### 4. Deploy and Access Applications
+Deploy applications in their respective virtual clusters:
+- Download the `kubeconfig` file for a specific virtual cluster from the platform console.
+- Use `kubectl` to connect to the virtual cluster and deploy application manifests. Manifests should include `Namespace`, `Deployment`, `Service`, `Ingress`, and `PersistentVolumeClaim`.
+- **Key Practice**: In `Ingress` resource annotations, explicitly specify using a shared `load-balancer-name` (e.g., `vcluster-alb`) and define path-based routing rules (e.g., `/app1`, `/app2`). This way, traffic from the same domain on different paths is routed to applications in different virtual clusters, sharing a single ALB.
+
+### 5. Verification and Cleanup
+- **Verification**: Access applications via the ALB domain and different paths, confirming all virtual cluster applications are accessible through a single entry point. Check ALB listener rules to confirm correct path-based rules for different applications.
+- **Cleanup**: When environments are no longer needed, uninstall the vCluster Helm release and delete related Route53 DNS records and ACM certificates to avoid unnecessary costs.
+
+## SRE Essentials
+
+This solution embodies SRE core principles across multiple dimensions:
+
+### Relationship to Reliability, Observability, and Incident Response
+- **Improved Environment Reliability and Consistency**: Template-based virtual cluster creation ensures structural consistency of test environments, reducing "works on my machine" issues caused by environment differences. Each virtual cluster's isolation also prevents test activities from interfering with each other.
+- **Simplified Observability**: All virtual clusters share the host cluster's monitoring infrastructure (such as log and metric collection agents). SRE teams only need to configure and monitor core platform health at one level, rather than repeating for dozens of independent clusters. During troubleshooting, it is clearer to determine whether issues are at the platform layer or specific application layer.
+- **Accelerated Incident Response**: The ability to quickly create and destroy environments enables SRE and developers to rapidly reproduce production issues or test fix patches, shortening incident response and recovery times.
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+    - **Self-Service and Empowerment**: Delegate environment creation capabilities to development/QA teams, eliminating single-point dependencies on the platform team and greatly increasing organizational agility.
+    - **Resource Pooling and Sharing**: By sharing core components (control plane services, load balancers) and underlying resources, significantly reduce Total Cost of Ownership (TCO) and operational complexity.
+    - **Infrastructure as Code (IaC)**: All configurations (virtual cluster creation parameters, application deployment manifests) should be version-controlled to ensure reproducibility and audit trails.
+- **Common Anti-Patterns**:
+    - **Over-Isolation**: Creating completely independent clusters for every trivial test need, leading to resource waste and management nightmares. The vCluster model provides "just right" isolation.
+    - **Ignoring Platform Governance**: While self-service is beneficial, virtual cluster usage still needs governance through resource quotas, namespace conventions, and other policies to avoid resource contention and cost overruns.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**:
+    - **Environment Provisioning Time**: Time from request submission to environment readiness. Deloitte improved this SLI from 30-45 minutes to under 5 minutes.
+    - **Environment Availability Rate**: Health status percentage of the test environment platform.
+- **SLO (Service Level Objective)**:
+    - Set targets for the test environment platform, e.g., "95% of virtual cluster creation requests complete and become available within 10 minutes."
+    - "Monthly environment platform availability no less than 99.9%."
+- **Cost Metrics**:
+    - **Cost Per Test Environment**: Using the vCluster solution, due to resource reuse, the marginal cost per test environment decreases significantly.
+    - **Overall AWS Infrastructure Cost**: Achieving significant cost savings by consolidating EKS control planes, using Spot instances, and resource overcommitment (Deloitte case saved over 50 vCPUs and 200GB of memory).
+
+By implementing this architecture, organizations can build a more cost-effective, scalable, and manageable Kubernetes test environment platform that directly supports SRE's pursuit of reliability, efficiency, and scaled operations.

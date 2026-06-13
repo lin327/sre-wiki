@@ -1,0 +1,83 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Panel Size Affects Transformation Calculation Results"
+description: "In Grafana dashboards, changes in panel dimensions (height/width) cause unexpected changes to aggregated values computed through Transformations, impacting data reliability."
+category: observability-platform
+order: 0
+lastUpdated: 2026-04-30
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/123904
+    title: "Dashboards: Panel size affects calculated values (GitHub Issue #123904)"
+tags: [Grafana, Dashboard, Panel, Transformation, Bug, Reliability, Opensearch]
+---
+
+# Grafana Panel Size Affects Transformation Calculation Results
+
+## Overview
+
+In SRE practice, Grafana-based dashboards are the critical interface for monitoring and presenting system health, service [[service-level-objective|SLO]] progress, and incident trends. The accuracy and consistency of data on dashboards is a cornerstone of reliability. This document records a specific bug found in Grafana v13.0.1: **panel dimensions (height/width) affect data values calculated through Transformations**. This issue directly threatens the credibility of monitoring data and may lead SRE teams to make decisions based on incorrect data during incident response or capacity planning.
+
+## Core Concepts
+
+Understanding this issue involves several core Grafana concepts:
+
+1. **Panel Size**: In a Grafana dashboard, each panel occupies a space defined by a row-column grid. Users can adjust its size by dragging.
+2. **Transformations**: A data processing capability provided by Grafana that allows users to filter, merge, reorganize, or calculate data after it is returned from a data source query but before panel rendering. Common transformations include `Reduce` (aggregating multiple rows into one), `Binary Operations` (performing arithmetic such as addition, subtraction, multiplication, division), and `Calculate field` (creating calculated fields based on existing fields).
+3. **Expected Behavior**: The physical display size of a panel should only affect visual presentation (such as chart density, label readability), not the data processing logic applied to the underlying query results. The same query, the same transformations, should produce completely consistent output values on panels of different sizes.
+4. **Observed Behavior (Bug)**: In a specific environment (Grafana v13.0.1), when a panel is smaller in the dashboard, the aggregated values computed through transformations are significantly lower than expected; as the panel size increases, the calculated results increase proportionally, but may still not be entirely correct. The key point is that the underlying database query (e.g., OpenSearch) itself is constant and correct.
+
+## Practice
+
+### Reproduction Steps
+
+According to the report, reproducing this issue requires the following setup:
+
+1. **Data Source**: Configure an OpenSearch (2.33.1) data source.
+2. **Panel Query**: Create a panel with at least two queries.
+3. **Apply Transformations**: In the panel's "Transform" tab, add transformations sequentially:
+    *   `Reduce`: Aggregate query result rows (e.g., sum, count).
+    *   `Calculate field`: Create a new calculated field based on the aggregation result from the previous step.
+    *   `Binary Operation`: Perform a binary operation using the created calculated field (e.g., division to calculate a ratio).
+4. **Trigger the Issue**:
+    *   Save the panel in the dashboard.
+    *   Drag the panel to a smaller size, refresh the dashboard, and observe the calculated value (should be lower than expected).
+    *   Drag the panel to a larger size, refresh the dashboard, and observe the calculated value (will change, but may still be incorrect).
+
+### Troubleshooting and Mitigation
+
+For SRE teams encountering this issue, the following troubleshooting and temporary mitigation approaches are recommended:
+
+1. **Verify the Query**: First, as the reporter did, **independently verify that the query results at the data source level are correct**. This can be done by directly accessing OpenSearch's query analysis tools or running the same query to rule out data source issues.
+2. **Isolate Variables**: Within Grafana, try removing all transformations and displaying only the raw query results to observe whether they change with panel size. If the raw data is stable, the issue is isolated to the transformation processing layer.
+3. **Check Version and Updates**: Clearly document the current Grafana version (v13.0.1 in this case). The issue report indicates it appeared after updating to v13. Monitor Grafana's official fix status for this issue and plan to upgrade promptly once a fix is available.
+4. **Temporary Workaround**: Before an official fix is released, consider the following temporary measures:
+    *   Avoid using complex transformations involving multi-step aggregation and secondary calculations in panels on critical dashboards, especially when these values are the primary basis for monitoring [[service-level-objective|SLO]] or critical Error Budgets.
+    *   Consider moving complex calculation logic to the data source query (e.g., OpenSearch Painless scripts) or a separate preprocessing layer, letting Grafana panels only display pre-calculated final values.
+
+## SRE Key Points
+
+### Relationship to Reliability, Observability, and Incident Response
+
+*   **Observability Data Integrity Compromised**: This bug undermines the fundamental principle of "what you see is what you queried." The derived metrics displayed on dashboards deviate from the true system state, severely weakening system observability.
+*   **Incident Response Risk**: When SRE teams initiate or evaluate an incident response based on incorrect metrics on dashboards (e.g., aggregated error rates, request latencies), it may lead to false positives (misidentifying normal conditions as failures) or false negatives (failing to detect actual failures), extending MTTR (Mean Time to Repair).
+*   **Capacity Planning Misleading**: Capacity trend projections based on such panels may also be distorted, leading to over-provisioning or under-provisioning.
+
+### Best Practices and Common Anti-Patterns
+
+*   **Best Practices**:
+    *   **Data Source-Side Calculation**: Whenever possible, perform core, decision-driving metric calculations in data source queries or data pipelines to ensure consistency. Grafana panels should be used more for visualization and exploration.
+    *   **Critical Panel Validation**: For panels displaying critical SLO/SLI or cost-related metrics, regularly (or through automated tests) validate that calculation results are consistent across different views (e.g., different sizes, different dashboards).
+    *   **Version Management and Testing**: Before upgrading core observability platforms like Grafana, thoroughly test in non-production environments, particularly checking whether existing dashboard data presentation has changed.
+*   **Common Anti-Patterns**:
+    *   **Over-Reliance on Client-Side Calculation**: Delegating complex, multi-layered metric calculations entirely to Grafana's front-end transformation capabilities increases the risk of front-end rendering uncertainty.
+    *   **Ignoring Version Update Impact**: Not including Grafana in the version management process for critical infrastructure, leaving teams unprepared for potential regressions introduced by version updates.
+
+### Related Metrics (SLI/SLO/SLA)
+
+This issue directly impacts the following observability metrics:
+
+*   **Dashboard Data Accuracy (SLI)**: An SLI targeting the reliability of the monitoring system itself. An SLO could be defined as "all transformation-based aggregated metric values on critical dashboards deviate by less than 0.1% from aggregated values returned directly by data source queries." This bug would cause violations of that SLO.
+*   **SLI Data Reliability**: For SLIs that rely on Grafana as the sole or primary visualization source (e.g., "service availability"), this issue may cause a **decrease in data reliability** for that SLI. SRE teams need to account for this potential source of error when evaluating SLIs.
+*   **Error Budget Consumption**: If unnecessary incident responses are triggered or incorrect changes are made due to the use of this erroneous data, it may consume valuable [[error-budget|Error Budget]].

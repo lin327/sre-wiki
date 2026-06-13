@@ -1,0 +1,55 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Mesh Introduction and Hacktoberfest Participation Guide"
+category: "Chaos Engineering"
+confidence: medium
+---
+
+# Chaos Mesh Introduction and Hacktoberfest Participation Guide
+
+## Overview
+
+Chaos engineering is a key methodology in SRE practice for proactively discovering system vulnerabilities and improving service resilience. Chaos Mesh is a cloud-native chaos engineering platform focused on safely orchestrating and executing chaos experiments in Kubernetes environments. By injecting various types of faults into Pods, networks, file systems, and even the kernel, it helps engineers validate system fault tolerance and is a powerful tool for building observable, highly reliable distributed systems. As a CNCF sandbox project, it fully demonstrates the value of open-source community collaboration.
+
+## Core Concepts
+
+Understanding Chaos Mesh requires grasping the following core concepts:
+
+*   **Chaos Engineering Platform**: A software system capable of systematically and controllably introducing faults into production or production-like environments and observing system reactions. Chaos Mesh is exactly such a platform, providing a complete set of capabilities for defining, executing, and managing chaos experiments.
+*   **Fault Injection**: This is the core technical approach of chaos engineering. Chaos Mesh supports multiple fault types, including but not limited to:
+    *   **Pod Faults**: Such as killing Pods, making Pods unavailable, or applying CPU/memory pressure to Pods.
+    *   **Network Faults**: Such as network latency, packet loss, bandwidth throttling, and DNS errors.
+    *   **File System Faults**: Such as file I/O delays and permission changes.
+    *   **Kernel Faults**: Such as clock skew and other lower-level simulations.
+*   **Kubernetes-Native**: Chaos Mesh is built on top of Kubernetes, and all its resources (such as ChaosMesh CRDs) are managed as Kubernetes objects, enabling seamless integration into cloud-native toolchains and leveraging K8s scheduling and lifecycle management capabilities.
+*   **Open-Source and Community-Driven**: As shown in the materials, the project's growth is highly dependent on contributions from developers worldwide. Its growth trajectory (4000+ stars in 1.5 years, 140+ contributors) is itself a successful example of open-source community collaboration.
+
+## Practice
+
+To participate in the Chaos Mesh project (using the Hacktoberfest event as an example) or start using it, follow these steps:
+
+**1. Quick Open-Source Contribution:**
+   *   **Register for the Event**: Sign up for Hacktoberfest during the event period (e.g., October 1-31).
+   *   **Join the Community**: Get help and connect through the `#project-chaos-mesh` channel on CNCF Slack.
+   *   **Find Tasks**: Browse issues labeled "Hacktoberfest" in the GitHub repository; these are typically beginner-friendly starter tasks.
+   *   **Submit Contributions**: Follow the project's [contribution guide](https://github.com/chaos-mesh/chaos-mesh/blob/master/CONTRIBUTING.md) to create and submit Pull Requests (PRs). It is important that PRs have substantive value and avoid meaningless submissions.
+
+**2. Exploring Chaos Mesh Features:**
+   *   While the source material does not go into detail, typical usage practices include: installing Chaos Mesh into a Kubernetes cluster, defining `ChaosExperiment` CRs to describe fault scenarios (e.g., injecting 10 seconds of network latency into a specified Deployment), executing experiments, and combining monitoring systems (such as Prometheus, Grafana) to observe whether service SLIs (such as error rate, latency) show changes exceeding SLO expectations.
+
+## SRE Takeaways
+
+*   **Reliability, Observability, and Incident Response Connections**:
+    *   **Reliability**: Chaos Mesh directly serves to improve system reliability. By regularly executing chaos experiments, teams can proactively discover dependency failures, network partitions, single points of failure, and other issues, thereby hardening systems before real failures occur.
+    *   **Observability**: Chaos experiments are a stress test for the observability system. A robust observability system (Metrics, Logs, Traces) should accurately and timely reflect anomalous changes in internal system state during chaos experiments, helping to pinpoint root causes.
+    *   **Incident Response**: Simulating failures in a controlled environment is essentially a "dress rehearsal" for the incident response team, validating the effectiveness of fault detection processes, alert configurations, and response playbooks.
+
+*   **Best Practices and Common Anti-patterns**:
+    *   **Best Practices**: Always start in non-production environments or strictly controlled production slices; follow the "blast radius" control principle, starting with small-scale experiments; ensure the team is aware before experiments and has clear rollback plans; compare experiment results against defined SLOs to quantify reliability risks.
+    *   **Common Anti-patterns**: Injecting high-risk faults directly in production without planning or communication; focusing only on "injection" while neglecting the "observe" and "learn" feedback loop; treating chaos engineering as a one-time activity rather than a continuous practice.
+
+*   **Related Metrics (SLI/SLO/SLA)**:
+    Chaos experiments are the core means of validating whether SLIs (Service Level Indicators) meet SLOs (Service Level Objectives) under failure scenarios. For example, an experiment can verify: after simulating an availability zone failure, whether the overall service availability SLI can still maintain above the 99.95% SLO. This provides data support for setting and negotiating fact-based SLAs (Service Level Agreements).
+
+To start exploring Chaos Mesh, refer to its official documentation for installation and creating your first chaos experiment. [[chaos-engineering]] [[sre-principles]]

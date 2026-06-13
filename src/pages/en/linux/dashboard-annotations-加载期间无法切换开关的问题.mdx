@@ -1,0 +1,57 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Dashboard Annotations: Unable to Toggle Switch While Loading"
+category: "Dashboard and Visualization"
+confidence: medium
+---
+
+# Dashboard Annotations: Unable to Toggle Switch While Loading
+
+## Overview
+
+In observability platforms like Grafana, annotations are a key feature that allows users to overlay event markers on time series graphs, correlating infrastructure changes, deployments, or alert events with performance metric changes. For SREs, the ability to view and manage annotations accurately and in a timely manner is critical for root cause analysis and incident response.
+
+However, a user experience (UX) issue affecting operational fluidity has been reported: when an annotation data source is loading data (e.g., connected to a slow-responding log service or cloud API), its corresponding toggle switch becomes disabled. This means that if a user starts a time-consuming annotation query and then changes their mind, or discovers that the query may not return results in time due to incorrect parameters, they cannot abort the operation by toggling the switch -- they can only passively wait for the loading to complete. This not only reduces operational efficiency but may also delay critical information assessment in urgent troubleshooting scenarios.
+
+## Core Concepts
+
+*   **Dashboard Annotations**: In Grafana, annotations are discrete events marked on a timeline. They can be queried from various data sources such as Elasticsearch, Loki, cloud monitoring APIs, etc., used to display event timelines in chart backgrounds.
+*   **Annotation Overlay**: The visual marker layer rendered on charts when annotation data finishes loading. Its loading state (loading, loaded, failed) directly affects the display of that layer and the availability of related controls.
+*   **UI State Management**: In frontend applications (such as Grafana's React app), a component's interactive state (such as whether a button is clickable) is typically controlled by its internal or global state manager. In this issue, the loading state management logic incorrectly sets the toggle switch's `disabled` property to `true` and does not provide a mechanism to interrupt background async requests (such as data source queries) based on user actions (clicking the switch).
+*   **Cancellable Async Operations**: Modern frontend frameworks (such as React with `AbortController`) support creating cancellable Promises. A robust UX design should allow users to actively cancel a long-running async operation (such as a network request) through UI interaction after initiating it.
+
+## Practice
+
+### Problem Description and Reproduction
+
+1.  **Scenario**: Create a dashboard with at least one panel configured with an annotation data source. The data source needs to connect to a slow-responding service (e.g., a complex cross-cluster log query, an unoptimized third-party API call).
+2.  **Steps**:
+    *   Open the dashboard, triggering annotation data loading. You will see a loading indicator (such as a spinning icon), and the toggle switch associated with that annotation becomes grayed out and unclickable (disabled state).
+    *   During this period, try clicking the switch. The system will not respond to your click, and you cannot cancel the ongoing loading operation.
+    *   You can only wait for the query to time out or eventually complete (whether successful or not), after which the switch becomes available again.
+
+### Workaround and Best Practices
+
+While this is a product defect that needs to be fixed by the Grafana team, SREs can take the following measures to mitigate the impact:
+
+1.  **Optimize Data Source Queries**: This is the fundamental solution. Review and optimize queries that cause slow annotation loading.
+    *   Ensure query time ranges are reasonable, avoiding full scans.
+    *   Create indexes and optimize schemas at the data source level.
+    *   For cloud API calls, check if rate limits or pre-aggregated metrics are available.
+2.  **Set Reasonable Timeouts**: Configure query timeouts (`timeout`) in dashboard or data source settings. This prevents a single slow query from indefinitely blocking frontend and backend resources, and is an important practice for ensuring overall system reliability. While it does not allow users to actively cancel, it limits the maximum wait time.
+3.  **Split and Layer Display**: If non-essential, consider distributing annotations across different rows, or using separate toggles for different annotation groups, thereby isolating the impact of slow queries and preventing them from blocking the entire dashboard's interactivity.
+4.  **Monitor Grafana Frontend Performance**: From an observability perspective, you can track Grafana's own service metrics (such as `grafana_frontend_query_duration_seconds`) to identify which annotation queries are performance bottlenecks and perform targeted optimization.
+
+## SRE Takeaways
+
+*   **Reliability and Observability Impact**: This seemingly UX issue profoundly affects the reliability and user experience of observability tools themselves. A dashboard that traps users in a "passive waiting" state is unreliable during urgent incident troubleshooting. SRE toolchains must remain agile and controllable to effectively support SRE practices.
+*   **Best Practices and Common Anti-patterns**:
+    *   **Best Practice**: Ensure all user-facing async operations provide clear progress feedback and interrupt options (such as cancel buttons or clickable loading icons). At the system design level, queries should have timeout and circuit-breaking mechanisms.
+    *   **Common Anti-pattern**: Completely disabling related UI controls during loading, depriving users of control. This is a classic "developer perspective" rather than "user perspective" design anti-pattern.
+*   **Related Metrics (SLI/SLO/SLA)**:
+    *   **SLI (Service Level Indicator)**: **"Average time (P95) for annotation data to first render after dashboard loads"** can serve as an SLI, directly measuring the availability and performance of critical functionality.
+    *   **SLO (Service Level Objective)**: Set targets based on the above SLI, such as: "95% of dashboards complete annotation data loading within 10 seconds of opening." This SLO drives the team to optimize slow queries.
+    *   **Error Budget Connection**: If SRE spends extra time during incident troubleshooting due to such UX defects or performance issues (e.g., waiting for non-cancellable annotation loading), this can indirectly count toward Error Budget consumption, as it reduces the team's overall operational efficiency.
+
+For deeper understanding of Grafana architecture or common dashboard issues, see [[grafana-dashboard-overview]]. To explore how to set reliability objectives for system features, see [[slo-error-budget]].

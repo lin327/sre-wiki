@@ -1,0 +1,111 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd v3.7 Client Connection Blocking Behavior Change"
+description: "Analysis of etcd v3.7's `clientv3.dial` blocking behavior when a non-zero DialTimeout is set, its impact on client high availability, and mitigation strategies."
+category: etcd
+order: 0
+lastUpdated: 2026-05-28
+confidence: high
+sources:
+  - url: https://github.com/etcd-io/etcd/issues/21830
+    title: "clientv3.dial blocks when a non-zero DialTimeout is set"
+tags: [etcd, SRE, clientv3, DialTimeout, gRPC, high-availability]
+---
+
+# etcd v3.7 Client Connection Blocking Behavior Change
+
+## Overview
+
+This document analyzes an important client behavior change introduced in etcd v3.7: when a non-zero `DialTimeout` is set, the `clientv3.dial` function becomes a blocking call. This change differs from etcd v3.5 and v3.6 behavior, and may cause client tools (such as `etcdctl`) to fail querying healthy nodes when some cluster nodes are down, impacting operational efficiency and troubleshooting. Understanding the cause, impact, and solution for this change is critical for maintaining etcd cluster reliability and client robustness.
+
+## Core Concepts
+
+### `clientv3.dial` and DialTimeout
+
+`clientv3.dial` is a key function inside the etcd client library used to establish gRPC connections with etcd servers. The `DialTimeout` parameter controls the timeout for connection establishment.
+
+### Behavior Change Analysis
+
+In **etcd v3.5 and v3.6**, `clientv3.dial`'s blocking behavior is strictly controlled by the `grpc.WithBlock()` option. Only when this option is set will `dial` block until connection is established or times out. By default (without `WithBlock()`), `dial` is non-blocking, returning immediately, with the connection established in the background.
+
+Starting from **etcd v3.7** (introduced by [PR #21282](https://github.com/etcd-io/etcd/pull/21282)), as long as `DialTimeout` is set to a non-zero value, regardless of whether `grpc.WithBlock()` is specified, `clientv3.dial` becomes a blocking call. This means the client will block at startup until the connection is established or times out.
+
+This change stems from a correction of gRPC anti-patterns. According to [gRPC-Go official documentation](https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md) recommendations, clients should not proactively check if connections are "Ready" before making RPC calls, but should instead rely on errors returned by RPC calls themselves to handle connection issues. The new behavior aims to more closely follow this pattern, but inadvertently changed the calling semantics of the `clientv3.dial` function.
+
+### Impact Scenario: Partial Cluster Node Failure
+
+The most direct impact of this behavior change manifests in client behavior during partial cluster node failures:
+- **v3.6 Behavior**: When connecting to a failed node (connection refused), the client library reports an error immediately, but the load balancer redirects to other healthy nodes, and commands (such as `etcdctl endpoint status`) still succeed, returning healthy node status.
+- **v3.7 Behavior**: Since `dial` is blocking, it continuously tries to connect to all endpoints until one succeeds or `DialTimeout` expires. If the first endpoint attempted is the failed node and the connection timeout is set long, the client blocks until timeout, ultimately failing the entire command **even though other nodes are healthy**.
+
+## Practice
+
+### Solutions and Configuration Examples
+
+#### Option 1: Set DialTimeout to 0 (Recommended)
+
+This is the most direct and compatible solution. Setting `DialTimeout` to `0` restores the non-blocking behavior of v3.6 and earlier versions.
+
+```go
+import (
+    "go.etcd.io/etcd/clientv3"
+    "time"
+)
+
+// Use DialTimeout: 0 to restore non-blocking behavior
+cli, err := clientv3.New(clientv3.Config{
+    Endpoints:   []string{"etcd1:2379", "etcd2:2379", "etcd3:2379"},
+    DialTimeout: 0, // Key setting
+})
+```
+
+For `etcdctl`, set via environment variable or command-line parameter:
+```bash
+ETCDCTL_DIAL_TIMEOUT=0 etcdctl endpoint status -w table --cluster
+```
+
+#### Option 2: Combine with `grpc.WithBlock()` for Precise Control
+
+If blocking connection is truly needed for pre-startup checks, explicitly use the `grpc.WithBlock()` option with a reasonable timeout. This approach better aligns with gRPC's recommended usage.
+
+```go
+import (
+    "go.etcd.io/etcd/clientv3"
+    "google.golang.org/grpc"
+    "time"
+)
+
+// Explicitly use WithBlock with timeout
+cli, err := clientv3.New(clientv3.Config{
+    Endpoints:   []string{"etcd1:2379", "etcd2:2379", "etcd3:2379"},
+    DialTimeout: 5 * time.Second,
+    DialOptions: []grpc.DialOption{grpc.WithBlock()},
+})
+```
+
+#### Container and Orchestration Environment Considerations
+
+In environments like Kubernetes, etcd client connection parameters (such as kube-apiserver) are typically controlled by startup flags. Check and potentially adjust related `--etcd-servers`, `--etcd-dial-timeout` configuration items. For etcd clusters managed by etcd-operator or custom Operators, ensuring client library version compatibility with etcd server versions is critical.
+
+## SRE Essentials
+
+### Impact on Reliability
+
+- **Narrower troubleshooting window**: During partial node failures, operator use of tools like `etcdctl` to check cluster status changes from "partial success" to "complete failure," potentially delaying overall cluster health assessment.
+- **Increased client startup risk**: In distributed systems, the node list a client depends on may not all be available. Blocking connections mean the client startup (or reconnection) process may be extended by a single unreachable node, increasing service startup fragility and uncertainty.
+- **Timeout configuration sensitivity**: Improper `DialTimeout` settings amplify this issue. Too short may prevent connecting to healthy slow nodes; too long causes the client to block for extended periods at failed nodes.
+
+### Best Practices and Anti-Patterns
+
+- **Pre-upgrade compatibility testing**: Before upgrading etcd clusters or client library versions, always test client behavior under various failure scenarios (such as node downtime, network partitions) in pre-production environments.
+- **Clarify client connection intent**: When writing custom etcd client programs, explicitly choose "non-blocking" (`DialTimeout=0`) or "blocking with explicit timeout" (`DialTimeoutover 0` + `WithBlock()`) mode, avoiding ambiguous default behavior.
+- **Monitor connections and latency**: Monitor client connection establishment time and failure rate. This behavior change may significantly increase P99 latency for client connections, especially when the cluster is unhealthy.
+
+### Related Metrics (SLI/SLO/SLA)
+
+- **SLI (Service Level Indicator)**:
+    - `etcd_client_connection_duration_seconds`: Histogram of client connection establishment time.
+    - `etcd_client_requests_failed_total`: Total client request failures due to connection issues or timeouts.
+- **SLO (Service Level Objective)**: Can set SLO like "99% of the time, client connection to available etcd nodes has latency < 500ms." The v3.7 behavior change may affect achieving this SLO, requiring re-evaluation and adjustment of `DialTimeout` parameters.
+- **Error Budget**: Additional client connection failures or timeouts caused by this behavior change consume the service's "error budget," potentially triggering alerts about etcd client stability, requiring SRE team investigation and adjustment.

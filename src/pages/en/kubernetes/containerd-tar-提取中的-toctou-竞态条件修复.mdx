@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
-title: "'[release/2.0] Fix TOCTOU race bug in tar extraction'"
+title: "[release/2.0] Fix TOCTOU race bug in tar extraction"
 category: "容器安全"
 confidence: medium
 ---
+
+# [release/2.0] Fix TOCTOU race bug in tar extraction
 
 ## Overview
 In the container ecosystem, securely unpacking image layers (usually tar archives) is a fundamental and critical step in building container file systems. A common vulnerability in file system operations is the TOCTOU (Time-of-Check to Time-of-Use) race condition. The repair of the containerd project this time is to strengthen the tar extraction process, aiming to eliminate such potential security risks and ensure that the conversion process from the image to the container file system is more reliable and secure.

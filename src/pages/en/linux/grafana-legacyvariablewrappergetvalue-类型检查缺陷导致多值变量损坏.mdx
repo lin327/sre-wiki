@@ -1,44 +1,46 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Grafana Issue"
-category: "SRE知识库"
+category: "SRE Knowledge Base"
 confidence: high
 ---
 
+# Grafana Issue
 
-## 概述
+## Overview
 
-在 SRE 实践中，仪表板和告警是系统可观测性的关键组件，而变量（Variable）是实现动态、可重用仪表板的核心机制。一个关于变量插值的底层缺陷，可能悄无声息地破坏数据查询和展示的逻辑，导致监控视图呈现错误信息，进而影响故障排查的效率和准确性。本文档详细解析了 Grafana 中一个已发现的 `LegacyVariableWrapper.getValue()` 方法的类型检查错误，该错误会“损坏”多值变量，将其从预期的数组格式变为逗号分隔的字符串。
+In SRE practice, dashboards and alerts are key components of system observability, and variables are the core mechanism for implementing dynamic, reusable dashboards. A low-level defect in variable interpolation can silently corrupt the logic of data queries and display, causing monitoring views to present incorrect information, thereby affecting the efficiency and accuracy of troubleshooting. This document details a discovered type-checking error in Grafana's `LegacyVariableWrapper.getValue()` method, which "corrupts" multi-value variables, converting them from the expected array format to a comma-separated string.
 
-## 核心概念
+## Core Concepts
 
-### LegacyVariableWrapper 与 getValue() 方法
+### LegacyVariableWrapper and the getValue() Method
 
-在 Grafana 的 Scenes 引擎（较新版本的默认仪表板渲染引擎）中，`LegacyVariableWrapper` 类负责封装和处理模板变量。其核心方法 `getValue()` 的职责是提取变量的原始值，供后续的插值（Interpolation）过程使用。理想情况下，该方法应能正确处理各种数据类型，包括字符串、数字、布尔值，以及代表多值变量选择的数组。
+In Grafana's Scenes engine (the default dashboard rendering engine in newer versions), the `LegacyVariableWrapper` class is responsible for encapsulating and processing template variables. Its core method `getValue()` is responsible for extracting the raw value of the variable for subsequent interpolation processes. Ideally, this method should correctly handle various data types, including strings, numbers, booleans, and arrays representing multi-value variable selections.
 
-### 类型检查错误及其影响
+### Type-Checking Error and Its Impact
 
-该缺陷源于一个错误的类型检查逻辑。正确的做法是使用 `typeof value` 运算符来检查值的**类型**。然而，原代码错误地将变量的**值本身**与字符串字面量（`'string'`, `'number'`, `'boolean'`）进行比较。这意味着，该条件守卫（guard clause）几乎永远不会成立，导致所有通过此方法返回的值（包括数组）最终都被 `String(value)` 强制转换为字符串。
+The defect stems from an incorrect type-checking logic. The correct approach is to use the `typeof value` operator to check the **type** of the value. However, the original code incorrectly compared the **value itself** of the variable against string literals (`'string'`, `'number'`, `'boolean'`). This means that the guard clause almost never evaluates to true, causing all values returned through this method (including arrays) to be forcibly converted to strings by `String(value)`.
 
-对于多值变量，例如一个选中了 `["server1", "server2"]` 的变量，经过此方法处理后，会意外地变成字符串 `"server1,server2"`。任何依赖此变量值为数组的下游逻辑（如自定义插件、格式化器）都会收到错误的数据结构，从而引发查询错误或展示异常。
+For multi-value variables, for example, a variable with `["server1", "server2"]` selected, after being processed by this method, would unexpectedly become the string `"server1,server2"`. Any downstream logic that depends on this variable value being an array (such as custom plugins, formatters) would receive an incorrect data structure, causing query errors or display anomalies.
 
-## 实践
+## Practice
 
-### 问题复现
+### Problem Reproduction
 
-根据报告，可以通过以下步骤在 Grafana 中复现此问题：
+According to the report, this issue can be reproduced in Grafana through the following steps:
 
-1.  **启用多值变量**：在一个使用 Scenes 引擎的 Grafana 仪表板中，创建一个查询变量（Query Variable），并开启 “Multi-value” 选项。
-2.  **选择多个值**：在仪表板顶部的变量选择器中，选择至少两个值（例如 `server1` 和 `server2`）。
-3.  **构造依赖场景**：添加一个面板，其数据源或自定义格式化器需要调用 `getValue()` 方法，并期望返回一个数组。这可以通过使用实现了 `Scenes FormatVariable` 接口的插件，或通过自定义格式注册器来实现。
-4.  **触发查询**：运行面板查询。
-5.  **观察结果**：检查接收到的变量值。预期是数组 `["server1", "server2"]`，但实际得到的是字符串 `"server1,server2"`。
+1.  **Enable Multi-value Variables**: In a Grafana dashboard using the Scenes engine, create a Query Variable and enable the "Multi-value" option.
+2.  **Select Multiple Values**: In the variable selector at the top of the dashboard, select at least two values (e.g., `server1` and `server2`).
+3.  **Construct Dependent Scenario**: Add a panel whose data source or custom formatter needs to call the `getValue()` method and expects an array return. This can be achieved using a plugin that implements the `Scenes FormatVariable` interface or through a custom format registry.
+4.  **Trigger Query**: Run the panel query.
+5.  **Observe Results**: Check the received variable value. The expected result is array `["server1", "server2"]`, but the actual result is string `"server1,server2"`.
 
-### 修复方法
+### Fix Method
 
-修复的核心是将错误的类型检查纠正。在 `public/app/features/templating/LegacyVariableWrapper.ts` 文件中，应修改 `getValue()` 方法的相关逻辑：
+The core of the fix is to correct the erroneous type checking. In the file `public/app/features/templating/LegacyVariableWrapper.ts`, the relevant logic in the `getValue()` method should be modified:
 
-**修复前的错误代码：**
+**Incorrect code before fix:**
 ```typescript
 if (value === 'string' || value === 'number' || value === 'boolean') {
   return value;
@@ -46,40 +48,40 @@ if (value === 'string' || value === 'number' || value === 'boolean') {
 return String(value);
 ```
 
-**修复后的正确代码：**
+**Correct code after fix:**
 ```typescript
 if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
   return value;
 }
-// 对于数组或其他对象，应直接返回，而不是强制转为字符串
+// For arrays or other objects, return directly instead of forcing conversion to string
 return value;
 ```
 
-此修复确保了原始数据类型（包括数组）得以保留，从而保证了多值变量在后续插值和处理过程中的结构完整性。
+This fix ensures that original data types (including arrays) are preserved, thereby maintaining the structural integrity of multi-value variables during subsequent interpolation and processing.
 
-## SRE 要点
+## SRE Key Points
 
-### 与可靠性和可观测性的关联
+### Reliability and Observability Association
 
-*   **数据准确性风险**：此缺陷是一个“静默故障”（Silent Failure）。变量值的结构在插值过程中被破坏，但不会立即导致仪表板崩溃或报错。这可能导致 SRE 依赖的监控图表显示错误的数据关联或丢失过滤条件，在关键时刻误导故障判断，严重损害**监控数据的可靠性**。
-*   **影响范围广**：该错误位于核心变量插值层，影响所有使用了 Scenes 引擎的 Grafana 版本，并且涉及所有使用多值变量的面板和数据链接。其影响面远大于一个孤立的面板插件错误。
+*   **Data Accuracy Risk**: This defect is a "Silent Failure." The structure of the variable value is corrupted during interpolation but does not immediately cause the dashboard to crash or report errors. This may cause monitoring charts that SRE relies on to display incorrect data associations or missing filter conditions, misleading incident diagnosis at critical moments and severely undermining **monitoring data reliability**.
+*   **Wide Impact Scope**: The error is located in the core variable interpolation layer, affecting all Grafana versions using the Scenes engine, and involving all panels and data links using multi-value variables. Its impact area is far greater than an isolated panel plugin error.
 
-### 最佳实践与常见反模式
+### Best Practices and Common Anti-Patterns
 
-*   **最佳实践**：
-    1.  **防御性编程与类型检查**：在处理动态数据或插件输入时，应使用明确的类型检查（如 `typeof`），而不是基于值的猜测。
-    2.  **单元测试覆盖**：为工具类函数（如 `LegacyVariableWrapper`）编写单元测试，覆盖多种输入类型（原始值、数组、嵌套对象等），是防止此类“拼写错误”级缺陷上线的重要保障。
-    3.  **关注核心库的变更**：当仪表板引擎等核心组件迁移或重构时，SRE 团队应主动了解其架构变化，并对关键路径（如变量插值）进行回归测试，特别是涉及多值、自定义变量等复杂场景。
-*   **常见反模式**：
-    1.  **过度依赖“巧合”**：该缺陷长期存在却未被发现，部分原因是对于最常见的单字符串变量，其输出（`String(value)`）恰好与预期一致。这种基于巧合的正确性非常脆弱，是潜在的故障点。
-    2.  **忽视前端逻辑的可靠性**：SRE 关注后端服务的 SLI/SLO，但前端可视化层的错误同样会直接影响运维体验和决策质量。应将前端核心逻辑的健壮性纳入可靠性考量范围。
+*   **Best Practices**:
+    1.  **Defensive Programming and Type Checking**: When handling dynamic data or plugin inputs, use explicit type checking (such as `typeof`) rather than value-based guessing.
+    2.  **Unit Test Coverage**: Writing unit tests for utility classes (such as `LegacyVariableWrapper`) that cover multiple input types (primitive values, arrays, nested objects, etc.) is an important safeguard against "typo-level" defects reaching production.
+    3.  **Monitor Core Library Changes**: When core components like the dashboard engine are migrated or refactored, the SRE team should proactively understand architectural changes and perform regression testing on critical paths (such as variable interpolation), especially involving complex scenarios like multi-value and custom variables.
+*   **Common Anti-Patterns**:
+    1.  **Over-relying on "Coincidence"**: This defect existed for a long time without being discovered, partly because for the most common single-string variables, its output (`String(value)`) happened to match expectations. This correctness based on coincidence is very fragile and a potential failure point.
+    2.  **Ignoring Frontend Logic Reliability**: SRE focuses on backend service SLI/SLO, but errors in the frontend visualization layer equally directly affect operational experience and decision quality. The robustness of frontend core logic should be included in reliability considerations.
 
-### 相关指标（SLI/SLO）
+### Related Metrics (SLI/SLO)
 
-*   **SLI**：监控仪表板变量插值的成功率或错误率。可以定义如“由变量插值导致的数据面板查询失败次数”作为错误指标。
-*   **SLO**：对于严重依赖动态仪表板进行监控的环境，可以设立类似“仪表板核心功能（包括变量筛选）可用性 ≥ 99.9%”的目标。此缺陷的存在会直接影响该 SLO 的达成。
-*   **关联**：此类缺陷会影响**准确性**（Accuracy）和**完整性**（Completeness）这两个可靠性属性，进而影响基于监控数据的告警和决策过程。
+*   **SLI**: The success rate or error rate of monitoring dashboard variable interpolation. Metrics such as "number of data panel query failures caused by variable interpolation" can be defined as error indicators.
+*   **SLO**: For environments that heavily rely on dynamic dashboards for monitoring, goals like "dashboard core functionality (including variable filtering) availability at least 99.9%" can be established. The existence of this defect directly impacts achieving this SLO.
+*   **Association**: Such defects affect the reliability attributes of **Accuracy** and **Completeness**, thereby impacting alerting and decision-making processes based on monitoring data.
 
 ---
 
-**相关页面**：[[grafana-变量]] [[可观测性基础]] [[故障注入与测试]]
+**Related Pages**: [[grafana-variables]] [[observability-fundamentals]] [[chaos-testing]]

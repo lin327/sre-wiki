@@ -1,0 +1,50 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana SQL Expression Alert Preview Unexpected Error"
+category: "Monitoring & Alerting"
+confidence: low
+---
+
+# Grafana SQL Expression Alert Preview Unexpected Error
+
+## Overview
+
+In SRE practice, accurate configuration and validation of alert rules is the first line of defense for ensuring system reliability. Grafana's alert editor provides a powerful "preview" feature that allows engineers to view query results and calculated states before saving rules. This article describes a scenario where using a specific SQL expression as the alert query source (e.g., `gdev-loki` data source) and clicking "Preview" causes the system to return an "An unexpected error happened" uncaught exception. Understanding the manifestation and potential causes of this issue helps SRE personnel quickly troubleshoot and work around it, ensuring effective alert rule deployment.
+
+## Core Concepts
+
+**Grafana Alerting Expressions**: Allow users to define metrics or log conditions to be monitored through data queries (such as PromQL, SQL, LogQL). When query results meet specific logic (such as thresholds), the system triggers an alert.
+
+**SQL Expression Query**: A specific type of query syntax that can execute structured queries directly in Grafana against SQL-supporting data sources (such as Loki, PostgreSQL, MySQL). It provides flexibility for extracting information from complex data structures.
+
+**Preview Feature**: A key interactive component in the alert rule editor. It executes configured queries in real time and displays returned data points, calculated `for` states, etc., serving as an important tool for debugging rule logic.
+
+**Problem Manifestation**: When a user configures an alert query containing a specific SQL expression and attempts to preview, the editor fails to correctly process or render the data returned by the query, causing the frontend to throw an uncaught exception and the interface to display the generic error message "An unexpected error happened." According to the original report's speculation, this may be related to complex data structures such as nested JSON fields in the query results, with the preview component failing when attempting to format or display such data.
+
+## Practice
+
+While this is a reported Grafana product defect, before the official fix is released, SREs can take the following steps for problem diagnosis and temporary workarounds:
+
+**Troubleshooting Steps:**
+1.  **Isolate the Query**: First, in Grafana's "Explore" view, execute the query directly using the same data source and SQL expression to confirm whether the query itself can successfully return data. This rules out query syntax errors or data source connection issues.
+2.  **Simplified Testing**: Try modifying the SQL expression, gradually removing fields that may contain complex data structures (such as nested JSON objects or arrays), and observe whether the preview functionality returns to normal. This helps identify the specific field causing the parsing failure.
+3.  **Switch Query Types**: If business allows, consider temporarily using other query languages supported by the data source (such as Loki's LogQL) to implement the same monitoring logic, bypassing the SQL expression parser's specific issue.
+4.  **Check Frontend Logs**: Open browser developer tools (usually F12), switch to the "Console" tab. Re-trigger the preview operation and check for more detailed JavaScript error stack trace output. This information can provide precise clues for problem location.
+5.  **Track Upstream Issue**: Bookmark the GitHub Issue URL recorded on this page and periodically monitor the Grafana official team's discussion and fix progress on this issue.
+
+**Temporary Workaround**:
+With the query logic verified as correct, you can temporarily skip the preview validation step and directly save and enable the alert rule. However, you must accept the risk of rule configuration errors, so after saving you should immediately check its status in the "Alert Rules" list and potentially verify its trigger logic through simulated failures.
+
+## SRE Key Points
+
+-   **Relationship with Reliability**: Alert rules are critical outputs of the observability system. The stability of their configuration tools (such as the preview feature) directly relates to whether engineers can efficiently and correctly set monitoring boundaries. This issue weakens the configuration validation process, potentially introducing human error, reducing alert signal-to-noise ratio, and ultimately affecting incident response efficiency and accuracy.
+-   **Best Practices and Anti-Patterns**:
+    -   **Practice**: Before deploying complex monitoring logic as alert rules, always use independent Explore panels or test queries for thorough validation. Implement version control for alert rules (e.g., through Provisioning API).
+    -   **Anti-Pattern**: Over-relying on the editor's single preview feature for final validation without conducting end-to-end simulation testing.
+    -   **Anti-Pattern**: Blindly modifying or deleting query logic without understanding the root cause of preview errors, potentially creating monitoring blind spots.
+-   **Related Metrics (SLI/SLO)**:
+    -   **SLI**: "Alert rule configuration success rate" (ratio from rule submission to successful enablement without preview errors) can serve as an internal SLI.
+    -   **SLO**: Ensuring the alert rule configuration flow succeeds on the first attempt 99.9% of the time (without tool obstruction) can serve as the SLO for related teams (such as monitoring platform SRE).
+
+[[alerting-rule-configuration]] [[grafana-query-languages]] [[observability-in-sre]]

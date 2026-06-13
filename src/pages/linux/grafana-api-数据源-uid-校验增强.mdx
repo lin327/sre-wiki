@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana API 数据源 UID 校验增强"
 description: "在更新数据源的 PUT 请求中，当 JSON 负载中的 UID 与 URL 路径参数中的 UID 不匹配时，API 现在会返回 400 错误，而非静默失败并导致后续的 500 内部服务器错误。"
@@ -11,6 +12,8 @@ sources:
     title: "“[release-13.0.2] Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid”"
 tags: [grafana, api, datasource, validation, error-handling]
 ---
+
+# Grafana API 数据源 UID 校验增强
 
 ## 概述
 

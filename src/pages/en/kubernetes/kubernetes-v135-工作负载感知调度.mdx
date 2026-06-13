@@ -1,0 +1,104 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes v1.35 Workload-Aware Scheduling"
+description: "Kubernetes v1.35 introduces the Workload API and native Gang scheduling, providing all-or-nothing scheduling guarantees for large workloads like AI/ML."
+category: Scheduling
+order: 0
+lastUpdated: 2025-12-29
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2025/12/29/kubernetes-v1-35-introducing-workload-aware-scheduling/
+    title: "Kubernetes v1.35: Introducing Workload Aware Scheduling"
+tags: [kubernetes, scheduling, workload, gang-scheduling, ai, ml, sre]
+---
+
+# Kubernetes v1.35 Workload-Aware Scheduling
+
+## Overview
+
+In Kubernetes clusters, scheduling a single Pod differs fundamentally from scheduling large workloads composed of multiple Pods (like AI/ML training tasks). The latter typically requires strategic placement of related Pods as a whole, such as placing all worker nodes within the same rack to maximize network bandwidth and computational efficiency. Traditional per-Pod independent scheduling cannot meet this need, potentially causing resource fragmentation, partial task startup, or deadlocks. The "workload-aware scheduling" introduced in Kubernetes v1.35 addresses this challenge by introducing a new `Workload` API and native Gang scheduling support, elevating workloads to "first-class citizens" of the scheduler. This lays the foundation for efficiently running large-scale, tightly coupled workloads on Kubernetes, critical for scenarios requiring job atomicity (like distributed training), and is a key evolution for improving cluster resource utilization and application reliability.
+
+## Core Concepts
+
+Kubernetes v1.35's workload-aware scheduling encompasses three core concepts:
+
+1.  **Workload API**: A new API resource (under `scheduling.k8s.io/v1alpha1`) for defining scheduling requirements of a group of Pods in a structured, machine-readable way. Unlike Job which defines "what to run," the Workload resource defines "how to schedule" this group of Pods. It logically groups Pods through the `podGroups` field and applies specific scheduling policies to each group.
+
+2.  **Gang Scheduling**: The first implemented scheduling policy, enforcing "all-or-nothing" placement. The scheduler treats Pods belonging to the same Pod group as an indivisible whole. Scheduling is only approved when the entire group's minimum count (`minCount`) of Pods can find suitable nodes in the cluster. This avoids resource waste and potential deadlock from workloads partially running.
+
+3.  **Opportunistic Batching**: An optimization feature enabled by default in Beta. It automatically identifies Pods with identical scheduling requirements (image, resource requests, affinity, etc.) in the queue. When the scheduler computes a feasible node for one Pod, it can reuse this result for subsequent identical Pods, significantly reducing scheduling latency for batch Pods.
+
+## Practice
+
+### Enable Features
+
+*   **Workload API and Gang Scheduling**:
+    - Enable `GenericWorkload` feature gate on `kube-apiserver` and `kube-scheduler`.
+    - Enable `GangScheduling` feature gate on `kube-scheduler` (depends on `GenericWorkload`).
+    - Ensure API Server has `scheduling.k8s.io/v1alpha1` API group enabled.
+*   **Opportunistic Batching**:
+    - Enabled by default as Beta in v1.35. To disable, set `OpportunisticBatching=false` on `kube-scheduler`.
+
+### Create Workload Resource
+
+Define a Workload resource describing Pod groups and Gang scheduling policy:
+
+```yaml
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: Workload
+metadata:
+  name: training-job-workload
+  namespace: some-ns
+spec:
+  podGroups:
+  - name: workers
+    policy:
+      gang:
+        minCount: 4
+```
+
+### Create Associated Pods
+
+Link Pods to the Workload's specific Pod group via the new `workloadRef` field:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-0
+  namespace: some-ns
+spec:
+  workloadRef:
+    name: training-job-workload
+    podGroup: workers
+```
+
+### Gang Scheduling Workflow
+
+1.  **Wait**: Scheduler temporarily blocks Pod scheduling until: the associated `Workload` exists, and pending Pods in the group reach `minCount`.
+2.  **Attempt placement and permit gate**: Scheduler tries finding nodes for the entire group but doesn't immediately bind Pods. Pods enter a "Permit" gate state.
+3.  **Decision**:
+    - **Success**: If valid nodes found for the entire group, gate opens, all Pods bound simultaneously.
+    - **Failure**: If only partial nodes found within timeout (default 5 minutes), scheduler **rejects all** Pods in the group, returning them to the scheduling queue.
+
+## SRE Essentials
+
+### Relationship with Reliability
+Gang scheduling directly improves distributed workload startup reliability. It avoids "half-baked" jobs consuming resources without producing results through atomic scheduling, an important guarantee for resource efficiency and application availability.
+
+### Best Practices and Anti-Patterns
+*   **Best Practices**:
+    - For workloads requiring strongly correlated scheduling (distributed training, HPC jobs), prioritize using `Workload` API and Gang scheduling.
+    - For large stateless service deployments or batch tasks, `kube-scheduler`'s **opportunistic batching** automatically provides acceleration without additional configuration.
+    - Verify the impact of new feature gates on existing scheduling behavior in test environments before upgrading clusters.
+*   **Common Anti-Patterns**:
+    - **Overusing Gang scheduling**: For regular Pods without strict correlation requirements, forcing Gang scheduling creates artificial scheduling bottlenecks.
+    - **Ignoring opportunistic batching limitations**: Requires identical scheduling context (image, resources, etc.) for Pods.
+
+### Related Metrics (SLI/SLO)
+*   **Gang Scheduling SLI**: `SchedulingGangSuccessRate`, `GangSchedulingLatency`.
+*   **Opportunistic Batching SLI**: `SchedulerBatchSize`, `BatchingHitRatio`.
+*   **General SLO**: Overall `PodSchedulingLatency` should remain stable or decrease. `JobCompletionRate` for Gang-scheduled workloads should improve.
+
+Related concepts: [[scheduler-performance-tuning]], [[dynamic-resource-allocation]], [[slo]].

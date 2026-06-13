@@ -1,63 +1,65 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
-title: "'[$] BPF loop verification with scalar evolution'"
-category: "SRE知识库"
-confidence: medium
+title: "[$] BPF loop verification with scalar evolution"
+category: "SRE Knowledge Base"
+confidence: high
 ---
 
+# [$] BPF loop verification with scalar evolution
 
-## 概述
+## Overview
 
-BPF（Berkeley Packet Filter）作为现代Linux内核中最核心的可编程基础设施之一，被广泛应用于网络监控、安全策略（如[[linux-seccomp]]）、性能分析（如[[bpf-tracing]]）和系统可观测性。BPF程序在被内核加载执行前，必须经过一个严格的**静态验证器（BPF Verifier）**进行安全检查，以确保其不会导致内核崩溃、死循环或访问非法内存。其中，**循环的验证**是验证器面临的最复杂挑战之一。验证器必须在编译期（加载期）证明循环必然终止且不会越界，这是一个经典的静态分析难题。本文将探讨BPF验证器处理循环的传统方法及其局限性，以及通过引入**标量演化（Scalar Evolution）**分析技术所带来的关键改进。
+BPF (Berkeley Packet Filter), as one of the most core programmable infrastructures in the modern Linux kernel, is widely used in network monitoring, security policies (such as [[linux-seccomp]]), performance analysis (such as [[bpf-tracing]]), and system observability. Before BPF programs are loaded and executed by the kernel, they must undergo a rigorous **static verifier (BPF Verifier)** for safety checks to ensure they do not cause kernel crashes, infinite loops, or illegal memory access. Among these, **loop verification** is one of the most complex challenges the verifier faces. The verifier must prove at compile time (load time) that loops necessarily terminate and do not exceed bounds, which is a classic static analysis problem. This article explores the traditional methods and limitations of how the BPF verifier handles loops, as well as the key improvements brought by introducing **Scalar Evolution** analysis techniques.
 
-## 核心概念
+## Core Concepts
 
-### BPF验证器与循环分析的挑战
+### BPF Verifier and the Challenge of Loop Analysis
 
-BPF验证器的核心任务是在程序运行前，通过模拟其所有可能的执行路径来证明其安全性。对于`while`或`for`循环，验证器需要证明两点：1) 循环体在有限次迭代内必然执行退出条件；2) 循环内的所有内存访问和寄存器操作都在合法范围内。传统的处理方式是**逐次迭代模拟**：验证器会实际展开循环，每次处理一个迭代，直到遇到退出分支或达到某个内部限制（如最大指令数或最大验证步数）。这种方法对于简单循环有效，但在面对**嵌套循环**、循环边界依赖于外部输入或复杂条件时，可能导致验证器过早地达到指令限制而拒绝一个实际上安全的程序，因为它在验证过程中“展开”的迭代次数过多。
+The BPF verifier's core task is to prove program safety before execution by simulating all possible execution paths. For `while` or `for` loops, the verifier needs to prove two things: 1) the loop body necessarily executes the exit condition within a finite number of iterations; 2) all memory accesses and register operations within the loop are within legal bounds. The traditional approach is **iteration-by-iteration simulation**: the verifier actually unrolls the loop, processing one iteration at a time, until it encounters an exit branch or reaches some internal limit (such as maximum instruction count or maximum verification steps). This method works for simple loops, but when facing **nested loops**, loops whose bounds depend on external input, or complex conditions, it may cause the verifier to prematurely reach instruction limits and reject a program that is actually safe, because it "unrolled" too many iterations during verification.
 
-### 标量演化分析
+### Scalar Evolution Analysis
 
-**标量演化（Scalar Evolution, SCoP）**是一种源自编译器优化领域的静态分析技术，用于分析循环中一个标量变量（如循环计数器）如何随迭代次数变化。例如，对于简单的循环`for (int i = 0; i < n; i++)`，SCoP分析可以识别出变量`i`的值在每次迭代后增加1，其取值范围可以表示为`[0, n-1]`。
+**Scalar Evolution (SCoP)** is a static analysis technique originating from the compiler optimization field, used to analyze how a scalar variable (such as a loop counter) in a loop changes with iteration count. For example, for a simple loop `for (int i = 0; i < n; i++)`, SCoP analysis can identify that variable `i` increases by 1 after each iteration, and its value range can be expressed as `[0, n-1]`.
 
-将此技术应用于BPF验证器，意味着验证器不再需要笨拙地逐次迭代模拟循环。相反，它可以通过分析循环中关键变量（特别是控制循环边界和内部内存访问的变量）的演化规律，**一次性推导出它们在所有迭代中的取值范围**。这使得验证器能够更高效、更精确地验证循环的安全性，尤其是在处理复杂的嵌套循环时。
+Applying this technique to the BPF verifier means the verifier no longer needs to clumsily simulate loops iteration by iteration. Instead, it can analyze the evolution patterns of key variables in the loop (particularly those controlling loop bounds and internal memory accesses) to **derive their value ranges across all iterations in one pass**. This enables the verifier to verify loop safety more efficiently and precisely, especially when handling complex nested loops.
 
-## 实践
+## Practice
 
-Eduard Zingerman在2026年Linux存储、文件系统、内存管理和BPF峰会上的演讲，展示了其正在进行的改进工作。其核心思路是将标量演化分析集成到BPF验证器的循环处理逻辑中。
+Eduard Zingerman's presentation at the 2026 Linux Storage, Filesystem, Memory Management, and BPF Summit showcased his ongoing improvement work. The core idea is to integrate scalar evolution analysis into the BPF verifier's loop handling logic.
 
-**技术实现方向包括：**
+**Technical implementation directions include:**
 
-1.  **循环建模**：验证器在遇到循环结构时，首先识别其基本组成部分，如初始化部分、条件判断和增量部分。
-2.  **变量追踪与建模**：针对循环中被修改的标量寄存器，分析其如何基于前一次迭代的值进行计算。例如，`r1 = r2 + 4`会被建模为`r1_i = r1_{i-1} + 4`。
-3.  **范围推导**：结合循环条件和变量演化模型，利用抽象解释或约束求解技术，推断出该变量在整个循环生命周期内可能取值的上下界。
-4.  **验证集成**：在验证循环体内操作时（如内存访问`*(u32*)(r10 + r2)`），验证器不再仅仅依赖当前状态，而是使用从标量演化分析中获得的变量范围（例如，`r2`在循环中始终满足`0 &lt;= r2 < 16`），来证明内存访问的安全性。
+1.  **Loop modeling**: When the verifier encounters a loop structure, it first identifies its basic components, such as the initialization section, condition evaluation, and increment section.
+2.  **Variable tracking and modeling**: For scalar registers modified in the loop, analyze how they are computed based on the previous iteration's value. For example, `r1 = r2 + 4` is modeled as `r1_i = r1_{i-1} + 4`.
+3.  **Range derivation**: Combining loop conditions and variable evolution models, use abstract interpretation or constraint solving techniques to infer the upper and lower bounds of the variable's possible values throughout the loop's lifetime.
+4.  **Verification integration**: When verifying operations inside the loop body (such as memory access `*(u32*)(r10 + r2)`), the verifier no longer relies solely on the current state but uses variable ranges obtained from scalar evolution analysis (e.g., `r2` always satisfies `0 at most r2 < 16` in the loop) to prove memory access safety.
 
-通过这种“以分析换迭代”的方式，验证器可以避免不必要的循环展开，从而在有限的验证资源下处理更复杂的循环结构，同时保持甚至提高安全保证的强度。
+Through this "analysis for iteration" approach, the verifier can avoid unnecessary loop unrolling, thereby handling more complex loop structures with limited verification resources while maintaining or even improving the strength of safety guarantees.
 
-## SRE要点
+## SRE Key Points
 
-### 与可靠性和可观测性的关联
+### Relationship with Reliability and Observability
 
-BPF程序是构建云原生可观测性栈（如Prometheus的eBPF Exporter、Cilium的Hubble、Pixie等）的基石。BPF验证器的能力直接决定了这些工具能编写何种复杂度的监控和分析逻辑。如果验证器过于保守，拒绝了合理且高效的循环（特别是嵌套循环），SRE工程师和平台开发者就不得不采用更笨拙、更低效的替代方案，从而影响**监控数据的采集精度和系统性能**。因此，提升验证器对循环的分析能力，直接增强了构建复杂、高性能内核级可观测性工具的能力。
+BPF programs are the building blocks for constructing cloud-native observability stacks (such as Prometheus's eBPF Exporter, Cilium's Hubble, Pixie, etc.). The BPF verifier's capabilities directly determine what complexity of monitoring and analysis logic these tools can write. If the verifier is too conservative and rejects reasonable and efficient loops (especially nested loops), SRE engineers and platform developers are forced to adopt clumsier, less efficient alternatives, impacting **monitoring data collection precision and system performance**. Therefore, improving the verifier's loop analysis capability directly enhances the ability to build complex, high-performance kernel-level observability tools.
 
-### 最佳实践与常见反模式
+### Best Practices and Common Anti-Patterns
 
-- **最佳实践**：
-    - **理解验证器限制**：编写复杂BPF程序（尤其是涉及深度嵌套循环或大循环）时，应意识到验证器的资源限制。有时通过数学变换简化循环逻辑或循环边界可以提高验证通过率。
-    - **利用内核版本红利**：关注内核版本的更新说明。像标量演化这样的验证器增强会随主线内核发布，升级内核可能自动使之前被拒绝的BPF程序得以通过。
-    - **利用验证器反馈**：现代BPF验证器提供了详细的错误日志和“验证状态图”。SRE在调试BPF加载失败时，应仔细分析这些日志，判断是真正的安全问题还是验证器能力不足导致的误拒。
+- **Best practices**:
+    - **Understand verifier limitations**: When writing complex BPF programs (especially those involving deeply nested loops or large loops), be aware of the verifier's resource limits. Sometimes simplifying loop logic or loop bounds through mathematical transformations can improve verification pass rates.
+    - **Leverage kernel version benefits**: Follow kernel version release notes. Verifier enhancements like scalar evolution are released with mainline kernels, and upgrading the kernel may automatically allow previously rejected BPF programs to pass.
+    - **Utilize verifier feedback**: Modern BPF verifiers provide detailed error logs and "verification state graphs." When debugging BPF load failures, SREs should carefully analyze these logs to determine whether it's a genuine safety issue or a false rejection due to verifier limitations.
 
-- **常见反模式**：
-    - **“暴力”循环展开**：为了避免验证错误，手动将循环展开成大量重复的代码。这不仅使代码难以维护，也可能增加实际运行时的开销，并未解决根本问题。
-    - **过度依赖单一大型BPF程序**：试图在一个BPF程序中实现所有复杂逻辑，导致循环和分支过深，挑战验证器极限。更好的模式是采用**BPF程序链**或**尾调用（Tail Calls）**，将复杂逻辑分解。
+- **Common anti-patterns**:
+    - **"Brute force" loop unrolling**: Manually unrolling loops into large amounts of repeated code to avoid verification errors. This not only makes code hard to maintain but may also increase actual runtime overhead, without solving the fundamental problem.
+    - **Over-relying on single large BPF programs**: Trying to implement all complex logic in one BPF program, causing loops and branches to be too deep, challenging verifier limits. A better pattern is to use **BPF program chains** or **Tail Calls** to decompose complex logic.
 
-### 相关指标（SLI/SLO/SLA）
+### Related Metrics (SLI/SLO/SLA)
 
-虽然BPF验证本身不直接对应用户面向的SLI/SLO，但其效率和能力是底层平台能力的关键指标：
+While BPF verification itself does not directly correspond to user-facing SLIs/SLOs, its efficiency and capability are key indicators of underlying platform capability:
 
-- **验证延迟**：加载BPF程序所需的时间。标量演化等优化可以减少验证耗时，提升系统配置或动态跟踪场景下的响应速度。
-- **验证通过率**：对于一组代表性的BPF程序模板（涵盖各种循环模式），验证器成功加载的比例。改进的目标是提升复杂循环程序的通过率。
-- **运行时开销**：验证器更精确的分析可能允许内核生成更优化的BPF原生代码，间接降低程序执行时的CPU开销，从而影响承载该BPF程序的应用或节点的性能SLO。
+- **Verification latency**: The time required to load a BPF program. Optimizations like scalar evolution can reduce verification time, improving response speed in system configuration or dynamic tracing scenarios.
+- **Verification pass rate**: For a set of representative BPF program templates (covering various loop patterns), the proportion of successful verifier loads. The improvement goal is to increase the pass rate of complex loop programs.
+- **Runtime overhead**: More precise verifier analysis may allow the kernel to generate more optimized BPF native code, indirectly reducing CPU overhead during program execution, thereby affecting the performance SLO of the application or node hosting the BPF program.
 
-相关概念请参阅[[linux-bpf]]、[[static-analysis]]及[[kernel-tracing]]。
+Related concepts can be referenced in [[linux-bpf]], [[static-analysis]], and [[kernel-tracing]].

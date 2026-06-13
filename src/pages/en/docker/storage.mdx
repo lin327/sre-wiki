@@ -1,0 +1,112 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Docker Storage Drivers and Volumes"
+category: ""
+confidence: low
+---
+
+# Docker Storage Drivers and Volumes
+
+## Storage Drivers
+
+Docker uses storage drivers to manage container writable layers and image layers, based on the Union Filesystem implementation.
+
+### overlay2 (Recommended)
+
+`overlay2` is the default and recommended driver on Linux, based on OverlayFS:
+
+```bash
+docker info --format '{{.Driver}}'
+# Output: overlay2
+```
+
+Kernel-native support, excellent performance, high inode efficiency. Suitable for the vast majority of Linux production environments.
+
+### Other Drivers
+
+| Driver | Platform | Description |
+|------|------|------|
+| devicemapper | Linux | Used by early CentOS/RHEL, replaced by overlay2 |
+| fuse-overlayfs | Rootless Docker | Userspace overlay implementation |
+| btrfs / zfs | Linux | Requires corresponding filesystem support |
+| windowsfilter | Windows | Windows container default |
+
+**Selection Principle:** Prefer overlay2; use fuse-overlayfs for Rootless Docker; avoid the deprecated `aufs` and COW-less `vfs`.
+
+## Volumes vs Bind Mounts vs tmpfs
+
+Docker provides three data mounting methods.
+
+### Volumes
+
+Managed by Docker, stored under `/var/lib/docker/volumes/`:
+
+```bash
+docker volume create mydata
+docker run -d -v mydata:/app/data postgres:16
+docker volume inspect mydata
+```
+
+Lifecycle independent of containers, supports volume driver plugins (NFS, cloud storage), shareable across multiple containers.
+
+### Bind Mounts
+
+Mount host directories directly into containers:
+
+```bash
+docker run -d -v /host/path:/container/path nginx
+```
+
+Commonly used for local development source code mounting. Risk: container processes may modify host files; use with caution in production.
+
+### tmpfs Mounts
+
+Data stored in memory, lost when container stops. Suitable for temporary caches and sensitive data:
+
+```bash
+docker run -d --tmpfs /app/cache:rw,size=100m myapp
+```
+
+### Comparison
+
+| Feature | Volume | Bind Mount | tmpfs |
+|------|--------|------------|-------|
+| Docker managed | Yes | No | No |
+| Persists after container stop | Yes | Yes | No |
+| Supports volume drivers | Yes | No | No |
+| Typical use | Database data | Dev mounts | Temp cache |
+
+## Volume Lifecycle Management
+
+```bash
+docker volume ls                                    # List all volumes
+docker volume prune                                 # Clean up unused volumes
+docker volume rm mydata                             # Delete specific volume
+```
+
+`docker volume prune` deletes all unmounted named volumes. Confirm no important data exists before executing.
+
+## Disk Space Management
+
+```bash
+docker system df -v                                 # View Docker disk usage overview
+docker system prune -a --volumes                    # One-click cleanup (use with caution)
+```
+
+Production environments should configure scheduled cleanup policies to avoid disk exhaustion. Watch for inode exhaustion:
+
+```bash
+df -i                                               # Check inode usage
+```
+
+## SRE Practice Essentials
+
+- **Data Persistence:** Stateful services must use named volumes and never depend on container writable layers.
+- **Disk Management:** In CI/CD environments, old images and build caches expand rapidly. Use scheduled `docker system prune` tasks.
+- **Volume Backup:**
+  ```bash
+  docker run --rm -v mydata:/source -v $(pwd):/backup alpine \
+    tar czf /backup/mydata-backup.tar.gz -C /source .
+  ```
+  Production databases should use native backup tools (`pg_dump`, `mysqldump`) rather than directly backing up volume files.

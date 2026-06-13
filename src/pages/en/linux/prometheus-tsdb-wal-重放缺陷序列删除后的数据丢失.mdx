@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "'tsdb: fix WAL replay dropping samples for series re-created after stale"
 category: "Prometheus"
 confidence: high
 ---
+
+# 
 
 ## Overview
 In Prometheus' time series database (TSDB), Write-Ahead Log (WAL) and Write-Behind Log (WBL) are key components to ensure data durability and recover data after restart or crash. The WAL replay process is responsible for reloading the samples recorded in the log into memory. This document analyzes a race condition defect that occurs during WAL replay, which causes all sample data of a sequence under certain conditions to be lost after restarting, and details the fix.

@@ -1,9 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "Can't split notifications"
 category: "告警与通知"
 confidence: medium
 ---
+
+# Can
 
 ## Overview
 In SRE practice, clear, timely, and actionable alarm notifications are the foundation of effective incident response. Grafana Alerting provides a powerful notification policy (Notification Policy) mechanism to control how alarms are grouped, routed, and sent. A common requirement is to split alerts with different labels (such as different `cluster`) into independent notification messages to avoid a single notification containing too many alerts (such as "32 firing alerts"), thereby making it easier to quickly locate the problem. However, according to the case provided, even if the `not_grouping` parameter is configured correctly, alarm notifications may still be accidentally aggregated, which will seriously affect the judgment and processing efficiency of operation and maintenance personnel.

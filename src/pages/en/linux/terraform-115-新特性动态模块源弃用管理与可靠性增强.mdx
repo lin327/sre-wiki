@@ -1,0 +1,100 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Terraform 1.15 New Features: Dynamic Module Sources, Deprecation Management, and Reliability Improvements"
+category: "IaC"
+confidence: medium
+sources:
+  - url: https://www.hashicorp.com/blog/new-in-terraform-115-dynamic-sources-variable-deprecation-and-more
+    title: "New in Terraform 1.15: Dynamic sources, variable deprecation, and more"
+tags: [terraform, iac, reliability, module-management, best-practices]
+---
+
+# Terraform 1.15 New Features: Dynamic Module Sources, Deprecation Management, and Reliability Improvements
+
+## Overview
+
+Terraform, as a mainstream Infrastructure as Code (IaC) tool, directly impacts SRE workflows and reliability practices with each version update. Terraform 1.15 introduces a series of enhancements aimed at improving configuration flexibility, module maintainability, and the overall development experience. These new features -- particularly dynamic module sources, variable/output deprecation mechanisms, and inline type conversion -- provide important support for building more robust and evolvable infrastructure code, directly relating to SRE concerns of deployment reliability, change safety, and long-term operational efficiency.
+
+## Core Concepts
+
+The core new features of Terraform 1.15 revolve around the following concepts:
+
+1.  **Dynamic Module Sources and the `const` Attribute**: This feature allows using variables to dynamically determine the module source and version during `terraform init`. By declaring `const = true` on a variable, Terraform ensures the variable's value is deterministic at initialization time (e.g., from a `-var` parameter or environment variable), allowing it to be used in module declarations. This greatly enhances module flexibility and reusability, especially when switching between different module versions based on environment or configuration.
+2.  **Variable and Output Deprecation (`deprecated` Attribute)**: Module authors can now use the `deprecated` attribute to mark variables or outputs that are no longer recommended for use. When a caller uses a deprecated variable or references a deprecated output, Terraform will emit a warning during the plan phase. This provides a standardized mechanism for safe, gradual module evolution and is a key part of module lifecycle management.
+3.  **Inline Type Conversion (`convert` Function)**: The new built-in `convert` function allows explicit, precise type conversion in HCL configurations. It addresses ambiguity or errors that Terraform's type inference may cause in certain edge cases (such as inconsistent conditional expression types or creating empty containers of complex types), making configuration logic clearer and more robust.
+
+## Practice
+
+**1. Using Dynamic Module Sources**
+
+Declare the `const` attribute on a variable and reference it in the module source:
+
+```hcl
+variable "deployment_target" {
+  type    = string
+  const   = true # Mark this variable as usable during init
+  default = "staging"
+}
+
+module "app_service" {
+  # Dynamically select module source and version based on variable value
+  source  = "app.terraform.io/my-org/app-module/${var.deployment_target}"
+  version = "~> 2.0"
+}
+```
+
+**Note**: `const` variables cannot be used with `sensitive` or `ephemeral` attributes simultaneously. When used in nested modules, their input variables must also explicitly declare `const = true`.
+
+**2. Marking Deprecated Variables and Outputs**
+
+Add `deprecated` messages to variables and outputs within modules:
+
+```hcl
+# In a module
+variable "instance_type" {
+  # ...
+  deprecated = "Use 'machine_type' instead. This variable will be removed in a future version."
+}
+
+output "old_endpoint" {
+  value     = some_resource.example.endpoint
+  deprecated = "Use 'new_endpoint' instead. This output will be removed."
+}
+```
+
+When the root module calls this module and passes `instance_type`, or references `old_endpoint`, Terraform will display the corresponding deprecation warning in the execution plan, helping teams migrate gradually.
+
+**3. Using the `convert` Function for Type Conversion**
+
+```hcl
+# Explicitly create an empty list of numbers, not an empty tuple
+variable "allowed_ports" {
+  # Wrong: type = list(number), default {} is interpreted as empty object
+  # Correct: use the convert function
+  type    = list(number)
+  default = convert([], list(number))
+}
+
+# Ensure type consistency in conditional expressions
+resource "null_resource" "example" {
+  count = convert(var.create ? 1 : 0, number)
+}
+```
+
+## SRE Key Points
+
+- **Relation to Reliability, Observability, and Incident Response**:
+    - **Deployment Reliability**: Dynamic module sources allow more flexible configuration switching across environments in deployment pipelines, while `const` ensures determinism at initialization time, reducing unexpected failures caused by improper variable resolution timing.
+    - **Change Safety and Observability**: The deprecation management mechanism provides clear signals for infrastructure code evolution. In CI/CD pipelines, deprecation warnings can be used as part of code quality checks (Quality Gates), ensuring legacy usage is identified during the planning phase and preventing production incidents.
+    - **Configuration Maintainability**: The `convert` function and output type constraints improve type safety in configurations, reducing runtime issues caused by implicit type conversions or input errors, and lowering debugging complexity.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: When developing new module versions, actively use the `deprecated` attribute to guide user migration. In CI pipelines, configure deprecation warnings to be treated as build failures (or at least flagged), ensuring technical debt is addressed promptly.
+    - **Anti-Pattern**: Avoid using the `deprecated` attribute on root module outputs (this will directly cause errors). Do not over-rely on implicit type conversions; prefer using `convert` to make intent explicit. When using `const` variables, avoid leaving stale values in their sources (such as environment variables).
+
+- **Related Metrics (SLI/SLO/SLA)**:
+    - While these features do not directly produce new SLIs, they can indirectly influence the following metrics:
+        - **Deployment Success Rate**: More flexible module management and clearer error messages help improve first-time deployment success rates.
+        - **Change Rollback Rate**: Clear deprecation warnings help identify compatibility issues before changes are introduced, reducing the need for rollbacks.
+        - **Mean Time to Repair (MTTR)**: More accurate type errors and configuration warnings help engineers locate and fix infrastructure code issues faster.

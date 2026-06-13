@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "容器运行时快照泄漏：containerd的overlayfs孤立快照问题"
 description: "一个导致containerd中overlayfs快照在容器删除后残留在磁盘和数据库中的已知问题，无内置工具清理。"
@@ -11,6 +12,8 @@ sources:
     title: "containerd/containerd#13416: overlayfs: orphaned RW snapshots after container removal"
 tags: [containerd, overlayfs, snapshot, storage-leak, SRE-troubleshooting]
 ---
+
+# 容器运行时快照泄漏：containerd的overlayfs孤立快照问题
 
 ## 概述
 

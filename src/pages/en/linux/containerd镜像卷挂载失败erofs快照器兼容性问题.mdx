@@ -1,10 +1,12 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
 title: "ImageVolumeMountFailed using erofs in v2.3.1"
 category: "SRE故障排查与调试"
 confidence: medium
 ---
 
+# ImageVolumeMountFailed using erofs in v2.3.1
 
 ## 概述
 在 Kubernetes 与容器运行时环境中，镜像卷是一种便捷的机制，允许将容器镜像的内容直接挂载到 Pod 的指定路径。此功能对于分发配置、证书或静态资产非常有用。然而，该功能的正确实现高度依赖于底层容器运行时的快照器（snapshotter）机制。本文档记录了一个在特定配置下使用 `erofs` 快照器时，containerd 无法成功挂载镜像卷的已知问题，该问题会导致 Pod 启动失败或卷内容异常，是 SRE 在配置和故障排查中需要关注的重要场景。

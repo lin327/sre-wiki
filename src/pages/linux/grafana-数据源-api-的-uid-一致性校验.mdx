@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Grafana 数据源 API 的 UID 一致性校验"
 description: "在 Grafana 的 PUT /api/datasources/uid/:uid 端点中增加了对请求载荷 UID 与 URL 路径中 UID 一致性的校验，不匹配时返回 400 错误。"
@@ -11,6 +12,8 @@ sources:
     title: "[release-11.6.15] Datasources: return 400 when payload UID does not match URL UID in PUT /api/datasources/uid/:uid"
 tags: [api, grafana, data-source, validation, rest-api, reliability]
 ---
+
+# Grafana 数据源 API 的 UID 一致性校验
 
 ## 概述
 

@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "告警：Recording Rules 忽略查询评估偏移"
 description: "分析 Grafana 托管的 Recording Rules 在评估时未正确应用查询偏移（query evaluation offset）导致时间戳不准确的问题。"
@@ -11,6 +12,8 @@ sources:
     title: "Grafana Issue #110037: Alerting: Recording rules ignore query evaluation offset"
 tags: [alerting, recording-rules, prometheus, observability]
 ---
+
+# 告警：Recording Rules 忽略查询评估偏移
 
 ## 概述
 在 Prometheus 生态系统中，Recording Rules 用于预先计算并存储常用的或计算量大的查询结果，以提升 Dashboard 加载速度和告警评估效率。查询偏移（Query Evaluation Offset）是一个关键配置，它允许规则相对于“当前时间”进行回溯查询，这常用于对齐不同数据源或避免时间序列的短暂波动。本页面分析了 Grafana 托管的 Recording Rules 在处理此偏移量时存在的一个缺陷，该缺陷会导致写入的时间戳与查询使用的时间戳不一致，从而可能影响监控数据的准确性和可靠性。理解此问题对于维护使用 Grafana Alerting 的 SRE 团队的 [[monitoring-architecture]] 至关重要。

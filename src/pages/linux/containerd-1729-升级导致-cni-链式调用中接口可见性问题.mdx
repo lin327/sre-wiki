@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "Containerd 1.7.29+ 升级导致 CNI 链式调用中接口可见性问题"
 description: "在升级 Containerd 至 1.7.29+ 后，通过 Multus 以链式方式调用的 CNI 插件（如 Bond CNI）可能无法看到前序插件（如 SR-IOV CNI）在 Pod 网络命名空间中创建的接口，导致网络配置失败。"
@@ -11,6 +12,8 @@ sources:
     title: "Bond CNI fails with 'Link not found' in chained CNI config after upgrading to 1.7.29+"
 tags: [containerd, cni, sriov, bond, multus, 网络命名空间, regression]
 ---
+
+# Containerd 1.7.29+ 升级导致 CNI 链式调用中接口可见性问题
 
 ## 概述
 

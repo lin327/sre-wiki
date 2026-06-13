@@ -1,0 +1,76 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Variables Not Refreshing on Load with 'On Time Range Change' Mode"
+description: "Since Grafana 12.1.0, dashboards configured with 'On time range change' refresh option may fail to refresh variables on initial load, causing data inconsistency across organizations or data sources."
+category: observability-tools-integration
+order: 0
+lastUpdated: 2025-09-02
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/110421
+    title: "GitHub Issue: Variables not refreshing on dashboard load when On time range change is selected"
+tags: [grafana, dashboard, variables, bug, troubleshooting]
+---
+
+# Grafana Dashboard Variables Not Refreshing on Load with
+
+## Overview
+
+In operations work, dashboards are the core interface for SRE teams to monitor system state, analyze performance, and troubleshoot issues. As a widely used visualization tool, Grafana's functional stability and correctness are critical. The bug described in this article involves Grafana dashboard variable loading behavior under a specific refresh mode, directly impacting the accuracy and consistency of dashboard data, especially in multi-organization (Org) or multi-data-source environments. Failure to properly handle this issue may cause SRE teams to make judgments based on stale or incorrect data, affecting incident response efficiency and reliability goal attainment.
+
+## Core Concepts
+
+**Grafana Dashboard Variables**: Variables are configurable parameters for dashboards that allow users to dynamically filter and change the data displayed in panels. They are typically associated with data source queries, enabling interactive data exploration.
+
+**"On time range change" Refresh Option**: A dashboard refresh setting. When this option is enabled, the dashboard's variable queries and panel data only trigger reloading when the user manually changes the Time Range, rather than executing on every dashboard load. This option aims to optimize performance by reducing unnecessary queries.
+
+**Root Cause**: Starting with Grafana 12.1.0, a regression bug exists. When a dashboard is configured with the "On time range change" refresh mode, variables do not perform their initial query and refresh as expected during the first dashboard load (without changing the time range). This leads to:
+1. When switching from one organization to another that has the same dashboard but different data sources, the dashboard may briefly display the previous organization's variable values or cached data.
+2. Users must manually trigger a time range change to see the correct variable values and data for the current organization/data source.
+
+## Practice
+
+### Reproduction and Verification
+If you suspect encountering this issue, follow these steps to reproduce it in Grafana 12.1.0 or later:
+
+1. Create a dashboard in Organization A and configure at least one template variable (e.g., a data source variable or a query-based label variable).
+2. Clone the dashboard to Organization B, ensuring Organization B has a variable with the same name but different configuration (such as data source connection).
+3. Log in to Organization A, open the dashboard, and observe variables loading normally.
+4. Switch to log in to Organization B.
+5. Open the same dashboard. Note whether the variable values still display Organization A's values or are in an unrefreshed state.
+6. Manually change the time range in the upper right corner of the dashboard (e.g., change "Last 1 hour" to "Last 6 hours").
+7. Observe whether variables refresh at this point and display the correct values corresponding to Organization B.
+
+### Impact Scope and Troubleshooting
+- **Affected Versions**: Grafana 12.1.0 and later.
+- **Platform**: This issue is independent of the operating system (such as Ubuntu) and browser; it is a Grafana backend logic defect.
+- **Troubleshooting Steps**:
+  1. **Check version**: Confirm whether the Grafana version is 12.1.0 or higher.
+  2. **Check refresh settings**: Enter dashboard settings and confirm whether the "Refresh" option is set to "On time range change."
+  3. **Check variable configuration**: Confirm the variable type (such as `Query` type) and `Refresh` behavior setting (typically `On dashboard load` or `On time range change`).
+  4. **Upgrade or rollback**: Monitor Grafana's official fix status for this Issue. Temporary solutions include:
+      - Change the dashboard's global refresh setting to "Every Xs" (e.g., "Every 30s"), though this may increase backend query load.
+      - Roll back to a stable version before 12.1.0.
+      - Wait for an official version containing the fix to be released and upgrade.
+
+## SRE Key Points
+
+### Relationship to Reliability
+This bug directly undermines the **data accuracy** and **state consistency** of the monitoring system, which are cornerstones of reliability engineering. A dashboard that cannot accurately reflect the current system state will mislead SRE teams' judgment on Service Level Objectives (SLOs), and may even lead to misjudgment or missed detection of incidents. During critical Incident Response moments, data inconsistencies extend troubleshooting time (MTTR).
+
+### Best Practices and Common Anti-Patterns
+- **Best Practices**:
+  - **Version Management and Testing**: Upgrades to critical tools like Grafana should follow strict change management processes. Verify the behavior of all critical dashboards after upgrading in a test environment, especially complex dashboards involving variables and refresh strategies.
+  - **Configuration Checklists**: Establish a standard checklist for dashboard publishing that includes verifying variable loading behavior under different refresh modes.
+  - **Monitor the Tool Itself**: Monitor Grafana's health like monitoring business systems, such as its API response time, dashboard load failure rate, etc.
+- **Common Anti-Patterns**:
+  - **Blind Upgrades**: Upgrading production Grafana to a new version without sufficient testing may introduce such regression defects.
+  - **Over-reliance on Caching**: Relying on browser or Grafana internal caches to obtain "latest" data may cause data leakage or confusion in multi-organization/multi-tenant scenarios.
+
+### Related Metrics
+- **Dashboard Load Time**: While this bug doesn't directly affect load speed, the polling refresh approach adopted to solve the issue (such as "Every Xs") increases data source query pressure, which may indirectly affect this metric.
+- **Data Accuracy**: Ensuring that data displayed on dashboards is consistent with the data source at the point in time is a core reliability metric. The occurrence of this issue means this metric is temporarily ineffective in certain scenarios.
+- **Change Failure Rate**: After upgrading Grafana, if this bug causes the need for emergency rollback or fix, that upgrade change should be counted as a failure.
+
+SRE teams should incorporate such tool reliability issues into their risk management scope, ensuring that the monitoring and visualization platforms we depend on are themselves solid and reliable.

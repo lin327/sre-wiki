@@ -1,0 +1,75 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Ingress NGINX Retirement: Migration Guide and Security Impact"
+description: "Kubernetes officially announced Ingress NGINX retirement in March 2026, affecting approximately half of cloud-native environments. Immediate migration to Gateway API or alternatives is required for security."
+category: Kubernetes Networking
+order: 0
+lastUpdated: 2026-01-29
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/01/29/ingress-nginx-statement/
+    title: "Kubernetes Blog - Ingress NGINX: Statement from the Kubernetes Steering and Security Response Committees"
+tags: [ingress-nginx, kubernetes, gateway-api, security, migration, networking]
+---
+
+# Ingress NGINX Retirement: Migration Guide and Security Impact
+
+## Overview
+
+This document consolidates and interprets the official joint statement released by the Kubernetes Steering Committee and Security Response Committee on January 29, 2026. The statement clearly indicates that **Ingress NGINX**, a critical network infrastructure component in the Kubernetes ecosystem, will officially **retire in March 2026**. This means no further releases will be made, including bug fixes, security patches, or any updates. The scope of impact is vast -- an estimated half of cloud-native environments depend on this tool, and any delay in action may bring serious security risks. As SREs, understanding the severity of this change and immediately initiating migration planning is the top priority for ensuring system reliability and security.
+
+## Core Concepts
+
+### Ingress NGINX Retirement
+Refers to the project entering its final lifecycle stage, completely ceasing all maintenance activities. After retirement, the software codebase will no longer accept any contributions or release any patches. This means **any known or future discovered vulnerabilities will never be fixed**, and continuing to run retired versions of Ingress NGINX will expose clusters to known attacks.
+
+### Gateway API
+This is the next-generation Ingress resource standard and API launched by the Kubernetes community. It aims to address the limitations of traditional Ingress resources, providing more powerful and flexible traffic management capabilities, supporting more complex routing rules, weighted splitting, header matching, etc. Gateway API is recommended by Kubernetes as one of the primary alternatives to Ingress NGINX.
+
+### Ingress Controller Ecosystem
+Kubernetes Ingress resources only define rules; the actual execution is performed by Ingress controllers. Ingress NGINX is the most popular but not the only choice. The retirement statement encourages users to evaluate and migrate to other third-party Ingress controllers, such as Envoy-based implementations (Contour, Emissary-Ingress) or cloud provider native load balancer integrations.
+
+## Practice
+
+### Step 1: Immediately Assess Impact
+First, confirm whether your cluster depends on Ingress NGINX. Execute with cluster administrator privileges:
+```bash
+kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx
+```
+If the command returns any Pods, your cluster is running Ingress NGINX and action must be taken.
+
+### Step 2: Develop Migration Strategy
+Since there is no direct drop-in replacement, migration requires planning and engineering investment. Consider the following paths:
+1.  **Assess Gateway API compatibility**: Review existing Ingress resource rules to understand which features can be directly or indirectly supported by Gateway API's `HTTPRoute`, `GRPCRoute`, etc.
+2.  **Evaluate third-party Ingress controllers**: Based on your specific needs (performance, features, cloud vendor integration, team familiarity), research other Ingress controllers. Common choices include Traefik, HAProxy Ingress, Istio (its Gateway API support), etc.
+3.  **Plan phased migration**: Consider gradual migration. For example, switch new or non-critical service traffic to the new controller first, then gradually migrate core services. Leverage Service Mesh traffic splitting or DNS weights for gradual cutover.
+4.  **Test and verify**: Thoroughly test the new controller in non-production environments, ensuring it meets all functional, performance, and security requirements.
+5.  **Team training and documentation**: Ensure operations and development teams understand the new tool's usage and operational procedures, and update internal operational manuals.
+
+### Step 3: Execute Migration and Retirement
+According to the plan, gradually migrate production traffic from Ingress NGINX to the chosen alternative. After verifying all traffic has been successfully switched and the system is stable, safely remove the Ingress NGINX controller and its associated Custom Resource Definitions (CRDs) from the cluster.
+
+## SRE Essentials
+
+### Relationship with Reliability, Observability, and Incident Response
+- **Reliability**: Retired Ingress NGINX will no longer be maintained; any undiscovered defects or performance issues will become permanent reliability risks. Migrating to actively maintained alternatives is the guarantee for long-term reliability.
+- **Observability**: During migration, comprehensive observability for the new controller must be established. Ensure the ability to monitor latency, error rates, connection counts, and other critical metrics, comparing with original Ingress NGINX monitoring data to verify post-migration system health.
+- **Incident Response**: If still using retired Ingress NGINX and encountering security events, since there are no official patches, response will be extremely passive and difficult, potentially involving emergency manual hotfixes or large-scale service shutdowns. Migrating to active projects ensures timely security response support.
+
+### Best Practices and Common Anti-Patterns
+**Best Practices:**
+- **Act immediately**: Do not delay; start evaluation and planning today.
+- **Thorough testing**: Before cutover, perform full regression testing in staging environments.
+- **Monitor migration impact**: Closely monitor key business metrics (error rate, P99 latency) before and after migration, establishing rollback plans.
+- **Phased cutover**: Avoid "big bang" migration to reduce risk.
+
+**Common Anti-Patterns:**
+- **"It still works for now" mentality**: Ignoring the long-term security risks of retirement is the biggest anti-pattern.
+- **False assumption of "no impact"**: Even if the current cluster doesn't explicitly deploy Ingress NGINX, it may be indirectly dependent through Helm Charts, Operators, or cloud services; thorough checking is mandatory.
+- **Underestimating migration complexity**: Seeking a "one-click replacement" tool without investing necessary evaluation and testing engineering resources.
+
+### Related Metrics (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**: After migration, establish SLIs for the new Ingress controller, e.g., `control plane component availability`, `proportion of successfully proxied requests`, `request latency (P99)`.
+- **SLO (Service Level Objective)**: Set SLOs for the new controller's SLIs, e.g., `control plane availability > 99.95%`, `P99 latency < 200ms`. Ensure the new solution's SLO is not lower than what the original Ingress NGINX achieved.
+- **Note**: Ingress NGINX's retirement itself does not affect existing SLAs, but continued use of retired versions may violate your SLA with users due to security vulnerabilities.

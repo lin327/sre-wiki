@@ -1,69 +1,74 @@
 ---
+
 layout: ../../../layouts/BaseLayout.astro
-title: "'etcd issue #18667: Specifying a revision for a range request in a transaction"
-category: "分布式系统与共识协议"
+title: "etcd issue #18667: Specifying a revision for a range request in a transaction"
+category: "Distributed Systems and Consensus Protocols"
 confidence: high
 ---
 
+# etcd issue #18667: Specifying a revision for a range request in a transaction
 
-## 概述
+## Overview
 
-在分布式键值存储系统 etcd 中，确保所有成员之间的数据一致性是可靠性的基石。此问题揭示了一个由于事务处理优化不当而导致的数据分裂（split-brain）风险：当客户端在事务（TXN）中对范围请求（如 `get k1 --rev=10`）指定了特定的版本号（revision）时，可能导致集群的不同成员最终持有不同的数据状态。这对于依赖 etcd 作为唯一真相源（Single Source of Truth）的系统，尤其是承载着服务发现和配置中心职责的 Kubernetes 而言，是一个需要严肃对待的可靠性隐患。作为 SRE，理解其根本原因和规避方法，对于保障集群健康和快速故障恢复至关重要。
+In the distributed key-value store etcd, ensuring data consistency across all members is the cornerstone of reliability. This issue reveals a data split-brain risk caused by improper transaction processing optimization: when a client specifies a particular revision for a range request (such as `get k1 --rev=10`) within a transaction (TXN), it may cause different cluster members to ultimately hold different data states. For systems relying on etcd as the Single Source of Truth, especially Kubernetes which bears service discovery and configuration center responsibilities, this is a reliability concern that needs to be taken seriously. As an SRE, understanding its root cause and mitigation methods is critical for ensuring cluster health and rapid fault recovery.
 
-## 核心概念
+## Core Concepts
 
-- **事务 (TXN, Transaction)**：etcd 提供的原子性操作单元，允许将多个操作（比较、获取、写入）捆绑在一起执行。事务保证了其内部操作的原子性，即要么全部成功，要么全部失败。
-- **范围请求 (Range Request)**：一种获取键值对范围的操作，例如 `get k1 --rev=10` 表示获取键 `k1` 在版本 10 时的值。这依赖于 etcd 的多版本并发控制（MVCC）能力。
-- **Revision**：etcd 的逻辑时钟，每次有事务提交时都会单调递增。它为系统提供了全局一致的状态快照视图。
-- **Compact (压缩)**：etcd 会定期清理旧版本的历史数据以释放空间。`compact` 操作会删除指定版本之前的所有历史记录，之后对这些历史版本的访问将返回错误。
-- **MVCC 与一致性**：etcd 通过 MVCC 为每个键维护多个历史版本。所有成员必须对同一版本号（revision）对应的数据状态达成一致，这是保证线性化读（linearizable read）和分布式事务正确性的基础。
+- **TXN (Transaction)**: The atomic operation unit provided by etcd, allowing multiple operations (comparisons, gets, writes) to be bundled together for execution. Transactions guarantee atomicity of their internal operations, meaning either all succeed or all fail.
+- **Range Request**: An operation that retrieves a range of key-value pairs. For example, `get k1 --rev=10` retrieves the value of key `k1` at revision 10. This relies on etcd's Multi-Version Concurrency Control (MVCC) capability.
+- **Revision**: etcd's logical clock, monotonically increasing with each committed transaction. It provides the system with a globally consistent view of state snapshots.
+- **Compact**: etcd periodically cleans up old version history data to free space. The `compact` operation deletes all history before a specified revision, after which access to those historical versions will return errors.
+- **MVCC and Consistency**: etcd maintains multiple historical versions for each key through MVCC. All members must agree on the data state corresponding to the same revision number, which is the basis for ensuring linearizable reads and distributed transaction correctness.
 
-## 实践
+## Practice
 
-### 问题复现步骤
+### Issue Reproduction Steps
 
-该问题可以通过以下步骤稳定复现，它模拟了一个典型的事务场景：
-1.  创建一个全新的三节点 etcd 集群。
-2.  依次插入键 `k1` 到 `k20`，形成 20 个版本的修订历史。
-3.  执行压缩操作，清理版本 21 之前的历史（`etcdctl compact 21`）。
-4.  执行一个交互式事务（`etcdctl txn --interactive`）。该事务的比较条件依赖一个可能已被压缩的旧版本数据（`value("k1") = "v1"`），并在成功分支中包含一个指定已压缩版本（`--rev=10`）的范围请求（`get k1 --rev=10`）。
-5.  由于版本 10 已被压缩，客户端连接到的成员会因 `checkRange` 失败而使整个事务失败。
-6.  但关键点在于，客户端未连接的其他成员可能已经从事务中**移除了这个有问题的范围请求**，从而成功应用了事务中的写入操作（`put k2 foo`）。
-7.  最终结果是，集群成员间数据出现分裂：客户端连接的成员上 `k2` 的值为原始值 `v2`，而其他成员上的值为 `foo`。
+The issue can be reliably reproduced with the following steps, simulating a typical transaction scenario:
+1.  Create a brand new three-node etcd cluster.
+2.  Insert keys `k1` through `k20` sequentially, forming 20 revision history entries.
+3.  Execute a compact operation to clean up history before revision 21 (`etcdctl compact 21`).
+4.  Execute an interactive transaction (`etcdctl txn --interactive`). The transaction's comparison condition depends on possibly already-compacted old version data (`value("k1") = "v1"`), and in the success branch includes a range request specifying a compacted revision (`get k1 --rev=10`).
+5.  Since revision 10 has been compacted, the member the client is connected to will fail the entire transaction due to `checkRange` failure.
+6.  However, the critical point is that other members not connected to the client may have already **removed this problematic range request** from the transaction, thereby successfully applying the write operation (`put k2 foo`) in the transaction.
+7.  The final result is data split between cluster members: on the member the client is connected to, `k2`'s value is the original `v2`, while on other members the value is `foo`.
 
-### 临时解决方案 (Workaround)
+### Temporary Workaround
 
-在官方修复发布前，SRE 可以采用以下方法恢复一致性：
-- **单成员故障**：如果仅有一个成员不一致，可以按照 etcd 的 [替换故障机器](https://etcd.io/docs/v3.5/op-guide/runtime-configuration/#replace-a-failed-machine) 指南，替换该成员并清除其数据目录，让其从其他健康成员同步正确数据。
-- **多成员故障**：如果所有成员数据均不一致，则需要人为指定一个“真相源”。操作步骤是：停止整个集群，仅使用一个成员的数据目录强制创建一个新的单成员集群（`--force-new-cluster`），然后逐个添加其他成员（添加前务必清除其原有数据目录）。**这是一个风险较高的操作，需要充分备份和测试。**
+Before an official fix is released, SREs can use the following methods to restore consistency:
+- **Single member failure**: If only one member is inconsistent, follow etcd's [replace a failed machine](https://etcd.io/docs/v3.5/op-guide/runtime-reconfiguration/#replace-a-failed-machine) guide to replace that member and clear its data directory, letting it sync correct data from other healthy members.
+- **Multiple member failure**: If all members' data is inconsistent, you need to manually designate a "source of truth." The operation steps are: stop the entire cluster, use only one member's data directory to force create a new single-member cluster (`--force-new-cluster`), then add other members one by one (making sure to clear their original data directories before adding). **This is a high-risk operation requiring full backup and testing.**
 
-### 根本修复与规避
+### Root Fix and Mitigation
 
-根本的修复方案是：**不再在非客户端连接的成员上从事务中移除范围请求**。具体做法是：
-- 保留所有范围请求，但在其他成员上不执行其数据查询，只进行验证，以确保所有成员对相同的事务应用一致的合法性检查。
-- 这在性能和一致性之间做出了正确的权衡——一致性优先。
+The root fix is: **no longer remove range requests from transactions on members not connected by the client**. Specifically:
+- Retain all range requests, but on other members, do not execute their data queries, only perform validation to ensure all members apply consistent legitimacy checks for the same transaction.
+- This makes the correct trade-off between performance and consistency -- consistency takes priority.
 
-作为 SRE，主动的规避策略比事后修复更重要：
-- **审计事务使用**：检查应用程序代码，确保**不要在事务的比较（compare）或后续操作（put/del）中使用指定了旧 revision 的范围请求**。Kubernetes 核心组件已被确认不受影响，但自定义 Operator 或客户端需重点排查。
-- **监控数据一致性**：定期对关键键值进行跨端点一致性校验（注意避免对历史版本的重复读取），可作为监控项集成到健康检查中。
+As SREs, proactive mitigation strategies are more important than post-incident fixes:
+- **Audit transaction usage**: Check application code to ensure **not using range requests with old revision specifications in transaction comparisons (compare) or subsequent operations (put/del)**. Kubernetes core components have been confirmed to be unaffected, but custom Operators or clients need to be thoroughly examined.
+- **Monitor data consistency**: Regularly perform cross-endpoint consistency checks on critical key-values (being careful to avoid repeated reads of historical versions), which can be integrated as monitoring items in health checks.
 
-## SRE 要点
+## SRE Key Points
 
-### 与可靠性的关联
-此问题直接冲击了分布式系统的核心属性——一致性（Consistency）。数据不一致会导致客户端读取到陈旧或错误的状态，可能引发级联故障（如 Kubernetes 基于错误配置做出错误调度）。它破坏了用户对 etcd 作为可靠协调服务的信任，严重影响 SLO 中关于数据准确性的承诺。
+### Relationship with Reliability
 
-### 事件响应与最佳实践
-- **事件响应**：一旦发现疑似数据不一致（如不同节点读取到同一 key 不同值），应立即启动调查。首先确认是否触发了此已知问题（检查事务使用模式），然后依据上述 **Workaround** 进行恢复。恢复后，务必审查根因并应用官方补丁。
-- **最佳实践**：
-    1.  **谨慎使用事务**：只在必要时使用事务，并避免在事务中嵌入可能依赖历史快照的复杂查询。
-    2.  **保持版本号新鲜**：尽量避免在事务操作中引用很久以前的 revision，以减少与 compaction 冲突的概率。
-    3.  **监控 Compaction 指标**：密切监控 `etcd_mvcc_db_compaction_keys_total` 等指标，了解历史数据的清理情况。
-    4.  **版本升级与补丁**：对于受影响的版本（包括 3.4.x， 3.5.x 和 main），应积极关注并应用官方修复补丁。
-- **常见反模式**：
-    - 在事务中使用 `--rev` 参数查询可能已被压缩的旧版本数据。
-    - 假设事务在所有成员上对范围请求的处理行为完全相同，而忽略了其可能被优化的内部机制。
+This issue directly impacts the core property of distributed systems -- consistency (Consistency). Data inconsistency can cause clients to read stale or incorrect states, potentially triggering cascading failures (such as Kubernetes making incorrect scheduling based on wrong configurations). It undermines trust in etcd as a reliable coordination service and severely impacts SLO commitments regarding data accuracy.
 
-### 相关指标 (SLI/SLO)
-- **SLI（服务级别指标）**：可以定义与数据一致性相关的 SLI，例如“在 5 分钟窗口内，对同一键从不同端点读取值的不一致次数”。
-- **SLO（服务级别目标）**：为上述 SLI 设定一个严格的目标，例如“每月数据不一致事件次数 < 1”，并将其作为 etcd 集群可靠性的关键保障。
-- 此问题提醒我们，SLO 不仅应关注可用性（如 uptime），还必须包含数据一致性等质量属性。
+### Incident Response and Best Practices
+
+- **Incident response**: Once suspected data inconsistency is discovered (such as different nodes reading different values for the same key), investigation should begin immediately. First confirm whether this known issue was triggered (check transaction usage patterns), then proceed with recovery according to the above **Workaround**. After recovery, be sure to review the root cause and apply the official patch.
+- **Best practices**:
+    1.  **Use transactions cautiously**: Only use transactions when necessary, and avoid embedding complex queries that may depend on historical snapshots within transactions.
+    2.  **Keep revision numbers fresh**: Try to avoid referencing very old revisions in transaction operations to reduce the probability of conflict with compaction.
+    3.  **Monitor Compaction metrics**: Closely monitor metrics like `etcd_mvcc_db_compaction_keys_total` to understand historical data cleanup status.
+    4.  **Version upgrades and patches**: For affected versions (including 3.4.x, 3.5.x, and main), actively follow and apply official fix patches.
+- **Common anti-patterns**:
+    - Using `--rev` parameter in transactions to query old version data that may have been compacted.
+    - Assuming that transactions handle range requests identically on all members, ignoring their possibly optimized internal mechanisms.
+
+### Related Metrics (SLI/SLO)
+
+- **SLI (Service Level Indicator)**: Can define SLIs related to data consistency, such as "number of inconsistencies when reading values for the same key from different endpoints within a 5-minute window."
+- **SLO (Service Level Objective)**: Set a strict target for the above SLI, such as "monthly data inconsistency incidents < 1," and make it a key guarantee for etcd cluster reliability.
+- This issue reminds us that SLOs should not only focus on availability (such as uptime) but must also include quality attributes like data consistency.

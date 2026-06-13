@@ -1,0 +1,61 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana 11.6.1 Database Migration Failure on MariaDB 10.11.6"
+description: "Analysis and solution for Grafana 11.6.1 upgrade failure caused by incompatible transaction_isolation system variable on MariaDB."
+category: Troubleshooting
+order: 0
+lastUpdated: 2025-04-25
+confidence: high
+---
+
+# Grafana 11.6.1 Database Migration Failure on MariaDB 10.11.6
+
+## Overview
+
+When Grafana performs a version upgrade，其后端会执行数据库迁移（DB Migration）脚本以更新表结构或数据。此过程高度依赖于 Grafana 所支持的数据库驱动和具体版本特性。本文描述的问题，是在将 Grafana 从 11.5.4 升级至 11.6.1 版本时，与 MariaDB 10.11.6 数据库交互过程中出现的一个关键兼容性错误。该问题会导致 Grafana 启动失败，表现为初始化资源数据库时迁移命令执行中断，错误信息为 `Unknown system variable 'transaction_isolation'`。理解此问题对于确保 Grafana 在混合数据库环境中的平稳升级至关重要。
+
+## 核心概念
+
+该错误的核心在于 Grafana 11.6.1 版本使用的数据库驱动（或代理层）在尝试设置或读取数据库事务隔离级别时，使用了不被当前 MariaDB 版本识别的变量名。
+
+- **`transaction_isolation` 与 `tx_isolation`**：这是用于定义数据库事务隔离级别的系统变量。在 MySQL 5.7 及更高版本、以及 MariaDB 10.5.1 及更高版本中，标准变量名为 `transaction_isolation`。然而，在 MariaDB 10.5.0 及更早版本中，该变量名仍为旧式的 `tx_isolation`。Grafana 的数据库连接层需要正确识别后端数据库类型和版本，以使用对应的变量名进行查询或设置。
+- **数据库版本兼容性**：MariaDB 作为 MySQL 的分支，虽然在许多方面保持兼容，但在某些系统变量命名、默认值或行为上存在细微差异。应用程序（如 Grafana）依赖其 ORM 或数据库驱动来自动处理这些差异。当驱动无法准确判断数据库类型和版本时，就会导致此类不兼容错误。
+- **Grafana 资源服务器**：错误信息中提到的 `Resource Server` 是 Grafana 11.x 引入的用于管理团队、权限等功能的内部组件，它拥有独立的数据库模式，其初始化与迁移过程首先触发了此错误。
+
+## 实践
+
+### 问题诊断
+1.  **确认错误来源**：升级过程中，Grafana 容器日志会明确显示错误 `Error 1193 (HY000): Unknown system variable 'transaction_isolation'`。这表明是 SQL 层面的错误，发生在数据库迁移脚本执行期间。
+2.  **验证数据库版本**：使用 `SELECT version();` 命令确认所使用的 MariaDB 具体版本。在本案例中为 `10.11.6-MariaDB`，该版本理应支持 `transaction_isolation` 变量。问题根源更可能在于 Grafana 驱动对“MariaDB”这一类型标识的响应策略，而非变量本身的缺失。
+3.  **查阅社区与官方渠道**：该问题已在 Grafana GitHub Issues 中被报告（#104582），表明这是一个已知的兼容性缺陷。
+
+### 解决方案与临时规避措施
+目前（截至 2025 年 4 月），该问题的根本原因已在 Grafana 内部跟踪，最终修复需等待官方发布包含补丁的版本。在修复发布前，可采取以下临时措施：
+
+1.  **暂时保持当前 Grafana 版本**：如果功能满足要求，可暂不升级至 11.6.1，等待后续版本（如 11.6.2 或 11.7.x）修复此问题。
+2.  **调整 Grafana 数据库连接字符串配置（部分场景可能有效）**：有社区用户尝试在 Grafana 的 `grafana.ini` 配置中，为 MySQL 连接指定不同的参数，或使用不同的数据库驱动参数来“欺骗”驱动，使其使用 `tx_isolation`。此方法效果不一，需谨慎测试。
+    ```ini
+    [database]
+    type = mysql
+    # 尝试添加或修改驱动参数
+    parameters = parseTime=true&charset=utf8mb4&loc=Local
+    ```
+3.  **升级 MariaDB 版本**：将 MariaDB 升级至 10.6 或更高版本。新版本不仅原生支持 `transaction_isolation`，也可能改善了与各种客户端驱动的兼容性。这是从环境层面解决问题的根本方法。
+4.  **回滚 Grafana 版本**：如果升级失败且无法修复，需要将 Grafana 回滚至先前的正常版本（如 11.5.4），并确保数据库文件未被不可逆地修改（Grafana 迁移通常会记录版本号，回滚前需评估数据库兼容性）。
+
+## SRE 要点
+
+- **可靠性与事件响应**：此案例是一个典型的**软件升级失败**事件。它强调了在进行任何生产环境升级前，必须在与生产环境尽可能一致的**预发布环境**中进行充分测试的重要性。SRE 需要制定清晰的升级回滚计划。
+- **最佳实践与常见反模式**：
+    - **最佳实践**：维护清晰的组件兼容性矩阵（如 Grafana 版本 vs 数据库版本）；将基础设施即代码（IaC）与配置管理结合，确保测试环境与生产环境配置同构。
+    - **反模式**：在未经测试的情况下直接在生产环境执行数据库或核心应用的主版本升级；忽视应用日志中的警告信息。
+- **相关指标**：
+    - **SLI/SLO**：虽然不直接对应某个 SLI，但升级失败会影响服务的**可用性**。可将“核心服务（如 Grafana）升级成功率”作为一个内部 **SLO** 进行追踪。
+    - **Error Budget**：此类升级事故会消耗**可用性 Error Budget**，促使团队更严谨地规划发布节奏和测试流程。
+- **可观测性关联**：完善的日志（如 Grafana 启动日志）、指标（如数据库连接状态）和告警（如 Grafana 进程存活监测）能帮助 SRE 快速发现升级后的新问题。
+
+## 相关页面
+- [[database-configuration]]
+- [[database-migration]]
+- [[observability-fundamentals]]

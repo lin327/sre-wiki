@@ -1,4 +1,5 @@
 ---
+
 layout: ../../layouts/BaseLayout.astro
 title: "bugfix:add lock to protect task delete and task kill"
 description: "通过为containerd的任务删除（Delete）和任务终止（Kill）操作添加锁，解决并发竞态条件导致的`ttrpc closed`错误。"
@@ -11,6 +12,8 @@ sources:
     title: "containerd/containerd Pull Request #12378"
 tags: [并发, 竞态条件, 锁, 任务生命周期, 容器运行时]
 ---
+
+# bugfix:add lock to protect task delete and task kill
 
 ## 概述
 

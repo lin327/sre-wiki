@@ -1035,16 +1035,16 @@ function isPageActive(href: string): boolean {
         }
       });
 
-      // === Auth state check ===
-      (async () => {
-        try {
-          const { authClient } = await import("/src/lib/auth-client.ts");
-          const res = await authClient.getSession();
-          if (res.data?.user) {
-            document.getElementById("auth-buttons")?.style.setProperty("display", "none");
-            document.getElementById("auth-user")?.style.removeProperty("display");
-          }
-        } catch {}
+      // === Auth state check (via session cookie) ===
+      (function checkAuth() {
+        // Better Auth stores session in cookie
+        const hasSession = document.cookie.includes("better-auth.session_token") ||
+                          document.cookie.includes("session_token") ||
+                          document.cookie.includes("__session");
+        if (hasSession) {
+          document.getElementById("auth-buttons")?.style.setProperty("display", "none");
+          document.getElementById("auth-user")?.style.removeProperty("display");
+        }
       })();
 
       // === Search trigger ===

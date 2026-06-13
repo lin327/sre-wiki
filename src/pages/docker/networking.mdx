@@ -3,3 +3,98 @@ layout: ../../layouts/BaseLayout.astro
 title: "Docker 网络模式详解"
 ---
 
+## 网络模式概览
+
+Docker 提供多种网络驱动，适用于不同的部署场景。选择正确的网络模式直接影响容器间通信效率、安全隔离和故障排查难度。
+
+| 驱动 | 隔离性 | 性能 | 典型场景 |
+|------|--------|------|----------|
+| bridge | 中 | 中 | 单机多容器，开发/测试 |
+| host | 无 | 高 | 高性能网络、监控 Agent |
+| overlay | 高 | 中 | 跨主机 Swarm/K8s 通信 |
+| macvlan | 中 | 高 | 容器需独立 MAC 地址 |
+| none | 完全 | — | 安全沙箱、离线任务 |
+
+## Bridge 网桥模式（默认）
+
+`bridge` 是默认驱动。每个容器获得独立的网络命名空间，通过虚拟网桥 `docker0` 通信。
+
+```bash
+docker network create --driver bridge my-network
+docker run -d --name web --network my-network nginx
+docker run -d --name api --network my-network myapp
+```
+
+自定义 bridge 支持**自动 DNS 解析**（容器名即域名），默认 bridge 不支持。始终使用自定义网络。
+
+## Host 主机模式
+
+`host` 移除容器与宿主机的网络隔离，容器直接使用宿主机网络栈，无需 `-p` 映射：
+
+```bash
+docker run -d --network host nginx
+```
+
+零网络开销，但存在端口冲突风险。适用于网络性能敏感的场景（如监控采集 Agent）。
+
+## Overlay 覆盖网络
+
+`overlay` 通过 VXLAN 封装实现跨主机容器通信，是 Swarm 和 Kubernetes 的基础网络：
+
+```bash
+docker network create --driver overlay --attachable my-overlay
+```
+
+## Macvlan 与 None
+
+- **macvlan** — 为容器分配独立 MAC/IP，容器在物理网络中表现为独立主机。
+- **none** — 容器完全无网络，仅 loopback，适用于安全沙箱。
+
+## Container DNS 解析
+
+Docker 内置 DNS 服务器为自定义网络中的容器提供名称解析：
+
+- 容器名 → 容器 IP（同一自定义网络内）。
+- service name → VIP（Swarm 模式下）。
+- 外部域名 → 宿主机 DNS 转发。
+
+```bash
+docker exec web cat /etc/resolv.conf
+```
+
+DNS 解析失败是容器间通信故障的最常见原因。排查时优先检查容器是否在同一自定义网络中。
+
+## Port Mapping 端口映射
+
+```bash
+docker run -d -p 8080:80 nginx                    # 宿主 8080 → 容器 80
+docker run -d -p 127.0.0.1:3306:3306 mysql        # 仅本地访问
+docker port my-container                           # 查看端口映射
+```
+
+排查端口冲突：
+
+```bash
+lsof -i :8080
+ss -tlnp | grep 8080
+```
+
+## 网络排查工具
+
+```bash
+# 查看网络详情和连接的容器
+docker network inspect my-network | jq '.[0].Containers'
+
+# 容器内网络诊断
+docker exec my-container nslookup api-container
+docker exec my-container curl -v http://api-container:8080/health
+
+# 查看 Docker iptables 规则
+iptables -t nat -L -n | grep -i docker
+```
+
+## SRE 实践要点
+
+- **服务发现：** 自定义网络中容器名即 DNS 名称，无需额外引入 Consul 或 etcd。
+- **网络隔离：** 不同环境或业务域使用独立网络，防止容器间意外访问。
+- **端口冲突：** CI/CD 中使用动态端口分配或在 Compose 中不绑定宿主机端口。

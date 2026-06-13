@@ -3,3 +3,115 @@ layout: ../../layouts/BaseLayout.astro
 title: "systemd 与服务管理"
 ---
 
+# systemd 与服务管理
+
+systemd 是 Linux 主流的 init 系统和服务管理器，负责系统启动（PID 1）、服务生命周期管理、日志收集和定时任务。RHEL 7+、Ubuntu 16.04+、Debian 8+ 均使用 systemd。
+
+## Unit 类型
+
+| Unit 类型 | 后缀 | 用途 |
+|-----------|------|------|
+| Service | `.service` | 守护进程和服务 |
+| Socket | `.socket` | Socket 激活（按需启动） |
+| Timer | `.timer` | 定时任务（替代 cron） |
+| Target | `.target` | 启动阶段分组 |
+| Mount | `.mount` | 文件系统挂载 |
+
+Unit 文件搜索路径（优先级从高到低）：
+
+```
+/etc/systemd/system/          # 管理员自定义
+/run/systemd/system/          # 运行时生成
+/usr/lib/systemd/system/      # 软件包安装
+```
+
+## Service Unit 文件
+
+```ini
+[Unit]
+Description=My Application Server
+After=network.target postgresql.service
+Requires=postgresql.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=appuser
+WorkingDirectory=/opt/myapp
+EnvironmentFile=/opt/myapp/.env
+ExecStart=/opt/myapp/bin/server
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Type** 决定状态跟踪方式：`simple`（主进程即 ExecStart 进程）、`forking`（fork 到后台）、`oneshot`（执行一次后退出）、`notify`（通过 sd_notify 通知就绪）。
+
+**依赖关系**：`Requires=` 强依赖、`Wants=` 弱依赖、`After=`/`Before=` 仅控制顺序、`Conflicts=` 互斥。
+
+## 常用命令
+
+```bash
+# 服务管理
+systemctl start/stop/restart nginx       # 管理生命周期
+systemctl status nginx -l                # 查看状态和日志片段
+systemctl enable/disable nginx           # 开机自启
+systemctl daemon-reload                  # 修改 unit 文件后重载
+systemctl --failed                       # 列出失败的服务
+systemctl list-dependencies nginx        # 依赖树
+
+# 日志查询
+journalctl -u nginx -f                   # 实时跟踪
+journalctl -u nginx -n 200               # 最近 200 条
+journalctl --since "1h ago"              # 按时间范围
+journalctl -p err                        # 只看错误
+journalctl -b                            # 本次启动的日志
+journalctl -k                            # 内核日志
+journalctl --disk-usage                  # 日志占用空间
+journalctl --vacuum-time=7d              # 清理旧日志
+```
+
+## Timer 定时任务
+
+Timer unit 替代 cron，提供更好的日志集成。配置示例：`OnCalendar=*-*-* 02:00:00`（每天凌晨 2 点）、`RandomizedDelaySec=900`（随机延迟）。`systemctl list-timers` 查看所有 timer，`systemctl enable --now backup.timer` 启用。
+
+## SRE 实践场景
+
+### 服务崩溃排查
+
+```bash
+systemctl status myapp -l --no-pager     # 状态和日志
+journalctl -u myapp -n 200               # 完整日志
+dmesg | grep -i "oom\|killed"            # OOM 检查
+systemctl show myapp -p NRestarts        # 重启次数
+```
+
+### 启动时间优化
+
+```bash
+systemd-analyze                          # 总启动耗时
+systemd-analyze blame | head -20         # 各服务耗时排名
+systemd-analyze critical-chain           # 关键路径
+```
+
+优化策略：非关键服务延迟启动、用 socket activation 替代直接启动、禁用不需要的服务。
+
+### journald 配置与资源限制
+
+`/etc/systemd/journald.conf` 关键参数：`SystemMaxUse=2G`（最大占用）、`MaxRetentionSec=30day`（保留时间）、`Compress=yes`（压缩旧日志）。修改后 `systemctl restart systemd-journald` 生效，`journalctl --vacuum-size=1G` 手动清理。
+
+Service 资源限制与安全加固：
+
+```ini
+[Service]
+MemoryMax=4G                             # 内存上限
+CPUQuota=200%                            # CPU 限制
+LimitNOFILE=65536                        # 文件描述符
+PrivateTmp=true                          # 独立 /tmp
+NoNewPrivileges=true                     # 禁止提权
+ProtectSystem=strict                     # 只读文件系统
+```

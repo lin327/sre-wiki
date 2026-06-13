@@ -3,3 +3,85 @@ layout: ../../layouts/BaseLayout.astro
 title: "DNS 解析失败故障复盘"
 ---
 
+# DNS 解析失败故障复盘
+
+DNS 是 Kubernetes 服务发现的基石。DNS 解析失败会导致大量服务间调用中断，属于典型的级联故障触发器，通常为 P1 级别事故。
+
+## CoreDNS Architecture in K8s
+
+CoreDNS 是 K8s 默认集群 DNS 服务器，以 Deployment 运行。查询链路：
+
+```
+Pod → /etc/resolv.conf → CoreDNS Service (ClusterIP)
+  ├── 本地缓存命中 → 直接返回
+  ├── 集群内 Service → kubernetes plugin 查询 API Server
+  └── 外部域名 → forward plugin 转发到上游 DNS
+```
+
+关键插件：`kubernetes`（集群内 DNS）、`forward`（外部转发）、`cache`（本地缓存）、`loop`（转发环路检测）、`ready`/`health`（健康检查）。
+
+## 常见故障模式
+
+**上游 DNS 超时**：CoreDNS 转发外部查询到上游 DNS，上游不可达时所有外部域名超时，集群内 Service 解析正常。
+
+**Service Discovery 失败**：CoreDNS 无法连接 API Server，`<service>.<namespace>.svc.cluster.local` 解析失败，直接 IP 访问正常。
+
+**DNS Cache 陈旧**：Service IP 更新后，部分 Pod 仍解析到旧 IP。需重启 CoreDNS 清除缓存。
+
+**ndots 性能问题**：K8s 默认 `ndots:5`，短域名会尝试所有 search domain 后缀，每次外部查询产生 5 次无效的集群内查询。
+
+## 诊断步骤
+
+```bash
+# Step 1: 确认故障范围
+kubectl exec -it <pod> -- nslookup kubernetes.default     # 集群内
+kubectl exec -it <pod> -- nslookup example.com             # 集群外
+
+# Step 2: 检查 CoreDNS 状态
+kubectl -n kube-system get pods -l k8s-app=kube-dns
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=100
+
+# Step 3: 深入查询（绕过本地缓存）
+kubectl exec -it <pod> -- dig @10.96.0.10 <service>.<namespace>.svc.cluster.local
+
+# Step 4: 检查连通性
+kubectl exec -it <pod> -- nc -zv 10.96.0.10 53
+```
+
+返回码含义：`SERVFAIL`（上游失败）、`NXDOMAIN`（域名不存在）、`NOERROR`（正常）。
+
+## 恢复流程
+
+```bash
+# 快速缓解
+kubectl -n kube-system rollout restart deployment coredns   # 重启 CoreDNS
+
+# 上游 DNS 故障时临时切换
+kubectl -n kube-system edit configmap coredns
+# forward . /etc/resolv.conf → forward . 8.8.8.8 8.8.4.4
+kubectl -n kube-system rollout restart deployment coredns
+
+# 重启受影响业务 Pod 清除其本地缓存
+kubectl rollout restart deployment <affected-app>
+```
+
+## 预防措施
+
+**NodeLocal DNSCache**：在每个节点部署 DNS 缓存代理（DaemonSet + hostNetwork），Pod 查询先经本地缓存再到 CoreDNS，减少 UDP 丢包和 CoreDNS 负载。
+
+**CoreDNS 优化**：设置合理的 cache TTL（30s）、`max_concurrent 1000`、`health_check 5s`。
+
+**监控告警**：
+
+| 指标 | 告警阈值 | 说明 |
+|------|---------|------|
+| `coredns_dns_responses_total{rcode="SERVFAIL"}` | 持续增长 | 上游查询失败 |
+| `coredns_dns_request_duration_seconds` | p99 > 1s | 查询延迟过高 |
+| 缓存命中率 | < 50% | 缓存策略需调整 |
+
+## SRE 关联
+
+- **级联故障**：DNS 故障同时影响所有依赖服务发现的工作负载，一个问题可导致整个集群通信中断
+- **Caching Pitfalls**：DNS 缓存缓解上游压力的同时，也会在变更后造成新旧记录并存的不一致窗口。TTL 需在性能和一致性间权衡
+- **SLO 影响**：DNS 解析可用性应作为基础设施 SLO 独立度量，建议目标 99.99%
+- **故障注入**：通过 Chaos Engineering 定期注入 CoreDNS 故障、上游超时等场景，验证系统韧性

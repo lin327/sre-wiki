@@ -3,3 +3,82 @@ layout: ../../layouts/BaseLayout.astro
 title: "GitOps 部署流水线"
 ---
 
+# GitOps 部署流水线
+
+GitOps 是一种以 Git 仓库作为基础设施和应用部署单一事实来源的运维模式。对 SRE 而言，GitOps 提供了可审计、可回滚、可复现的部署能力。
+
+## GitOps 四原则
+
+**Declarative（声明式）**：系统期望状态以声明式配置描述（如 Kubernetes YAML、Terraform HCL），工具负责将当前状态收敛到期望状态，而非执行命令式操作步骤。
+
+**Versioned（版本化）**：所有期望状态存储在 Git 仓库中，每次变更都有 commit 记录，通过 `git diff` 追踪变更，通过 branch 和 tag 管理不同环境。
+
+**Automated（自动化）**：配置变更被自动应用到目标环境。Push-based 由 CI pipeline 构建镜像并更新配置；Pull-based 由集群内 Agent watch 仓库并自动同步。
+
+**Observed（可观测）**：Agent 持续比对 Git 期望状态与集群实际状态，检测并报告配置漂移（drift），可配置自动修复将实际状态拉回期望状态。
+
+## ArgoCD vs Flux
+
+| 特性 | ArgoCD | Flux |
+|------|--------|------|
+| 架构 | 集中式控制面 + Web UI | 去中心化，以 CRD 为核心 |
+| UI | 内置功能丰富的 Web Dashboard | 需借助 Weave GitOps 等第三方 UI |
+| 多租户 | 通过 Project 和 AppSet 支持 | 原生 Namespace 隔离 |
+| Sync 策略 | 支持自动/手动/定时同步 | 通过 Kustomization CRD 控制 |
+| SSO 集成 | 内置 OIDC、LDAP、SAML、GitHub | 需自行配置 |
+| 学习曲线 | Web UI 降低上手门槛 | 更贴近 Kubernetes 原生方式 |
+
+选择建议：需要可视化和团队协作优先选 ArgoCD；偏好声明式 CRD 和轻量架构选 Flux。
+
+## Git Branching Strategy for Infra
+
+### Environment-per-Branch
+
+```
+main          → 生产环境（production）
+  ├── staging → 预发布环境
+  └── dev     → 开发环境
+```
+
+每个环境的 GitOps Agent watch 对应分支，变更通过 PR 逐级合并推进。
+
+### Monorepo with Directory-per-Env
+
+```
+infra/
+├── base/               # 基础配置（共享模板）
+├── overlays/
+│   ├── dev/
+│   ├── staging/
+│   └── prod/
+└── apps/
+    ├── app-a/
+    └── app-b/
+```
+
+使用 Kustomize overlay 管理不同环境的差异化配置，单一主分支，通过 PR merge 触发环境升级。
+
+## Rollback Procedures
+
+```bash
+# 即时回滚：revert 最近一次变更
+git revert HEAD && git push origin main
+# GitOps Agent 自动同步回上一个版本
+
+# 指定版本回滚
+git revert <commit-sha> && git push origin main
+
+# ArgoCD CLI 回滚
+argocd app history my-app
+argocd app rollback my-app <revision-id>
+```
+
+对于 Flux，可通过暂停 source、修改 GitRepository spec.ref.tag 并恢复来实现版本回退。
+
+## SRE 关联
+
+**Deployment Audit Trail**：GitOps 天然提供完整审计记录——每次部署对应 commit，包含 author、timestamp 和变更内容，满足 SOC 2 / ISO 27001 合规要求的变更管理审计。
+
+**Rollback Speed**：Git revert + 自动同步的回滚时间通常在分钟级别，比手动 `kubectl rollout undo` 更可靠且可审计。SLO 中应将回滚时间纳入 incident recovery 的 MTTR 目标。
+
+**Drift Detection**：人工 `kubectl edit` 或其他控制器的修改会导致集群状态偏离 Git 仓库。GitOps Agent 定期比对并报告 drift，可配置自动修复。SRE 应设置 drift alert，将漂移视为潜在 incident 的早期信号。

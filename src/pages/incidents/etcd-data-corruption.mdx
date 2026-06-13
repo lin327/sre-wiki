@@ -3,3 +3,96 @@ layout: ../../layouts/BaseLayout.astro
 title: "etcd 数据损坏故障复盘"
 ---
 
+# etcd 数据损坏故障复盘
+
+etcd 是 Kubernetes 集群的核心数据存储，存储所有集群状态、Secret 和 ConfigMap。etcd 数据损坏会导致整个集群不可用，属于 P0 级别事故。
+
+## 故障根因
+
+**磁盘空间耗尽**：etcd 默认存储配额 2GB，历史数据不断积累且未 compact 时空间被占满。
+
+**突然断电**：etcd 使用 boltdb 存储引擎，突然断电可能导致 WAL 文件损坏或数据页不一致。
+
+**磁盘 I/O 错误**：底层磁盘故障（坏扇区、RAID 降级）导致数据写入不完整。
+
+**网络分区**：长时间分区后落后节点无法追上 leader 日志，被移除后数据不一致。
+
+```bash
+# 检查存储使用情况
+etcdctl endpoint status --write-out=table
+# 检查磁盘健康
+dmesg | grep -i "error\|fault\|bad"
+```
+
+## 故障症状
+
+- `kubectl` 命令返回 `connection refused` 或超时
+- API Server 日志出现 `etcdserver: request timed out`
+- 集群节点状态显示 `NotReady`
+- 新建 Pod 长时间处于 `Pending`
+
+```bash
+# 快速诊断
+etcdctl endpoint health --cluster --write-out=table
+etcdctl member list --write-out=table
+```
+
+## 恢复流程
+
+### 场景一：单节点损坏，集群仍可用
+
+```bash
+etcdctl member list --write-out=table          # 找到损坏节点 ID
+etcdctl member remove <member-id>              # 移除损坏成员
+rm -rf /var/lib/etcd/member                    # 清理本地数据
+etcdctl member add <name> --peer-urls=https://<ip>:2380  # 重新加入
+systemctl restart etcd                         # 启动（配置 initial-cluster-state=existing）
+```
+
+### 场景二：多数节点损坏，从快照恢复
+
+```bash
+systemctl stop etcd                            # 停止所有节点
+etcdctl snapshot restore /backup/snapshot.db \  # 从备份恢复
+  --data-dir=/var/lib/etcd --name=<node-name> \
+  --initial-cluster=<all-members>
+systemctl start etcd                           # 启动
+etcdctl endpoint health --cluster --write-out=table  # 验证
+```
+
+## 预防措施
+
+### 监控告警
+
+| 指标 | 告警阈值 | 说明 |
+|------|---------|------|
+| `etcd_server_has_leader` | = 0 | 无 leader，集群不可用 |
+| `etcd_disk_wal_fsync_duration_seconds` | > 10ms | WAL 写入延迟过高 |
+| `etcd_mvcc_db_total_size_in_bytes` | > 80% quota | 存储空间接近上限 |
+
+### 备份策略
+
+```bash
+etcdctl snapshot save /backup/etcd-$(date +%Y%m%d-%H%M).db
+etcdctl snapshot status /backup/etcd-snapshot.db --write-out=table
+```
+
+- 至少每小时备份一次，保留最近 72 小时
+- 备份同步到对象存储（S3、OSS）
+- 每月执行一次恢复演练
+
+### 定期 Compact 与 Defrag
+
+```bash
+etcdctl compact <revision>                     # compact 历史 revision
+etcdctl defrag --cluster                       # 释放磁盘空间
+```
+
+建议每天 compact，每周 defrag。
+
+## SRE 关联
+
+- **MTTR 影响**：etcd 损坏恢复时间较长（快照恢复 + 数据校验），直接影响 SLO 可用性
+- **变更窗口**：etcd 升级应在维护窗口进行，并确保有最近快照
+- **容量规划**：监控 revision 增长速率，预估 compact 频率
+- **Chaos Engineering**：定期模拟 etcd 故障，验证备份恢复和 RTO 目标

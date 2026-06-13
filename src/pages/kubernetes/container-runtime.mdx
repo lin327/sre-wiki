@@ -1,5 +1,175 @@
 ---
 layout: ../../layouts/BaseLayout.astro
 title: "容器运行时"
+description: "深入理解 Kubernetes 容器运行时架构，包括 CRI、OCI 标准、containerd 与 CRI-O 的选型对比，以及安全运行时（sandboxed runtime）的实践。"
 ---
 
+# 容器运行时
+
+容器运行时（Container Runtime）是 Kubernetes 节点上真正执行容器生命周期管理的组件。它负责拉取镜像、创建容器、管理 cgroup 和 namespace、以及终止进程。理解运行时架构对于排查容器崩溃、优化启动性能和加固安全边界至关重要。
+
+## CRI：Container Runtime Interface
+
+Kubernetes 从 1.5 版本开始引入 CRI（Container Runtime Interface），将 kubelet 与具体运行时实现解耦。CRI 定义了一组 gRPC 接口，kubelet 通过 Unix Socket（默认 `/var/run/containerd/containerd.sock`）与运行时通信。
+
+```text
+kubelet  ──gRPC──▶  CRI Shim  ──▶  OCI Runtime (runc)
+                   (containerd
+                    或 CRI-O)
+```
+
+CRI 核心服务：
+
+| 服务 | 职责 | 关键 RPC |
+|------|------|----------|
+| **RuntimeService** | 容器生命周期管理 | RunPodSandbox, CreateContainer, StartContainer, StopContainer |
+| **ImageService** | 镜像管理 | PullImage, ListImages, ImageStatus, RemoveImage |
+
+```bash
+# 查看节点使用的运行时
+kubectl get node <node-name> -o jsonpath='{.status.nodeInfo.containerRuntimeVersion}'
+
+# 检查 CRI socket 连接状态
+crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock info
+```
+
+## OCI Runtime Spec
+
+OCI（Open Container Initiative）定义了容器运行时规范，包括两个核心部分：
+
+- **Image Spec** — 镜像格式标准（layer、manifest、config）
+- **Runtime Spec** — 如何运行容器（文件系统、进程参数、cgroup、namespace）
+
+符合 OCI Runtime Spec 的运行时称为 OCI Runtime，它们负责实际的容器进程创建：
+
+| OCI Runtime | 特点 | 适用场景 |
+|-------------|------|----------|
+| **runc** | 默认运行时，直接操作 Linux namespace 和 cgroup | 大多数通用工作负载 |
+| **crun** | C 语言实现，比 runc 更轻量，启动更快 | 对冷启动敏感的场景 |
+| **Kata Containers** | 每个容器运行在独立的轻量级 VM 中 | 多租户隔离、不可信代码 |
+| **gVisor (runsc)** | 用户态内核拦截系统调用 | 安全沙箱，减少内核攻击面 |
+| **Firecracker** | AWS 开源的 microVM | Serverless / FaaS 平台 |
+
+```bash
+# 查看 containerd 使用的 OCI runtime
+cat /etc/containerd/config.toml | grep -A5 'plugins."io.containerd.grpc.v1.cri".containerd.runtimes'
+
+# 查看 runc 版本
+runc --version
+```
+
+## containerd vs CRI-O
+
+这两个是 Kubernetes 生态中最主流的 CRI 实现：
+
+| 维度 | containerd | CRI-O |
+|------|-----------|-------|
+| **来源** | Docker 拆分的独立项目，CNCF 毕业项目 | Red Hat 主导，专为 Kubernetes 设计 |
+| **功能范围** | 完整的容器管理（镜像、存储、网络） | 仅实现 CRI 接口，功能最小化 |
+| **CLI 工具** | `ctr`, `nerdctl` | `crictl` |
+| **镜像构建** | 支持（通过 BuildKit） | 不支持，需配合 Buildah |
+| **发行版采用** | GKE, EKS, AKS, Docker Desktop | OpenShift, SUSE |
+| **插件体系** | 丰富的 snapshotter 和 runtime 插件 | 相对精简 |
+
+```bash
+# containerd 常用排障命令
+crictl ps -a                    # 列出所有容器
+crictl logs <container-id>      # 查看容器日志
+crictl inspect <container-id>   # 容器详细信息
+crictl pull <image>             # 手动拉取镜像
+
+# CRI-O 排障命令（crictl 通用）
+crictl pods                     # 列出所有 Pod Sandbox
+crictl inspectp <pod-id>        # 查看 Pod Sandbox 详情
+```
+
+## RuntimeClass：按工作负载选择运行时
+
+Kubernetes 的 RuntimeClass 允许为不同 Pod 指定不同的运行时，实现安全分级：
+
+```yaml
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata
+handler: kata
+scheduling:
+  nodeSelector:
+    security-tier: high
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untrusted-workload
+spec:
+  runtimeClassName: kata
+  containers:
+  - name: app
+    image: untrusted/image:latest
+```
+
+典型分级策略：
+
+| 工作负载类型 | 推荐运行时 | 理由 |
+|-------------|-----------|------|
+| 内部微服务 | runc | 性能最优，启动快 |
+| 第三方 SaaS 集成 | gVisor | 限制系统调用，降低内核风险 |
+| 多租户用户代码 | Kata Containers | 硬隔离，防止容器逃逸 |
+| 合规敏感工作负载 | Kata + SEV/TDX | 硬件级机密计算 |
+
+## SRE 排障要点
+
+### 运行时崩溃
+
+当 containerd 或 CRI-O 进程本身崩溃时，节点上所有容器都会受到影响：
+
+```bash
+# 检查运行时服务状态
+systemctl status containerd    # 或 crio
+
+# 查看运行时日志
+journalctl -u containerd --since "10 minutes ago" --no-pager
+
+# 检查节点 NotReady 原因
+kubectl describe node <node-name> | grep -A5 "Conditions"
+```
+
+### 容器启动失败
+
+```bash
+# 查看容器创建错误
+crictl create <sandbox-id> container-config.json sandbox-config.json
+
+# 检查 SELinux / AppArmor 是否阻止了容器启动
+ausearch -m AVC -ts recent
+dmesg | grep -i "denied\|apparmor"
+
+# 检查 cgroup 驱动是否匹配
+kubectl get node <node-name> -o jsonpath='{.status.nodeInfo.operatingSystem}'
+cat /var/lib/kubelet/config.yaml | grep cgroupDriver
+```
+
+### 安全事件排查
+
+容器逃逸是最高优先级的安全事件：
+
+```bash
+# 检查是否有特权容器运行
+kubectl get pods -A -o json | jq '.items[] | select(.spec.containers[].securityContext.privileged==true)'
+
+# 审计日志中查找可疑的 exec 操作
+cat /var/log/kubernetes/audit.log | grep '"verb":"create"' | grep 'exec'
+
+# 检查运行时是否有已知 CVE
+containerd --version
+runc --version
+```
+
+## SRE 实践清单
+
+- 节点上只保留一个 CRI 实现，避免多个 containerd 或 dockerd 实例争抢 socket
+- 为不可信工作负载配置 RuntimeClass，使用沙箱运行时（gVisor 或 Kata）
+- 监控 `containerd` / `crio` 进程的 CPU 和内存，运行时自身 OOM 会导致节点 NotReady
+- 定期更新 runc 和 containerd 版本，关注安全公告（历史上多次出现容器逃逸 CVE）
+- cgroup 驱动（cgroupfs vs systemd）必须在 kubelet 和运行时之间保持一致
+- 使用 `crictl` 而非 `docker` 命令排障，Docker CLI 不经过 CRI 接口

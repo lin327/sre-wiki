@@ -1,5 +1,211 @@
 ---
 layout: ../../layouts/BaseLayout.astro
 title: "OOMKilled 排障"
+description: "Kubernetes 容器因超出内存限制被 OOM Killer 终止的完整排查流程，涵盖症状识别、内存分析与资源调优。"
 ---
 
+# OOMKilled 排障手册
+
+OOMKilled 表示容器进程因超出内存限制被 Linux 内核的 OOM Killer（Out of Memory Killer）强制终止。在 Kubernetes 中，当容器实际内存使用超过 `resources.limits.memory` 设定的值时，kubelet 会触发 OOM Kill，容器退出码为 **137**（128 + 9，其中 9 是 SIGKILL 信号编号）。
+
+## 症状识别
+
+当容器被 OOMKilled 时，你会观察到以下现象：
+
+- `kubectl get pods` 显示 `STATUS` 为 `CrashLoopBackOff` 或 `OOMKilled`
+- `RESTARTS` 计数持续增加
+- `kubectl describe pod` 的 Events 中出现 `OOMKilled` 或 `Back-off restarting failed container`
+- 容器退出码为 137
+- 用户侧表现为服务短暂不可用、请求超时或连接重置
+
+```bash
+# 快速查找所有命名空间中被 OOMKilled 的 Pod
+kubectl get pods -A -o json | jq -r '.items[] |
+  select(.status.containerStatuses[]?.lastState.terminated.reason == "OOMKilled") |
+  "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
+## 诊断步骤
+
+### 第一步：确认 OOM 事件
+
+```bash
+# 查看 Pod 详情，重点关注 Last State 和 Events
+kubectl describe pod <pod-name>
+
+# 关注以下输出部分：
+# - Containers > State > Last State > Reason: OOMKilled
+# - Containers > Last State > Exit Code: 137
+# - Events > Reason: Killing
+```
+
+典型 `describe pod` 输出：
+
+```text
+State:          Waiting
+  Reason:       CrashLoopBackOff
+Last State:     Terminated
+  Reason:       OOMKilled
+  Exit Code:    137
+  Started:      Wed, 11 Jun 2025 10:15:30 +0000
+  Finished:     Wed, 11 Jun 2025 10:16:02 +0000
+Events:
+  Type     Reason     Age   From     Message
+  ----     ------     ----  ----     -------
+  Warning  OOMKilled  2m    kubelet  Memory cgroup out of memory
+```
+
+### 第二步：查看内存限制与实际使用
+
+```bash
+# 查看 Pod 配置的内存限制
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].resources}' | jq .
+
+# 查看当前内存使用（需要 metrics-server）
+kubectl top pod <pod-name> --containers
+
+# 查看节点内存压力
+kubectl describe node <node-name> | grep -A10 "Allocated resources"
+```
+
+如果 metrics-server 不可用，可以通过 cgroup 文件直接读取：
+
+```bash
+# 获取容器 ID
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[0].containerID}'
+
+# 在节点上查看 cgroup 内存统计
+# cgroup v2 路径
+cat /sys/fs/cgroup/kubepods.slice/kubepods-<qos>.slice/<pod-uid>/<container-id>/memory.current
+cat /sys/fs/cgroup/kubepods.slice/kubepods-<qos>.slice/<pod-uid>/<container-id>/memory.peak
+
+# cgroup v1 路径
+cat /sys/fs/cgroup/memory/kubepods/<qos>/<pod-uid>/<container-id>/memory.max_usage_in_bytes
+```
+
+### 第三步：分析 OOM 前的内存趋势
+
+```bash
+# 查看上一次崩溃的日志（OOM 前的应用输出）
+kubectl logs <pod-name> --previous --tail=200
+
+# 如果是多容器 Pod
+kubectl logs <pod-name> -c <container-name> --previous --tail=200
+```
+
+在 Prometheus 中查看内存增长趋势：
+
+```promql
+# 容器内存使用量（字节）
+container_memory_working_set_bytes{
+  pod="<pod-name>",
+  container="<container-name>"
+}
+
+# 内存使用占 limit 的百分比
+container_memory_working_set_bytes{pod="<pod-name>"}
+/ container_spec_memory_limit_bytes{pod="<pod-name>"} * 100
+```
+
+### 第四步：判断是内存泄漏还是限制过低
+
+两种根因的区分方式：
+
+| 特征 | 内存泄漏 | 限制过低 |
+|------|---------|---------|
+| **内存曲线** | 持续增长不回落 | 在正常范围内波动但触顶 |
+| **OOM 时间** | 运行一段时间后崩溃 | 启动后很快就崩溃 |
+| **重启后表现** | 每次运行时间逐渐缩短 | 每次表现一致 |
+| **Pod 频繁重启** | 间隔越来越短 | 间隔基本固定 |
+
+## 修复方案
+
+### 方案一：调整资源限制
+
+```bash
+# 临时通过 patch 提高内存限制
+kubectl patch deployment <deployment-name> -p \
+  '{"spec":{"template":{"spec":{"containers":[{"name":"<container-name>","resources":{"limits":{"memory":"512Mi"},"requests":{"memory":"256Mi"}}}]}}}}'
+
+# 观察新 Pod 状态
+kubectl get pod -w
+```
+
+<div class="admonition">
+  <p class="admonition-title">提示</p>
+  <p>将 requests 设置为 limits 的 50%-80% 是常见的实践。requests 影响调度决策，limits 决定 OOM 阈值。两者差距过大会导致节点 overcommit 严重。</p>
+</div>
+
+### 方案二：修复内存泄漏
+
+```bash
+# Java 应用：获取 OOM 前的 heap dump
+# 在 JVM 参数中添加：
+# -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heapdump.hprof
+
+# Go 应用：启用 pprof 内存分析
+# 在应用中暴露 /debug/pprof/heap 端点
+kubectl port-forward <pod-name> 6060:6060
+go tool pprof http://localhost:6060/debug/pprof/heap
+
+# Node.js 应用：使用 --inspect 参数
+# 在启动命令中添加 --inspect=0.0.0.0:9229
+```
+
+### 方案三：启用 QoS 策略
+
+确保 Pod 获得 Guaranteed 或 Burstable QoS 等级，避免被优先驱逐：
+
+```yaml
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+```
+
+当 requests 等于 limits 时，Pod 获得 **Guaranteed** QoS，不会在节点内存压力下被优先驱逐。
+
+### 方案四：大内存应用专项优化
+
+对于 Java 等依赖虚拟内存的应用：
+
+```yaml
+# Java 应用设置堆内存为 limit 的 75%，留出空间给非堆内存
+env:
+- name: JAVA_OPTS
+  value: "-Xms256m -Xmx384m -XX:MaxRAMPercentage=75.0"
+```
+
+```yaml
+# Python 应用可能需要禁用内存分配器的 arena
+env:
+- name: MALLOC_ARENA_MAX
+  value: "2"
+```
+
+## 确认修复
+
+```bash
+# 观察新 Pod 是否稳定运行
+kubectl get pod <pod-name> -w
+
+# 确认重启计数不再增加
+kubectl get pod <pod-name> -o jsonpath='{.status.containerStatuses[0].restartCount}'
+
+# 持续监控内存使用
+watch -n 5 "kubectl top pod <pod-name> --containers"
+
+# 检查 QoS 等级
+kubectl get pod <pod-name> -o jsonpath='{.status.qosClass}'
+```
+
+## 预防措施
+
+- 为所有容器设置 `resources.requests` 和 `resources.limits`，避免无限制内存使用
+- 通过 VPA（Vertical Pod Autoscaler）自动推荐合理的资源值
+- 部署内存告警：当容器内存使用超过 limit 的 80% 时触发告警
+- 在 CI/CD 中加入负载测试，验证应用在预期并发下的内存占用
+- 对于 Java / Python / Node.js 等运行时，显式配置堆内存参数，不要依赖容器 limit 的自动推断

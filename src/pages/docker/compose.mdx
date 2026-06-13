@@ -3,3 +3,105 @@ layout: ../../layouts/BaseLayout.astro
 title: "Docker Compose 编排实践"
 ---
 
+## docker-compose.yml 结构
+
+Docker Compose 使用 YAML 文件定义多容器应用，描述服务、网络和卷之间的关系：
+
+```yaml
+version: "3.8"
+
+services:
+  web:
+    build: ./web
+    ports: ["3000:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+```
+
+每个 `service` 的关键字段：`image` / `build`（镜像来源）、`ports`（端口映射）、`environment`（环境变量）、`volumes`（数据挂载）、`depends_on`（启动依赖）、`restart`（重启策略）、`deploy.resources`（CPU / 内存限制）。
+
+## Networks 与 Volumes
+
+Compose 自动创建项目默认网络。显式定义网络可实现隔离拓扑（`internal: true` 禁止外网访问）。命名卷在顶级 `volumes` 中声明，多服务共享，支持卷驱动插件。
+
+```yaml
+networks:
+  backend:
+    internal: true
+
+volumes:
+  app-data:
+    driver: local
+```
+
+## Environment Variables 环境变量
+
+三种方式，按优先级从高到低：Compose 文件内 `environment`、`.env` 文件（Compose 级变量替换）、`env_file`（容器级环境变量）。
+
+**SRE 建议：** 将 `.env` 纳入 `.gitignore`，使用 `.env.example` 模板记录必需变量。
+
+## Health Checks 与 depends_on
+
+健康检查让 Compose 知道服务是否真正就绪，而非仅进程存在。默认 `depends_on` 只保证启动顺序，使用 `condition: service_healthy` 等待健康检查通过：
+
+```yaml
+services:
+  api:
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+```
+
+查看健康状态：`docker compose ps` 显示 healthy / unhealthy / starting。
+
+## Profiles 配置文件
+
+按需启动服务子集，避免一个文件混杂开发和调试工具。无 profile 的服务默认启动，带 profile 的服务需显式启用：
+
+```bash
+docker compose up -d                     # 只启动默认服务
+docker compose --profile debug up -d     # 启动默认 + debug 服务
+```
+
+## 常用命令
+
+```bash
+docker compose up -d                     # 后台启动
+docker compose up -d --build             # 重新构建并启动
+docker compose ps                        # 查看状态
+docker compose logs -f api               # 查看日志
+docker compose down                      # 停止（保留卷）
+docker compose down -v                   # 停止并删除卷
+docker compose exec api sh               # 进入容器
+```
+
+## SRE 实践要点
+
+- **本地开发：** 一键搭建完整开发环境，新成员入职第一天即可跑通整个系统。
+- **Staging 部署：** 使用 `docker-compose.staging.yml` 覆盖配置，配合 `--force-recreate` 滚动更新。
+- **CI/CD 集成：** 在流水线中用 Compose 启动测试依赖，使用 `-T` 标志禁用 TTY，`down -v` 清理残留数据。

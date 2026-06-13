@@ -3,3 +3,112 @@ layout: ../../layouts/BaseLayout.astro
 title: "高可用集群架构"
 ---
 
+# 高可用集群架构
+
+高可用（High Availability, HA）集群的目标是消除单点故障，确保系统在组件失效时仍能持续提供服务。对 SRE 而言，HA 架构是达成 SLO 的基础设施保障。
+
+## Active-Passive vs Active-Active
+
+### Active-Passive（主备模式）
+
+一个节点对外提供服务（active），另一个节点处于待命状态（passive）。当 active 节点故障时，流量切换到 passive 节点。
+
+- **优点**：实现简单，数据一致性容易保证
+- **缺点**：资源利用率低（备用节点长期闲置），故障切换期间存在短暂不可用
+- **典型场景**：传统数据库主备、单体应用的灾备部署
+
+### Active-Active（双活模式）
+
+多个节点同时对外提供服务，负载均衡器将流量分发到所有活跃节点。
+
+- **优点**：资源利用率高，无切换延迟
+- **缺点**：需要解决数据同步和冲突问题，架构复杂度高
+- **典型场景**：无状态应用层、多区域部署的全局服务
+
+## Leader Election 与 Quorum
+
+### Leader Election（领导者选举）
+
+在分布式系统中，通过选举产生一个 leader 节点来协调关键操作。常见算法包括 Raft 和 Paxos。
+
+- leader 负责处理写请求并复制日志到 follower
+- 当 leader 故失时，剩余节点重新选举新 leader
+- 选举期间集群短暂不可写（通常在秒级完成）
+
+### Quorum（多数派）
+
+集群中必须有超过半数节点存活才能正常工作。对于 N 个节点的集群，quorum 为 `(N/2) + 1`。
+
+- 3 节点集群容忍 1 个节点故障
+- 5 节点集群容忍 2 个节点故障
+- 生产环境推荐奇数节点（3 或 5），避免偶数节点导致的选举平票
+
+## Split-Brain Prevention（脑裂防护）
+
+当网络分区导致集群分裂为多个子群组，各子群组都认为自己是唯一合法集群，即产生 split-brain。防护手段：
+
+- **Quorum 机制**：只有获得多数派投票的子群组才能继续工作
+- **Fencing（隔离）**：通过 STONITH（Shoot The Other Node In The Head）强制关闭无法通信的节点
+- **Lease 机制**：leader 持有带过期时间的 lease，过期后自动放弃领导权
+- **Witness 节点**：引入不承载业务但参与投票的仲裁节点
+
+## Health Check 策略
+
+有效的健康检查是快速故障转移的前提：
+
+| 检查类型 | 说明 | 示例 |
+|---------|------|------|
+| Liveness | 进程是否存活 | HTTP 200、TCP 端口可达 |
+| Readiness | 是否能处理请求 | 依赖服务连接正常、缓存已预热 |
+| Startup | 启动是否完成 | 数据迁移完成、配置加载完毕 |
+
+检查间隔和超时需要根据业务容忍度调优：间隔过长导致故障检测延迟，过短产生误判。
+
+## Kubernetes HA Control Plane
+
+### etcd Cluster
+
+etcd 是 Kubernetes 的数据存储层，通常部署 3 或 5 节点的集群：
+
+- 使用 Raft 协议进行 leader election 和日志复制
+- 所有数据变更通过 leader 提交并复制到 quorum 节点
+- 推荐使用 SSD 磁盘，写延迟直接影响 API Server 响应时间
+
+### Multi-Master 部署
+
+生产环境至少部署 3 个 API Server 实例，通过负载均衡器对外暴露：
+
+```
+Load Balancer
+    ├── API Server 1  ──→  etcd Node 1
+    ├── API Server 2  ──→  etcd Node 2
+    └── API Server 3  ──→  etcd Node 3
+```
+
+- Controller Manager 和 Scheduler 通过 leader election 保证只有一个活跃实例
+- 每个 API Server 可以连接所有 etcd 节点（客户端侧负载均衡）
+
+## SRE 关联
+
+### SLO 定义
+
+HA 架构直接支撑 SLO 的可用性目标：
+
+- 99.9%（三个九）：允许年停机 ~8.76 小时
+- 99.99%（四个九）：允许年停机 ~52.6 分钟
+- 架构选型需与 SLO 目标匹配，避免过度或不足设计
+
+### Capacity Planning（容量规划）
+
+- N+1 冗余：承载 N 个节点的负载，实际部署 N+1 个节点
+- 故障场景下的容量评估：单节点故障后，剩余节点能否承载全部流量
+- 需定期进行 Chaos Engineering 验证故障转移能力
+
+### Disaster Recovery（灾难恢复）
+
+| 指标 | 含义 |
+|------|------|
+| RTO（Recovery Time Objective） | 从故障到恢复服务的目标时间 |
+| RPO（Recovery Point Objective） | 可接受的最大数据丢失时间窗口 |
+
+HA 架构降低 RTO，备份策略保障 RPO。两者共同构成 DR 计划的核心。

@@ -3,3 +3,105 @@ layout: ../../layouts/BaseLayout.astro
 title: "Docker 存储驱动与 Volume"
 ---
 
+## Storage Drivers 存储驱动
+
+Docker 使用存储驱动管理容器的可写层和镜像层，基于 Union Filesystem 实现。
+
+### overlay2（推荐）
+
+`overlay2` 是 Linux 上的默认和推荐驱动，基于 OverlayFS：
+
+```bash
+docker info --format '{{.Driver}}'
+# 输出: overlay2
+```
+
+内核原生支持、性能优秀、inode 效率高。适用于绝大多数 Linux 生产环境。
+
+### 其他驱动
+
+| 驱动 | 平台 | 说明 |
+|------|------|------|
+| devicemapper | Linux | 早期 CentOS/RHEL 使用，已被 overlay2 取代 |
+| fuse-overlayfs | Rootless Docker | 用户态 overlay 实现 |
+| btrfs / zfs | Linux | 需要对应文件系统支持 |
+| windowsfilter | Windows | Windows 容器默认 |
+
+**选择原则：** 优先 overlay2；Rootless Docker 用 fuse-overlayfs；避免已废弃的 `aufs` 和无 COW 的 `vfs`。
+
+## Volumes vs Bind Mounts vs tmpfs
+
+Docker 提供三种数据挂载方式。
+
+### Volumes（卷）
+
+由 Docker 管理，存放在 `/var/lib/docker/volumes/` 下：
+
+```bash
+docker volume create mydata
+docker run -d -v mydata:/app/data postgres:16
+docker volume inspect mydata
+```
+
+生命周期独立于容器，支持卷驱动插件（NFS、云存储），多容器可共享。
+
+### Bind Mounts（绑定挂载）
+
+将宿主机目录直接挂载到容器：
+
+```bash
+docker run -d -v /host/path:/container/path nginx
+```
+
+常用于本地开发挂载源代码。风险：容器进程可能修改宿主机文件，生产环境谨慎使用。
+
+### tmpfs Mounts
+
+数据存储在内存中，容器停止后丢失。适用于临时缓存和敏感数据：
+
+```bash
+docker run -d --tmpfs /app/cache:rw,size=100m myapp
+```
+
+### 对比
+
+| 特性 | Volume | Bind Mount | tmpfs |
+|------|--------|------------|-------|
+| Docker 管理 | 是 | 否 | 否 |
+| 容器停止后保留 | 是 | 是 | 否 |
+| 支持卷驱动 | 是 | 否 | 否 |
+| 典型用途 | 数据库数据 | 开发挂载 | 临时缓存 |
+
+## Volume 生命周期管理
+
+```bash
+docker volume ls                                    # 列出所有卷
+docker volume prune                                 # 清理未使用的卷
+docker volume rm mydata                             # 删除指定卷
+```
+
+`docker volume prune` 会删除所有未挂载的命名卷，执行前务必确认无重要数据。
+
+## 磁盘空间管理
+
+```bash
+docker system df -v                                 # 查看 Docker 磁盘使用概览
+docker system prune -a --volumes                    # 一键清理（慎用）
+```
+
+生产环境应配置定时清理策略，避免磁盘耗尽。关注 inode 耗尽问题：
+
+```bash
+df -i                                               # 检查 inode 使用情况
+```
+
+## SRE 实践要点
+
+- **数据持久化：** 有状态服务必须使用命名卷，绝不能依赖容器可写层。
+- **磁盘管理：** CI/CD 环境中旧镜像和构建缓存快速膨胀，使用 `docker system prune` 定时任务。
+- **卷备份：**
+  ```bash
+  docker run --rm -v mydata:/source -v $(pwd):/backup alpine \
+    tar czf /backup/mydata-backup.tar.gz -C /source .
+  ```
+  生产数据库应使用原生备份工具（`pg_dump`、`mysqldump`）而非直接备份卷文件。

@@ -3,3 +3,97 @@ layout: ../../layouts/BaseLayout.astro
 title: "Linux 文件系统与存储"
 ---
 
+# Linux 文件系统与存储
+
+Linux 通过 **VFS（Virtual File System）** 抽象层统一不同文件系统的接口，使得用户态程序可以用同一套 `read`/`write`/`open` 系统调用访问 ext4、XFS、NFS 等底层实现。
+
+## VFS 核心对象
+
+- **superblock** — 描述已挂载的文件系统（块大小、状态、挂载选项）
+- **inode** — 文件元数据（权限、所有者、时间戳、数据块指针），不含文件名
+- **dentry** — 文件名到 inode 的映射，维护目录树结构
+- **file** — 进程打开的文件实例，含读写偏移量和访问模式
+
+## inode 结构
+
+每个文件对应一个 inode，存储权限位（rwx/SUID/SGID/sticky）、UID/GID、三个时间戳（`atime`/`mtime`/`ctime`）以及数据块指针。inode 耗尽时即使磁盘有空间也无法创建新文件，这是 SRE 常见故障之一。
+
+## 常见文件系统
+
+| 文件系统 | 特点 | 典型场景 |
+|---------|------|---------|
+| **ext4** | 成熟稳定，日志型 | 通用 Linux 系统盘 |
+| **XFS** | 高性能并行 I/O，擅长大文件 | 数据库、日志存储 |
+| **btrfs** | 快照、压缩、校验、子卷 | 容器镜像层、需要快照的场景 |
+| **tmpfs** | 基于内存 | `/tmp`、`/run`、容器内临时目录 |
+
+## 挂载与 /etc/fstab
+
+```bash
+mount -t xfs /dev/sdb1 /data          # 手动挂载
+mount | grep sda                       # 查看挂载
+lsblk -f                               # 列出块设备及文件系统
+blkid /dev/sdb1                        # 查看 UUID
+findmnt --target /data                 # 树形展示挂载关系
+```
+
+`/etc/fstab` 格式：`<设备>  <挂载点>  <类型>  <选项>  <dump>  <fsck顺序>`
+
+```fstab
+UUID=xxx  /data  xfs  defaults,noatime  0  2
+```
+
+`noatime` 减少写入提升性能；`noexec` 禁止执行挂载点上的二进制文件。
+
+## I/O 调度器
+
+| 调度器 | 策略 | 适用场景 |
+|-------|------|---------|
+| **mq-deadline** | 按截止时间排序 | 通用、数据库 |
+| **bfq** | 按进程公平分配 I/O | 桌面、交互式负载 |
+| **none** | 不调度，直接下发 | NVMe 等低延迟设备 |
+
+```bash
+cat /sys/block/sda/queue/scheduler             # 查看当前调度器
+echo mq-deadline > /sys/block/sda/queue/scheduler  # 临时切换
+```
+
+## SRE 关键实践
+
+### 磁盘空间监控
+
+```bash
+df -hT                                       # 文件系统使用概览
+du -sh /var/log/* | sort -rh | head -20      # 按目录统计空间
+find / -xdev -type f -size +500M -ls         # 查找大文件
+```
+
+告警阈值：80% warning，90% critical。
+
+### inode 耗尽排查
+
+```bash
+df -i                                        # inode 使用情况
+for d in /*; do echo "$(find "$d" -xdev 2>/dev/null | wc -l) $d"; done | sort -rn | head -10
+```
+
+常见原因：大量小文件（邮件队列、session 文件、缓存目录）。
+
+### 文件系统修复
+
+```bash
+umount /dev/sdb1                             # 必须先卸载
+fsck.ext4 -y /dev/sdb1                      # ext4
+xfs_repair /dev/sdb1                         # XFS（必须用专用工具）
+```
+
+XFS 不能用通用 `fsck`，操作前建议做快照备份。
+
+### 只读恢复
+
+```bash
+dmesg | grep -i "error\|readonly"            # 确认原因
+mount -o remount,rw /                        # 尝试重新挂载
+```
+
+若失败需在维护模式下 fsck。

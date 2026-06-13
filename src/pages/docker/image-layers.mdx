@@ -3,3 +3,108 @@ layout: ../../layouts/BaseLayout.astro
 title: "Docker 镜像与分层机制"
 ---
 
+## Union Filesystem 联合文件系统
+
+Docker 镜像的核心是 **Union Filesystem（联合文件系统）**，它将多个目录（称为层）叠加为一个统一的视图。目前最常用的实现是 **overlay2**。
+
+关键特性：只读层与可写层分离（镜像层不可变，容器顶部附加薄可写层）、透明叠加（用户看到合并后的文件树）、共享底层（多容器复用相同层，节省磁盘空间）。
+
+## Image Layers 镜像分层
+
+每一条 Dockerfile 指令（`RUN`、`COPY`、`ADD`）都会生成一个新的镜像层。层与层之间是增量关系：
+
+```dockerfile
+FROM ubuntu:22.04          # Layer 0 - 基础镜像
+RUN apt-get update         # Layer 1 - 包索引更新
+RUN apt-get install -y curl # Layer 2 - 安装 curl
+COPY app.py /app/           # Layer 3 - 复制应用代码
+```
+
+每一层只记录相对于上一层的文件变更（增、删、改）。未变更的层在不同镜像之间可以**复用**，这就是 Docker 镜像拉取时常见的 `Already exists` 提示。
+
+## Copy-on-Write 写时复制
+
+当容器需要修改一个来自只读层的文件时，Docker 使用 **Copy-on-Write（COW）** 策略：
+
+1. 从只读层复制该文件到顶部的可写层。
+2. 在可写层中执行修改。
+3. 后续读取该文件时，可写层中的版本覆盖只读层版本。
+
+COW 保证了镜像层的不可变性，但也意味着频繁写入大文件会导致性能下降和容器层膨胀。
+
+## Layer Caching 层缓存策略
+
+Docker 构建镜像时会逐层检查缓存。如果某一层的指令和上下文未变化，直接复用缓存层，跳过构建。
+
+**缓存失效规则：**
+
+- 指令内容变化 → 该层及后续所有层失效。
+- `COPY` / `ADD` 的源文件内容变化 → 该层失效。
+- 基础镜像更新 → 从 `FROM` 开始全部失效。
+
+**最佳实践 — 将变化频率低的指令放在前面：**
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./   # 依赖定义变化少
+RUN npm ci                                # 缓存命中率高
+COPY . .                                  # 源码变化频繁，放最后
+```
+
+## Multi-Stage Builds 多阶段构建
+
+多阶段构建通过在同一个 Dockerfile 中使用多个 `FROM`，将构建环境和运行环境分离：
+
+```dockerfile
+# ---- 构建阶段 ----
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app/server
+
+# ---- 运行阶段 ----
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /app/server /server
+ENTRYPOINT ["/server"]
+```
+
+**SRE 价值：** 最终镜像只包含二进制文件和最小运行时，体积可从数百 MB 缩减至十几 MB，显著减少攻击面。
+
+## Image Size Optimization 镜像体积优化
+
+| 策略 | 示例 |
+|------|------|
+| 选用精简基础镜像 | `alpine`、`distroless`、`slim` 变体 |
+| 合并 RUN 指令 | `RUN apt-get update && apt-get install -y pkg && rm -rf /var/lib/apt/lists/*` |
+| 清理构建缓存 | 在同一 `RUN` 层中删除临时文件 |
+| 使用 `.dockerignore` | 排除 `.git`、`node_modules`、测试文件等 |
+| 多阶段构建 | 构建产物复制到空白镜像 |
+
+## 常用排查命令
+
+```bash
+# 查看镜像各层大小，定位体积异常膨胀的层
+docker history myapp:latest --no-trunc --format "table {{.Size}}\t{{.CreatedBy}}"
+
+# 查看镜像元数据（层 SHA、环境变量、入口点）
+docker inspect myapp:latest --format '{{json .RootFS.Layers}}' | jq
+```
+
+## SRE 实践要点
+
+### 镜像漏洞扫描
+
+每一层都可能引入有漏洞的依赖。CI 流水线中应集成扫描工具（`trivy`、`grype`），在构建完成后阻断高危漏洞镜像进入仓库。
+
+### Layer Deduplication 层去重
+
+在集群规模下，相同的镜像层在各节点只存储一份。合理利用层缓存可以：
+
+- 加速节点拉取镜像的速度。
+- 减少 Registry 的存储开销和网络带宽。
+- 降低 `docker pull` 导致的部署延迟。
+
+将通用依赖（OS 包、运行时、公共库）放在镜像构建的早期阶段，是实现层复用的关键设计。

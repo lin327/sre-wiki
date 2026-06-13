@@ -1,5 +1,212 @@
 ---
 layout: ../../layouts/BaseLayout.astro
 title: "Service Mesh"
+description: "理解 Service Mesh 架构原理、Sidecar Proxy 模式、Istio 与 Linkerd 对比，以及 mTLS、流量管理和可观测性在 SRE 实践中的应用。"
 ---
 
+# Service Mesh
+
+Service Mesh 是处理服务间通信的基础设施层。它将网络功能（负载均衡、加密、认证、可观测性）从应用代码中剥离，下沉到独立的代理层。在微服务架构中，当服务数量增长到数十甚至数百个时，Service Mesh 能够统一管理流量策略，而无需修改业务代码。
+
+## Sidecar Proxy 模式
+
+Service Mesh 的核心架构是 Sidecar Proxy：每个应用 Pod 注入一个额外的代理容器，拦截所有出入流量。
+
+```text
+┌─────────────────────────┐
+│         Pod              │
+│  ┌──────┐  ┌──────────┐ │
+│  │ App  │──│  Sidecar  │ │──▶ 其他 Pod 的 Sidecar
+│  │Container│ │ Proxy    │ │
+│  └──────┘  └──────────┘ │
+└─────────────────────────┘
+```
+
+Sidecar Proxy 负责的职责：
+
+- 服务发现与负载均衡
+- mTLS 加密与身份认证
+- 流量路由（金丝雀发布、A/B 测试）
+- 请求重试与熔断
+- 指标采集与分布式追踪上下文注入
+
+```bash
+# 查看 Pod 是否已注入 Sidecar
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].name}'
+
+# 查看 Sidecar 资源占用
+kubectl top pod <pod-name> --containers
+```
+
+## Istio vs Linkerd
+
+两者是 Kubernetes 生态中最主流的 Service Mesh 方案：
+
+| 维度 | Istio | Linkerd |
+|------|-------|---------|
+| **数据面** | Envoy（C++） | linkerd2-proxy（Rust） |
+| **控制面** | istiod（Pilot + Citadel + Galley 合并） | destination / identity / proxy-injector |
+| **资源占用** | Sidecar 约 60-100MB 内存 | Sidecar 约 10-25MB 内存 |
+| **功能丰富度** | 极高（VirtualService, DestinationRule, PeerAuthentication 等 CRD） | 中等，聚焦核心功能 |
+| **学习曲线** | 陡峭，CRD 配置复杂 | 平缓，开箱即用 |
+| **mTLS** | 支持 permissive / strict 模式 | 默认开启，自动轮换证书 |
+| **多集群** | 原生支持，通过 East-West Gateway | 支持，通过 gateway 或 flat network |
+| **适用规模** | 大型复杂拓扑，需要精细流量控制 | 中小规模，追求简洁和低开销 |
+
+```bash
+# Istio 常用命令
+istioctl analyze -n <namespace>
+istioctl proxy-status
+istioctl proxy-config routes <pod-name> -n <namespace>
+
+# Linkerd 常用命令
+linkerd check
+linkerd stat deploy -n <namespace>
+linkerd viz top deploy/<service-name> -n <namespace>
+```
+
+## mTLS：服务间双向认证
+
+mTLS（Mutual TLS）确保服务间通信的双向身份验证和加密。Service Mesh 自动处理证书签发、分发和轮换，应用无需感知。
+
+```text
+Client Pod                     Server Pod
+┌──────────┐                  ┌──────────┐
+│  App  ──▶│── mTLS ─────────▶│──▶  App  │
+│  Sidecar │  (加密 + 身份)    │  Sidecar │
+└──────────┘                  └──────────┘
+```
+
+Istio mTLS 配置示例：
+
+```yaml
+# 强制命名空间级别的 strict mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: production
+spec:
+  mtls:
+    mode: STRICT
+```
+
+```bash
+# 验证 mTLS 是否生效
+istioctl x describe pod <pod-name> -n <namespace>
+
+# Linkerd 验证 mTLS
+linkerd viz edges deploy -n <namespace>
+```
+
+<div class="admonition admonition--warning">
+  <p class="admonition-title">注意</p>
+  <p>从 non-mTLS 模式切换到 STRICT 模式前，必须确保所有服务都已注入 Sidecar。否则未注入的服务将无法与已注入的服务通信。建议先用 PERMISSIVE 模式观察，确认全部迁移后再切换到 STRICT。</p>
+</div>
+
+## 流量管理
+
+Service Mesh 提供了强大的流量控制能力，无需应用代码配合即可实现复杂的发布策略。
+
+### 金丝雀发布（Canary Deployment）
+
+```yaml
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: my-service
+spec:
+  hosts:
+  - my-service
+  http:
+  - route:
+    - destination:
+        host: my-service
+        subset: stable
+      weight: 90
+    - destination:
+        host: my-service
+        subset: canary
+      weight: 10
+```
+
+### 超时与重试
+
+```yaml
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: my-service
+spec:
+  hosts:
+  - my-service
+  http:
+  - timeout: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: connect-failure,refused-stream,unavailable
+    route:
+    - destination:
+        host: my-service
+```
+
+### 熔断（Circuit Breaking）
+
+```yaml
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: my-service
+spec:
+  host: my-service
+  trafficPolicy:
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+```
+
+## 可观测性
+
+Service Mesh 自动生成 RED 指标（Rate, Errors, Duration），无需修改应用代码。
+
+### 分布式追踪
+
+Sidecar Proxy 自动注入 trace context header（如 `x-b3-traceid`、`traceparent`），将分散在各服务的请求串联成完整的调用链。
+
+```bash
+# Istio 查看追踪数据（需部署 Jaeger 或 Zipkin）
+kubectl port-forward svc/tracing -n istio-system 16686:80
+
+# Linkerd 查看追踪（需安装 viz 扩展）
+linkerd viz deploy -n <namespace>
+```
+
+关键追踪指标：
+
+- **P50 / P99 延迟** — 识别慢服务
+- **错误率** — 按服务和 HTTP 状态码聚合
+- **调用拓扑** — 自动发现服务间依赖关系
+
+### SRE 告警指标
+
+```promql
+# P99 延迟超过 500ms
+histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket[5m])) by (le, destination_service)) > 500
+
+# 5xx 错误率超过 1%
+sum(rate(istio_requests_total{response_code=~"5.*"}[5m])) by (destination_service)
+/ sum(rate(istio_requests_total[5m])) by (destination_service) > 0.01
+```
+
+## SRE 实践清单
+
+- Sidecar 内存开销是固定的基础设施成本，规划集群容量时需将其纳入计算
+- 从 PERMISSIVE 模式开始部署 mTLS，逐步迁移到 STRICT，避免一刀切导致服务中断
+- 为 Sidecar 配置合理的资源 requests 和 limits，避免 OOMKilled 或资源争抢
+- 使用 Distributed Tracing 而非仅依赖日志排查跨服务延迟问题
+- 金丝雀发布结合 Prometheus 指标自动回滚，而非仅靠人工观察
+- 定期检查控制面组件（istiod / linkerd-destination）的健康状态和证书过期时间
+- Service Mesh 引入的额外网络跳转（hop）会增加约 1-3ms P99 延迟，性能敏感路径需评估是否有必要透传

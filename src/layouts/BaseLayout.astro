@@ -948,18 +948,42 @@ function isPageActive(href: string): boolean {
         });
       });
 
-      // === Sidebar group collapse/expand ===
-      document.querySelectorAll(".sidebar__group").forEach((group) => {
+      // === Sidebar group collapse/expand with localStorage ===
+      const SIDEBAR_STATE_KEY = "atlas-sidebar-groups";
+
+      function loadSidebarState() {
+        try {
+          return JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) || "{}");
+        } catch { return {}; }
+      }
+
+      function saveSidebarState(state) {
+        try {
+          localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(state));
+        } catch {}
+      }
+
+      const sidebarState = loadSidebarState();
+
+      document.querySelectorAll(".sidebar__group").forEach((group, index) => {
         const btn = group.querySelector(".sidebar__group-header");
         const list = group.querySelector(".sidebar__list");
         const chevron = group.querySelector(".sidebar__chevron");
         const hasActive = group.querySelector(".sidebar__link--active");
+        const groupLabel = group.querySelector(".sidebar__group-label")?.textContent?.trim() || String(index);
 
-        // Default: all collapsed except the group with active page
-        if (hasActive) {
+        // Restore saved state, or expand if has active link, or collapse
+        const savedOpen = sidebarState[groupLabel];
+        const shouldOpen = savedOpen !== undefined ? savedOpen : !!hasActive;
+
+        if (shouldOpen) {
           list?.classList.remove("sidebar__list--collapsed");
           chevron?.classList.remove("sidebar__chevron--collapsed");
           btn?.setAttribute("aria-expanded", "true");
+        } else {
+          list?.classList.add("sidebar__list--collapsed");
+          chevron?.classList.add("sidebar__chevron--collapsed");
+          btn?.setAttribute("aria-expanded", "false");
         }
 
         btn?.addEventListener("click", () => {
@@ -968,11 +992,14 @@ function isPageActive(href: string): boolean {
             list?.classList.add("sidebar__list--collapsed");
             chevron?.classList.add("sidebar__chevron--collapsed");
             btn.setAttribute("aria-expanded", "false");
+            sidebarState[groupLabel] = false;
           } else {
             list?.classList.remove("sidebar__list--collapsed");
             chevron?.classList.remove("sidebar__chevron--collapsed");
             btn.setAttribute("aria-expanded", "true");
+            sidebarState[groupLabel] = true;
           }
+          saveSidebarState(sidebarState);
         });
       });
 

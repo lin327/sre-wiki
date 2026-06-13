@@ -1,0 +1,65 @@
+---
+title: Prometheus 2.0 存储层革新与早期实践
+description: Prometheus 2.0 针对云原生动态环境重写了核心存储层，显著提升性能并支持热备份，但其早期 Alpha 版本存在重大限制，部署需谨慎。
+category: 监控与可观测性
+order: 0
+lastUpdated: 2024-05-20
+confidence: high
+sources:
+  - url: https://prometheus.io/blog/2017/04/10/promehteus-20-sneak-peak/
+    title: Sneak Peak of Prometheus 2.0
+tags: [Prometheus, 存储, TSDB, 性能优化, 监控, Kubernetes]
+---
+
+## 概述
+
+Prometheus 2.0 是 Prometheus 项目的一次重大版本升级，其核心变革在于引入了全新的本地存储引擎。这次升级的根本驱动力是随着 Kubernetes 等云原生技术的普及，被监控的环境变得愈发动态和复杂，这对 Prometheus 的存储性能提出了前所未有的挑战。对于 SRE 团队而言，理解这一变革至关重要，因为它直接关系到监控系统的性能、可靠性以及长期运维策略。2.0 版本的新存储层旨在解决瓶颈、提升整体性能，并为未来实现如热备份等高级功能奠定基础。
+
+## 核心概念
+
+Prometheus 2.0 最核心的变更是其全新的本地存储后端，通常被称为 **TSDB**。这并非对旧存储层的简单优化，而是一次彻底的重写。
+
+*   **新存储架构 (TSDB)**：新的存储引擎采用了更高效的数据结构和写入路径。它优化了数据的压缩和检索，旨在解决在高基数、高动态环境下（例如频繁扩缩容的 Kubernetes 集群）出现的性能瓶颈。根据官方深度解析，这种设计能显著提升写入和查询效率。
+*   **热备份支持**：新架构的设计为未来实现“热备份”功能铺平了道路。这意味着理论上可以在不中断 Prometheus 服务的情况下创建数据备份，这对需要高数据持久性的 SRE 场景极具吸引力。
+*   **破坏性变更 (Breaking Change)**：Prometheus 2.0 是一个不向后兼容的版本。其存储格式与 1.x 系列完全不同，这意味着无法直接加载旧版本的数据，需要规划清晰的升级路径和数据迁移策略。
+
+## 实践
+
+部署和测试 Prometheus 2.0 早期 Alpha 版本需要遵循特定的步骤和注意事项，以规避已知风险。
+
+1.  **环境准备**：
+    *   必须使用一个**空的数据目录**。Prometheus 2.0 无法读取或转换 1.x 版本的存储数据。
+    *   **移除所有过时的存储配置标志**。除了 `-storage.local.retention`（数据保留时间）之外，所有与 1.x 本地存储相关的命令行标志（如 `-storage.local.memory-chunks`, `-storage.local.max-chunks-to-persist` 等）都必须删除，因为新存储层有完全不同的内部参数。
+
+    **配置示例对比：**
+    *   **旧版 (1.x) 配置**：
+        ```bash
+        ./prometheus -storage.local.retention=200h -storage.local.memory-chunks=1000000 -storage.local.max-chunks-to-persist=500000 -storage.local.chunk-encoding=2 -config.file=/etc/prometheus.yaml
+        ```
+    *   **新版 (2.0 Alpha) 配置**：
+        ```bash
+        ./prometheus -storage.local.retention=200h -config.file=/etc/prometheus.yaml
+        ```
+
+2.  **功能限制认知**：
+    *   该版本处于非常早期的 Alpha 阶段，应**仅用于测试和探索**，切勿用于生产环境。应预期可能出现崩溃、数据损坏等问题。
+    *   实验性的远程存储 API 在此版本中被禁用。
+    *   暂不支持抓取暴露了时间戳的目标（如联合的 Prometheus 服务器）。
+    *   存储格式在后续 Alpha 版本中可能再次发生破坏性变更。
+
+## SRE 要点
+
+*   **与可靠性的关联**：新存储层的核心目标之一是提升在动态环境下的**性能与稳定性**，这直接关系到监控系统本身作为可靠性基础设施的可靠性。一个因存储瓶颈而变慢或不可用的 Prometheus 会严重削弱团队的故障响应能力。
+*   **可观测性基础**：TSDB 的优化意味着能够处理更大规模、更高动态性的指标数据，这为建立更完善的可观测性体系提供了坚实的数据基础。
+*   **事件响应考量**：在评估或测试 2.0 版本时，SRE 团队必须制定详尽的**回滚计划和升级验证流程**。由于其破坏性变更，错误的升级可能导致监控数据丢失或系统瘫痪。
+*   **最佳实践与反模式**：
+    *   **最佳实践**：在独立的测试环境中充分验证新版本与现有服务发现集成的兼容性；紧密关注官方关于数据迁移路径的文档发布。
+    *   **常见反模式**：直接在生产集群部署 Alpha 版本；忽视移除旧配置标志，导致启动失败；假设 1.x 的数据可以无缝迁移。
+*   **相关指标 (SLO/SLI)**：对于 Prometheus 本身的 SLO，可以关注其指标抓取延迟、查询响应时间、以及存储引擎的写入错误率等新引入的内部指标。在从 1.x 迁移到 2.0 期间，需确保这些 SLI 在新版本上满足既定的 SLO。
+
+## 相关页面
+
+*   [[prometheus]] - Prometheus 概览与核心概念。
+*   [[tsdb]] - 时序数据库 (TSDB) 技术细节。
+*   [[dynamic-environments]] - 应对动态环境（如 Kubernetes）的监控挑战。
+*   [[service-discovery]] - Prometheus 服务发现机制。

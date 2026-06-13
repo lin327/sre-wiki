@@ -1,0 +1,58 @@
+---
+title: Chaos Mesh 简介与 Hacktoberfest 参与指南
+description: 介绍开源混沌工程平台 Chaos Mesh 的核心功能、在 Kubernetes 中的实践价值，以及参与其 Hacktoberfest 活动的具体步骤与社区规范。
+category: Chaos Engineering
+order: 0
+lastUpdated: 2024-05-23
+confidence: medium
+sources:
+  - url: https://chaos-mesh.org/blog/chaos-mesh-hacktoberfest-2021/
+    title: Hacktoberfest 2021: hack with Chaos Mesh!
+tags: [chaos-engineering, kubernetes, open-source, sre, resilience-testing]
+---
+
+## 概述
+
+混沌工程（Chaos Engineering）是 SRE 实践中用于主动发现系统脆弱性、提升服务弹性的关键方法论。Chaos Mesh 是一个云原生的混沌工程平台，专注于在 Kubernetes 环境中安全地编排和执行混沌实验。它通过向 Pod、网络、文件系统乃至内核注入各类故障，帮助工程师验证系统的容错能力，是构建可观测、高可靠分布式系统的强大工具。该项目作为 CNCF 沙箱项目，充分体现了开源社区协作的价值。
+
+## 核心概念
+
+理解 Chaos Mesh 需要把握以下几个核心概念：
+
+*   **混沌工程平台**：指能够系统化、可控制地对生产或类生产环境引入故障，并观测系统反应的软件系统。Chaos Mesh 就是这样一个平台，它提供了定义、执行和管理混沌实验的全套能力。
+*   **故障注入（Fault Injection）**：这是混沌工程的核心技术手段。Chaos Mesh 支持多种故障类型，包括但不限于：
+    *   **Pod 故障**：如杀死 Pod、使 Pod 不可用、设定 Pod 的 CPU/内存压力。
+    *   **网络故障**：如网络延迟、丢包、带宽限制、DNS 错误。
+    *   **文件系统故障**：如文件 I/O 延迟、权限变更。
+    *   **内核故障**：如时钟偏移等更底层的模拟。
+*   **Kubernetes 原生**：Chaos Mesh 构建在 Kubernetes 之上，其所有资源（如 ChaosMesh CRD）都以 Kubernetes 对象的形式管理，这使其能够无缝集成到云原生工具链中，利用 K8s 的调度、生命周期管理能力。
+*   **开源与社区驱动**：如资料所示，该项目的成长高度依赖于全球开发者的贡献。其发展过程（1.5年内获得4000+ stars，140+贡献者）本身就是开源社区协作的成功范例。
+
+## 实践
+
+参与 Chaos Mesh 项目（以 Hacktoberfest 活动为例）或开始使用它，可以遵循以下路径：
+
+**1. 快速参与开源贡献：**
+   *   **注册活动**：在活动期间（如10月1日至31日）注册 Hacktoberfest。
+   *   **加入社区**：通过 CNCF Slack 的 `#project-chaos-mesh` 频道获取帮助和交流。
+   *   **获取任务**：浏览 GitHub 仓库中标有 “Hacktoberfest” 标签的 issue，这些通常是适合新人的入门任务。
+   *   **提交贡献**：遵循项目的[贡献指南](https://github.com/chaos-mesh/chaos-mesh/blob/master/CONTRIBUTING.md)创建和提交 Pull Request (PR)。重要的是，PR 需要有实质价值，避免无意义的提交。
+
+**2. 探索 Chaos Mesh 功能：**
+   *   虽然原始资料未详细展开，但典型的使用实践包括：安装 Chaos Mesh 到 Kubernetes 集群、定义 `ChaosExperiment` CR 来描述故障场景（如为指定 Deployment 注入 10 秒的网络延迟）、执行实验并结合监控系统（如 Prometheus、Grafana）观测服务的 SLI（如错误率、延迟）是否出现超出 SLO 预期的变化。
+
+## SRE 要点
+
+*   **与可靠性、可观测性、事件响应的关联**：
+    *   **可靠性**：Chaos Mesh 直接服务于提升系统可靠性。通过定期执行混沌实验，可以主动发现依赖故障、网络分区、单点失效等问题，从而在故障真正发生前进行加固。
+    *   **可观测性**：混沌实验是对可观测性体系的压力测试。一个健全的可观测性系统（Metrics, Logs, Traces）应在混沌实验期间准确、及时地反映出系统内部状态的异常变化，帮助定位问题根因。
+    *   **事件响应**：在受控环境中模拟故障，实际上是为事件响应团队提供了一次“彩排”，可以检验故障发现流程、告警配置和应对预案的有效性。
+
+*   **最佳实践与常见反模式**：
+    *   **最佳实践**：始终在非生产环境或严格控制的生产切片中开始；遵循“爆炸半径”控制原则，从小范围实验开始；确保团队在实验前知晓并有明确的回滚方案；将实验结果与已定义的 SLO 进行对比，量化可靠性风险。
+    *   **常见反模式**：在未经规划和沟通的情况下直接在生产环境注入高风险故障；只关注“注入”而忽略“观测”和“学习”的闭环；认为混沌工程是一次性活动，而非持续实践。
+
+*   **相关指标（SLI/SLO/SLA）**：
+    混沌实验是验证 SLI（服务级别指标）在故障场景下是否满足 SLO（服务级别目标）的核心手段。例如，实验可以验证：在模拟一个可用区故障后，整体服务的可用性 SLI 是否仍能保持在 99.95% 的 SLO 之上。这为制定和谈判基于事实的 SLA（服务级别协议）提供了数据支撑。
+
+要开始探索 Chaos Mesh，可以参考其官方文档进行安装和首个混沌实验的创建。[[chaos-engineering]] [[sre-principles]]

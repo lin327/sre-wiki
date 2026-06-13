@@ -1,0 +1,71 @@
+---
+title: Ingress NGINX 即将退役：迁移指南与安全影响
+description: Kubernetes 官方宣布将于2026年3月退役 Ingress NGINX，约半数云原生环境受影响，需立即迁移至 Gateway API 或其他替代方案以确保安全。
+category: Kubernetes 网络
+order: 0
+lastUpdated: 2026-01-29
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/01/29/ingress-nginx-statement/
+    title: Kubernetes Blog - Ingress NGINX: Statement from the Kubernetes Steering and Security Response Committees
+tags: [ingress-nginx, kubernetes, gateway-api, security, migration, networking]
+---
+
+## 概述
+
+本文档整理并解读了 Kubernetes 指导委员会和安全响应委员会于2026年1月29日联合发布的官方声明。该声明明确指出，作为 Kubernetes 生态系统中关键网络基础设施的 **Ingress NGINX** 项目将于 **2026年3月** 正式退役。这意味着之后将不再有任何版本发布，包括错误修复、安全补丁或任何更新。此决定影响范围极广，据估计约有一半的云原生环境依赖此工具，任何延迟处理都可能带来严重的安全风险。作为 SRE，理解这一变更的严重性并立即启动迁移规划是保障系统可靠性和安全性的首要任务。
+
+## 核心概念
+
+### Ingress NGINX 退役 (Retirement)
+指该项目进入最终生命周期阶段，完全停止所有维护活动。退役后，软件代码库将不再接受任何贡献，也不会发布任何补丁。这意味着 **任何已知或未来发现的漏洞将永远无法被修复**，持续运行退役版本的 Ingress NGINX 将使集群暴露于已知攻击之下。
+
+### Gateway API
+这是 Kubernetes 社区推出的下一代 Ingress 资源标准和 API。它旨在解决传统 Ingress 资源的局限性，提供更强大、更灵活的流量管理能力，支持更复杂的路由规则、权重分流、Header 匹配等。Gateway API 被 Kubernetes 官方推荐作为 Ingress NGINX 的主要替代方案之一。
+
+### Ingress 控制器生态
+Kubernetes 的 Ingress 资源仅定义了规则，实际执行这些规则的是 Ingress 控制器。Ingress NGINX 是其中最流行的一个，但并非唯一选择。退役声明中鼓励用户评估和迁移到其他众多的第三方 Ingress 控制器，例如基于 Envoy 的实现（如 Contour, Emissary-Ingress）或云服务商提供的原生负载均衡集成方案。
+
+## 实践
+
+### 步骤一：立即检查影响范围
+首先，必须确认您的集群是否依赖 Ingress NGINX。使用具有集群管理员权限的账号执行以下命令：
+```bash
+kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx
+```
+如果命令返回了任何 Pod，则表明您的集群正在运行 Ingress NGINX，必须采取行动。
+
+### 步骤二：制定迁移策略
+由于没有直接替代品，迁移是一个需要规划和工程投入的过程。请考虑以下路径：
+1.  **评估与 Gateway API 兼容性**：审查现有 Ingress 资源规则，了解哪些功能可以被 Gateway API 的 `HTTPRoute`、`GRPCRoute` 等资源直接或间接支持。
+2.  **评估第三方 Ingress 控制器**：根据您的具体需求（如性能、特性、云供应商集成、团队熟悉度）研究其他 Ingress 控制器。常见的选择包括 Traefik、HAProxy Ingress、Istio（其 Gateway API 支持）等。
+3.  **规划分阶段迁移**：考虑采用渐进式迁移。例如，可以先将新服务或非关键服务的流量切换到新控制器，再逐步迁移核心服务。可以利用 Service Mesh 的流量拆分能力或 DNS 权重进行渐进切换。
+4.  **测试与验证**：在非生产环境中彻底测试新控制器，确保其满足所有功能性、性能和安全性要求。
+5.  **团队培训与文档更新**：确保运维和开发团队了解新工具的使用方法和运维流程，并更新内部的运维手册。
+
+### 步骤三：执行迁移与退役
+根据制定的计划，逐步将生产流量从 Ingress NGINX 迁移至选定的替代方案。在验证所有流量都已成功切换且系统稳定运行后，方可从集群中安全移除 Ingress NGINX 控制器及其关联的自定义资源定义（CRD）。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+- **可靠性**：退役后的 Ingress NGINX 不再有维护，其任何未发现的缺陷或性能问题都将成为系统可靠性的永久隐患。迁移到积极维护的替代方案是长期可靠性的保障。
+- **可观测性**：在迁移过程中，需要建立对新控制器的全面可观测性。确保能够监控其延迟、错误率、连接数等关键指标，并与原有 Ingress NGINX 的监控数据进行对比，以验证迁移后系统的健康状况。
+- **事件响应**：如果仍使用退役版本的 Ingress NGINX 并遭遇安全事件，由于没有官方补丁，响应将极其被动和困难，可能涉及紧急的手工热修复或大规模下线服务。迁移至活跃项目能确保获得及时的安全响应支持。
+
+### 最佳实践与常见反模式
+**最佳实践：**
+- **立即行动**：不要拖延，从今天开始评估和规划。
+- **充分测试**：在切流前，在 staging 环境中进行完全回归测试。
+- **监控迁移影响**：迁移前后密切监控关键业务指标（如错误率、P99延迟），制定回滚方案。
+- **分阶段切流**：避免“大爆炸式”迁移，降低风险。
+
+**常见反模式：**
+- **认为“目前还能用”**：忽视退役带来的长期安全风险，是最大的反模式。
+- **错误假设“无影响”**：即使当前集群未显式部署 Ingress NGINX，也可能通过 Helm Chart、Operator 或云服务间接依赖，必须进行彻底检查。
+- **低估迁移复杂度**：试图寻找“一键替换”工具，而不愿投入必要的评估和测试工程资源。
+
+### 相关指标 (SLI/SLO/SLA)
+- **SLI (服务水平指标)**：迁移后，需要为新 Ingress 控制器建立 SLI，例如：`控制平面组件可用性`、`成功代理请求的比例`、`请求延迟 (P99)`。
+- **SLO (服务水平目标)**：为新控制器的 SLI 设定 SLO，例如：`控制平面可用性 > 99.95%`，`P99 延迟 < 200ms`。确保新方案的 SLO 不低于原有 Ingress NGINX 达到的水平。
+- **注意**：Ingress NGINX 的退役本身不影响已有的 SLA，但持续使用退役版本可能因安全漏洞导致违反您与用户之间的 SLA。

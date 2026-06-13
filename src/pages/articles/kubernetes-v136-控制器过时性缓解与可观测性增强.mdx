@@ -1,0 +1,62 @@
+---
+title: Kubernetes v1.36: 控制器过时性缓解与可观测性增强
+description: 介绍Kubernetes v1.36引入的控制器缓存过时性检测机制及其提供的可观测性能力，用于提升控制器可靠性。
+category: 容器编排与平台
+order: 0
+lastUpdated: 2026-04-28
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/28/kubernetes-v1-36-staleness-mitigation-for-controllers/
+    title: Kubernetes v1.36: Staleness Mitigation and Observability for Controllers
+tags: [kubernetes, controllers, staleness, observability, SRE, client-go, kube-controller-manager]
+---
+
+## 概述
+
+在 Kubernetes 生态系统中，控制器（Controller）是实现声明式 API 和自动化运维的核心组件。它们通过持续的“协调”（Reconciliation）循环，确保集群的实际状态趋近于期望状态。然而，控制器依赖于本地缓存来快速响应变化，这个缓存可能会因为各种原因（如重启、网络问题或高负载）而变得“过时”（Stale）。过时的缓存会导致控制器做出错误的决策、未能及时响应变化或延迟过高，严重威胁服务的可靠性。Kubernetes v1.36 版本引入了针对这一问题的关键缓解措施和配套的可观测性工具，这对于 SRE 实践中保障控制平面的稳定性和可观测性具有重要意义。
+
+## 核心概念
+
+**缓存过时（Staleness）**：指控制器本地缓存的数据与 Kubernetes API 服务器中的真实状态不一致。控制器在重启后需要重建缓存，或者在 API 服务器暂时不可用期间，其缓存都无法得到更新。在此期间，控制器可能基于“陈旧”的信息做出错误判断。
+
+**资源版本（Resource Version）**：这是 Kubernetes API 用于乐观并发控制的元数据字段。每个被版本化的对象都有一个唯一的资源版本号，它代表了该对象最后一次被写入 API 服务器的顺序。控制器可以将其缓存中的资源版本与从 API 服务器获取的最新版本进行比较，以判断缓存的新鲜度。
+
+**协调（Reconciliation）**：控制器的核心工作模式。控制器监听资源变化，在本地缓存中查看当前状态，与期望状态进行对比，然后执行必要的操作（如创建、更新、删除）以实现目标状态。缓存的过时性直接影响协调逻辑的正确性。
+
+**原子 FIFO 处理（Atomic FIFO）**：在 v1.36 的 client-go 中引入的新特性（通过 `AtomicFIFO` 特性门控启用）。它确保即使接收到的事件（如初始列表操作返回的对象集）乱序到达，队列也能以原子性操作进行处理，从而维持队列内部状态的一致性，这是实现更高级过时性检测的基础。
+
+## 实践
+
+v1.36 的改进主要体现在两个层面：底层的 client-go 库和顶层的 kube-controller-manager 内置控制器。
+
+**client-go 改进**：
+- 新增 `LastStoreSyncResourceVersion()` 方法（位于 `Store` 接口），允许自定义控制器检查其 Informer 缓存最近一次成功同步到的资源版本。
+- 引入了 `ConsistencyStore` 数据结构，为 Informer 作者提供了实现缓存一致性检查的工具。它提供了三个核心函数：
+  - `WroteAt()`: 当控制器向 API 服务器写入对象后调用，记录本次写入的资源版本。
+  - `EnsureReady()`: 在协调之前调用，比较缓存的最新资源版本与记录的写入版本，返回缓存是否足够新以供安全决策。
+  - `Clear()`: 当对象被删除时调用，进行清理。
+
+**kube-controller-manager 控制器改进**：
+- 以下 4 个核心控制器默认启用了基于 `ConsistencyStore` 的过时性检测功能：
+  1.  DaemonSet 控制器
+  2.  StatefulSet 控制器
+  3.  ReplicaSet 控制器
+  4.  Job 控制器
+- 工作原理：控制器在尝试协调一个对象前，会检查其缓存记录的资源版本是否至少与它最近一次写入该对象（或关联资源）时所获得的资源版本一样新。如果缓存版本落后，则跳过本次协调，等待缓存更新后再行动。
+- 可以通过设置特性门控为 `false` 来禁用特定控制器的此功能。例如，禁用 DaemonSet 控制器：`--feature-gates=StaleControllerConsistencyDaemonSet=false`。
+
+**Informer 作者使用指南**：
+使用 client-go 构建自定义控制器的开发者，可以参照 `ReplicaSet` 控制器的实现方式，利用 `ConsistencyStore` 接口来增强自身控制器的健壮性。关键在于，`EnsureReady()` 函数为协调循环提供了一个明确的、基于缓存新鮮度的前置条件检查。
+
+## SRE 要点
+
+- **与可靠性的关联**：这是直接提升控制器可靠性的机制。通过防止基于过时信息做出决策（如错误地认为 Pod 数量不足而进行扩缩容），它减少了非预期变更和误操作的风险，是保障集群状态最终一致性的关键一环。
+- **可观测性（Observability）**：v1.36 新增了两个关键的 alpha 指标（默认启用），用于监控此功能：
+  - `stale_sync_skips_total`：记录因检测到缓存过时而跳过的协调次数。每个启用了该功能的控制器都会暴露此指标。该指标的异常上升可能提示集群存在同步压力或网络问题。
+  - `store_resource_version`：由 client-go 暴露，显示每个共享 Informer 缓存的最新资源版本。通过将其与 API 服务器的资源版本进行比较，SRE 可以全局监控控制平面缓存的健康状况。
+- **最佳实践与常见反模式**：
+  - **最佳实践**：升级到 v1.36 后，重点关注新引入的 `stale_sync_skips_total` 指标，并将其纳入告警规则（例如，当跳过次数在短时间内激增时）。在构建自定义控制器时，应主动使用 `ConsistencyStore` 来实现“读取自己的写入”语义。
+  - **常见反模式**：忽视缓存过时性，完全信任本地缓存中的数据进行决策。这在重启后的控制器或网络分区期间可能导致严重的状态不一致。
+- **相关指标（SLI/SLO/SLA）**：
+  - 该功能本身主要提升了 **控制平面操作的准确性** 这一隐含的可靠性目标。
+  - 新增的指标可作为衡量 **控制器协调循环健康度** 的 SLI（服务级别指标）。例如，可以定义 SLO 为“控制器因缓存过时而跳过的协调次数在任意 5 分钟窗口内低于 N 次”。监控这些指标有助于提前发现控制平面的潜在问题，避免其演变为影响最终用户的服务中断事件。

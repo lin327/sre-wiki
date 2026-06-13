@@ -1,0 +1,117 @@
+---
+title: Kubernetes v1.36：Pod级资源原地垂直扩展 (Beta)
+description: 介绍Kubernetes v1.36中毕业至Beta的Pod级资源原地垂直扩展功能，它允许在不重启容器的情况下动态调整运行中Pod的聚合资源配额。
+category: SRE最佳实践
+order: 0
+lastUpdated: 2026-04-30
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/04/30/kubernetes-v1-36-inplace-pod-level-resources-beta/
+    title: Kubernetes v1.36: In-Place Vertical Scaling for Pod-Level Resources Graduates to Beta
+tags: [Kubernetes, 容器, 可靠性, 自动扩展, 资源管理, 云原生]
+---
+
+## 概述
+
+在 Kubernetes 中，Pod 的资源管理是确保应用可靠性和集群资源效率的关键。传统上，更改 Pod 的 CPU 或内存限制通常需要重建 Pod，导致服务中断。Kubernetes v1.36 引入的 **Pod级资源原地垂直扩展 (In-Place Pod-Level Resources Vertical Scaling)** 功能（现已毕业至 Beta）显著改变了这一局面。该功能允许在不重启 Pod 内容器的情况下，动态调整整个 Pod 的聚合资源配额（`.spec.resources`），为 SRE 实践带来了更高的灵活性和更低的变更风险。
+
+对于运行复杂、多容器应用（例如包含 sidecar 容器的应用）的 SRE 团队而言，这是一个重要的能力提升。它使得在流量高峰时快速扩容共享资源池成为可能，同时保持服务持续可用，是提升系统弹性和运维效率的有力工具。
+
+## 核心概念
+
+要理解此功能，需要掌握几个关键概念：
+
+- **Pod 级资源 (Pod-Level Resources)**：允许为 Pod 定义一个整体的 CPU 和内存资源池（在 `spec.resources` 下），Pod 内的容器可以共享此池，而不必为每个容器单独设定硬限制。这简化了资源管理，尤其适用于 sidecar 模式。
+- **原地调整 (In-Place Resize)**：指在不重新调度 Pod 或重启所有容器的情况下，应用资源规格的变更。其核心是通过容器运行时接口 (CRI) 动态更新容器的 cgroup 限制。
+- **ResizePolicy**：定义在单个容器级别，用于告知 Kubelet 在资源变更时应采取的策略：
+    - `NotRequired`：允许非破坏性更新，Kubelet 将尝试动态调整 cgroup 限制，无需重启容器。
+    - `RestartContainer`：强制破坏性更新，容器必须重启才能应用新的资源边界。
+- **可行性检查与状态条件**：Kubelet 在执行调整前会进行节点容量检查。如果调整被接受但尚未完全应用到 cgroup，Kubelet 会通过 Pod 的条件 (`conditions`) 状态，如 `PodResizePending` (待处理) 和 `PodResizeInProgress` (进行中)，来提供可观测性。
+
+## 实践
+
+以下是如何在 Kubernetes v1.36 中启用和使用此特性的具体步骤和示例。
+
+### 1. 启用特性门控
+
+在 v1.36 中，此功能默认启用。其特性门控为 `InPlacePodLevelResourcesVerticalScaling`。要使用它，集群还必须启用更早毕业的相关特性门控：`PodLevelResources` 和 `InPlacePodVerticalScaling`。
+
+### 2. 定义具有 Pod 级资源的 Pod
+
+创建一个在 Pod 级别定义资源配额的 YAML 文件。注意容器本身没有定义 `resources.limits`，它们将自动继承 Pod 级别的资源池。
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: shared-pool-app
+spec:
+  resources: # Pod 级资源池
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  containers:
+  - name: main-app
+    image: my-app:v1
+    # 关键：为容器定义 resizePolicy，允许 CPU 的原地调整
+    resizePolicy:
+    - resourceName: cpu
+      restartPolicy: NotRequired
+  - name: sidecar
+    image: logger:v1
+    resizePolicy:
+    - resourceName: cpu
+      restartPolicy: NotRequired
+```
+
+### 3. 执行原地调整
+
+当需要扩容时（例如流量高峰），使用 `kubectl patch` 命令并指定 `--subresource resize` 来修改 Pod 级资源。无需重启 Pod 或其容器。
+
+```bash
+# 将 Pod 的 CPU 限额从 2 核增加到 4 核
+kubectl patch pod shared-pool-app --subresource resize --patch \
+  '{"spec":{"resources":{"limits":{"cpu":"4"}}}}'
+```
+
+### 4. 观测调整状态
+
+调整操作发出后，可以通过查看 Pod 状态来跟踪进度。
+
+```bash
+kubectl get pod shared-pool-app -o yaml
+```
+
+关注 `.status` 部分：
+- `.status.allocatedResources`：Kubelet 已接受的新资源分配。
+- `.status.resources`：当前已完全应用到 cgroup 的实际资源限制。
+- `.status.conditions`：查找 `PodResizeInProgress` 条件，其值为 `True` 表示调整正在进行中。
+
+## SRE 要点
+
+### 与可靠性和可观测性的关联
+- **提升变更可靠性**：允许资源调整而无需重启，极大降低了因变更导致的应用中断风险，符合 SRE 的最小化故障域原则。
+- **增强可观测性**：通过 `PodResizePending` 和 `PodResizeInProgress` 条件，SRE 可以清晰地看到资源变更的生命周期和最终状态，便于集成监控和告警系统。建议将这些条件纳入监控面板和 SLO/SLI 的健康检查中。
+- **优化事件响应**：在性能事件（如突发流量导致 CPU 压力）中，SRE 可以快速执行原地扩容，为应用提供喘息空间，而无需经历完整的 Pod 重启和启动流程，从而缩短 MTTR (平均恢复时间)。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    1.  **为支持原地调整的容器设置 `resizePolicy: NotRequired`**：这是实现无中断调整的前提。
+    2.  **结合垂直 Pod 自动扩缩器 (VPA)**：虽然 VPA 的 Pod 级原地调整集成仍在开发中，但这是未来的方向。目前可以将此手动操作作为自动化的补充。
+    3.  **监控节点资源利用率**：原地调整依赖于节点的空闲容量。SRE 应确保集群有适当的超配比和自动扩缩策略，以保证调整请求能通过可行性检查。
+- **常见反模式**：
+    1.  **过度依赖原地调整**：它并非万能。对于内存的减少或需要完全重置资源配额的场景，仍可能需要重启 Pod。
+    2.  **忽略节点容量**：盲目调整 Pod 资源而不考虑节点承载能力，会导致调整请求被延迟 (`Deferred`) 或永久不可行 (`Infeasible`)，并可能引发节点资源竞争。
+
+### 相关指标 (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**：`资源原地调整成功率` = (成功应用的原地调整次数) / (发起的原地调整请求总数)。
+- **SLO (Service Level Objective)**：可设定为“在支持的命名空间内，95% 的资源原地调整请求在 30 秒内成功应用”。
+- **监控重点**：跟踪 `kube_pod_status_conditions` 指标中 `PodResizePending` 和 `PodResizeInProgress` 为 `True` 的持续时间，这是衡量调整效率和问题的关键。
+
+## 约束与要求
+- **必须使用 cgroup v2**。
+- **容器运行时需支持 `UpdateContainerResources` CRI 调用** (例如 containerd v2.0+ 或 CRI-O)。
+- **需要启用多个特性门控**：`PodLevelResources`, `InPlacePodVerticalScaling`, `InPlacePodLevelResourcesVerticalScaling`。
+- **目前仅支持 Linux 节点**。
+
+如需反馈或获取更多信息，可以加入 Kubernetes 的 `#sig-node` Slack 频道或查看相关的 SIG Node 讨论区。

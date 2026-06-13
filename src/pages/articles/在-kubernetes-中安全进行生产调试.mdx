@@ -1,0 +1,192 @@
+---
+title: 在 Kubernetes 中安全进行生产调试
+description: 介绍在 Kubernetes 生产环境中实施安全调试的最佳实践，包括最小权限 RBAC、短期凭证和即时访问网关。
+category: 安全与合规
+order: 0
+lastUpdated: 2025-10-04
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/03/18/securing-production-debugging-in-kubernetes/
+    title: Kubernetes 官方博客 - Securing Production Debugging in Kubernetes
+tags: [kubernetes, rbac, security, debugging, access-control, credentials]
+---
+
+## 概述
+
+在 Kubernetes 生产环境中进行问题排查和调试时，运维与 SRE 团队经常面临速度与安全性的两难选择。为了快速解决问题，团队倾向于使用广泛权限（如 `cluster-admin` ClusterRole）、共享跳板机或长期有效的 SSH 密钥。这种做法虽然便捷，但会引入严重的安全风险：难以追溯操作者行为，并且临时授权很容易演变为永久性的权限蔓延。本文将阐述一套兼顾效率与安全的生产调试方法论，其核心是利用 Kubernetes 的原生能力（如 RBAC）构建一个安全、可审计且权限即时生效的工作流。
+
+## 核心概念
+
+### RBAC（基于角色的访问控制）
+
+RBAC 是 Kubernetes 内置的授权机制，用于定义“谁（Subject）可以对什么资源（Resource）执行什么操作（Verb）”。它是实现最小权限原则的基石。在调试场景中，应为特定团队或角色（如 oncall 团队）定义细粒度的 `Role` 和 `RoleBinding`，仅授予诊断问题所需的最小权限集，例如读取 Pod 日志、执行临时命令或进行端口转发。
+
+### 短期身份绑定凭证
+
+为了减少凭证泄露和滥用的风险，应避免使用长期有效的令牌或证书。短期身份绑定凭证是指有效时间短（如 30 分钟）、并明确绑定了用户身份和具体权限范围的认证材料。这些凭证可以是短生命周期的 OIDC 令牌，或是通过 `CertificateSigningRequest` API 签发的客户端证书。它们通常由私钥（最好是硬件安全模块保护的）生成，确保不可伪造。
+
+### 即时访问网关（Just-in-time Access Gateway）
+
+这是一种架构模式，通常以集群内按需创建的 Pod 形式部署，作为安全调试的“前门”。工程师使用短期凭证连接到此网关（例如通过 SSH），网关随后根据预定义的策略和 Kubernetes RBAC 规则，代表用户向集群 API 发起经过授权的请求。这种模式实现了会话的自动过期、细粒度的命令控制（如限制 `exec` 可执行的命令）以及完整的审计追踪。
+
+## 实践
+
+### 1. 在 Kubernetes RBAC 之上构建访问代理
+
+直接使用 RBAC 进行授权是基础，但通过在前面增加一个访问代理（Access Broker）可以提供更丰富的控制策略。代理可以决定一个请求是自动批准还是需要人工审批、管理用户组成员资格，甚至在 `exec` 会话中执行额外的命令白名单策略。
+
+**最佳实践是仅将 RBAC 角色绑定到组或 ServiceAccount，而非个人用户**。由身份提供商或访问代理负责将用户添加到相应的组中。以下是一个定义给 oncall 团队的命名空间级调试角色的示例：
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: oncall-debug
+  namespace: <namespace>
+rules:
+  # 发现集群中运行的资源
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list", "watch"]
+  # 读取日志
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # 交互式调试操作
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create"]
+  # 理解部署和控制器状态
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  # 可选：允许使用 kubectl debug 进行临时容器调试
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oncall-debug
+  namespace: <namespace>
+subjects:
+  - kind: Group
+    name: oncall-<team-name> # 关联到身份提供商的用户组
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: oncall-debug
+  apiGroup: rbac.authorization.k8s.io
+```
+
+### 2. 使用短期、身份绑定的凭证
+
+凭证的有效期应尽可能短，并明确标识使用者身份和权限范围。
+
+**选项 A：短期 OIDC 令牌**
+确保你的 `kubeconfig` 使用凭证辅助程序自动刷新令牌，而不是手动粘贴长期令牌。
+
+```yaml
+users:
+- name: oncall
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: cred-helper
+      args: ["--cluster=prod", "--ttl=30m"]
+```
+
+**选项 B：短期客户端证书 (X.509)**
+利用 Kubernetes 的 `CertificateSigningRequest` API 签发短生命周期的证书。
+
+```bash
+# 在本地生成私钥和证书签名请求
+openssl genpkey -algorithm Ed25519 -out oncall.key
+openssl req -new -key oncall.key -out oncall.csr -subj "/CN=user/O=oncall-payments"
+```
+
+创建一个 30 分钟后过期的 `CertificateSigningRequest` 对象：
+
+```yaml
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: oncall-<user>-20260218
+spec:
+  request: <base64-encoded oncall.csr>
+  signerName: kubernetes.io/kube-apiserver-client
+  expirationSeconds: 1800 # 30 分钟
+  usages:
+  - client auth
+```
+
+批准并签署此 CSR 后，提取签发的证书，与之前的私钥一起用于认证。
+
+### 3. 使用即时访问网关执行调试命令
+
+持有短期凭证的工程师可以连接到即时访问网关。网关负责建立会话、应用策略并执行 Kubernetes 操作。会话应被严格限定作用域，例如仅限于特定命名空间，甚至特定的 Pod。
+
+以下是为即时调试创建更细粒度的命名空间作用域角色的示例：
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jit-debug
+  namespace: <namespace>
+  annotations:
+    kubernetes.io/description: >
+      用于执行需要临时权限的半特权调试，访问权限按需即时授予。
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-debug
+  namespace: <namespace>
+subjects:
+  - kind: Group
+    name: jit:oncall:<namespace> # 此组映射自短期凭证（证书/OIDC）
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: jit-debug
+  apiGroup: rbac.authorization.k8s.io
+```
+
+对于确实需要集群范围读取权限（如查看节点信息）的场景，可以谨慎创建 `ClusterRole` 和 `ClusterRoleBinding`，但应严格限制使用范围。更细粒度的控制（如“仅限于特定 Pod”）应由网关在会话期间强制执行。
+
+在高安全要求的环境中，可以在工程师和 Kubernetes API 之间增加一个额外的会话中介层，进一步分离会话建立与特权操作，并为每一层生成独立的审计日志。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+安全的调试实践是实现可靠性的基础。它确保在紧急事件响应中，工程师能快速获得所需权限，同时又不会因为过度权限引入新的风险或违反合规要求。清晰的审计日志（来自网关和 Kubernetes Audit Logs）是事后复盘和根因分析的关键数据源，直接增强了系统的可观测性。
+
+### 最佳实践与常见反模式
+**最佳实践：**
+*   **最小权限**：遵循最小权限原则，为调试任务定义专用的、权限受限的 `Role`。
+*   **短期凭证**：使用生命周期短暂（分钟至小时级）且身份绑定的凭证。
+*   **组级授权**：将 RBAC 角色绑定到组，通过身份提供商管理用户成员资格。
+*   **集中审计**：确保所有调试会话通过网关进行，并记录完整的操作日志。
+*   **策略即代码**：将访问代理的策略（如允许的命令列表）纳入版本控制，并通过代码评审流程进行变更。
+
+**常见反模式：**
+*   使用 `cluster-admin` 进行日常调试。
+*   分享或长期使用个人 kubeconfig 文件和 SSH 密钥。
+*   为个人用户直接创建 RBAC `RoleBinding`。
+*   允许调试会话在预定时间后仍然保持活动状态。
+
+### 相关指标 (SLI/SLO/SLA)
+*   **SLI**：安全调试工作流的平均请求到访问就绪时间（从申请到获得凭证并连接成功）；未授权访问尝试次数。
+*   **SLO**：95% 的合法调试权限请求应在 5 分钟内完成自动审批和发放；生产集群每周未授权访问尝试次数为 0。
+*   **SLA**：内部服务等级协议，确保 oncall 工程师在 15 分钟内能获得针对特定命名空间的调试访问权限，以支持 MTTR（平均修复时间）目标。
+
+相关页面：[[rbac-authorization]], [[oidc-authentication]], [[kubernetes-security-best-practices]]

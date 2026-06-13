@@ -1,0 +1,233 @@
+---
+title: 使用 kind 本地实验 Gateway API 指南
+description: 详解如何在本地使用 kind 集群与 cloud-provider-kind 快速搭建并实验 Kubernetes Gateway API，用于学习和测试。
+category: Kubernetes与云原生
+order: 15
+lastUpdated: 2025-07-08
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/01/28/experimenting-gateway-api-with-kind/
+    title: Experimenting with Gateway API using kind - Kubernetes Blog
+tags: [gateway-api, kind, 本地开发, 流量管理, 网络]
+---
+
+## 概述
+
+Gateway API 是 Kubernetes 中用于管理南北向和东西向流量的新一代标准，它为服务网格和入口控制提供了更强大、更灵活的编程接口。对于 SRE 和平台工程师而言，在投入生产前于本地环境中理解和实验其核心概念至关重要。本文档提供了一份使用 `kind` (Kubernetes in Docker) 和 `cloud-provider-kind` 在本地搭建临时实验环境的完整指南，该环境专门用于学习 Gateway API 的工作原理，而不涉及生产环境的复杂性和高可用性要求。
+
+## 核心概念
+
+在深入实践之前，需要理解 Gateway API 中的几个关键资源：
+
+- **GatewayClass**：定义了一类网关的实现。类似于 `StorageClass` 之于 `PersistentVolumeClaim`，`GatewayClass` 由基础设施管理员或云提供商提供，用于指示使用哪个控制器来处理 `Gateway` 资源。在本文实验中，`cloud-provider-kind` 会自动创建一个名为 `cloud-provider-kind` 的 `GatewayClass`。
+- **Gateway**：在 `GatewayClass` 的基础上，定义了一个用于承载流量的网络端点实例。它指定了监听器（Listeners），例如协议、端口和主机名模式，用于接收外部流量。
+- **HTTPRoute**：定义了如何将匹配特定规则（如主机名、路径）的流量路由到后端服务（Service）。它是附着（attach）在某个 `Gateway` 上的。
+
+理解这三者的分离关注点设计（`GatewayClass` 由基础架构团队管理，`Gateway` 由集群运维团队管理，`HTTPRoute` 由应用开发团队管理）是掌握 Gateway API 价值的关键。
+
+## 实践
+
+本节将引导你从零开始搭建一个完整的本地 Gateway API 实验环境。
+
+### 1. 环境准备
+
+确保你的本地机器已安装以下工具：
+- **Docker**：用于运行 kind 和 cloud-provider-kind 容器。
+- **kubectl**：与 Kubernetes 集群交互的命令行工具。
+- **kind**：在 Docker 中运行 Kubernetes 的工具。
+- **curl**：用于测试路由是否生效。
+
+### 2. 创建 kind 集群
+
+使用以下命令创建一个单节点的本地 Kubernetes 集群：
+```shell
+kind create cluster
+```
+
+### 3. 部署 cloud-provider-kind
+
+`cloud-provider-kind` 是一个模拟云环境的控制器，它提供了两个核心功能：为 `LoadBalancer` 类型的 Service 分配地址，以及实现 Gateway API 控制器。它还会自动在集群中安装 Gateway API 所需的 CRD。
+
+在同一台宿主机上，通过 Docker 运行 `cloud-provider-kind`：
+```shell
+VERSION="$(basename $(curl -s -L -o /dev/null -w '%{url_effective}' https://github.com/kubernetes-sigs/cloud-provider-kind/releases/latest))"
+docker run -d --name cloud-provider-kind --rm --network host -v /var/run/docker.sock:/var/run/docker.sock registry.k8s.io/cloud-provider-kind/cloud-controller-manager:${VERSION}
+```
+> **注意**：在某些操作系统上，你可能需要管理员权限才能访问 Docker socket。
+
+验证容器是否正在运行：
+```shell
+docker ps --filter name=cloud-provider-kind
+```
+
+### 4. 创建 Gateway
+
+接下来，创建一个 `Gateway` 资源。以下清单会：
+- 创建一个名为 `gateway-infra` 的命名空间。
+- 定义一个监听 80 端口、接受匹配 `*.exampledomain.example` 模式主机名的 HTTP 流量的 `Gateway`。
+- 允许**所有命名空间**中的 `HTTPRoute` 附着到此 `Gateway`（在生产环境中，应使用 `Same` 或 `Selector` 来限制附着范围）。
+
+```yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway-infra
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gateway
+  namespace: gateway-infra
+spec:
+  gatewayClassName: cloud-provider-kind
+  listeners:
+  - name: default
+    hostname: "*.exampledomain.example"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+```
+
+应用配置并验证状态：
+```shell
+kubectl get gateway -n gateway-infra gateway
+```
+期望看到 `PROGRAMMED` 状态为 `True`，并且 `ADDRESS` 字段被分配了一个 IP 地址（例如 `172.18.0.3`）。
+
+### 5. 部署示例应用
+
+部署一个简单的回声应用（echo application），它会返回收到的请求详情，方便测试路由。
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: echo
+  name: echo
+  namespace: demo
+spec:
+  ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app.kubernetes.io/name: echo
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: echo
+  name: echo
+  namespace: demo
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: echo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: echo
+    spec:
+      containers:
+      - env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: registry.k8s.io/gateway-api/echo-basic:v20251204-v1.4.1
+        name: echo-basic
+```
+
+### 6. 创建 HTTPRoute
+
+现在，创建一个 `HTTPRoute`，将发往 `some.exampledomain.example` 的流量路由到上面部署的 echo 应用。
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo
+  namespace: demo
+spec:
+  parentRefs:
+  - name: gateway
+    namespace: gateway-infra
+  hostnames: ["some.exampledomain.example"]
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: echo
+      port: 3000
+```
+
+### 7. 测试路由
+
+最后，使用 `curl` 发送测试请求。`--resolve` 参数将模拟域名解析到 Gateway 的 IP 地址。
+
+```shell
+GW_ADDR=$(kubectl get gateway -n gateway-infra gateway -o jsonpath='{.status.addresses[0].value}')
+curl --resolve some.exampledomain.example:80:${GW_ADDR} http://some.exampledomain.example
+```
+如果配置正确，你将收到一个 JSON 响应，其中包含了请求路径、主机名、方法以及处理该请求的 Pod 名称。
+
+### 8. 故障排除
+
+如果测试失败，按照以下步骤排查：
+- **检查 Gateway 状态**：`kubectl get gateway -n gateway-infra gateway -o yaml`，查看 `status.conditions` 中是否包含 `Accepted: True` 和 `Programmed: True`。
+- **检查 HTTPRoute 状态**：`kubectl get httproute -n demo echo -o yaml`，关注 `status.parents` 中的条件。常见错误原因包括 `BackendNotFound`（后端服务不存在或名称错误）或 `Accepted: False`（命名空间权限或主机名不匹配）。
+- **查看控制器日志**：检查 `cloud-provider-kind` 容器的日志以获取详细错误信息：
+  ```shell
+  docker logs -f cloud-provider-kind
+  ```
+
+### 9. 清理资源
+
+实验结束后，请按顺序清理所有资源，以释放本地资源：
+```shell
+# 删除 Kubernetes 资源（命名空间及其内部所有资源）
+kubectl delete namespace gateway-infra
+kubectl delete namespace demo
+
+# 停止并移除 cloud-provider-kind 容器
+docker stop cloud-provider-kind
+
+# 删除 kind 集群
+kind delete cluster
+```
+
+## SRE 要点
+
+- **与可靠性的关联**：Gateway API 通过将流量管理（网关）与应用路由（HTTPRoute）分离，允许不同的团队独立操作，这有助于提升整体系统的可靠性和变更效率。SRE 可以专注于保障 `Gateway` 基础设施的高可用性和性能，而开发团队则可以独立管理自己的路由规则。
+- **最佳实践与反模式**：
+    - **最佳实践**：在生产环境中，始终选择一个经过充分测试的、有良好社区支持的 [Gateway API 实现](https://gateway-api.sigs.k8s.io/implementations/)。配置 `allowedRoutes` 时，优先使用 `Same` 或 `Selector` 而不是 `All`，以实施最小权限原则，增强安全性。
+    - **反模式**：将本指南中的实验性环境（`cloud-provider-kind`）用于生产流量。该组件缺乏生产必需的性能、高可用性、安全性和可扩展性特性。
+- **相关指标（SLI/SLO）**：虽然本文档未直接定义 SLO，但使用 Gateway API 时，应为其 SLI 设定相应的 SLO，例如：
+    - **可用性**：Gateway 监听器成功处理请求的百分比。
+    - **延迟**：Gateway 转发请求到后端服务的 P99 延迟。
+    - **错误率**：由 Gateway 生成的 5xx 错误响应的比例。
+
+---
+**下一步**：
+- 了解生产级方案：查阅 [Gateway API 实现列表](https://gateway-api.sigs.k8s.io/implementations/)。
+- 深入 Gateway API 功能：探索 [TLS 终止](https://gateway-api.sigs.k8s.io/guides/tls/)、[流量分割](https://gateway-api.sigs.k8s.io/guides/traffic-mirroring/) 等高级用法。

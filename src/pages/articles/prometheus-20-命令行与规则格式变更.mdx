@@ -1,0 +1,66 @@
+---
+title: Prometheus 2.0 命令行与规则格式变更
+description: Prometheus 2.0 Alpha 引入了命令行标志格式统一及基于 YAML 的分组规则系统，解决了并发执行和全局间隔的限制。
+category: 监控与警报
+order: 0
+lastUpdated: 2024-05-13
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2017/06/21/prometheus-20-alpha3-new-rule-format/
+    title: Prometheus 2.0 Alpha.3 with New Rule Format
+tags: [Prometheus, 告警, 规则, 迁移, 命令行]
+---
+
+## 概述
+Prometheus 2.0 引入了多项旨在提升系统可维护性、可靠性和功能性的重大变更。对于 Site Reliability Engineering (SRE) 团队而言，理解这些变更至关重要，因为它们直接影响监控配置的部署方式、告警规则的管理效率以及监控系统自身的可靠性。本文将重点解析 2.0 Alpha.3 版本中引入的两个核心破坏性变更：命令行标志格式的统一与全新的、基于 YAML 的记录规则和告警规则格式。
+
+## 核心概念
+### 命令行标志标准化
+Prometheus 2.0 放弃了其历史性的单破折号（`-`）标志前缀，转而采用更为通用和标准的双破折号（`--`）前缀。这一变更旨在减少与其他命令行工具的习惯性冲突，并提升配置的一致性。同时，多个已被废弃或整合的配置项（如 `web.telemetry-path`， 所有 `storage.remote.*` 和 `storage.local.*` 标志）被彻底移除，简化了最终的命令行接口。
+
+### 基于分组与 YAML 的规则系统
+这是 Prometheus 规则引擎的一次架构性重写，旨在解决长期存在的设计问题。
+- **问题**：在 1.x 版本中，所有规则以**相同的时间间隔**评估，且**全部并发执行**。这导致了两个主要缺陷：1) 无法为计算量不同的规则设置灵活的执行频率；2) 并发执行可能导致规则间的依赖顺序错乱（如一个告警依赖于另一个记录规则的最新结果，但两者同时计算，告警可能使用过时数据），以及评估时间点的资源尖峰。
+- **解决方案**：引入**规则分组（Groups）** 概念。每个规则组可以配置独立的 `interval`，且组内的规则**按顺序串行执行**。这确保了具有依赖关系的规则（例如，一个记录规则和一个基于该结果的告警规则）可以被合理地组织在同一个组内，并按声明顺序可靠地评估。规则定义格式也从 Prometheus 专有 DSL 迁移到了通用的 YAML 格式，使其更易于版本控制、生成和与基础设施即代码（IaC）实践集成。
+
+## 实践
+### 迁移命令行标志
+部署 Prometheus 2.0 时，必须更新所有启动脚本和配置管理工具（如 Ansible、Systemd 单元文件）。主要变更是为所有标志添加双破折号。例如，将 `-config.file` 更新为 `--config.file`，`-web.enable-lifecycle` 更新为 `--web.enable-lifecycle`。同时，应移除上述已废弃的标志。
+
+### 迁移规则文件
+Prometheus 提供了 `promtool` 命令行工具来自动化旧格式规则的迁移。
+1.  **执行迁移命令**：使用以下命令将旧的规则文件转换为新的 YAML 格式。
+    ```bash
+    promtool update rules <old-rule-file-1> <old-rule-file-2> ...
+    ```
+2.  **处理输出**：转换后的文件会以 `.yml` 为后缀自动保存（例如 `rules.yml` 变为 `rules.yml.yml`），你需要重命名并整合它们。
+3.  **更新 Prometheus 配置**：在主配置文件 `prometheus.yml` 的 `rule_files` 部分，指向新的 `.yml` 规则文件。
+4.  **验证与分组**：审查生成的 YAML 文件，合理设置 `groups` 的 `name` 和 `interval`，并将逻辑上相关的规则放入同一组。
+
+**新旧规则格式对比示例**：
+```yaml
+# 新格式 (prometheus.yml)
+rule_files:
+  - 'new-rules.yml'
+
+# 新规则文件 (new-rules.yml) 内容
+groups:
+- name: network_rules
+  interval: 30s
+  rules:
+  - record: instance:network_bytes:rate1m
+    expr: sum by(instance) (rate(network_bytes_total[1m]))
+  - alert: HighNetworkTraffic
+    expr: instance:network_bytes:rate1m > 10e6
+    for: 5m
+    labels:
+      severity: critical
+```
+在此示例中，记录规则 `instance:network_bytes:rate1m` 和告警规则 `HighNetworkTraffic` 位于同一组，确保了告警评估时使用的是同一评估周期内最新的记录规则结果。
+
+## SRE 要点
+- **与可靠性的关联**：新的规则分组机制直接提升了监控系统自身的可靠性。通过确保依赖规则顺序执行，避免了因数据竞争导致的误告警或漏告警。分组隔离也限制了单个评估周期内的负载尖峰范围，使 Prometheus 实例的表现更稳定、可预测。
+- **最佳实践与常见反模式**：
+    - **最佳实践**：按业务功能或监控域（如 `database_rules`, `http_rules`）对规则进行逻辑分组。为计算密集型的规则组设置更长的 `interval`。始终将相互依赖的规则放在同一组内并保持正确的声明顺序。
+    - **常见反模式**：将所有规则放入一个巨大的组中，失去了分组隔离和灵活配置的优势。忽略规则间的依赖顺序，导致告警评估结果不准确。
+- **相关指标（SLI/SLO/SLA）**：规则引擎的变更不直接定义 SLI，但它是实现 SLI 计算（通过记录规则）和 SLO 遵守度告警（通过告警规则）的关键执行层。可靠、可预测的规则执行是确保基于这些指标的告警策略（SLO-based alerting）得以正确实施的基础。一个配置不当或评估不可靠的规则引擎会直接破坏监控承诺的可靠性。

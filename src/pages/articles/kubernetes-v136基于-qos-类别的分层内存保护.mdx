@@ -1,0 +1,92 @@
+---
+title: Kubernetes v1.36：基于 QoS 类别的分层内存保护
+description: 介绍 Kubernetes v1.36 中内存 QoS 功能的更新，特别是通过 cgroup v2 实现基于 QoS 类别的分层内存保护机制。
+category: 容器与编排
+order: 0
+lastUpdated: 2026-04-29
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/29/kubernetes-v1-36-memory-qos-tiered-protection/
+    title: Kubernetes v1.36: Tiered Memory Protection with Memory QoS
+tags: [kubernetes, cgroup-v2, memory-qos, sre, reliability]
+---
+
+## 概述
+
+在 Kubernetes 环境中，内存管理是保障工作负载可靠性与性能的核心环节。不当的内存处理可能导致关键服务因 OOM 被杀，或系统资源利用率低下。Kubernetes 的内存 QoS（Memory QoS）功能通过利用 Linux cgroup v2 内存控制器，允许内核更精细地管理容器内存。自 v1.22 引入并在 v1.27 更新后，该功能在 v1.36 版本中迎来了重要演进：引入了按需内存预留、基于 QoS 级别的分层保护、新的可观测性指标以及内核版本检查。这些更新旨在提供更灵活、更可靠的内存管理策略，是 SRE 实践中优化资源效率与系统稳定性的关键工具。
+
+## 核心概念
+
+内存 QoS 功能的核心在于将 Kubernetes 的资源请求与限制映射到 Linux 内核的 cgroup v2 内存控制接口，从而指导内核如何处理特定容器的内存回收。
+
+在 v1.36 中，`memoryReservationPolicy` 配置项将**内存节流（throttling）** 与**内存预留（reservation）** 分离，提供了更精细的控制：
+
+*   **内存节流（`memory.high`）**：当容器内存使用超过此阈值时，内核会主动回收或限制该 cgroup 的内存分配，防止单个容器耗尽系统内存。这通过 `memoryThrottlingFactor`（默认 0.9）与容器的内存请求（requests）计算得出。
+*   **内存预留**：通过 `memoryReservationPolicy` 配置项启用，旨在为容器提供不同程度的内存保护。
+    *   **`None`（默认）**：不设置 `memory.min` 或 `memory.low`。仅启用 `memory.high` 节流。
+    *   **`TieredReservation`**：启用基于 Pod QoS 类别的分层保护：
+        *   **Guaranteed Pod**：获得**硬保护**（`memory.min`）。内核在任何情况下都不会回收此部分内存。若无法满足，将触发其他进程的 OOM。
+        *   **Burstable Pod**：获得**软保护**（`memory.low`）。在正常压力下，内核会避免回收此内存；但在极端系统压力下，为避免全局 OOM，内核可以回收它。
+        *   **BestEffort Pod**：不获得任何预留保护（`memory.min` 和 `memory.low` 均不设置）。其内存完全可回收。
+
+这种分层设计相较于 v1.27 的行为是一个重要改进。早期版本为所有有内存请求的容器设置 `memory.min`（硬预留），在请求总量接近节点物理内存时，会因锁住过多内存而增加系统 OOM 风险。v1.36 的分层策略显著降低了 Burstable 工作负载的硬预留内存总量，为系统和内核保留了更多活动空间，提高了整体稳定性。
+
+## 实践
+
+### 启用与配置
+
+要启用带有分层保护的 Memory QoS，需要修改节点的 Kubelet 配置：
+
+1.  **前提条件**：
+    *   使用 Kubernetes v1.36 或更高版本。
+    *   节点操作系统支持并启用了 cgroup v2（可通过 `mount | grep cgroup2` 检查）。
+    *   推荐使用 Linux 5.9 或更高版本内核，以避免早期版本存在的内核活锁问题。
+    *   使用支持 cgroup v2 的容器运行时（如 containerd 1.6+， CRI-O 1.22+）。
+
+2.  **KubeletConfiguration 配置示例**：
+
+    ```yaml
+    apiVersion: kubelet.config.k8s.io/v1beta1
+    kind: KubeletConfiguration
+    featureGates:
+      MemoryQoS: true
+    # 启用分层内存保护
+    memoryReservationPolicy: TieredReservation # 可选值: None (默认), TieredReservation
+    # 可选：调整内存节流因子
+    memoryThrottlingFactor: 0.9 # 默认值为 0.9
+    ```
+
+    如果你只想启用内存节流而不启用分层保护，可以保持 `memoryReservationPolicy` 为默认的 `None` 或直接省略该项。
+
+3.  **验证配置**：配置生效后，可以通过检查容器的 cgroup 文件系统来验证预留设置是否正确。
+    *   对于一个请求了 512 MiB 内存的 Guaranteed Pod，其 `memory.min` 值应为 `536870912` 字节。
+    *   对于一个相同请求的 Burstable Pod，其 `memory.low` 值应为 `536870912` 字节。
+
+### 可观测性
+
+Kubelet 在 `/metrics` 端点暴露了两个 alpha 阶段的指标，用于监控内存预留状态：
+
+| 指标                                       | 描述                                   |
+| ------------------------------------------ | -------------------------------------- |
+| `kubelet_memory_qos_node_memory_min_bytes` | 集群中所有 Guaranteed Pod 设置的 `memory.min` 总量 |
+| `kubelet_memory_qos_node_memory_low_bytes` | 集群中所有 Burstable Pod 设置的 `memory.low` 总量 |
+
+这些指标对于容量规划至关重要。如果 `kubelet_memory_qos_node_memory_min_bytes` 持续接近节点的物理内存总量，则表明硬预留内存紧张，可能需要调整工作负载的 QoS 类别或节点配置。
+
+## SRE 要点
+
+*   **与可靠性的关联**：分层内存保护是提升节点可靠性的主动防御机制。它确保关键（Guaranteed）服务获得稳定的内存基础，同时允许系统在压力下对非关键（Burstable/BestEffort）内存进行智能回收，从而大幅降低因单个工作负载内存突增导致全节点 OOM，进而影响多个服务的风险。这是实现内存资源 **Error Budget** 管理的底层技术支撑。
+
+*   **最佳实践与常见反模式**：
+    *   **渐进式启用**：建议先仅启用 `memory.high` 节流（`memoryReservationPolicy: None`），观察工作负载的内存使用行为和系统影响，再逐步启用 `TieredReservation`。这可以降低配置变更带来的风险。
+    *   **容量规划**：SRE 团队应定期监控 `kubelet_memory_qos_node_memory_min_bytes` 指标，确保其总和不会耗尽节点可用内存，为内核、系统守护进程和突发需求预留足够空间。
+    *   **反模式**：避免将所有工作负载都标记为 `Guaranteed` QoS。虽然这能获得最强保护，但会锁定大量硬预留内存，可能导致节点资源利用率低下，并增加其他进程触发 OOM 的可能性。应根据工作负载特性合理规划 QoS 类别。
+    *   **内核版本**：在生产集群中应计划将内核升级至 5.9 以上，以规避已知的内核活锁问题，获得更稳定的行为。
+
+*   **相关指标（SLI/SLO/SLA）**：
+    *   **SLI（服务等级指标）**：可以结合使用节点级 OOM Kill 频率、Pod 重启率（特别是由于内存原因）作为衡量内存管理有效性的指标。
+    *   **SLO（服务等级目标）**：可以为关键工作负载设置“内存请求满足率”或“无内存相关 OOM”的 SLO。内存 QoS 的分层保护是实现此类 SLO 的重要技术手段。
+
+*   **可观测性与事件响应**：新增的 `kubelet_memory_qos_node_memory_min_bytes` 和 `kubelet_memory_qos_node_memory_low_bytes` 指标，应被集成到集群监控系统（如 Prometheus）的看板和告警规则中。当硬预留内存（`memory.min`）过高时告警，可以帮助 SRE 提前进行负载均衡或容量扩张，预防 OOM 事件的发生。在排查内存相关事件时，检查 Pod 的 QoS 类别和对应的 cgroup 设置是标准步骤之一。
+
+相关页面：[[pod-qos]], [[cgroup-v2-support]], [[resource-management]]

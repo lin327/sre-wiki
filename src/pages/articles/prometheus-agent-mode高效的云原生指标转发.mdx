@@ -1,0 +1,73 @@
+---
+title: Prometheus Agent Mode：高效的云原生指标转发
+description: 介绍Prometheus Agent Mode的核心功能、适用场景及最佳实践，旨在优化指标的远程写入与转发。
+category: 可观测性与监控
+order: 0
+lastUpdated: 2024-10-27
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2021/11/16/agent/
+    title: Introducing Prometheus Agent Mode, an Efficient and Cloud-Native Way for Metric Forwarding
+tags: [prometheus, agent-mode, remote-write, metrics, cloud-native, sre]
+---
+
+## 概述
+
+在云原生监控生态中，Prometheus 凭借其强大的 Pull 模型和稳定的生态系统成为了事实标准。然而，随着架构的演进，特别是在边缘计算、动态集群和集中式监控等场景下，将指标数据高效、可靠地转发至远程存储成为了一个新的挑战。Prometheus Agent Mode 正是为解决这一挑战而生。它是一个内置于 Prometheus 二进制文件中的专用运行模式，通过禁用本地查询、告警和存储功能，极大地优化了指标抓取（Scrape）和远程写入（Remote Write）的效率，是构建可扩展、资源敏感型监控架构的关键组件。
+
+## 核心概念
+
+要理解 Agent Mode，首先需要厘清几个关键概念及其演进。
+
+- **Pull 模型与全局视图（Global View）**：Prometheus 的经典部署是将服务器与被监控应用同域部署，通过定期拉取（Pull）应用暴露的 `/metrics` 端点来获取指标。这种模型赋予了 Prometheus 对目标健康状况的精准感知能力。然而，当需要跨多个集群或网络边界聚合数据以获得“全局视图”时，直接跨网络抓取（Scraping across network boundaries）或从应用直接推送（Push）指标到中央存储都存在严重缺陷，前者会引入不可靠性，后者则使监控管道自身的故障模式变得不透明。
+- **Remote Write 协议**：为了在保持 Pull 模型优势的同时实现数据聚合，Prometheus 引入了 Remote Write 协议。它允许 Prometheus 服务器将本地收集的所有或部分指标数据流式传输（转发）到支持该协议的远程存储系统（如 Thanos Receive、Cortex、各云厂商的托管服务等）。这是一种将数据“推送”到中央位置的机制，但关键在于推送动作由本地的、能理解目标状态的 Prometheus 发起，从而将监控的未知因素降至最低。
+- **Prometheus Agent Mode**：这是 Prometheus 从 `v2.32.0` 版本开始引入的一种实验性运行模式（通过 `--enable-feature=agent` 标志启用）。Agent Mode 对 Prometheus 进行了“瘦身”：
+    - **禁用功能**：禁用了 PromQL 查询、告警规则评估和本地长期存储。
+    - **优化目标**：专注于两件事——基于服务发现的指标抓取和高效的 Remote Write 转发。
+    - **核心组件**：使用一个为流式写入而定制的 WAL（预写日志），写入成功后立即丢弃数据，仅在远程端点不可达时保留有限的本地缓冲。它本质上是将 Prometheus 的抓取和转发功能微服务化。
+
+## 实践
+
+### 使用方式
+
+启用 Agent Mode 非常简单。在启动 Prometheus 时，添加 `--enable-feature=agent` 标志即可：
+
+```bash
+prometheus --config.file=agent.yml --enable-feature=agent
+```
+
+其配置文件与标准 Prometheus 非常相似，保留了 `scrape_configs` 和 `remote_write` 部分，但可以省略 `rule_files` 等与查询告警相关的配置。一个典型的配置示例如下：
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+    - role: pod
+    relabel_configs:
+    # ... 标准的服务发现与重打标配置
+
+remote_write:
+  - url: "http://thanos-receive:19291/api/v1/receive"
+    # 或任何兼容 Remote Write API 的端点
+```
+
+### 架构与部署
+
+在架构上，Agent Mode 的 Prometheus 实例作为纯粹的“抓取-转发”代理运行。每个 Agent 只需要一个可写的持久卷（用于暂存未发送的数据），并且由于其无状态特性（除了暂存数据），非常容易进行水平扩展。部署时，通常会为高可用部署一对 Agent（HA pair），共同抓取相同的目标集，并将数据发送到中央存储，由存储层负责去重。这使得抓取层可以根据指标目标的数量动态扩缩容，而无需担心数据状态迁移。
+
+## SRE 要点
+
+- **与可靠性的关联**：Agent Mode 通过其高效的设计提升了监控管道本身的可靠性。其资源消耗更低，使得在资源受限的环境（如边缘集群）中也能稳定运行。同时，它解决了跨网络监控的核心可靠性问题，确保即使部分网络中断，本地抓取和本地数据缓冲仍能工作，最大程度保障数据可见性。
+- **最佳实践**：
+    - **明确职责分离**：使用 Agent Mode 实现抓取和转发职责，而将查询、告警、长期存储和聚合交给后端的集中式存储（如 Thanos, Cortex）或另一个 Prometheus Server。这符合“关注点分离”的 SRE 原则。
+    - **水平扩展**：在动态或大规模环境中，利用 Agent Mode 的无状态特性实现抓取能力的水平自动扩展。Prometheus Kubernetes Operator 社区已在此方面进行探索。
+    - **配置一致性**：由于 Agent Mode 复用了标准的 Prometheus 抓取配置，可以实现从服务器模式到 Agent 模式的平滑迁移，减少了配置维护成本。
+- **常见反模式**：
+    - **混淆角色**：避免在 Agent Mode 实例上尝试运行 PromQL 查询或告警规则，这并非其设计目的，也不会正常工作。
+    - **过度依赖本地缓冲**：虽然 Agent Mode 有本地数据缓冲（默认约2小时），但这不应被视为长期存储。其核心是尽力交付，中央存储才是数据可靠性的基石。
+- **相关指标（SLI/SLO）**：
+    - **SLI**：监控 Agent Mode 自身的关键指标包括：`prometheus_agent_wal_storage_bytes`（WAL大小）、`prometheus_agent_samples_total`（成功写入的样本数）、`prometheus_agent_sent_samples_total`（尝试发送的样本数）以及与远程端点的网络延迟和错误率。
+    - **SLO**：可以为目标 Remote Write 端点的数据交付延迟和丢包率定义 SLO。例如，“99%的指标样本应在产生后30秒内被中央存储接收”。Agent Mode 的效率和可靠性直接服务于此 SLO 的达成。

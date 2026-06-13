@@ -1,0 +1,137 @@
+---
+title: Kubernetes v1.36: 工作负载感知调度（Workload-Aware Scheduling）进阶
+description: Kubernetes v1.36通过分离Workload与PodGroup API、引入PodGroup调度周期、拓扑感知调度和工作负载感知抢占，显著提升了AI/ML和批处理工作负载的调度能力。
+category: workload-scheduling
+order: 0
+lastUpdated: 2026-05-13
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/13/kubernetes-v1-36-advancing-workload-aware-scheduling/
+    title: Kubernetes v1.36: Advancing Workload-Aware Scheduling
+tags: [kubernetes, scheduling, ai-ml, batch, gang-scheduling, podgroup, topology, preemption, dra]
+---
+
+## 概述
+Kubernetes v1.36 版本为工作负载感知调度（Workload-Aware Scheduling）带来了重大架构演进。此次更新的核心是将API关注点清晰分离：`Workload` API 作为静态模板，而全新的 `PodGroup` API 负责管理运行时状态。这一分离为更高级的调度功能奠定了基础，包括原子化的 `PodGroup` 调度周期、拓扑感知调度、工作负载感知抢占，以及对动态资源分配（DRA）的增强支持。对于SRE而言，这些改进直接关系到AI/ML训练、大数据批处理等复杂工作负载的可靠性、资源利用率与性能表现。
+
+## 核心概念
+
+### Workload 与 PodGroup API 的分离
+在 v1.35 中，Pod 组及其运行时状态被嵌入在 `Workload` 资源内。v1.36 将这两者解耦：
+- **Workload API** (`scheduling.k8s.io/v1alpha2`): 作为静态模板对象。它由工作负载控制器（如 Job Controller）创建，定义了 Pod 组的调度策略模板（如 `gang` 策略的 `minCount`）。
+- **PodGroup API** (`scheduling.k8s.io/v1alpha2`): 作为独立的运行时对象。控制器基于 Workload 模板生成 PodGroup 实例，其中包含实际的调度策略、对模板的引用，以及反映整个组调度状态的 `status`。
+
+这种分离提升了性能与可扩展性，因为 PodGroup API 允许按副本分片进行状态更新。调度器可以直接读取 PodGroup 获取所有所需信息，无需监听或解析 Workload 对象。
+
+### PodGroup 调度周期（PodGroup Scheduling Cycle）
+`kube-scheduler` 引入了专门的 **PodGroup 调度周期**，用于原子化处理整个 Pod 组，避免了逐个 Pod 调度可能导致的死锁和部分部署问题。其流程如下：
+1.  **快照**：获取集群状态的单一快照，确保评估一致性。
+2.  **尝试放置**：使用 PodGroup 调度算法（基于标准的过滤和打分阶段），尝试为组内所有 Pod 找到有效的节点放置方案。
+3.  **原子化决策**：
+    - **成功**：找到满足约束的放置方案后，所有可调度的 Pod 成功进入绑定阶段。未调度的 Pod 会返回队列等待资源。
+    - **失败**：整个组被视为不可调度。没有任何 Pod 会被绑定，全部返回队列并在退避期后重试。
+
+这个周期是 **Gang 调度** 的基础。对于要求“全有或全无”（all-or-nothing）放置策略的工作负载，`gang` 策略利用此周期来防止资源浪费和潜在的死锁。
+
+### 拓扑感知调度（Topology-Aware Scheduling）
+此功能允许你在 PodGroup 上直接定义拓扑约束，确保组内的 Pod 被放置在特定的物理或逻辑域（如机架）内，以减少网络延迟。调度器采用一个基于放置的算法，包含三个阶段：
+1.  **生成候选放置方案**：基于约束生成理论上可行的节点子集。
+2.  **验证放置方案**：确认整个 PodGroup 是否真的适合该方案。
+3.  **打分选择最佳方案**：对所有可行的方案进行打分，选出最佳放置位置。
+
+### 工作负载感知抢占（Workload-Aware Preemption）
+当 PodGroup 无法调度时，此机制会尝试为整个组腾出空间。与默认的逐 Pod 抢占不同，它将整个 PodGroup 视为一个抢占单元，在整个集群范围内搜索并可能同时从多个节点抢占 Pod，为整个组的调度创造条件。它引入了两个 PodGroup 级别的新字段：
+- `priority`：覆盖组内单个 Pod 的优先级。
+- `disruptionMode`：决定组内 Pod 是可以被独立抢占，还是必须以“全有或全无”的方式被一起抢占。
+
+### 动态资源分配（DRA）对工作负载的支持
+PodGroup 现在可以作为 `ResourceClaimTemplate` 的可复制单元。对于引用了 `ResourceClaimTemplate` 的 PodGroup，Kubernetes 仅为整个 PodGroup 生成一个 `ResourceClaim`，无论组内有多少 Pod。当 Pod 的资源声明与此匹配时，Pod 会共享该 PodGroup 级别的 ResourceClaim。此外，`ResourceClaim` 的 `status.reservedFor` 字段现在可以引用 PodGroup，从而突破原来单个 ResourceClaim 最多预留 256 个 Pod 的限制，支持大规模设备共享。
+
+## 实践
+
+### 配置示例
+1.  **定义 Workload 模板**：
+    ```yaml
+    apiVersion: scheduling.k8s.io/v1alpha2
+    kind: Workload
+    metadata:
+      name: training-job-workload
+    spec:
+      podGroupTemplates:
+      - name: workers
+        schedulingPolicy:
+          gang:
+            minCount: 4 # 组内至少需要4个Pod同时运行
+    ```
+
+2.  **控制器生成运行时 PodGroup**：
+    ```yaml
+    apiVersion: scheduling.k8s.io/v1alpha2
+    kind: PodGroup
+    metadata:
+      name: training-job-workers-pg
+    spec:
+      podGroupTemplateRef:
+        workload:
+          workloadName: training-job-workload
+          podGroupTemplateName: workers
+      schedulingPolicy:
+        gang:
+          minCount: 4
+    status:
+      conditions:
+      - type: PodGroupScheduled
+        status: "True"
+    ```
+
+3.  **Pod 关联到 PodGroup**：
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: worker-0
+    spec:
+      schedulingGroup:
+        podGroupName: training-job-workers-pg
+      ...
+    ```
+
+### 启用特性（Alpha）
+要在 v1.36 中试用这些功能，需在 `kube-apiserver` 和 `kube-scheduler` 上启用相关特性门控：
+- **前提**：`GenericWorkload` (API 支持)
+- **Gang 调度**：`GangScheduling` (仅 scheduler)
+- **拓扑感知调度**：`TopologyAwareWorkloadScheduling` (仅 scheduler)
+- **工作负载感知抢占**：`WorkloadAwarePreemption` (仅 scheduler，需先启用 `GangScheduling`)
+- **DRA 工作负载支持**：`DRAWorkloadResourceClaims` (api-server, controller-manager, scheduler, kubelet)
+- **Job 控制器集成**：`WorkloadWithJob` (api-server, controller-manager)
+
+### 与 Job 控制器集成
+对于满足以下条件的 Job，控制器会自动创建 Workload 和 PodGroup，并为每个 Pod 设置 `schedulingGroup`：
+- `spec.parallelism > 1`
+- `spec.completionMode: Indexed`
+- `spec.completions` 等于 `spec.parallelism`
+- Pod 模板中未预先设置 `schedulingGroup`
+
+这使得分布式 AI 训练等紧耦合并行应用能够开箱即用 Gang 调度。
+
+## SRE 要点
+
+### 与可靠性的关联
+- **避免部分失败**：Gang 调度确保分布式任务要么全部启动，要么全部不启动，避免了因部分 Pod 启动而导致的任务死锁或资源闲置，从而提高了工作负载的完成可靠性。
+- **提升资源利用率与性能**：拓扑感知调度通过将紧密通信的 Pod 放置在相近的物理位置，降低了网络延迟，对于 AI/ML 训练等高性能计算任务至关重要，可直接提升作业性能（SLI）。
+- **可控的资源抢占**：工作负载感知抢占为高优先级任务提供了更可预测的资源保障机制，允许 SRE 通过定义清晰的优先级和中断模式来管理集群资源争用。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    - 对于 AI 训练、渲染等分布式批处理作业，优先评估和使用 Gang 调度。
+    - 结合拓扑约束（如机架、可用区）定义 PodGroup，以优化高性能工作负载的通信效率。
+    - 利用 Job 控制器的原生集成简化操作，避免手动管理 Workload/PodGroup 对象。
+- **反模式**：
+    - **在不适合的场景使用 Gang 调度**：对于无强依赖、可弹性伸缩的微服务，强行使用 Gang 调度会导致调度困难和资源浪费。
+    - **忽视拓扑约束的影响**：在跨越故障域（如可用区）部署有状态或高通信负载时，不定义拓扑约束可能导致严重的性能抖动和稳定性问题。
+
+### 相关指标（SLI/SLO）
+- **调度成功率 (Scheduling Success Rate)**：对于使用 Gang 调度的 PodGroup，应监控其首次调度尝试的成功率。失败的调度循环（整个组无法调度）可能指示资源碎片化或策略配置问题。
+- **调度延迟 (Scheduling Latency)**：监控从 Pod 进入调度队列到被绑定的时间。PodGroup 调度周期可能比单个 Pod 调度更耗时，需要建立相应的 SLO。
+- **资源争用指标**：工作负载感知抢占行为可以通过监控 `kube_scheduler_preemption_total` 等指标来观测，帮助评估集群中的优先级冲突情况。
+- **工作负载完成时间**：对于端到端的 Job，其完成时间是衡量 Gang 调度和拓扑感知调度对最终用户影响的关键 SLO。

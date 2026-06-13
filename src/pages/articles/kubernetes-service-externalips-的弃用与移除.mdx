@@ -1,0 +1,144 @@
+---
+title: Kubernetes Service ExternalIPs 的弃用与移除
+description: Kubernetes v1.36正式弃用Service API的`.spec.externalIPs`字段，因其存在严重安全问题，并规划在后续版本中移除。
+category: 服务与网络
+order: 0
+lastUpdated: 2025-08-08
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/14/kubernetes-v1-36-deprecation-and-removal-of-service-externalips/
+    title: Kubernetes v1.36: Deprecation and removal of Service ExternalIPs
+tags: [kubernetes, service, security, deprecation, networking, migration]
+---
+
+## 概述
+
+在 Kubernetes 的演进过程中，对存在安全隐患或设计缺陷的 API 进行清理是保障集群长期安全性和可靠性的关键举措。`Service` 资源的 `.spec.externalIPs` 字段就是一个典型例子。该功能最初旨在为非云环境提供类似云负载均衡器的能力，但其设计假设集群内所有用户完全可信，从而引入了严重的安全漏洞。随着更优替代方案的出现，Kubernetes 社区决定正式弃用此字段，并为未来彻底移除做好准备。理解这一变更的背景、影响及迁移路径，对于维护 Kubernetes 集群的 **安全态势** 和 **服务可靠性** 至关重要。
+
+## 核心概念
+
+### `.spec.externalIPs` 字段与安全风险
+
+`Service` 的 `.spec.externalIPs` 字段允许用户为 `Service` 指定一个或多个额外的 IP 地址，使该 `Service` 可以在这些地址上响应流量。然而，这一 API 将 IP 地址的分配和所有权完全交给了用户，缺乏集中的协调与验证机制。这导致了严重的安全漏洞，特别是 **CVE-2020-8554**：一个不受信任的用户可以将其他用户或核心服务使用的 IP 地址分配给自己的 `Service`，从而实施中间人攻击（Man-in-the-Middle）。在启用 RBAC 的集群中，该字段也可能绕过预期的权限控制。
+
+### “External IP” 术语辨析
+
+在 Kubernetes 生态中，“外部 IP”（External IP）是一个被多处使用的术语，容易混淆：
+*   **Service API 的 `externalIPs`**：本文讨论的对象，位于 `spec` 部分，允许用户任意指定。
+*   **Node API 的 `ExternalIP`**：位于 `status.addresses` 中的一种地址类型，用于描述节点的公共 IP。
+*   **`kubectl` 的输出列**：在显示 `LoadBalancer` 类型的 `Service` 时，列标题为 `EXTERNAL-IP`，通常指负载均衡器分配的入口 IP。
+
+本文的弃用明确指向第一种——`Service.spec.externalIPs` 字段。
+
+### 弃用状态与时间线
+
+该功能自 Kubernetes 1.21 起就已不推荐使用。在 **Kubernetes v1.36** 中，它被正式标记为弃用。弃用将分阶段推进：
+1.  **v1.36 (当前)**：使用该字段时 Kubernetes 会发出警告。
+2.  **约一年后 (v1.40 或更晚)**：`kube-proxy` 将默认停止对该字段的支持，但会提供选项允许用户重新启用以进行迁移。
+3.  **再约一年后 (v1.43 或更晚)**：支持将被完全移除，无法再启用。
+
+## 实践
+
+### 迁移现有 `externalIPs` 服务
+
+如果你的集群中有使用 `.spec.externalIPs` 的 `Service`，需要规划迁移至更安全的替代方案。以下是主要的替代路径：
+
+#### 替代方案一：手动管理的 LoadBalancer 服务（不推荐）
+
+这是一种“应急”迁移方法，本质上是将 IP 地址从 `spec.externalIPs` 移至 `status.loadBalancer.ingress`。由于 `.status` 默认受 RBAC 保护，普通用户无法直接编辑，从而增加了攻击难度。**但这并未解决根本问题**：拥有足够权限的用户仍然可以复现 CVE-2020-8554 的攻击。
+
+**操作步骤**：
+1.  创建一个指定 `loadBalancerClass` 为不存在值的 `LoadBalancer` 类型 `Service`，防止真实云控制器干预。
+2.  创建后，通过 `kubectl patch` 命令将目标 IP 写入其 `.status` 字段。
+
+```yaml
+# loadbalancer-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-example-service
+spec:
+  loadBalancerClass: non-existent-class # 防止真实负载均衡器处理
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: my-example-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+```
+```bash
+kubectl apply -f loadbalancer-service.yaml
+kubectl patch service my-example-service --subresource=status --type=merge -p '{"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.4"}]}}}'
+```
+
+#### 替代方案二：使用非云负载均衡控制器（推荐）
+
+对于非云集群，使用如 **MetalLB** 这样的第三方负载均衡控制器是推荐的方案。管理员可以预先配置一个受信任的 IP 地址池，控制器将负责从该池中分配 IP 给 `LoadBalancer` 类型的 `Service`，并确保 IP 不被冲突使用。
+
+**示例（使用 MetalLB）**：
+1.  安装并配置 MetalLB，定义 IP 地址池：
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: production
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.0.2.0/24
+  autoAssign: true
+```
+2.  创建 `Service`，MetalLB 会自动分配 IP，用户也可请求特定 IP（若在池内）：
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-example-service
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: my-example-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  loadBalancerIP: "192.0.2.4" # 可选，请求特定IP
+```
+
+#### 替代方案三：采用 Gateway API
+
+**Gateway API** 是 Kubernetes Ingress 和负载均衡的下一代 API。它将外部访问的定义（如 IP、域名）与路由规则、后端服务分离，由管理员通过 `Gateway` 资源进行管理，并通过 RBAC 进行权限控制。这种方式提供了更清晰、更安全、功能更丰富的模型。
+
+**示例架构**：
+*   管理员创建一个 `Gateway` 资源，并为其指定受管理的 IP 地址。
+*   用户创建 `HTTPRoute` 等路由资源，引用该 `Gateway`，并将流量导向自己的 `Service`。
+
+### 预防措施：禁用 `externalIPs`
+
+即使当前未使用，也建议作为安全加固措施，通过准入控制器完全禁用 `externalIPs` 字段：
+*   启用 **`DenyServiceExternalIPs`** 准入控制器，可以阻止任何包含 `.spec.externalIPs` 的 `Service` 对象被创建或更新。
+
+## SRE 要点
+
+### 与可靠性的关联
+*   **安全漏洞即可靠性风险**：CVE-2020-8554 等漏洞可能被利用来劫持流量、中断服务或窃取数据，直接破坏服务的可用性和完整性。移除此类不安全功能是提升整体系统可靠性的基础。
+*   **简化集群配置与维护**：弃用并最终移除过时、复杂的特性，可以减少控制平面和数据平面（如 `kube-proxy`）的复杂性，降低配置错误和意外故障的概率。
+*   **标准化与合规性**：使用如 MetalLB 或 Gateway API 等经过验证、具有更好安全模型的组件，有助于满足组织内部的安全合规要求，并确保集群行为符合 Kubernetes 认证标准。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    1.  **主动审计**：立即检查集群中是否存在使用 `.spec.externalIPs` 的 `Service`，制定迁移计划。
+    2.  **选择正确替代方案**：根据环境（云或非云）选择 `LoadBalancer` 配合控制器、或 Gateway API 作为替代。
+    3.  **遵循最小权限原则**：利用 RBAC 严格控制谁能创建/修改 `LoadBalancer` 类型的 `Service` 或 `Gateway` 资源。
+    4.  **启用准入控制**：在集群中启用 `DenyServiceExternalIPs` 准入控制器，即使没有计划使用该功能，也能作为防御层。
+    5.  **规划升级路径**：关注 Kubernetes 发布日志，为未来版本的强制移除做好准备。
+*   **常见反模式**：
+    1.  **忽视弃用警告**：忽略控制台输出的弃用警告，不采取任何行动，将面临未来版本升级导致服务中断的风险。
+    2.  **依赖 `externalIPs` 进行访问控制**：错误地认为仅通过 `externalIPs` 分配 IP 就能实现访问隔离，忽略其固有的安全模型缺陷。
+    3.  **在 RBAC 未正确配置时使用手动 `LoadBalancer` 状态修补**：如果普通用户拥有修改 `Service` status 的权限，这种替代方案仍然不安全。
+
+### 相关指标与监控
+虽然本变更不直接涉及传统的 SLI（如请求延迟、错误率），但 SRE 应关注以下方面：
+*   **配置漂移与合规性**：监控集群中是否存在使用已弃用字段的资源，可作为配置合规性的 **SLI**。
+*   **安全漏洞的平均修复时间 (MTTR)**：将规划和完成此类安全相关迁移的时间，纳入安全事件响应流程的 **SLO** 考核中。

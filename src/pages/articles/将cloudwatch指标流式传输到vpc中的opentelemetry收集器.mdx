@@ -1,0 +1,105 @@
+---
+title: 将CloudWatch指标流式传输到VPC中的OpenTelemetry收集器
+description: 介绍如何使用AWS Lambda作为桥梁，将Amazon CloudWatch Metric Streams指标流直接推送到部署在私有VPC内的OpenTelemetry收集器。
+category: 云可观测性
+order: 0
+lastUpdated: 2026-05-15
+confidence: medium
+sources:
+  - url: https://aws.amazon.com/blogs/architecture/streaming-cloudwatch-metrics-to-vpc-based-opentelemetry-collectors-using-lambda/
+    title: Streaming CloudWatch metrics to VPC-based OpenTelemetry collectors using Lambda
+tags: [cloudwatch, opentelemetry, lambda, metrics-streaming, vpc, push-based-monitoring]
+---
+
+## 概述
+
+随着云原生架构和微服务的普及，企业对可观测性的需求日益增长。传统的基于拉取的监控模型（如 Prometheus）在规模扩大时面临 API 节流、高成本和延迟等问题。OpenTelemetry 作为开源可观测性框架，通过标准化 API 和库帮助企业避免厂商锁定。本文介绍了一种推送式架构，利用 Amazon CloudWatch Metric Streams 与 AWS Lambda 结合，将指标实时、直接地流式传输到部署在私有 VPC 内的 OpenTelemetry 收集器，从而实现低延迟、高效率且成本优化的监控方案。该方案解决了 Firehose 无法直接将数据交付到 VPC 内网端点的限制。
+
+## 核心概念
+
+### OpenTelemetry
+OpenTelemetry 是一个开源的可观测性框架，用于统一收集追踪（Traces）、指标（Metrics）和日志（Logs）。其核心优势在于提供了厂商中立的单一 API 和库，使企业能够自由选择后端可观测性平台（如 Grafana Cloud、Amazon Managed Prometheus），避免厂商锁定。OpenTelemetry 收集器是其关键组件，它作为一个中央枢纽，负责接收、处理和转发遥测数据。
+
+### CloudWatch Metric Streams
+这是一个 AWS 原生服务，允许您以近乎实时的延迟流式传输 CloudWatch 指标，无需轮询 API。它支持以 OpenTelemetry 或 JSON 格式将指标推送到下游系统。
+
+### 推送（Push）与拉取（Pull）模型对比
+- **拉取模型**（如 Prometheus）：监控服务器主动、定期地从指标端点采集数据。这可能导致高频 API 调用、高成本、节流限制以及数据传输延迟，难以满足实时警报需求。
+- **推送模型**：数据源在事件发生时立即将数据主动推送到收集器。这提供了更接近实时的数据传输、更低的 API 开销和更好的成本效益，是实现亚分钟级延迟警报的理想选择。
+
+### Amazon Data Firehose 与 Lambda 转换
+Amazon Data Firehose 是一个完全托管的流式数据交付服务。本方案的核心创新点在于利用 Firehose 的 **数据转换** 功能，同步调用一个 AWS Lambda 函数。该 Lambda 函数作为“桥梁”，接收来自 Firehose 的指标数据（JSON 格式），并将其通过 HTTP 安全地推送到位于 VPC 内部的 OpenTelemetry 收集器端点，从而绕过了 Firehose 只能投递到公网端点的限制。
+
+## 实践
+
+### 架构组件
+本解决方案的架构由以下核心组件构成：
+
+1.  **CloudWatch Metric Streams**：源，将指定命名空间的指标以 JSON 格式流式传输。
+2.  **Amazon Data Firehose**：接收指标流，并将其缓冲后传递给 Lambda 进行处理。
+3.  **AWS Lambda 转换函数**：将 Firehose 传来的 JSON 格式指标数据转换为 OpenTelemetry 收集器可接收的 HTTP 请求，并发送到内部端点。
+4.  **网络负载均衡器**：作为 VPC 内的内部负载均衡器，将 TCP 流量分发到后端的 OpenTelemetry 收集器。
+5.  **OpenTelemetry Collector**：运行在 VPC 私有子网的 EC2 实例上，负责接收、处理（过滤、批处理、丰富）和导出（发送至最终后端）指标数据。
+6.  **Amazon S3 存储桶**：作为 Firehose 的失败数据备份存储桶，由于指标被 Lambda 直接转发，此处通常无数据且不产生费用。
+
+### 部署步骤
+您可以使用 AWS CloudFormation 或 AWS CLI 部署此架构。以下是使用 CloudFormation 的典型步骤：
+
+**先决条件：**
+- 具备所需资源创建权限的 AWS 账户。
+- 已安装并配置 AWS CLI v2 和 AWS SAM CLI。
+- 一个包含至少两个不同可用区子网的 VPC，并配置了允许相关流量的安全组。
+
+**使用 CloudFormation 部署：**
+1.  **克隆示例代码仓库**：获取包含 CloudFormation 模板和 Lambda 代码的仓库。
+2.  **打包 Lambda 工件**：运行提供的脚本和 `aws cloudformation package` 命令，将 Lambda 代码上传到 S3 并生成打包后的模板。
+    ```bash
+    ./setup_layer.sh
+    aws cloudformation package \
+        --template-file ./cloudformation-template.yaml \
+        --s3-bucket <your-s3-bucket> \
+        --output-template-file cf-packaged-file.yaml
+    ```
+3.  **创建 CloudFormation 堆栈**：通过 AWS 管理控制台或 CLI 创建堆栈，指定 VPC 子网、安全组和 OpenTelemetry 收集器端点等参数。
+    ```bash
+    aws cloudformation deploy \
+        --template-file cf-packaged-file.yaml \
+        --stack-name cw-metrics-otel-stack \
+        --parameter-overrides \
+            Subnet1=subnet-xxxx \
+            Subnet2=subnet-yyyy \
+            SecurityGroup=sg-zzzz \
+            OtelCollectorEndpoint="http://your-otel-endpoint:4318/v1/metrics" \
+        --capabilities CAPABILITY_NAMED_IAM
+    ```
+
+部署完成后，CloudWatch 指标流会自动开始向 Firehose 发送数据，经 Lambda 转换后流入 VPC 内的 OpenTelemetry 收集器。之后，您需要在 OpenTelemetry 收集器上配置处理器（Processors）和导出器（Exporters），以将数据转发到最终的可观测性后端。
+
+## SRE 要点
+
+### 与可靠性工程的关联
+该架构直接提升了监控系统的**可靠性**和**性能**：
+- **降低延迟**：推送模型实现了近乎实时的数据流，支持亚分钟级的监控指标，这对于实时警报和故障响应至关重要。
+- **提高可扩展性**：OpenTelemetry 收集器可以水平扩展以处理变化的流量，并提供至少一次的投递保证和自动重试机制，增强了数据传输的可靠性。
+- **减少节流**：相比高频轮询 API，推送模型显著减少了 API 调用，降低了因节流而导致数据丢失的风险。
+- **增强安全性**：通过将数据流和收集器置于 VPC 内部，满足了严格的数据隐私要求。
+
+### 最佳实践与反模式
+**最佳实践：**
+- **基础设施即代码（IaC）**：使用 CloudFormation 或类似工具部署整个方案，确保环境的一致性和可重复性。
+- **Lambda 与收集器配置**：精心设计 Lambda 转换函数，确保其高效、可靠地处理和转发数据。为 OpenTelemetry 收集器配置适当的处理器（如批处理、过滤）和重试策略。
+- **监控监控系统本身**：监控 CloudWatch Metric Streams、Firehose、Lambda 函数（如调用次数、错误率、延迟）和 OpenTelemetry 收集器的健康状况，确保整个数据管道的可靠性。
+- **利用托管服务**：尽可能使用 CloudWatch Metric Streams、Firehose、Lambda 等托管服务，以减少运维负担。
+
+**常见反模式：**
+- **忽略故障数据备份**：虽然本方案 Lambda 直接转发，但务必配置 Firehose 的 S3 备份桶，以捕获任何处理失败的数据，避免丢失。
+- **在 Lambda 中执行繁重处理**：Lambda 应专注于数据格式转换和轻量级转发，复杂的聚合、过滤和丰富工作应交给 OpenTelemetry 收集器的处理器完成，以避免 Lambda 超时或性能瓶颈。
+- **网络配置不当**：确保 VPC 的子网路由、安全组规则允许 Lambda（如果需要出站连接）和负载均衡器与 OpenTelemetry 收集器之间的通信。
+
+### 相关指标
+虽然文章未直接定义 SLO，但此架构为定义和衡量监控系统自身 SLO 提供了基础：
+- **监控数据延迟**：从 CloudWatch 指标产生到其在可观测性后端可用的时间（SLI）。目标 SLO 可设为“99% 的指标延迟小于 60 秒”。
+- **监控数据完整性**：成功发送到后端的指标占应发送指标的比例（SLI）。目标 SLO 可设为“月度数据完整性大于 99.9%”。
+- **系统可用性**：CloudWatch Metric Streams、Firehose、Lambda 和 OpenTelemetry 收集器的端到端可用性（SLI），直接关系到监控数据的持续流入。
+
+通过实施此方案，SRE 团队能够构建一个**经济高效、可扩展且低延迟**的可观测性管道，为业务关键系统提供可靠的实时洞察，同时保持对监控数据及其路径的控制。

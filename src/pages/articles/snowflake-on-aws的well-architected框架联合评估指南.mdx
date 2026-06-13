@@ -1,0 +1,112 @@
+---
+title: Snowflake on AWS的Well-Architected框架联合评估指南
+description: 一个统一的评估框架，将AWS与Snowflake的最佳实践整合，用于全面审查和优化在AWS上运行的Snowflake工作负载的架构。
+category: 可靠性架构
+order: 0
+lastUpdated: 2025-06-10
+confidence: medium
+sources:
+  - url: https://aws.amazon.com/blogs/architecture/introducing-the-snowflake-and-aws-custom-lens-for-the-aws-well-architected-framework/
+    title: Introducing the Snowflake and AWS Custom Lens for the AWS Well-Architected Framework
+tags: [SRE, Well-Architected, Snowflake, AWS, 云架构, 评估框架]
+---
+
+## 概述
+
+在 AWS 上运行 Snowflake 时，团队往往需要同时参考两套独立的最佳实践：一套是针对 AWS 基础设施的 AWS Well-Architected 指南，另一套是针对 Snowflake 计算、数据组织与治理的 Snowflake Well-Architected Framework。这种分离会导致安全控制映射脱节、生产就绪时间线延长以及合规性证明困难。Snowflake 和 AWS 联合推出的 Custom Well-Architected Framework Lens（自定义透镜）填补了这一空白。它提供了一个统一的评估视图，将 AWS 七大支柱（安全、可靠性、性能效率、成本优化、运营卓越、可持续性）与 Snowflake 的专业实践相结合，帮助 SRE 团队高效识别并修复跨服务的架构风险。
+
+## 核心概念
+
+该联合透镜将 AWS Well-Architected Framework 的七大支柱与 Snowflake 的指导原则整合为一个七支柱的评估模型。每个支柱都包含 AWS 基础设施层面和 Snowflake 数据平台层面的建议，其核心是提供**集成建议**，展示两个层面如何协同工作以构建稳健的生产架构。
+
+以下是七个支柱的详细拆解：
+
+### 1. 安全与身份
+安全需要在 AWS 基础设施层（如 VPC、IAM、KMS）和 Snowflake 数据平台层（如网络策略、RBAC、OAuth）进行协调。联合建议强调：
+*   **网络**：在 Amazon VPC 和 Snowflake 之间使用 AWS PrivateLink，并在 EC2 安全组之上分层 Snowflake 网络策略以实现纵深防御。
+*   **身份与访问**：通过 AWS IAM Identity Center 联合 Snowflake 身份验证，将身份提供商组映射到 Snowflake 数据库角色，实现一致的 RBAC。
+*   **认证**：使用 AWS Secrets Manager 存储 Snowflake RSA 私钥并自动轮换；通过 SAML 联合为两个系统提供统一 IdP。
+
+### 2. 数据治理与合规
+保护数据本身需要跨两个互补层：AWS 基础设施（如 S3 加密、生命周期策略）和 Snowflake 查询层（如动态数据屏蔽、行访问策略、Tri-Secret Secure）。联合建议包括：
+*   **数据保护**：结合使用 AWS KMS 和 Snowflake Tri-Secret Secure 实现双重托管加密，并应用 Snowflake 掩码策略进行列级保护。
+*   **审计与合规**：将 Snowflake 审计日志通过 Amazon S3 和 Amazon EventBridge 流到 Amazon CloudWatch 或 OpenSearch Service，以进行统一的合规监控。
+
+### 3. 可靠性
+可靠性取决于两个系统在故障场景下的协调能力。关键整合领域包括：
+*   **灾难恢复**：配置 Snowflake 跨区域复制到 AWS 的二级区域，并使用 Snowflake 客户端重定向实现自动故障转移。
+*   **数据持久性**：将 Snowflake Time Travel 保留期与 Amazon S3 版本控制策略对齐；使用零拷贝克隆进行部署前测试，以避免存储开销。
+*   **恢复目标**：定义考虑 Snowflake 复制延迟和 AWS 基础设施恢复时间的联合 RTO 和 RPO 目标。
+
+### 4. 性能优化
+性能调优需要在基础设施和应用两个层面进行。
+*   **计算资源调配**：根据查询分析对 Snowflake 虚拟仓库进行合理调整，使其与应用程序层自动扩展的多集群仓库对齐。
+*   **数据组织**：优化 Amazon S3 暂存文件大小以用于 Snowpipe 摄取；在常用过滤列上应用聚簇键，遵循从最低到最高基数的顺序（这是 Snowflake 微分区架构的特有要求）。
+*   **缓存与延迟**：设计查询模式以最大化 Snowflake 结果缓存命中率；使用 Amazon ElastiCache 在应用程序层缓存频繁访问的 Snowflake 结果。
+
+### 5. 成本优化与 FinOps
+跨两个计费模型（AWS 基础设施消费与预留 vs. Snowflake 计算积分与存储）管理成本。
+*   **成本可见性**：在集成的 FinOps 仪表板中结合 AWS Cost Explorer 数据和 Snowflake 积分消耗情况，使用匹配的成本中心标签为资源打标。
+*   **计算效率**：将 Snowflake 容量承诺与 AWS Savings Plans 配对，用于可预测的基线；对开发仓库激进地使用自动挂起。
+*   **存储效率**：将 Snowflake Time Travel 保留期（开发环境 1 天，受监管数据 90 天）与 Amazon S3 生命周期转换到 Glacier 对齐。
+
+### 6. 运营卓越
+构建跨两个应用程序的可观测性、自动化和事件响应工作流。
+*   **监控**：使用 Amazon S3 集成将 Snowflake 指标导出到 Amazon CloudWatch，以构建统一的运营仪表板。
+*   **自动化与 IaC**：在同一 Terraform 状态中管理 Snowflake 对象和 AWS 基础设施；使用 CI/CD 管道进行数据库迁移工作流。
+*   **事件响应**：通过通知集成和 Amazon SNS，从 Snowflake 资源监控器警报触发 AWS Lambda 自动修复。
+
+### 7. 可持续性
+这是首个将可持续性作为一等支柱的联合 ISV-AWS WAF 透镜。
+*   **区域选择**：为非延迟敏感的 Snowflake 工作负载选择与可持续性目标一致的 AWS 区域；优先选择可再生能源百分比较高的二级区域用于灾难恢复。
+*   **数据生命周期**：通过将 Time Travel 保留期与实际恢复需求对齐来最小化存储占用；使用零拷贝克隆替代完整的数据副本用于开发和测试。
+
+## 实践
+
+该透镜提供了三种访问方式，以适应不同的工作流程和团队偏好：
+
+### 1. AWS Well-Architected Tool 控制台
+适合进行结构化的正式审查。操作步骤如下：
+1.  下载 [Snowflake AWS Custom Lens JSON 文件](https://snowflake-corp-se-workshop.s3.us-west-1.amazonaws.com/AWS-Snowflake-Joint-WAF/Snowflake-WAF-Lens.json)。
+2.  登录 [AWS Well-Architected Tool 控制台](https://console.aws.amazon.com/wellarchitected)，在导航窗格中选择 **Custom lenses**。
+3.  选择 **Create custom lens**，上传下载的 JSON 文件，然后选择 **Submit**。
+此工具会生成一份包含优先级操作和文档链接的改进计划，并支持导出 PDF/JSON 用于合规性报告。
+
+### 2. Kiro (AI 辅助 IDE)
+适合在 IDE 内进行对话式、AI 辅助的审查。操作步骤如下：
+1.  下载 [Snowflake WAF Power](https://snowflake-corp-se-workshop.s3.us-west-1.amazonaws.com/AWS-Snowflake-Joint-WAF/snowflake-WAF-powers.zip) 并解压。
+2.  在 Kiro 中，选择 **Open Folder** 并选择解压后的文件夹。
+3.  在聊天中输入 “Run a Snowflake and AWS WAF review” 即可开始。
+其输出包含按时间范围（Now/Next/Later）分类的建议和自动化映射。
+
+### 3. Snowflake Cortex Code
+允许在 Snowflake 生态系统内完成审查，提供 CLI 和基于浏览器的 Snowsight 两种选择。
+*   **选项 A (CLI)**：
+    1.  下载并解压 [Cortex Code zip 文件](https://snowflake-corp-se-workshop.s3.us-west-1.amazonaws.com/AWS-Snowflake-Joint-WAF/joint-waf-aws-lens.zip)。
+    2.  在终端运行 `cortex skill add <解压路径>` 添加技能。
+    3.  启动 `cortex` CLI，输入 `invoke the joint-waf-aws-lens skill` 开始。
+*   **选项 B (Snowsight)**：
+    1.  在 Snowsight 中，导航到 **Projects > Workspaces**，打开或创建工作区。
+    2.  打开 Cortex Code 助手面板，选择 **+ Add context** > **Upload Skill Folder(s)** 并上传技能文件夹。
+    3.  在消息框中输入 `run the joint-waf skill` 开始审查。
+
+## SRE 要点
+
+此联合透镜对 SRE 团队具有直接的实践价值，它将两个独立的平台视为一个统一的系统进行优化。
+
+*   **与可靠性设计的关联**：透镜的“可靠性”支柱直接指导 SRE 如何设计跨 Snowflake 和 AWS 的灾难恢复、故障转移和恢复目标（RTO/RPO）。它促使 SRE 团队定义**联合 SLO**，其中 SLI 需要同时考虑 Snowflake 的查询性能和 AWS 基础设施的可用性。
+*   **可观测性整合**：在“运营卓越”支柱中，透镜明确推荐将 Snowflake 监控数据（如查询历史、资源监控器警报）集成到 AWS 原生可观测性工具（如 CloudWatch、OpenSearch）中。这使 SRE 能够构建**统一的可观测性仪表板**，关联应用程序性能（Snowflake）与基础设施健康状况（AWS）。
+*   **事件响应自动化**：SRE 可以利用透镜的指导，构建从 Snowflake 警报（如资源耗尽、查询失败）到 AWS 自动修复机制（如 Lambda 函数、SNS 通知）的自动化响应工作流，减少 **TOIL**。
+*   **自动化与 IaC 治理**：透镜强调使用 Terraform 等 IaC 工具同时管理 AWS 和 Snowflake 资源。这为 SRE 实现**基础设施即代码**、版本控制和一致性部署奠定了基础，是实现 GitOps 的关键一步。
+*   **FinOps 与成本可预测性**：成本支柱帮助 SRE 理解和优化跨两个平台的支出，通过集成的成本视图和联合优化策略（如 Snowflake 自动挂起与 AWS Spot 实例的结合），实现更精确的容量规划和成本预测，这是现代 SRE 的重要职责。
+*   **可持续性 (GreenOps)**：作为首个包含可持续性支柱的透镜，它引导 SRE 将碳足迹优化纳入架构决策，例如选择低碳区域、优化计算和存储效率，这扩展了 SRE 保障服务可靠性的传统职责边界。
+
+**最佳实践与常见反模式**：
+*   **最佳实践**：以安全性和可靠性支柱为起点进行首次审查；利用改进计划来跨团队优先排序任务；导出审查结果作为合规性证据。
+*   **常见反模式**：
+    1.  **孤岛式优化**：只优化 Snowflake 查询而忽略底层 EC2 实例的选型，或只优化 S3 存储而忽略 Snowflake 的数据生命周期策略。
+    2.  **凭据管理松散**：在 Snowflake 和 AWS 中重复或不一致地管理服务账户凭据，而非使用统一的身份联合和 Secrets Manager。
+    3.  **监控碎片化**：依赖 Snowflake 和 AWS 各自独立的监控视图，未能建立关联故障的全局视图，导致事件根因分析困难。
+
+**相关指标 (SLI/SLO)**：
+该透镜的评估结果直接影响定义联合工作负载的 SLI 和 SLO。例如，一个端到端的查询延迟 SLO 需要涵盖从 AWS 网络到 Snowflake 计算的完整路径。SRE 团队应根据透镜发现，将各项建议转化为可衡量的**可靠性指标**和**错误预算策略**。

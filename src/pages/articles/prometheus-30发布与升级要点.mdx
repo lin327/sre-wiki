@@ -1,0 +1,70 @@
+---
+title: Prometheus 3.0发布与升级要点
+description: Prometheus 3.0是七年来的首个主要版本，引入了全新UI、Remote Write 2.0、原生UTF-8支持及与OpenTelemetry的深度集成，本文档概述其核心特性、性能改进及迁移指南。
+category: prometheus
+order: 0
+lastUpdated: 2024-11-14
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2024/11/14/prometheus-3-0/
+    title: Announcing Prometheus 3.0
+tags: [prometheus, monitoring, upgrade, cloud-native]
+---
+
+## 概述
+Prometheus 3.0是Prometheus项目自2.0以来发布的首个主要版本，标志着其从早期采用者项目成熟为云原生监控栈的基石。此版本在保持向后兼容性和稳定性的同时，引入了多项重要新特性，旨在提升用户体验、增强生态互操作性，并为未来的发展奠定基础。对于SRE团队而言，理解3.0的变化是规划监控平台升级、利用新功能提升可观测性效率的关键。
+
+## 核心概念
+### 全新UI (User Interface)
+Prometheus 3.0默认启用了完全重写的Web界面。新UI设计更现代、简洁，并引入了类似PromLens的树状视图，便于理解复杂的PromQL查询。为便于过渡，用户可以通过`old-ui`功能标志临时切回旧版界面。值得注意的是，作为新组件，新UI可能存在未被发现的问题，社区鼓励用户积极反馈。
+
+### Remote Write 2.0
+Remote Write 2.0是监控数据远程写入协议的一次重大升级。它原生支持元数据、Exemplars、创建时间戳和原生直方图等新元素，并利用字符串驻留技术有效减小了传输负载的大小，降低了压缩和解压时的CPU使用率。协议还改进了部分写入的处理，为客户端提供更详细的错误信息。
+
+### 原生UTF-8支持
+Prometheus 3.0默认支持在指标名称和标签名称中使用所有有效的UTF-8字符。这简化了与遵循OpenTelemetry等语义约定的应用集成，避免了之前需要将点号等字符转换为下划线的繁琐步骤。如果生产者和消费者任一方不支持UTF-8，系统会自动回退到传统的转义方式。PromQL查询也相应支持新的引号语法。
+
+### OpenTelemetry (OTLP) 集成
+为兑现对OpenTelemetry生态的承诺，Prometheus 3.0增强了互操作性：
+*   **OTLP摄入**：Prometheus现在可以作为OTLP指标协议的原生接收器，通过`/api/v1/otlp/v1/metrics`端点接收数据。
+*   **UTF-8规范化**：得益于原生的UTF-8支持，Prometheus可以无损地存储和查询来自OpenTelemetry的指标，消除了因命名转换（如点号变下划线）造成的混淆。为实现这一点，OTLP摄入功能支持实验性的不同翻译策略。
+
+### 原生直方图 (Native Histograms)
+原生直方图是一种更高效的指标类型，相较于经典直方图，它无需预设或手动调整桶边界，而是基于指数增长设定预定义的桶。这为度量分布数据提供了更低开销、更高效率的方案。**注意：** 该功能目前仍处于实验阶段，默认未启用，需通过`--enable-feature=native-histograms`标志开启。
+
+## 实践
+### 升级路径与迁移
+从Prometheus 2.x升级到3.0需要遵循明确的路径。**官方强烈建议先升级到v2.55**，因为从v3.0回滚只能到v2.55，而无法回滚到更早版本。Prometheus 3.0包含一些破坏性变更，主要涉及功能标志、配置文件、PromQL语法和抓取协议。在执行升级前，务必仔细阅读官方的[迁移指南](https://prometheus.io/docs/prometheus/3.0/migration/)，评估影响并完成必要的配置调整。
+
+### 配置示例
+启用新特性通常需要在Prometheus的配置文件中进行声明。例如，要启用OTLP摄入功能，需在配置中添加`otlp`相关段。若要启用实验性的原生直方图，则在启动命令中添加功能标志。以下是一个简化示例：
+```yaml
+# 在 prometheus.yml 中启用OTLP接收（需配合相应功能标志）
+global:
+  scrape_interval: 15s
+
+# 新增OTLP接收器配置
+otlp:
+  translate_strategy: NoUTF8EscapingWithSuffixes # 实验性策略示例
+
+# 启动命令中启用原生直方图
+# ./prometheus --enable-feature=native-histograms
+```
+
+### 性能观察
+Prometheus团队通过宏基准测试对比了3.0版本与历史版本（2.0和2.18）在相同硬件、查询和配置下的表现。结果显示，3.0在CPU和内存使用效率上均有显著提升，这证明了社区在过去七年对核心存储和查询引擎优化的成果。SRE团队在升级后，可关注相关监控指标以验证性能改进。
+
+## SRE 要点
+*   **可靠性与稳定性**：尽管是新主要版本，Prometheus 3.0在核心功能上表现出良好的向后兼容性和稳定性。其性能提升直接有助于在相同硬件资源下承载更多监控数据，提升监控系统本身的可靠性。
+*   **可观测性增强**：
+    *   **新UI与UTF-8**：降低了理解和调试监控数据的门槛，尤其是对于包含复杂命名或与OpenTelemetry混合使用的环境。
+    *   **Remote Write 2.0与OTLP**：为构建统一、高效的可观测性数据管道提供了更强大的基础。SRE可以更无缝地将Prometheus与OpenTelemetry采集器等组件集成。
+*   **最佳实践与反模式**：
+    *   **实践**：在升级前进行充分的测试和验证。利用新的OTLP摄入和UTF-8支持，简化现有监控数据的翻译逻辑。关注并逐步评估实验性功能（如原生直方图）。
+    *   **反模式**：避免直接从2.x早期版本跳升到3.0。忽视阅读迁移指南可能导致生产环境配置错误或数据丢失。将实验性功能（如原生直方图）立即应用于核心生产监控可能带来未知风险。
+*   **相关指标 (SLI/SLO/SLA)**：
+    *   **SLI (服务水平指标)**：监控Prometheus服务器自身的CPU使用率、内存占用、抓取延迟、写入延迟等，以量化升级后的性能收益。
+    *   **SLO (服务水平目标)**：为监控数据流的可用性和延迟设置目标，确保新特性（如Remote Write 2.0）不会影响数据交付的可靠性。
+    *   **关联**：Prometheus性能的提升直接影响其作为监控系统核心组件的SLA承诺能力。
+
+相关页面：[[prometheus-architecture]], [[sli-slo-sla]], [[capacity-planning]]

@@ -1,0 +1,98 @@
+---
+title: Kubernetes Pod 内存压力测试：使用 Chaos Mesh 的 StressChaos
+description: 利用 Chaos Mesh 的 StressChaos 工具，高效、准确地模拟 Pod 内存压力场景，验证应用在资源受限下的可靠性。
+category: 故障注入
+order: 0
+lastUpdated: 2024-05-23
+confidence: medium
+sources:
+  - url: https://chaos-mesh.org/blog/how-to-efficiently-stress-test-pod-memory/
+    title: How to efficiently stress test Pod memory
+tags: [chaos-engineering, kubernetes, memory-stress-testing, stresschaos, cgroup]
+---
+
+## 概述
+
+在 Kubernetes 环境中，验证应用在内存压力下的行为是保障其可靠性的关键一环。内存压力测试能够帮助 SRE 团队识别应用是否存在内存泄漏、资源限制是否合理以及 OOM（内存耗尽）场景下的恢复能力。`Chaos Mesh` 是一个强大的混沌工程平台，其内置的 `StressChaos` 工具可以便捷地为 Pod 注入 CPU 和内存压力。本文将深入探讨如何使用 `StressChaos` 进行有效的内存压力测试，重点解决在使用过程中可能遇到的常见困惑，例如容器内内存使用量显示不准确、压力值与预期不符等问题，并提供正确的操作实践与原理分析。
+
+## 核心概念
+
+- **StressChaos**: `Chaos Mesh` 提供的一种故障注入实验类型，它利用 `stress-ng` 这个系统测试工具，在目标 Pod 的特定 cgroup（控制组）内创建内存或 CPU 工作负载，从而模拟资源紧张的状态。
+- **内存压力测试**: 指有目的地增加应用程序的内存消耗，直至其达到或超过设定的资源限制（memory limits），观察应用的性能降级、行为异常或被 Kubernetes 终止（OOM Killed）的过程。
+- **cgroup 内存限制**: Kubernetes 通过 Linux cgroup 机制限制容器可使用的内存。限制值存储在 `/sys/fs/cgroup/memory/memory.limit_in_bytes` 文件中。容器内传统的监控工具如 `free` 或 `top` 读取的是主机 `/proc/meminfo` 的信息，并非当前容器的限制值，这常导致误解。
+- **OOM Killer**: 当 cgroup 内存使用超过限制时，Linux 内核的 OOM Killer 会被触发，它会按照一定算法（基于 `oom_score_adj` 等）选择并终止消耗内存最多的进程，以释放内存并防止系统崩溃。
+
+## 实践
+
+### 1. 设置测试目标
+首先，需要部署一个设置了明确内存资源限制的目标应用。例如，使用 `hello-kubernetes` Helm chart，并在 `values.yaml` 中配置资源请求与限制：
+```yaml
+resources:
+  requests:
+    memory: '200Mi'
+  limits:
+    memory: '500Mi'
+```
+
+### 2. 正确测量容器内存使用
+在容器内部，**不应**依赖 `free -m` 或 `top` 来评估内存使用量。正确的方法是读取 cgroup 文件系统：
+```bash
+# 查看内存限制
+cat /sys/fs/cgroup/memory/memory.limit_in_bytes
+
+# 查看当前内存使用量
+cat /sys/fs/cgroup/memory/memory.usage_in_bytes
+```
+`memory.usage_in_bytes` 的值（单位为字节）才是该容器实际消耗的内存。
+
+### 3. 编写并应用 StressChaos 配置
+创建一个 `StressChaos` YAML 文件，指定内存压力参数。例如，注入总大小为 200MiB 的内存压力，持续 1 小时：
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: mem-stress
+  namespace: chaos-mesh
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - hello-kubernetes
+  stressors:
+    memory:
+      workers: 4  # 并行工作进程数
+      size: 200MiB # 指定总内存大小
+  duration: '1h'
+```
+使用 `kubectl apply -f memory.yaml` 命令应用此配置。
+
+### 4. 验证压力注入效果
+应用配置后，再次检查容器内的 `memory.usage_in_bytes`，其值会相应增加。如果注入的压力使内存使用超过限制，容器可能会被 OOM 终止。可以通过 `kubectl describe pod` 查看 Pod 事件，通常会看到 `OOMKilled` 的重启原因。
+
+## SRE 要点
+
+- **与可靠性的关联**: 内存压力测试是验证应用可靠性的主动手段。它可以帮助团队：
+    - 发现配置的资源限制（requests/limits）是否与应用实际需求匹配。
+    - 测试应用在 OOM 事件后的恢复能力（依赖 Pod 重启策略）。
+    - 评估 Kubernetes 的 QoS 等级（Guaranteed/Burstable/BestEffort）对 OOM Killer 决策的影响。
+
+- **最佳实践与常见反模式**:
+    - **最佳实践**:
+        1.  **使用正确的监控工具**: 在容器内始终使用 cgroup 接口（`/sys/fs/cgroup/memory/`）来监控内存，确保数据准确。
+        2.  **理解 StressChaos 的工作原理**: 注意 `size` 参数指定的是总内存压力，而非每个 worker 的大小（基于 `stress-ng` 源码行为）。
+        3.  **配置合理的探针**: 应用的存活探针（livenessProbe）和就绪探针（readinessProbe）对于自动恢复至关重要，但在压力测试时可能导致 Pod 被快速重启，需根据测试目的权衡是否保留。
+        4.  **关注 Pod 的 QoS 等级**: 为应用设置明确的资源请求和限制，使其成为 `Guaranteed` Pod，可以在节点内存压力时获得一定的保护。
+    - **常见反模式**:
+        1.  **依赖 `free`/`top` 评估容器内存**: 这会导致对资源使用和限制的严重误判。
+        2.  **忽略 OOM 事件分析**: Pod 因 OOM 重启时，应深入分析 `dmesg` 日志和 Pod 事件，而不仅仅是重启应用。
+        3.  **在生产环境未经充分测试和规划时注入高强度压力**: 压力测试应在 staging 环境进行，并制定好应对计划。
+
+- **相关指标（SLI/SLO）**:
+    - **SLI (服务级别指标)**: 可以考虑 `pod_oom_killed_count`（因 OOM 终止的 Pod 次数）或 `container_memory_working_set_bytes / container_spec_memory_limit_bytes`（内存使用率）。
+    - **SLO (服务级别目标)**: 例如，可以设定“核心服务 Pod 在 24 小时内，因内存原因导致的非预期重启次数少于 1 次”。
+
+- **可观测性**: 执行压力测试时，应同步观察应用的业务指标（如错误率、延迟）和系统指标（如上述的内存使用率、cgroup 统计），以全面评估内存压力对服务的影响。
+
+## 深入：Kubernetes 内存管理机制
+
+Kubernetes 的驱逐管理器会定期检查节点和 Pod 的资源使用情况。当容器的内存工作集（`working_set`，计算公式为 `memory.usage_in_bytes - total_inactive_file`）超过其限制时，会触发驱逐或 OOM Kill。需要注意的是，Kubernetes 默认禁用 swap，以避免因换页导致的性能不确定性。理解这一机制，有助于更合理地设置资源限制和设计混沌实验，从而真正提升系统的健壮性。

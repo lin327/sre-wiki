@@ -1,0 +1,94 @@
+---
+title: 实现自定义服务发现
+description: 介绍如何通过适配器模式和file_sd实现Prometheus的自定义服务发现集成。
+category: 可观测性
+order: 0
+lastUpdated: 2025-04-08
+confidence: high
+sources:
+  - url: https://prometheus.io/blog/2018/07/05/implementing-custom-sd/
+    title: Prometheus Blog: Implementing Custom Service Discovery
+tags: [prometheus, service-discovery, sre, file-sd]
+---
+
+## 概述
+
+服务发现是可观测性栈中的关键组件，它动态地为监控系统（如 Prometheus）提供需要抓取的目标列表。尽管 Prometheus 提供了许多内置的服务发现（SD）集成（如 Kubernetes、Consul），但维护所有可能 SD 系统的直接集成并不现实。**自定义服务发现** 通过一个适配器（Adapter）模式，允许 SRE 团队在不修改 Prometheus 核心二进制文件的前提下，为任何内部或外部服务目录创建集成。这对于监控非标准基础设施或遗留系统至关重要，是确保监控覆盖面和系统可靠性的重要实践。
+
+## 核心概念
+
+### 适配器模式与 Discoverer 接口
+自定义 SD 的实现核心是适配器（`adapter`）。它利用 Prometheus 内部的 `discovery.Manager` 来启动一个自定义的发现提供者（Provider）。你需要做的就是实现 Prometheus 定义的 `Discoverer` 接口。该接口非常简单，仅要求实现一个 `Run` 函数，该函数接收一个用于取消操作的 `context` 和一个用于发送目标组（TargetGroup）更新的通道。你的实现周期性地从服务目录（如自定义的 HTTP API、数据库等）查询最新的目标列表，并将结果封装为 `targetgroup.Group` 结构体发送到该通道。
+
+### 适配器的工作原理
+适配器充当自定义发现逻辑与 Prometheus 之间的桥梁。它接收来自 `Discoverer` 接口通道的更新，将 Prometheus 内部的 `targetgroup.Group` 结构转换为兼容 `file_sd` 格式的 JSON 文件。其关键点在于：适配器会对比新旧目标列表，只有在发生变化时才写入文件。这种设计意味着你的自定义 SD 实现每次发送的更新应代表其当前知道的 **全部目标**，适配器负责增量式的文件更新。
+
+### file_sd 配置
+最终的集成依赖于 Prometheus 的基于文件的服务发现（`file_sd_configs`）机制。Prometheus 被配置为定期读取由适配器生成的 JSON 文件，从而获取要抓取的目标。这种解耦方式使得自定义发现逻辑可以独立开发、测试和部署。
+
+## 实践
+
+### 步骤 1：实现 Discoverer 接口
+你需要编写一个实现了 `discovery.Discoverer` 接口的程序。核心是实现 `Run` 方法。在该方法中，你可以使用任何方式（例如 HTTP 调用、读取配置文件、查询数据库）来获取目标列表。
+
+**关键实现逻辑示例（基于提供的 Consul 示例）：**
+```go
+func (d *consulDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
+    ticker := time.NewTicker(d.interval)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            // 1. 查询所有服务
+            services, err := d.client.Services()
+            if err != nil { /* 处理错误，最好使用完整列表 */ continue }
+            // 2. 为每个服务查询所有实例
+            var tgs []*targetgroup.Group
+            for _, s := range services {
+                nodes, err := d.client.Service(s, "")
+                if err != nil {
+                    // 记录错误，但继续处理其他服务，避免因单个服务失败而丢弃所有更新
+                    log.Error("查询服务失败", "service", s, "err", err)
+                    continue
+                }
+                tg := d.parseServiceNodes(s, nodes)
+                tgs = append(tgs, tg)
+            }
+            // 3. 如果成功获取了所有信息（或至少部分信息），则发送更新
+            up <- tgs
+        }
+    }
+}
+```
+
+### 步骤 2：使用适配器启动服务
+在你的 `main.go` 中，你需要导入 Prometheus 的适配器包，并用它来包装你的 `Discoverer` 实现。适配器负责启动 Manager 和你的发现循环，并定义输出 JSON 文件的路径。
+
+### 步骤 3：配置 Prometheus
+在 Prometheus 的配置文件中，使用 `file_sd_configs` 来读取适配器生成的 JSON 文件。
+
+```yaml
+scrape_configs:
+  - job_name: "custom-sd"
+    scrape_interval: "15s"
+    file_sd_configs:
+      - files:
+          - /path/to/generated/targets.json
+```
+
+### 步骤 4：运行
+将你的自定义 SD 可执行文件和 Prometheus 部署在同一主机或容器中（例如通过 Docker Compose），确保文件路径权限正确。你的程序负责保持 `targets.json` 文件的更新。
+
+## SRE 要点
+
+- **可靠性与可观测性**：自定义服务发现直接关系到监控的 **完整性**。如果发现机制失败或不准确，关键服务的指标可能会丢失，导致盲点并影响事件响应。确保你的实现具有健壮的错误处理和重试机制。
+- **错误处理策略**：遵循示例中的智慧——“宁可暂时使用过期的完整目标列表，也不要发送一个不完整的列表”。这避免了因瞬时网络问题或单个服务查询超时而导致监控目标大规模闪烁（flapping），从而保持警报的稳定性。
+- **最佳实践**：
+    - **独立部署与更新**：将自定义 SD 程序与 Prometheus 分开部署和版本管理，便于独立迭代和故障排查。
+    - **完整更新**：每次发送到通道的更新应包含所有已知目标，由适配器处理与文件内容的差异比对。
+    - **配置管理**：管理好你的发现程序本身的配置（如 Consul 地址、轮询间隔），可以使用配置文件或环境变量。
+- **反模式**：不要频繁向 Prometheus 发送不完整或部分更新，这会导致目标列表不稳定。也避免将自定义发现逻辑的业务复杂性与 Prometheus 进程耦合。
+- **相关指标**：你的自定义 SD 程序本身也应被监控。可以为其暴露一个简单的健康检查端点或指标（如最后成功发现时间、错误计数），以便被 Prometheus 或其他监控系统抓取，形成监控的闭环。
+- **相关页面**：此实践是 [[file-based-service-discovery]] 的一个高级应用。理解 [[prometheus-overview]] 中的目标模型有助于更好地设计你的 `targetgroup.Group` 结构。对于服务网格环境，这可能是一种替代或补充方案。

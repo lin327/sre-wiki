@@ -1,0 +1,53 @@
+---
+title: Prometheus 对 OpenTelemetry 的支持与整合
+description: Prometheus正在深度整合OpenTelemetry，以成为其指标的默认存储，提升可观测性数据的互操作性。
+category: 可观测性
+order: 0
+lastUpdated: 2024-03-15
+confidence: high
+sources:
+  - url: https://prometheus.io/blog/2024/03/14/commitment-to-opentelemetry/
+    title: Our commitment to OpenTelemetry
+tags: [OpenTelemetry, Prometheus, OTLP, 指标, 可观测性]
+---
+
+## 概述
+
+OpenTelemetry 是一个旨在统一 Traces、Metrics 和 Logs 三大可观测性信号的框架与工具集。Prometheus 作为云原生领域事实上的指标监控标准，其与 OpenTelemetry 的深度整合具有里程碑意义。对于 SRE 而言，这意味着可以更便捷地构建一套统一、强大且开放的可观测性体系，从依赖多种采集器转向一个更加标准化和集成化的数据流水线，从而简化工具链并减少维护负担。
+
+## 核心概念
+
+**OpenTelemetry (OTel)**: 一个开源的观测性框架，提供厂商中立的 API、SDK 和工具，用于生成、收集和描述遥测数据（Traces, Metrics, Logs）。其核心价值在于规范的统一性和对供应商锁定的规避。
+
+**OTLP (OpenTelemetry Protocol)**: OpenTelemetry 定义的遥测数据传输协议，已成为在不同组件间传输 Traces、Metrics 和 Logs 的标准协议。Prometheus 正致力于原生支持 OTLP 的摄取与导出。
+
+**指标 (Metrics) 与资源属性 (Resource Attributes)**: OpenTelemetry 明确区分了标识指标本身的“指标属性”（如 `http.status_code`）和标识指标来源的“资源属性”（如 `k8s.pod.name`）。Prometheus 传统的扁平标签模型在此处需要演进以更好地支持这一分层，从而提升多维度分析和过滤的能力。
+
+**Delta 临时性 (Delta Temporality)**: 与 Prometheus 常用的累积临时性（Cumulative Temporality）相对，Delta 临时性报告的是上一个报告周期以来的增量变化。支持 Delta 临时性能更好地与 StatsD 等传统指标系统兼容，并拓展 OTel 的应用场景。
+
+## 实践
+
+根据 Prometheus 社区的路线图，以下关键整合特性正在推进中，旨在让 Prometheus 成为 OpenTelemetry 指标的默认存储：
+
+1.  **OTLP 摄取正式发布 (GA)**：Prometheus v2.47.0 引入了实验性的 OTLP 摄取功能。计划在未来版本中使其正式稳定，并完善对数据过时性（Staleness）和乱序摄取（Out-of-order ingestion）的支持，同时原生支持指数直方图（Exponential Histograms）。
+
+2.  **支持 UTF-8 指标和标签名**：为直接兼容 OpenTelemetry 语义规范（如 `http.server.request.duration`），Prometheus 正在开发对 UTF-8 字符的全面支持，以消除当前因字符限制而进行的名称转换所带来的不一致性。
+
+3.  **原生支持资源属性**：社区正在从查询、用户体验和存储等多个层面探索解决方案，目标是在 Prometheus 中实现对 OpenTelemetry 资源属性的便捷过滤和分组分析，使其更贴合 OTel 的数据模型。
+
+4.  **生态系统中的 OTLP 导出**：计划为 Prometheus 服务器、SDK 和 Exporters 添加 OTLP 导出支持。这意味着使用 Prometheus SDK 埋点的服务将能直接推送 OTLP 格式数据，从而将庞大的 Prometheus 导出器生态开放给 OTel 用户。同时，OpenMetrics 格式将继续作为针对 Prometheus 拉取模式优化的格式。
+
+5.  **支持 Delta 临时性**：为兼容更多传统监控系统（如 StatsD）的场景，Prometheus 服务器正在开发对 Delta 临时性指标的原生支持。
+
+## SRE 要点
+
+- **与可靠性/可观测性的关联**：Prometheus 与 OpenTelemetry 的深度整合，极大地增强了构建统一、完整的可观测性平台的可能性。SRE 可以利用 OTel 的丰富语义数据丰富 Prometheus 指标，并借助 Prometheus 强大的查询和告警能力进行分析，从而更全面地理解系统行为，快速定位故障根源。这种整合直接服务于提升系统可靠性的目标。
+
+- **最佳实践与常见反模式**：
+    - **最佳实践**：积极规划从多工具混合采集向以 OTLP 为中心的数据收集架构演进。评估现有 Prometheus 基础设施，为 UTF-8 支持和资源属性分析做好准备。参与社区讨论和测试，为这些功能提供反馈。
+    - **常见反模式**：在整合初期过早引入大量变更导致稳定性风险；忽视现有基于 `remote_write` 的监控栈价值，完全推倒重来；将 Prometheus 与 OTel 的整合仅视为协议转换，而忽略了数据模型差异带来的根本性挑战。
+
+- **相关指标（SLI/SLO/SLA）**：此次整合对定义和实现 SLI/SLO 带来了新思路。SRE 可以更自然地利用 OTel 的资源属性来定义更细粒度的 SLO（例如，按服务版本或部署区域），使得 Error Budget 的计算和管理更加精确和符合业务视角。Prometheus 的 SLI 计算将能结合更丰富的 OTel 上下文信息。
+
+[[observability]]
+[[sli-slo]]

@@ -1,0 +1,101 @@
+---
+title: Kubernetes SELinux 卷标签变更与升级指南
+description: 分析 Kubernetes v1.37 预期启用 SELinuxMount 特性所带来的破坏性变更、影响及平滑升级路径，以保障使用 SELinux 的集群可靠性。
+category: 存储与卷
+order: 0
+lastUpdated: 2026-04-22
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/22/breaking-changes-in-selinux-volume-labeling/
+    title: Kubernetes Blog: SELinux Volume Label Changes goes GA (and likely implications in v1.37)
+tags: [Kubernetes, SELinux, SELinuxMount, 存储, 安全, 升级, 可靠性]
+---
+
+## 概述
+
+对于在 Linux 上运行启用了强制模式（Enforcing mode）SELinux 的 Kubernetes 集群，一项重要的破坏性变更即将到来：在未来的 v1.37 版本（预计），`SELinuxMount` 特性门控（Feature Gate）将默认启用。此变更旨在通过直接在卷挂载时应用 SELinux 标签来大幅提升卷设置速度，但它会改变卷共享的底层行为，可能破坏依赖于旧式递归重标注模型的应用程序（例如，同一节点上特权与非特权 Pod 共享同一卷的场景）。作为 SRE，理解此变更并提前规划升级路径是确保集群可靠性和平稳运行的关键。
+
+## 核心概念
+
+### SELinux 与 Kubernetes 卷标签
+
+Linux 的 SELinux 使用标签（Label）来对文件、网络套接字等对象实施访问控制。在 Kubernetes 中，容器运行时负责为 Pod 及其所有卷应用 SELinux 标签。
+
+**旧模型（递归重标注）**：历史上，容器运行时会递归地遍历卷中的所有文件并更改其 SELinux 标签。这个过程可能非常耗时，尤其是在远程文件系统或包含大量文件的卷上。虽然通过 `subPath` 可以实现同一卷在不同 Pod 间的隔离，但整体效率低下。
+
+**新模型（挂载选项）**：新方法允许 kubelet 在挂载卷时直接使用 `-o context=<label>` 选项，由内核在挂载点层级应用正确的标签，无需遍历文件系统。这实现了常数时间的卷设置，但要求满足一系列前置条件。
+
+### SELinuxMount 特性门控与演进
+
+`SELinuxMount` 是控制新挂载行为的特性门控。其演进分为两个阶段：
+1.  **`SELinuxMountReadWriteOncePod`**：针对 `ReadWriteOncePod` 访问模式的卷，自 v1.28 起为 Beta（默认启用），在 v1.36 达到 GA（正式发布）。
+2.  **`SELinuxMount`**：将新行为扩展到所有卷。在 v1.36 中为 Beta 且默认禁用，预计在 v1.37 默认启用。
+
+### 新行为生效的条件
+
+要使新挂载行为生效（即使用挂载选项而非递归重标注），Pod 及其卷必须同时满足**所有**以下条件：
+1.  操作系统支持 SELinux。
+2.  相应的特性门控已启用（v1.36 中 `SELinuxMountReadWriteOncePod` 已 GA，`SELinuxMount` 为 Beta 默认关闭）。
+3.  Pod 使用的 PersistentVolumeClaim 满足特定条件：要么是 `ReadWriteOncePod` 模式，要么在启用了 `SELinuxChangePolicy` 和 `SELinuxMount` 特性门控后，Pod 的 `spec.securityContext.seLinuxChangePolicy` 设置为默认值或 `MountOption`。
+4.  Pod 或其容器在 `securityContext` 中明确指定了 `seLinuxOptions.level`。
+5.  负责该卷的 CSI 驱动或卷插件支持挂载选项，并在 `CSIDriver` 资源中声明了 `seLinuxMount: true`。
+
+## 实践
+
+### 升级准备与冲突检测（v1.36）
+
+在 v1.36 集群中，您可以主动为升级到 v1.37 做准备，识别潜在冲突：
+
+1.  **启用 SELinux 警告控制器**：在 `kube-controller-manager` 的启动参数中添加 `--controllers=*,selinux-warning-controller`，并确保 `SELinuxChangePolicy` 特性门控未被显式禁用。
+2.  **监控冲突指标**：
+    *   **`selinux_warning_controller_selinux_volume_conflict`**：此指标列出了所有潜在的 Pod 间 SELinux 标签冲突，这些冲突在未来启用 `SELinuxMount` 后会导致问题。指标标签包含冲突的 Pod 名称、命名空间和具体的 SELinux 标签。
+    *   **`volume_manager_selinux_volume_context_mismatch_warnings_total`**：由 kubelet 发出，统计那些在 `SELinuxMount` 禁用时能运行，但启用后会因标签冲突而无法启动的 Pod 数量。
+3.  **应用规避策略（Opt-out）**：对于识别出的冲突 Pod，通过设置 `spec.securityContext.seLinuxChangePolicy: Recursive` 来强制使用旧的递归重标注模式。可以通过 [[mutating-admission-policy]] 或类似 Kyverno、Gatekeeper 的策略引擎批量应用此设置。
+
+### 执行升级
+
+1.  在解决所有已知冲突后，将集群升级到预期启用 `SELinuxMount` 的版本（v1.37 或更高）。
+2.  升级后，观察以下指标以确认状态：
+    *   **`volume_manager_selinux_volume_context_mismatch_errors_total`**：kubelet 发出，统计因 SELinux 标签冲突而**实际无法启动**的 Pod 数量。
+    *   继续关注 `selinux_warning_controller_selinux_volume_conflict` 指标，获取具体的冲突 Pod 信息。
+
+### 架构考虑
+
+此变更要求 SRE 团队重新审视应用部署架构。需要特别注意：
+- **卷共享模式**：评估应用是否依赖于同一卷在不同 SELinux 上下文（如特权与非特权 Pod）间的共享。
+- **安全上下文声明**：确保所有相关 Pod 的 YAML 定义中明确指定了 `seLinuxOptions.level`，这是新行为生效的必要条件。
+- **CSI 驱动兼容性**：确认所使用的存储后端 CSI 驱动已支持并声明了 `seLinuxMount` 能力。
+
+## SRE 要点
+
+### 与可靠性的关联
+
+此变更直接关联到集群的**可用性**和**变更的可靠性**。
+- **中断风险**：未做准备的升级可能导致依赖特定卷共享模式的 Pod 陷入 `ContainerCreating` 状态，无法启动，从而引发服务中断。
+- **性能提升**：成功迁移后，对于大量文件或远程存储的卷，Pod 启动时间将显著缩短，提升了系统性能和弹性。
+- **可观测性**：新增的指标和事件为 SRE 提供了强大的工具，用于在升级前后发现和诊断问题，是 [[observability]] 在安全与存储领域的具体实践。
+
+### 最佳实践与反模式
+
+**最佳实践：**
+- **提前规划**：在 v1.36 阶段就启用警告控制器并解决冲突，是平滑升级的关键。
+- **使用策略管理**：利用策略引擎统一为工作负载设置 `seLinuxChangePolicy`，避免遗漏。
+- **明确声明安全上下文**：在 Pod 规范中显式定义 `seLinuxOptions.level`，而不是依赖容器运行时分配随机标签。
+- **验证 CSI 驱动**：在升级前，确认核心业务所依赖的 CSI 驱动支持新的挂载选项。
+
+**常见反模式：**
+- **忽视升级警告**：忽略 `selinux_warning_controller` 发出的事件和指标，直接进行版本升级，导致生产故障。
+- **模糊的安全上下文**：依赖 `securityContext` 的默认值，导致 kubelet 无法在挂载时获知 `level`，从而退回到递归重标注，无法享受性能收益。
+- **未测试共享卷场景**：未在测试环境中验证涉及 SELinux 标签的卷共享方案在新行为下的表现。
+
+### 相关指标（SLI/SLO）
+
+监控此变更过程中的关键指标有助于维护服务等级目标（SLO）：
+- **SLI**：Pod 从创建到运行状态的延迟（对于涉及卷挂载的工作负载）。
+- **SLO**：相关工作负载的启动成功率应为 100%。
+- **具体监控指标**：
+    - `selinux_warning_controller_selinux_volume_conflict`（潜在冲突，应为 0）
+    - `volume_manager_selinux_volume_context_mismatch_errors_total`（实际启动失败，应为 0）
+    - `volume_manager_selinux_volume_context_mismatch_warnings_total`（潜在风险 Pod 数量，应为 0）
+
+请参阅 Kubernetes 官方文档以获取关于 [[kubernetes-storage]]、`CSIDriver` 规范以及 [[security-context]] 的更多详细信息。

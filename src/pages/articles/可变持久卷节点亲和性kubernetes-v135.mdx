@@ -1,0 +1,96 @@
+---
+title: 可变持久卷节点亲和性（Kubernetes v1.35）
+description: 允许在运行时修改PV的节点亲和性，为在线存储迁移和更新提供了灵活性。
+category: SRE 核心概念
+order: 0
+lastUpdated: 2026-01-08
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/01/08/kubernetes-v1-35-mutable-pv-nodeaffinity/
+    title: Kubernetes Blog: Mutable PersistentVolume Node Affinity (alpha)
+tags: [kubernetes, persistent-volume, node-affinity, storage, sre]
+---
+
+## 概述
+在 Kubernetes 生态系统中，`PersistentVolume`（PV）的节点亲和性（`nodeAffinity`）用于声明哪些节点可以访问特定的卷，这对于有状态应用的存储部署至关重要。历史上，PV 的节点亲和性在创建后是不可变的，这在存储基础设施演进时（如从可用区磁盘迁移到区域磁盘）带来了限制。Kubernetes v1.35 引入了“可变持久卷节点亲和性”（Alpha）特性，允许集群管理员在不重建卷或中断服务的情况下，动态更新 PV 的节点亲和性。这一变更极大地提升了在线存储管理的灵活性，是 SRE 实践中实现存储层弹性和灵活性的重要一步。
+
+## 核心概念
+
+**持久卷节点亲和性（PV Node Affinity）**
+PV 的 `spec.nodeAffinity` 字段用于指定哪些节点（基于节点标签）可以挂载和访问该卷。这是 Kubernetes 调度器为使用该卷的 `PersistentVolumeClaim`（PVC）调度 Pod 时的关键约束。它确保了 Pod 被调度到能够物理访问底层存储的节点上。
+
+**为何要使其可变？**
+传统上，无状态工作负载（如 Deployment）可以随时更新，因为 Pod 会被重新创建。而 PV 是有状态资源，其生命周期与底层存储紧密绑定，无法随意重建。随着云存储服务的发展，出现了以下典型场景：
+1.  **存储迁移**：将卷从单可用区（Zonal）在线迁移到多可用区（Regional），以提高可用性。迁移后，卷在所有区域节点上都可访问，但旧的 PV 亲和性仍限制 Pod 只能调度到原来的可用区。
+2.  **存储硬件升级**：云提供商提供新一代磁盘（如从 Gen1 升级到 Gen2）。新磁盘可能不支持旧节点，但升级后的卷需要确保 Pod 被调度到兼容新磁盘的节点上。
+在这些场景下，如果不更新 PV 的节点亲和性，即使底层存储已变化，Kubernetes 调度器仍会基于旧信息做出决策，可能导致 Pod 无法使用更新后的卷，或调度到不兼容的节点。
+
+**特性门控**
+此特性当前处于 Alpha 阶段，默认禁用。必须通过启用 `MutablePVNodeAffinity` 特性门控来启用对 PV 节点亲和性的修改权限。
+
+## 实践
+
+**启用与访问控制**
+1.  在 `kube-apiserver` 启动参数中添加 `--feature-gates=MutablePVNodeAffinity=true`。
+2.  确保执行修改操作的用户具有编辑 `persistentvolumes` 资源的 RBAC 权限。
+
+**安全操作流程**
+**关键原则：必须先更新底层存储，再同步更新 PV 的节点亲和性。** 直接修改 PV 亲和性而不同步底层存储，会导致调度失败和数据访问中断。
+
+**示例：将 PV 从可用区级亲和性迁移到区域级**
+1.  **第一步（存储侧）**：在云存储提供商控制台或 API 中，将卷从 `us-east1-b`（可用区）在线迁移至 `us-east1`（区域）。确认迁移完成后，卷在 `us-east1` 区域所有节点上均可访问。
+2.  **第二步（Kubernetes 侧）**：修改 PV 的 `spec.nodeAffinity`，将约束从特定的可用区放宽到整个区域。
+
+迁移前的 PV 定义（示例）：
+```yaml
+spec:
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values:
+          - us-east1-b
+```
+
+迁移并更新后的 PV 定义（示例）：
+```yaml
+spec:
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/region
+          operator: In
+          values:
+          - us-east1
+```
+
+**注意竞态条件（Race Condition）**
+在收紧节点亲和性（例如，将约束从区域改为特定可用区）时，存在一个竞态窗口。因为调度器缓存可能尚未同步最新的 PV 信息，它可能仍会将使用该 PV 的新 Pod 调度到已经无法访问该卷的旧节点上。这将导致 Pod 卡在 `ContainerCreating` 状态。目前尚无内置的解决方案，最佳实践是：
+- 在修改 PV 后，密切监控后续调度的、引用该 PV 的 Pod。
+- 避免在脚本中进行“修改 PV 立即启动 Pod”的原子操作，应增加适当的等待和验证。
+
+## SRE 要点
+
+**与可靠性的关联**
+- **提高存储可用性**：此特性是实现无中断存储迁移（如 Zonal 到 Regional）的关键一环，使 SRE 团队能够在不进行计划性维护的情况下，提升有状态应用存储的持久性和可用性。
+- **支持无缝升级**：便于对存储硬件或性能进行平滑升级（如磁盘代际更换），减少因存储变更导致的应用停机时间。
+
+**最佳实践与反模式**
+- **最佳实践**：
+    1.  **变更前后验证**：在修改 PV 亲和性前，通过 `kubectl describe pv` 确认当前亲和性；修改后，验证新创建的 Pod 是否被正确调度。
+    2.  **配合 VolumeAttributesClass**：关注未来与 `[[volume-attributes-class]]` 的集成。理想情况下，用户可通过修改 PVC 的 `VolumeAttributesClass` 来触发存储变更，Kubernetes 自动协调 PV 亲和性的更新，实现完全自助化。
+    3.  **监控与告警**：为 PV 状态和因亲和性不匹配导致的 Pod 调度失败设置监控。
+- **常见反模式**：
+    1.  **只改 PV，不改存储**：仅修改 PV 的 `nodeAffinity` 字段，而没有先在存储提供商侧完成卷的访问范围变更，将立即导致数据不可达。
+    2.  **忽视竞态条件**：在收紧亲和性后，不检查后续 Pod 的调度和启动状态，可能导致故障未被及时发现。
+
+**相关指标与事件**
+- **PV 状态**：确保 PV 处于 `Available` 或 `Bound` 状态，无异常。
+- **Pod 调度事件**：关注因 `FailedScheduling` 事件，特别是提示 `no persistent volumes available` 或亲和性不匹配的错误。
+- **Pod 生命周期**：监控 Pod 是否长时间处于 `ContainerCreating` 或 `CrashLoopBackOff`，这可能指示存储挂载失败。
+
+---
+*此特性目前为 Alpha 版本，API 和行为可能在未来版本中发生变化。建议在测试环境中充分验证后再用于生产环境。反馈可通过 [SIG Storage 社区](https://github.com/kubernetes/community/tree/master/sig-storage) 渠道提交。*

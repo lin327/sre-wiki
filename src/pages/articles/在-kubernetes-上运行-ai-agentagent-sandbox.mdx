@@ -1,0 +1,67 @@
+---
+title: 在 Kubernetes 上运行 AI Agent：Agent Sandbox
+description: Agent Sandbox 为 Kubernetes 提供声明式 API，以安全、高效地运行长期、有状态的 AI Agent 工作负载。
+category: Kubernetes & 容器编排
+order: 0
+lastUpdated: 2025-10-27
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/
+    title: Kubernetes 官方博客 - Running Agents on Kubernetes with Agent Sandbox
+tags: [kubernetes, ai, agent, sandbox, sig-apps, stateful-workloads]
+---
+
+## 概述
+
+随着人工智能从短暂的无状态推理请求演变为长期运行、相互协调的自主 Agent，传统的 Kubernetes 工作负载原语面临新的挑战。这些 AI Agent 通常是有状态的、需要持久身份和隔离环境的单例工作负载，并且大部分时间处于空闲状态。`[[kubernetes]]` Agent Sandbox 项目（由 SIG Apps 开发）旨在填补这一抽象鸿沟，为 AI Agent 提供一个声明式、标准化的 API，使其能够安全、高效地运行在 Kubernetes 之上。
+
+## 核心概念
+
+AI Agent 工作负载具有几个区别于传统 Web 服务的显著特征，这导致了现有 `[[pod]]`、`[[deployment]]` 或 `[[statefulset]]` 等原语的适用性降低。
+
+*   **长期运行与状态化**：Agent 是持久的数字工作区，用于执行大型语言模型的指令。它们需要保持上下文、使用工具、编写并执行代码，生命周期可能持续数周，期间大部分时间处于空闲状态。
+*   **强隔离需求**：当 Agent 自主生成并执行代码时，安全至关重要。运行环境必须能够隔离不可信的代码执行。
+*   **稳定的网络身份**：多 Agent 协作系统要求 Agent 之间能够相互发现和通信，因此需要稳定的主机名和网络标识。
+*   **弹性的生命周期**：由于其空闲特性，Agent 环境需要支持缩容至零（Scale-to-Zero）以节省资源，同时在被调用时能够快速恢复。
+
+虽然理论上可以使用大小为 1 的 `[[statefulset]]`、`[[headless-service]]` 和 `[[persistent-volume-claim]]` 的组合来近似模拟，但在大规模管理时会成为运维噩梦。Agent Sandbox 项目通过引入 **Sandbox CRD** 来直接解决这些问题，它是一个轻量级的、完全基于 Kubernetes 原语构建的单容器环境，核心能力包括：
+1.  **强隔离**：原生支持 gVisor、Kata Containers 等运行时，提供内核和网络级别的隔离。
+2.  **生命周期管理**：支持将空闲环境缩容至零，并在需要时快速恢复。
+3.  **稳定身份**：为每个 Sandbox 分配稳定的主机名和网络身份。
+
+## 实践
+
+Agent Sandbox 的部署和使用分为核心组件和可选扩展。
+
+**1. 安装**
+可以通过 `kubectl` 直接应用发布的清单文件来安装核心组件和扩展。
+```bash
+# 替换为具体的版本标签
+export VERSION="vX.Y.Z"
+
+# 安装核心组件
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${VERSION}/manifest.yaml
+
+# 安装扩展组件（可选）
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${VERSION}/extensions.yaml
+```
+
+**2. 使用 Extensions API 消除冷启动**
+传统的 Pod 启动（约 1 秒）对于需要即时响应的 Agent 交互来说延迟过高。Agent Sandbox 提供了 Extensions API，其中的 **SandboxWarmPool** 是一个关键组件。它维护一个预热好的 Sandbox Pod 池，用户或编排服务通过提交一个 `SandboxClaim` 请求，控制器即可立即将一个预热的、完全隔离的环境分配给 Agent，从而有效消除了冷启动延迟。
+
+**3. 客户端集成**
+项目提供了 Python SDK，方便 AI Agent 框架直接与 Kubernetes API 交互来管理 Sandbox 的生命周期。开发者可以参考 SDK 和示例代码，快速将 Agent 工作负载集成到其平台中。
+
+## SRE 要点
+
+将 AI Agent 作为一类特殊工作负载在 Kubernetes 上运行，对 SRE 实践提出了新的考量，Agent Sandbox 提供的抽象有助于应对这些挑战。
+
+*   **可靠性与隔离**：通过使用 gVisor 或 Kata Containers 等强隔离运行时，可以显著降低一个 Agent 内的故障（如恶意或错误代码执行）影响整个节点或其他 Agent 的风险。这是**爆炸半径控制**的关键实践。
+*   **资源效率与成本优化**：Agent Sandbox 的“缩容至零”能力与 [[horizontal-pod-autoscaler]] 的理念一脉相承，但更针对单例有状态场景。这对于主要处于空闲状态的 Agent 来说，可以极大地节省计算资源，是优化云成本的有效手段。SRE 团队需要建立相关的监控，例如，跟踪 Sandbox 池的大小、使用率和唤醒延迟。
+*   **可观测性**：虽然 Agent Sandbox 简化了基础设施管理，但 Agent 本身的活动（代码执行、资源使用、错误）仍需要被监控。SRE 应确保将 Agent 层面的日志和指标纳入统一的观测平台。
+*   **事件响应**：当一个 Agent 出现问题时（如资源泄漏、无响应），SRE 需要有清晰的流程来诊断和恢复。由于 Agent 具有持久状态，可能需要设计特殊的“快照”或“回滚”机制，而非简单的终止并重建 Pod。
+*   **最佳实践与反模式**：
+    *   **实践**：对于需要快速响应的 Agent 场景，积极使用 SandboxWarmPool。在部署 Sandbox 时，明确指定所需的安全运行时和资源限制。
+    *   **反模式**：避免为每个 Agent 手动编排复杂的有状态集合组合，这会导致巨大的运维开销。不要忽视 Agent 的资源配额和限制设置，防止失控的 Agent 消耗过多集群资源。
+
+相关指标可能包括：Sandbox 从空闲到就绪的**唤醒延迟**、Sandbox 池的**利用率**、以及每个 Sandbox 的**资源消耗**（CPU、内存、存储），这些可以作为 Agent 基础设施层面的 [[sli|SLI]]，用于评估平台为 Agent 提供服务的质量。

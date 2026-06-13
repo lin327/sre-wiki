@@ -1,0 +1,97 @@
+---
+title: Kubelet 配置 Drop-in 目录功能 GA
+description: Kubernetes v1.35 将 Kubelet 配置 Drop-in 目录功能提升至 GA，通过一个稳定支持的命令行参数简化大规模异构集群的 Kubelet 配置管理。
+category: SRE 实践
+order: 0
+lastUpdated: 2025-12-22
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2025/12/22/kubernetes-v1-35-kubelet-config-drop-in-directory-ga/
+    title: Kubernetes v1.35: Kubelet Configuration Drop-in Directory Graduates to GA
+tags: [Kubernetes, Configuration-Management, Kubelet, SRE, Best-Practices]
+---
+
+## 概述
+
+在 Kubernetes 的运维实践中，管理大规模、异构集群的配置一直是一个核心挑战。随着 v1.35 版本的发布，Kubelet 配置 Drop-in 目录功能正式毕业至通用可用性（GA），为集群管理员提供了一种稳定、标准化的解决方案。此功能通过 `--config-dir` 命令行参数，允许将一个目录中的所有配置文件自动与 Kubelet 的主配置进行合并，从而在保持基础配置统一性的同时，灵活地支持针对不同节点组或工作负载的定制化需求，显著降低了配置漂移风险和运维复杂度。
+
+## 核心概念
+
+- **Drop-in 目录**：这是一个包含 Kubelet 配置文件的特定目录。当 Kubelet 启动并指定 `--config-dir` 参数时，它会扫描该目录下所有以 `.conf` 结尾的文件，并将这些文件的内容与主配置文件（通过 `--config` 参数指定）进行深度合并。
+- **KubeletConfiguration**：这是 Kubernetes 定义 Kubelet 行为的标准 API 对象。Drop-in 目录中的每个文件都是一个独立的 `KubeletConfiguration` 对象片段。
+- **合并机制**：合并遵循“后加载优先”和“字典深度合并”的原则。文件按其文件名的字母顺序进行处理，后处理的文件会覆盖先处理文件的同名字段，但对于数组或映射类型（如 `clusterDNS`、`evictionHard`）则执行合并而非替换。这使得分层覆盖和配置组合成为可能。
+
+## 实践
+
+### 配置 Drop-in 目录示例
+
+假设您管理着一个包含标准计算节点、高容量节点（如 GPU 节点）和边缘节点的异构集群。您可以按照以下结构组织配置文件：
+
+**基础配置 (`00-base.conf`)**：适用于所有节点。
+```yaml
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+clusterDNS:
+- "10.96.0.10"
+clusterDomain: cluster.local
+```
+
+**高容量节点覆盖 (`50-high-capacity-nodes.conf`)**：为需要运行高密度或资源密集型工作负载的节点进行定制。
+```yaml
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+maxPods: 50
+systemReserved:
+  memory: "4Gi"
+  cpu: "1000m"
+```
+
+**边缘节点覆盖 (`50-edge-nodes.conf`)**：针对资源受限的边缘节点调整驱逐阈值。
+```yaml
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+evictionHard:
+  memory.available: "500Mi"
+  nodefs.available: "5%"
+```
+
+通过文件名中的数字前缀（`00-`, `50-`）可以控制配置的应用顺序。高容量节点将应用 `00-base.conf` 和 `50-high-capacity-nodes.conf` 的合并结果，而边缘节点则应用 `00-base.conf` 和 `50-edge-nodes.conf` 的合并结果。
+
+### 渐进式配置滚动发布
+
+利用 Drop-in 目录，您可以安全地进行配置变更：
+1.  **测试**：添加一个新的 Drop-in 文件（例如 `90-new-feature.conf`），并在一小部分节点上进行测试。
+2.  **逐步推广**：验证无误后，逐步将此文件部署到更多节点组。
+3.  **固化**：待新配置稳定后，将其中的变更合并回基础配置文件或适当的节点组覆盖文件中，并移除临时的测试文件。
+
+### 查看最终合并配置
+
+为了验证最终生效的 Kubelet 配置，您可以查询节点的 `/configz` 端点：
+```bash
+# 启动 kubectl 代理
+kubectl proxy
+
+# 在另一个终端中获取合并后的配置（将 <node-name> 替换为实际节点名）
+curl -X GET http://127.0.0.1:8001/api/v1/nodes/<node-name>/proxy/configz | jq .
+```
+此操作能显示 Kubelet 实际使用的、经过所有合并步骤和命令行参数处理后的最终配置。
+
+## SRE 要点
+
+- **与可靠性、可观测性的关联**：
+    - **配置一致性**：Drop-in 目录是实现 [[config-management]] 一致性的关键工具，直接减少了因配置漂移（Configuration Drift）导致的服务行为不一致问题，是提升集群整体可靠性的基础设施。
+    - **变更管理**：它支持标准化的、可审计的配置变更流程。通过版本控制 Drop-in 文件，所有配置变更历史清晰可追溯，便于故障回滚和问题分析，这与 [[change-management]] 的最佳实践高度契合。
+    - **可观测性**：`/configz` 端点提供了对节点最终运行配置的即时可视化，是 [[kubernetes-observability]] 的重要组成部分。SRE 可以利用此端点进行快速配置审计或故障排查。
+
+- **最佳实践与常见反模式**：
+    - **最佳实践**：
+        1.  **增量测试**：始终在小范围节点上测试新配置。
+        2.  **版本控制**：将所有 Drop-in 文件纳入 Git 等版本控制系统进行管理。
+        3.  **有序命名**：使用数字前缀（如 `00-`, `10-`, `50-`）明确控制合并顺序。
+        4.  **保持目录清洁**：避免在目录中留下文本编辑器产生的临时文件（如 `.swp`, `.bak`），以免被意外合并。
+    - **反模式**：
+        1.  **配置漂移**：放弃 Drop-in 机制，手动在不同节点上应用不同配置，导致维护噩梦。
+        2.  **过度复杂化**：为每个微小配置差异创建单独的 Drop-in 文件，而不是合理分组，导致文件系统混乱。
+        3.  **忽略合并语义**：不理解合并规则（如数组合并而非覆盖），导致配置意料之外的行为。
+
+- **相关指标 (SLI/SLO/SLA)**：虽然此功能本身不直接产生新的 SLI，但它对提升服务的 **配置合规率** 和 **变更成功率** 有直接帮助。SRE 可以定义 SLO，例如“所有节点在 95% 的时间内应运行经审计的、符合标准的基础配置版本”，并利用 Drop-in 目录和 `/configz` 端点来度量和达成该 SLO。

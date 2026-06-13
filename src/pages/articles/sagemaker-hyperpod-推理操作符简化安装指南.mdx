@@ -1,0 +1,125 @@
+---
+title: SageMaker HyperPod 推理操作符简化安装指南
+description: 介绍如何通过 EKS Add-on 模式在 Amazon SageMaker HyperPod 上一键安装推理操作符，实现高效、可靠的 AI 模型部署与生命周期管理。
+category: sagemaker-hyperpod
+order: 0
+lastUpdated: 2026-04-06
+confidence: medium
+sources:
+  - url: https://aws.amazon.com/blogs/architecture/unlock-efficient-model-deployment-simplified-inference-operator-setup-on-amazon-sagemaker-hyperpod/
+    title: AWS Architecture Blog: Unlock efficient model deployment: Simplified Inference Operator setup on Amazon SageMaker HyperPod
+tags: [sagemaker, hyperpod, eks-addon, kubernetes, inference, sre, ai-infrastructure]
+---
+
+## 概述
+
+Amazon SageMaker HyperPod 为 AI 全生命周期（实验、训练、推理）提供端到端的解决方案。HyperPod Inference Operator 是一个 Kubernetes 控制器，负责在 HyperPod 集群上管理模型的部署和生命周期。它提供了灵活的部署接口（`kubectl`、Python SDK、SageMaker Studio UI、HyperPod CLI）、基于动态资源分配的高级自动伸缩功能，以及全面的可观测性（跟踪首令牌时间、延迟、GPU利用率等关键指标）。
+
+在 SRE 实践中，基础设施的可管理性和部署的可靠性至关重要。传统在 Kubernetes 上部署 AI 推理负载的过程涉及复杂的 Helm 图表、IAM 配置、依赖管理和手动升级，耗时数小时。将 Inference Operator 升级为 **EKS Add-on** 模式，实现了从 SageMaker 控制台的一键安装和托管升级，极大简化了运维复杂度，使 SRE 团队能够更专注于保障服务的可靠性目标（SLO），而非底层基础设施的配置。
+
+## 核心概念
+
+**1. Inference Operator 与 EKS Add-on 模式**
+- **Inference Operator**：一个运行在 Kubernetes 上的控制器，负责处理 `InferenceEndpointConfig` 或 `JumpStartModel` 等自定义资源（CR），管理模型部署、扩缩容、节点调度等。
+- **EKS Add-on**：一种由 AWS 托管、与 EKS 集群紧密集成的扩展机制。它简化了第三方软件（如负载均衡器、存储驱动）的安装、升级和管理。将 Inference Operator 实现为 EKS Add-on，意味着其版本管理、补丁更新和回滚都由 AWS 和 EKS 控制平面处理，符合 SRE 对变更管理和故障恢复的要求。
+
+**2. 高级部署功能**
+- **多实例类型部署**：允许在配置中指定一个带优先级的实例类型列表（例如 `["ml.p4d.24xlarge","ml.g5.24xlarge"]`）。Kubernetes 调度器使用 `nodeAffinity` 规则，按优先级顺序尝试调度。当首选实例类型不可用时，自动回退到次优选择，这提升了部署成功率和资源利用效率。
+- **原生节点亲和性**：直接暴露 Kubernetes 的 `nodeAffinity` 字段，允许 SRE/平台团队进行精细的调度控制，例如排除 Spot 实例、偏好特定可用区或定位具有自定义标签的节点，这对于实现高可用性和成本优化至关重要。
+
+**3. 依赖管理**
+Operator 依赖于多个 Kubernetes 组件，默认包含但可按需禁用：
+- **cert-manager**：管理 TLS 证书。
+- **S3/FSx CSI 驱动**：提供对 S3 和 FSx for Lustre 的持久化存储访问。
+- **AWS Load Balancer Controller**：管理 AWS 负载均衡器。
+- **KEDA Operator**：实现基于事件的自动伸缩（如根据队列长度或 GPU 利用率）。
+
+## 实践
+
+### 安装方法
+
+**方法一：通过 SageMaker 控制台安装（推荐）**
+这是最简化的体验，提供两种选项：
+- **快速安装**：自动创建所有必要资源（IAM 角色、S3 存储桶、依赖 Add-on）并使用优化默认值部署 Operator。
+- **自定义安装**：允许复用现有资源（如 IAM 角色、S3 存储桶）或自定义配置。
+
+安装步骤如下：
+1.  导航至 SageMaker 控制台 -> **HyperPod 集群** -> **集群管理**。
+2.  选择目标集群。
+3.  转到 **推理** 选项卡，选择 **快速安装** 或 **自定义安装**。
+4.  对于 **自定义安装**，指定现有资源。
+5.  点击 **安装** 开始自动化过程。
+6.  验证安装状态：
+    ```bash
+    kubectl get pods -n hyperpod-inference-system
+    # 或
+    aws eks describe-addon --cluster-name <CLUSTER-NAME> --addon-name amazon-sagemaker-hyperpod-inference --region <REGION>
+    ```
+
+**方法二：通过 EKS API (CLI) 安装**
+适用于偏好命令行工作流的团队，但需**手动预先创建所有先决条件资源**（IAM 角色、S3 存储桶、VPC 端点等）。
+```bash
+aws eks create-addon \
+  --cluster-name my-hyperpod-cluster \
+  --addon-name amazon-sagemaker-hyperpod-inference \
+  --addon-version v1.0.0-eksbuild.1 \
+  --configuration-values '{
+    "executionRoleArn": "arn:aws:iam::ACCOUNT-ID:role/SageMakerHyperPodInference-inference-role",
+    "tlsCertificateS3Bucket": "hyperpod-tls-certificate-bucket",
+    "hyperpodClusterArn": "arn:aws:sagemaker:REGION:ACCOUNT-ID:cluster/CLUSTER-ID",
+    "alb": { "serviceAccount": { "create": true, "roleArn": "arn:aws:iam::ACCOUNT-ID:role/alb-controller-role" } },
+    "keda": { "auth": { "aws": { "irsa": { "roleArn": "arn:aws:iam::ACCOUNT-ID:role/keda-operator-role" } } } }
+  }' \
+  --region us-west-2
+```
+
+**方法三：通过 Terraform (IaC) 安装**
+适用于使用基础设施即代码管理环境的团队。在 `custom.tfvars` 文件中启用模块：
+```hcl
+create_hyperpod_inference_operator_module = true
+```
+Terraform 模块会处理所有依赖项的安装。可通过变量（如 `enable_cert_manager = false`）禁用已存在的组件。
+
+### 模型部署示例
+安装完成后，可通过自定义资源部署模型：
+```yaml
+apiVersion: inference.sagemaker.aws.amazon.com/v1
+kind: InferenceEndpointConfig
+metadata:
+  name: lmcache-test-1
+  namespace: default
+spec:
+  replicas: 13
+  modelName: Llama-3.1-8B-Instruct
+  instanceTypes: ["ml.p4d.24xlarge","ml.g5.24xlarge","ml.g5.8xlarge"] # 多实例类型优先级列表
+```
+
+### 清理与迁移
+- **卸载操作符**：可通过 SageMaker 控制台点击“移除”，或使用 AWS CLI `aws eks delete-addon`。
+- **删除模型**：`kubectl delete inferenceendpointconfig <name>` 或 `kubectl delete jumpstartmodel <name>`。
+- **从 Helm 迁移**：存在自动化迁移脚本，支持自动发现现有 Helm 配置、安全地缩放旧部署、安装新 Add-on，并具备回滚能力，确保零停机迁移。
+
+## SRE 要点
+
+### 与可靠性的关联
+- **降低部署风险**：一键式、托管的安装和升级流程，消除了因手动配置 Helm 图表或 IAM 策略错误导致的人为失误，这是事件响应中常见的根本原因之一。
+- **增强弹性**：多实例类型部署和节点亲和性功能，使模型部署在面对底层实例容量波动时更具弹性，有助于维持服务的可用性目标（SLA）。
+- **简化灾难恢复**：作为 EKS Add-on，其状态由控制平面管理，集群重建或恢复后可快速重新安装，缩短恢复时间目标（RTO）。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    - **使用 IaC**：通过 Terraform 等工具管理安装配置，确保环境一致性。
+    - **利用自定义安装**：在生产环境中，复用已通过审核的 IAM 角色和基础设施资源，符合最小权限原则。
+    - **启用可观测性**：集成 HyperPod Observability Add-on，建立对推理服务性能的全面可视化，设置基于 **SLI**（如首令牌时间、P99延迟）的 **SLO** 和 **Error Budget**。
+- **反模式**：
+    - **绕过控制台直接修改底层资源**：如直接修改 Add-on 的 IAM 角色，可能破坏托管生命周期，导致升级失败。
+    - **忽略依赖管理**：在已有复杂环境的集群上使用“快速安装”可能导致资源冲突。应使用“自定义安装”显式管理依赖。
+
+### 相关指标（SLI/SLO/SLA）
+Inference Operator 提供的可观测性数据是构建 SLO 的基础：
+- **首令牌时间**：衡量请求到生成第一个令牌的延迟，是 LLM 推理的关键体验指标。
+- **端到端延迟**：请求的总处理时间。
+- **GPU 利用率**：反映资源效率和潜在瓶颈。
+- **自动伸缩指标**：如 KEDA 基于的队列长度或自定义指标，用于实现 **SLI** 驱动的自动伸缩，以维持 **SLO**。SRE 团队应基于这些指标定义明确的服务等级目标（例如，“99% 的请求首令牌时间 < 500ms”），并据此管理 Error Budget。
+
+相关页面：[[sre-observability]], [[incident-response]], [[infrastructure-as-code]]

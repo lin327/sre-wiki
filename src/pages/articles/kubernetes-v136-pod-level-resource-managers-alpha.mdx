@@ -1,0 +1,110 @@
+---
+title: Kubernetes v1.36 Pod-Level Resource Managers (Alpha)
+description: 介绍Kubernetes v1.36引入的Pod级别资源管理器Alpha特性，允许以Pod为中心分配计算和内存资源，优化性能敏感型工作负载的资源隔离与利用率。
+category: workload-management
+order: 0
+lastUpdated: 2024-10-30
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/01/kubernetes-v1-36-feature-pod-level-resource-managers-alpha/
+    title: Kubernetes v1.36: Pod-Level Resource Managers (Alpha)
+tags: [kubernetes, sre, performance, resources, alpha]
+---
+
+## 概述
+Kubernetes v1.36 引入了 **Pod-Level Resource Managers** 作为 Alpha 特性。它扩展了 kubelet 中的拓扑管理器（Topology Manager）、CPU 管理器和内存管理器，使其能够支持在 Pod 级别（`.spec.resources`）定义资源请求与限制。这一增强将资源分配模型从严格的“每容器”模型演进为以 Pod 为中心的模型，为性能敏感型工作负载（如机器学习训练、高频交易、低延迟数据库）提供了更灵活、高效的资源管理方式。
+
+## 核心概念
+### Pod 级别资源规格
+该特性允许在 Pod 规范中直接声明计算和内存资源（`.spec.resources`），作为整个 Pod 的资源“预算”。这改变了此前资源完全按容器独立分配的模式。
+
+### 混合资源分配模型
+启用此功能后，kubelet 可以创建混合分配模型。根据[[topology-manager|拓扑管理器]]的配置，它能够：
+1.  **为关键容器提供独占的、NUMA 对齐的资源**：确保主要应用容器获得可预测的高性能。
+2.  **创建 Pod 共享池**：Pod 预算中剩余的资源可以形成一个池，供 Pod 内的辅助容器（如 sidecar）共享使用。这些容器与关键容器以及节点上的其他工作负载严格隔离。
+3.  **保持 Pod 级别的资源边界**：整个 Pod 的资源消耗仍受其 Pod 级别预算的约束。
+
+### CPU 配额（CFS）与隔离
+在混合工作负载模型中，隔离机制如下：
+- **独占容器**：获得独占 CPU 切片的容器会禁用容器级的 CPU CFS 配额，避免被 Linux 调度器节流，以获得最佳性能。
+- **Pod 共享池容器**：运行在 Pod 共享池中的容器，其 CPU CFS 配额在 **Pod 级别** 进行强制执行，确保它们不会超出 Pod 的剩余预算。
+
+## 实践
+### 启用 Pod-Level Resource Managers
+要在 Kubernetes v1.36+ 中启用此功能，需要在 kubelet 配置中进行以下设置：
+1.  启用 Feature Gate `PodLevelResources` 和 `PodLevelResourceManagers`。
+2.  将[[topology-manager|拓扑管理器]]策略配置为非 `none`（例如 `best-effort`、`restricted` 或 `single-numa-node`）。
+3.  在 `KubeletConfiguration` 的 `topologyManagerScope` 字段中，将拓扑管理器作用域设置为 `pod` 或 `container`。
+4.  将[[cpu-manager-policies|CPU 管理器]]策略配置为 `static`。
+5.  将[[memory-manager-policies|内存管理器]]策略配置为 `Static`。
+
+### 实际应用示例
+#### 场景一：紧密耦合的数据库（拓扑管理器 Pod 作用域）
+在一个包含主数据库容器、指标导出器和备份代理 sidecar 的延迟敏感型 Pod 中：
+- 使用 Pod 级别资源设定整个 Pod 的预算（如 8 CPU，16Gi 内存）。
+- 主数据库容器请求独占资源（如 6 CPU，12Gi 内存），并获得 NUMA 对齐的独占切片。
+- 剩余资源（2 CPU，4Gi 内存）形成 **Pod 共享池**，供指标导出器和备份代理共享。它们与数据库隔离，但共享池内的资源。
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tightly-coupled-database
+spec:
+  # Pod 级别资源确立总预算和 NUMA 对齐大小
+  resources:
+    requests:
+      cpu: "8"
+      memory: "16Gi"
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+  containers:
+  - name: database
+    image: database:v1
+    # 此 Guaranteed 容器从 Pod 预算中获得独占的 6 CPU 切片。
+    # 剩余的 2 CPU 和 4Gi 内存组成用于 sidecar 的 Pod 共享池。
+    resources:
+      requests:
+        cpu: "6"
+        memory: "12Gi"
+      limits:
+        cpu: "6"
+        memory: "12Gi"
+  # initContainers 定义了 sidecar，它们将使用共享池资源
+  initContainers:
+  - name: metrics-exporter
+    image: metrics-exporter:v1
+    restartPolicy: Always
+  - name: backup-agent
+    image: backup-agent:v1
+    restartPolicy: Always
+```
+
+#### 场景二：带有基础设施 sidecar 的 ML 工作负载（拓扑管理器 Container 作用域）
+在一个运行 GPU 加速 ML 训练工作负载和通用服务网格 sidecar 的 Pod 中：
+- 使用 Pod 级别资源设定总预算（如 4 CPU，8Gi 内存）。
+- 在 `container` 作用域下，ML 训练容器可获得独占的 NUMA 对齐 CPU 和内存（如 3 CPU，6Gi 内存）。
+- 服务网格 sidecar 不需要 NUMA 对齐，可以运行在节点的全局共享池中，但仍受 Pod 级别总预算的约束。
+
+## SRE 要点
+### 可靠性、可观测性与事件响应
+- **性能保障**：为关键路径容器提供独占、NUMA 对齐的资源，减少了不可预测的性能抖动，直接提升了服务的可用性与响应时间（有利于达成 SLO）。
+- **可观测性**：该功能引入了新的 kubelet 指标，便于监控资源分配状态：
+    - `resource_manager_allocations_total`：统计总分配次数，通过 `source` 标签区分来自节点池还是 Pod 预算池的分配。
+    - `resource_manager_allocation_errors_total`：统计分配错误次数。
+    - `resource_manager_container_assignments`：跟踪容器运行的分配类型（`node_exclusive`、`pod_exclusive`、`pod_shared`），提供工作负载分布可见性。
+- **事件响应**：在排查性能问题时，可以通过这些指标判断关键容器是否获得了预期的独占资源，以及共享池中的容器是否造成了资源争抢。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    - 将此特性用于真正需要可预测性能的 Pod（如数据库、交易系统）。
+    - 在 `pod` 作用域下，合理规划 Pod 级别资源预算，为关键容器和共享池中的 sidecar 留出足够空间。
+    - 利用新的 kubelet 指标监控资源分配健康状况，并设置告警（例如，针对分配错误）。
+- **常见反模式**：
+    - 为所有容器都请求独占资源，导致资源浪费，失去了共享池的灵活性优势。
+    - 在未仔细规划的情况下，将过多的 sidecar 与关键容器放在同一 Pod 的共享池中，可能耗尽 Pod 预算，影响关键容器性能。
+    - 在生产环境过早采用此 Alpha 特性，而未充分测试其稳定性及对现有工作负载的影响。
+
+### 相关指标
+该特性本身不直接定义新的 SLI，但它通过更精细的资源控制，有助于保障基于延迟、吞吐量的 SLI。管理者可以利用新增的 kubelet 指标作为 **资源分配有效性** 的辅助 SLI，并关注分配错误率以避免资源分配失败导致的 SLO 违约。

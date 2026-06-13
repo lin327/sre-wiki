@@ -1,0 +1,71 @@
+---
+title: Kubernetes v1.36: 压力停滞信息 (PSI) 指标正式发布 (GA)
+description: 介绍 Kubernetes v1.36 中正式发布的 PSI 指标，它为节点、Pod 和容器级别的资源压力提供了高保真信号，是提升集群可观测性和可靠性的关键工具。
+category: 可观测性与监控
+order: 0
+lastUpdated: 2026-05-12
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/12/kubernetes-v1-36-psi-metrics-ga/
+    title: Kubernetes Blog - Kubernetes v1.36: PSI Metrics for Kubernetes Graduates to GA
+tags: [psi, kubernetes, monitoring, sre, observability, node-health, cgroups, cadvisor]
+---
+
+## 概述
+压力停滞信息 (Pressure Stall Information, PSI) 是一种源自 Linux 内核的机制，它通过提供任务因资源饱和而停滞的时间比例，为系统压力提供了高保真信号。在 Kubernetes v1.36 中，PSI 指标正式宣布为稳定可用 (GA)，标志着 Kubernetes 生态系统获得了一个可靠、标准化的接口，用于在节点、Pod 和容器级别观察资源争用情况。对于 SRE 团队而言，这超越了传统的资源利用率监控，是实现主动式容量规划、精准的事件根因分析以及设定可靠的服务级别目标 (SLO) 的重要工具。
+
+## 核心概念
+传统监控通常关注 CPU 或内存的使用率百分比，但这可能具有误导性。一个节点可能报告显示 80% 的 CPU 利用率，但其中一些任务可能因调度延迟而遭遇严重性能下降。PSI 正是为填补这一空白而设计。
+
+**PSI 提供的核心指标包括：**
+*   **累计总量**：任务处于停滞状态所花费的绝对时间。
+*   **移动平均值**：提供 10 秒、60 秒和 300 秒窗口的平均值，使运维人员能够区分瞬时峰值和持续性的资源紧张。
+
+PSI 监控涵盖三大类资源：**CPU**、**内存 (Memory)** 和 **I/O**。每个类别都提供了不同时间窗口的指标，例如 `cpu_psi_10s_avg` 或 `io_psi_300s_total`，这些指标共同描绘了资源压力的全貌。
+
+## 实践
+### 前提条件与启用
+要在 Kubernetes 集群中使用 PSI 指标，节点必须满足以下要求：
+1.  **Linux 内核版本**：4.20 或更高版本。
+2.  **cgroup 版本**：必须使用 cgroup v2。
+3.  **操作系统级启用**：内核编译时需包含 `CONFIG_PSI=y`，且启动参数中不能设置 `psi=0`。
+
+从 Kubernetes v1.36 开始，Kubelet PSI 指标已默认启用，无需任何功能门 (Feature Gate) 配置。只要节点满足上述操作系统要求，指标就会自动采集和暴露。
+
+### 数据采集与访问
+PSI 指标主要通过以下两种方式暴露：
+*   **Metrics 端点**：可以通过 Prometheus 兼容的监控系统抓取 Kubelet 的 `/metrics/cadvisor` 端点来获取 PSI 数据。这是生产环境中持续监控和告警的主要方式。
+*   **Summary API**：对于实时诊断，具有特权权限的节点管理员可以通过 API Server 代理访问 Kubelet 的 Summary API。例如，使用以下命令获取特定容器的实时压力数据：
+    ```bash
+    CONTAINER_NAME="example-container"
+    kubectl get --raw "/api/v1/nodes/$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')/proxy/stats/summary" | jq '.pods[].containers[] | select(.name=="'"$CONTAINER_NAME"'") | {name, cpu: .cpu.psi, memory: .memory.psi, io: .io.psi}'
+    ```
+    **注意**：代理到 Kubelet 是一项特权操作，存在安全风险，必须确保操作者拥有适当的管理员权限。
+
+### 注意事项
+*   PSI 是 Linux 内核特性，因此 **Windows 节点不提供这些指标**。在混合集群中，Kubelet 会自动忽略 Windows 节点上的 PSI 指标收集。
+*   在 v1.36 中，即使操作系统未启用 PSI（`psi=0`），Kubelet 也不会再报告具有误导性的零值指标，而是会正确地检测并省略这些指标，避免触发误报。
+
+## SRE 要点
+### 与可靠性的关联
+PSI 是提升系统可观测性和实现可靠性目标的核心支柱。
+*   **容量规划**：PSI 的持续高值（如 `io_psi_300s_avg` 长期高于阈值）是节点资源过度争用的直接信号，远比单纯观察利用率更早发出预警，支持更精准的容量规划。
+*   **事件响应与根因分析**：当服务出现延迟或错误时，检查相关容器或节点的 PSI 指标可以迅速定位瓶颈（CPU 调度延迟、内存回收压力或 I/O 阻塞），极大缩短故障排查时间 (MTTR)。
+*   **SLO 定义与 Error Budget**：可以将关键资源的 PSI 指标（如 CPU 停滞时间比例）作为服务级别指标 (SLI) 或其补充。例如，定义一个 SLO，要求 `cpu_psi_60s_avg` 的 99 分位值低于某个阈值，从而将资源压力直接与业务可靠性目标挂钩。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    *   将 PSI 指标集成到监控仪表板和告警规则中，特别是关注 **移动平均值** 以识别趋势。
+    *   结合 PSI 和传统利用率指标进行综合判断，PSI 提供的是“影响”（任务停滞），利用率提供的是“状态”（资源占用）。
+    *   使用 PSI 指导垂直或水平的 Pod 自动扩缩容决策，使其响应更贴近实际性能影响。
+*   **常见反模式**：
+    *   **忽视告警**：将 PSI 告警误认为“虚假警报”而忽略，从而错过资源饱和的早期信号。
+    *   **孤立看待指标**：仅在节点级别查看 PSI，而不关联到具体的 Pod 或容器，可能导致无法定位具体工作负载。
+    *   **依赖快照值**：过度关注瞬时 PSI 峰值，而忽略其持续时间（通过移动平均窗口判断），可能导致不必要的误操作。
+
+### 相关指标 (SLI/SLO/SLA)
+PSI 指标本身即可作为强大的 SLI 候选。例如：
+*   `node_cpu_psi_10s_avg`: 节点 CPU 压力的 10 秒平均值。
+*   `pod_memory_psi_60s_avg`: Pod 内存压力的 60 秒平均值。
+*   `container_io_psi_300s_total`: 容器 I/O 压力的 5 分钟累计停滞时间百分比。
+可以基于这些指标设定 SLO，例如：“在 99% 的采样点内，生产 Pod 的 CPU 10秒压力平均值不超过 5%”。

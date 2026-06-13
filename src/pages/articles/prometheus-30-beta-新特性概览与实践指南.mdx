@@ -1,0 +1,87 @@
+---
+title: Prometheus 3.0 Beta 新特性概览与实践指南
+description: Prometheus 3.0 Beta 发布，引入全新UI、Remote Write 2.0和原生OpenTelemetry支持，标志着监控系统向更现代、更集成的架构演进。
+category: 监控与可观测性
+order: 0
+lastUpdated: 2024-09-11
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2024/09/11/prometheus-3-beta/
+    title: "Prometheus 3.0 Beta Released - Prometheus Blog"
+tags: [prometheus, monitoring, observability, otel, histograms, remote-write, sre, release-notes]
+---
+
+## 概述
+
+Prometheus 3.0 Beta 的发布是 Prometheus 监控系统自 2.0 版本发布七年来的一个重要里程碑。作为云原生事实上的监控标准，这次更新引入了诸多旨在提升用户体验、增强协议能力以及深化与新兴可观测性标准（如 OpenTelemetry）集成的重大新特性。本次 Beta 版本的核心目标是收集社区反馈以确保最终 3.0 稳定版的可靠性，因此它不建议直接部署于关键生产环境，但鼓励 SRE 和 DevOps 团队在测试环境中积极试用。
+
+Prometheus 3.0 的设计理念是在保持向后兼容性的基础上进行创新。大多数现有用户可以“开箱即用”地升级，无需修改配置文件，这极大地降低了技术栈演进的迁移成本。此次更新不仅带来了令人瞩目的新功能，也清理了一些历史遗留问题，为 Prometheus 作为长期监控解决方案的稳定性和可扩展性奠定了新的基础。
+
+## 核心概念
+
+### 全新用户界面 (New UI)
+3.0 版本用全新设计的 Web UI 替换了旧版界面。新版 UI 默认启用，采用了更现代的技术栈和设计语言，界面更加简洁直观。其亮点包括引入了类似 PromLens 的**树状视图**，这对于理解和调试复杂的嵌套 PromQL 查询尤为有用。官方为了照顾用户习惯，提供了 `old-ui` 特性标志可以临时切换回旧版 UI。作为一个新事物，它可能尚存缺陷，社区鼓励用户测试并反馈问题。
+
+### Remote Write 2.0
+这是远程写入协议的一次重要迭代。Remote Write 2.0 协议原生支持**元数据**、**Exemplars**、**创建时间戳 (Created Timestamp)** 和**原生直方图 (Native Histograms)** 等新元素。它还通过字符串驻留（string interning）技术优化了数据压缩/解压缩过程，有效降低了传输负载大小和 CPU 消耗。该协议的增强使得 Prometheus 在数据转发和长期存储场景中更加高效和强大。
+
+### OpenTelemetry 深度集成
+Prometheus 3.0 明确了其作为 OpenTelemetry 指标默认存储后端的定位，并提供了两项关键支持：
+
+1.  **UTF-8 支持**：默认情况下，Prometheus 允许指标和标签名称中使用所有有效的 UTF-8 字符。这对于直接接收来自 OpenTelemetry 等系统的、使用丰富命名约定的指标至关重要。如果端到端不支持 UTF-8，指标名称将按照传统方式（用下划线替换非法字符）进行转义。
+2.  **OTLP Ingestion**：Prometheus 现在可以被配置为一个**原生接收器**，直接通过 `/api/v1/otlp/v1/metrics` 端点接收 OTLP 指标协议数据，无需额外代理。这简化了架构，降低了延迟。
+
+### Native Histograms (实验性)
+Native Histograms 是一种更高效的 Prometheus 指标类型，旨在替代传统的经典直方图（Classic Histograms）。它不再需要预先手动定义静态的桶边界，而是基于指数增长**自动设置桶边界**。这种方式在精度和效率上都有优势，尤其适用于值域分布广泛且动态变化的数据。此特性在 3.0 Beta 中仍为实验性，需通过 `--enable-feature=native-histograms` 特性标志手动启用，其规范和 API 仍在完善中。
+
+### 移除的特性标志与行为变更
+为保持代码整洁和行为一致性，以下特性标志已在 3.0 中被移除，其对应功能现在默认启用：
+- `promql-at-modifier`
+- `promql-negative-offset`
+- `remote-write-receiver`
+- `no-scrape-default-port`
+- `new-service-discovery-manager`
+
+另一个重要的行为变更是 PromQL 范围选择器的区间定义从 `左闭右闭` (`[a, b]`) 变为**左开右闭** (`(a, b]`)。这解决了在范围查询和聚合操作中偶尔包含多余数据点的问题。此外，Agent 模式现已稳定，并拥有独立的配置标志。
+
+## 实践
+
+**测试 Beta 版本**：
+1.  **获取安装**：从 [GitHub Releases](https://github.com/prometheus/prometheus/releases/tag/v3.0.0-beta.0) 页面下载适用于你平台的二进制文件。
+2.  **独立部署测试**：强烈建议在一个与生产环境隔离的测试集群或实例上部署 3.0 Beta。可以使用现有的配置文件启动，以验证其向后兼容性。
+3.  **启用新特性**：
+    - 新 UI 默认已启用，直接访问 Web 界面即可。
+    - 要测试 Native Histograms，启动时需添加 `--enable-feature=native-histograms` 参数。
+    - 配置一个 OTLP 端点接收器，尝试从 OpenTelemetry Collector 发送指标。
+4.  **验证与反馈**：重点测试新 UI 的交互性、查询性能；测试 Remote Write 2.0 的数据完整性和资源消耗；检查所有现有告警和仪表板是否工作正常。如发现问题，请在 [Prometheus GitHub Issues](https://github.com/prometheus/prometheus/issues/new?template=bug_report.yml) 中详细报告。
+
+**升级路径考量**：
+对于计划升级到稳定版 3.0 的团队，现在是绝佳的准备时机。需要做的前期工作包括：
+- **清理配置文件**：移除所有已移除的特性标志引用。
+- **评估 PromQL 查询**：检查是否有依赖于左闭右闭区间行为的查询或告警规则，可能需要微调。
+- **规划 Native Histograms**：评估原生直方图是否适用于你的指标类型，制定启用计划。
+- **测试 Agent 模式**：如果你的部署使用了 Agent 模式，测试使用新的独立配置标志是否工作正常。
+
+## SRE 要点
+
+### 与可靠性工程的关联
+Prometheus 3.0 的更新直接服务于 SRE 核心目标——提升系统可靠性和运维效率。
+- **提升可观测性**：OTLP 原生支持和 UTF-8 命名，使得构建覆盖传统指标、追踪和日志的**统一可观测性**管道更加顺畅，有助于实现更全面的故障排查。
+- **增强数据可靠性**：Remote Write 2.0 对元数据和 Exemplars 的支持，确保了指标在转发过程中上下文信息的完整性，对于关联指标与追踪信息、进行根因分析至关重要。
+- **优化资源效率**：Remote Write 2.0 的压缩优化和 Native Histograms 的潜在存储效率提升，有助于控制监控系统自身的成本与性能，这在 SRE 管理**错误预算**时是一个重要考量。
+
+### 最佳实践与反模式
+- **最佳实践**：在开发或 staging 环境中全面测试新版本。利用新 UI 的树状视图来理解和优化关键业务的复杂 PromQL。逐步评估并迁移至 Remote Write 2.0 以获取协议收益。
+- **常见反模式**：
+    - **盲目升级生产环境**：这是 Beta 版本测试期间最应避免的行为。
+    - **忽略行为变更**：未意识到范围选择器的区间变化可能导致告警或仪表板数据错误。
+    - **过度依赖实验性特性**：在 Native Histograms 相关规范稳定前，应谨慎用于核心业务数据。
+
+### 相关指标 (SLI/SLO/SLA)
+此次更新会影响监控系统自身的 SLI 指标定义：
+- **数据摄入延迟**：OTLP 原生接收可能改变从数据生成到可查询的延迟路径。
+- **数据完整性**：Remote Write 2.0 的新特性是否被正确接收和存储。
+- **查询性能**：新 UI 和 PromQL 变更可能影响查询延迟。
+- **自身资源使用率**：新版本对 Prometheus Server 的 CPU、内存消耗可能有变化。
+
+团队需要在升级后重新校准监控系统自身的 SLO，并确保它们在新架构下依然可靠。同时，得益于更强的 OTLP 支持，定义面向用户的服务 SLO 时可以更便捷地融合来自 OpenTelemetry 的指标。

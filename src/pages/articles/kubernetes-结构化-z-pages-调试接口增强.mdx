@@ -1,0 +1,93 @@
+---
+title: Kubernetes 结构化 z-pages 调试接口增强
+description: Kubernetes 1.35 为控制面组件的调试端点引入结构化、版本化的 JSON 响应，以提升自动化运维与故障排查效率。
+category: Kubernetes
+order: 0
+lastUpdated: 2025-12-31
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2025/12/31/kubernetes-v1-35-structured-zpages/
+    title: Kubernetes 1.35: Enhanced Debugging with Versioned z-pages APIs
+tags: [kubernetes, debugging, observability, sre, control-plane, api]
+---
+
+## 概述
+
+在 Kubernetes 集群运维中，快速诊断控制面组件（如 `kube-apiserver`）的运行时状态是站点可靠性工程（SRE）的核心挑战之一。传统的 `/*z` 调试端点（z-pages）虽然提供了关键信息，但其纯文本格式难以被程序化解析和自动化工具利用。Kubernetes 1.35 对此进行了重要增强，为 `statusz` 和 `flagz` 端点引入了结构化的、版本化的 JSON 响应。这一改进在保持向后兼容性的同时，显著提升了调试信息的可机读性，为构建更智能的监控和故障排查工作流奠定了基础。
+
+## 核心概念
+
+### z-pages 是什么？
+
+z-pages 是一组由 Kubernetes 控制面组件（如 `kube-apiserver`、`kube-controller-manager`、`kube-scheduler`、`kubelet`、`kube-proxy`）暴露的特殊调试端点。它们提供组件的实时运行时诊断信息。其名称来源于使用 `/*z` 路径模式的约定。目前，主要的两个端点是：
+
+*   **`/statusz`**：显示组件的高层级信息，包括版本、启动时间、运行时长和可用的调试路径。
+*   **`/flagz`**：显示组件启动时使用的所有命令行参数及其值（机密信息会被脱敏）。
+
+### 1.35 版本的核心改进：结构化响应
+
+在 1.35 版本之前，这些端点仅返回纯文本。1.35 引入了**结构化、版本化**的响应格式，其核心是：
+
+1.  **向后兼容**：这是一个“opt-in”特性。如果不指定 `Accept` 头部，端点仍然返回熟悉的纯文本。
+2.  **JSON 格式**：通过在 HTTP 请求中携带特定的 `Accept` 头部，可以获取 JSON 格式的响应。例如，获取结构化的 `statusz` 信息，需要设置头部：`Accept: application/json;v=v1alpha1;g=config.k8s.io;as=Statusz`。
+3.  **版本化 API**：响应中明确标识了 `apiVersion`（当前为 `config.k8s.io/v1alpha1`），为未来 API 的演进（如引入 `v1beta1`、`v1`）提供了清晰路径，保障了工具的稳定性。
+
+## 实践
+
+### 前提条件
+
+要使用结构化 z-pages，必须在对应的组件上启用相应的特性门控（Feature Gate）：
+
+*   `/statusz` 端点：启用 `ComponentStatusz`。
+*   `/flagz` 端点：启用 `ComponentFlagz`。
+
+### 查询示例
+
+以下是使用 `curl` 命令从 `kube-apiserver` 获取结构化 JSON 响应的示例（使用客户端证书进行认证）：
+
+```bash
+# 获取结构化的 statusz 响应
+curl \
+  --cert /etc/kubernetes/pki/apiserver-kubelet-client.crt \
+  --key /etc/kubernetes/pki/apiserver-kubelet-client.key \
+  --cacert /etc/kubernetes/pki/ca.crt \
+  -H "Accept: application/json;v=v1alpha1;g=config.k8s.io;as=Statusz" \
+  https://localhost:6443/statusz | jq .
+
+# 获取结构化的 flagz 响应
+curl \
+  --cert /etc/kubernetes/pki/apiserver-kubelet-client.crt \
+  --key /etc/kubernetes/pki/apiserver-kubelet-client.key \
+  --cacert /etc/kubernetes/pki/ca.crt \
+  -H "Accept: application/json;v=v1alpha1;g=config.k8s.io;as=Flagz" \
+  https://localhost:6443/flagz | jq .
+```
+
+**重要提示**：示例中使用了 `--cacert` 来验证服务器证书，确保了连接的安全性。在测试环境中，使用 `-k`（`--insecure`）跳过证书验证会带来中间人攻击风险，切勿在生产环境中使用。
+
+## SRE 要点
+
+### 与 SRE 实践的关联
+
+结构化 z-pages 直接增强了 Kubernetes 控制面的**可观测性**，为 SRE 的三大核心支柱（指标、日志、追踪）之外，增添了更精细的**配置与状态可观测性**。它使得：
+
+*   **事件响应**：在排查 API Server 异常时，可以快速、准确地获取其版本、配置和运行时间，为定位问题提供关键上下文。
+*   **自动化与编程**：自动化脚本和监控系统（如 Prometheus 的自定义 Exporter）可以轻松解析 JSON，检查组件是否运行了预期的模拟版本（`emulationVersion`）或关键标志（如 `--authorization-mode`），实现主动式健康检查。
+*   **配置漂移检测**：通过定期对比 `flagz` 的 JSON 响应，可以自动化地检测控制面组件配置是否意外发生了变更。
+
+### 最佳实践与安全考量
+
+*   **访问控制**：z-pages 端点受 `system:monitoring` 组的授权保护，与 `/healthz` 等端点一致。应严格控制对此组的 RBAC 权限，仅授权必要的运维人员和监控系统。
+*   **认证必须**：生产环境中必须启用认证，通常使用客户端证书。绝对禁止允许匿名访问或暴露这些端点到公网。
+*   **信息暴露风险**：`flagz` 端点会暴露组件的所有启动参数（尽管机密值已脱敏），这属于高敏感度信息。仅在需要深度调试时才开放访问权限。
+*   **功能成熟度**：请牢记，结构化响应在 1.35 中仍为 **alpha 特性**。这意味着 API 格式可能变化。**不建议将其用于关键的生产级 SLO 监控或告警工作流**，应等待其达到 Beta 或 Stable 状态后再考虑大规模采纳。
+
+### 相关指标与演进
+
+*   **相关指标**：虽然 z-pages 本身不是 SLI，但它们暴露的元数据（如版本、运行时间）对于理解组件运行状况和定义相关的 SLO 至关重要。例如，可以定义一个 SLO：关键控制面组件的配置漂移在 24 小时内必须被检测到。
+*   **未来演进**：Kubernetes SIG Instrumentation 计划收集社区反馈，未来版本可能会将 API 从 `v1alpha1` 推进到 `v1beta1` 和 `v1`，并可能增加新的 z-page 端点以暴露更多调试信息。请关注 [KEP-4827](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/4827-component-statusz/README.md) 和 [KEP-4828](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/4828-component-flagz/README.md) 的进展。
+
+### 相关页面
+
+*   [[kubernetes-health-checks]]
+*   [[observability]]

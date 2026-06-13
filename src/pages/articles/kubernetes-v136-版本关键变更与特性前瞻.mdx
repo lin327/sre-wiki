@@ -1,0 +1,69 @@
+---
+title: Kubernetes v1.36 版本关键变更与特性前瞻
+description: 概览 Kubernetes v1.36 版本中的 API 弃用与移除、安全增强及核心功能升级，为 SRE 团队规划升级提供指导。
+category: 平台与基础设施
+order: 0
+lastUpdated: 2026-03-30
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/03/30/kubernetes-v1-36-sneak-peek/
+    title: Kubernetes v1.36 Sneak Peek
+tags: [kubernetes, upgrade, deprecation, security, DRA, SELinux, serviceaccount]
+---
+
+## 概述
+
+Kubernetes v1.36 计划于 2026 年 4 月发布，对于 SRE 团队而言，及时了解并规划版本升级是保障集群稳定性与安全性的关键。本次版本更新包含遵循既定策略的 API 弃用与移除，旨在提升集群安全性、性能与资源管理效率。理解这些变更有助于 SRE 团队制定平滑的升级计划，主动进行应用迁移与兼容性测试，避免因不兼容变更导致服务中断。[[api-deprecation-policy]]
+
+## 核心概念
+
+本版本的变更主要围绕 Kubernetes API 生命周期管理与几项核心功能的演进展开。
+
+**API 生命周期管理**：Kubernetes 项目遵循明确的[弃用策略](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)。稳定（GA）API 在大版本内不会被移除；Beta API 在弃用后需支持至少 3 个版本；Alpha API 可在任何版本中无通知移除。所有移除操作都需在废弃指南中提供迁移路径。[[api-deprecation-policy]]
+
+**SELinux 标签应用**：传统上，为卷应用正确的 SELinux 标签需要递归地重标文件系统内容，这可能导致 Pod 启动延迟。新特性通过 `mount -o context=XYZ` 选项在挂载时直接应用标签，显著提升了性能和一致性。[[selinux]]
+
+**ServiceAccount 令牌外部签名**：允许集群将 ServiceAccount 令牌的签名委托给外部密钥管理服务或硬件安全模块，增强安全性并简化集中式密钥管理。[[serviceaccount]]
+
+**动态资源分配（DRA）**：DRA 允许对 GPU 等物理设备进行更灵活的分配。v1.36 版本扩展了其能力，支持设备“污染”（Taints）和设备分区（Partitionable Devices），使调度控制更精细，资源利用率更高。[[dynamic-resource-allocation]]
+
+## 实践
+
+以下是 SRE 团队为准备 v1.36 升级需要关注和采取行动的具体领域。
+
+### 弃用与移除的应对
+
+1.  **处理 Service `.spec.externalIPs` 弃用**：该字段因存在中间人攻击安全风险（CVE-2020-8554）而被弃用，计划在 v1.43 移除。从 v1.36 开始，使用该字段将产生警告。应评估并迁移现有使用 `externalIPs` 的 Service：
+    *   **云环境**：优先使用 `type: LoadBalancer`。
+    *   **简单端口暴露**：考虑使用 `type: NodePort`。
+    *   **复杂路由需求**：评估并采用更安全灵活的 Gateway API。[[KEP-5707]]
+
+2.  **移除 `gitRepo` 卷驱动**：`gitRepo` 卷自 v1.11 起已弃用，并因严重的安全漏洞（允许节点 root 代码执行）在 v1.36 中被永久移除且无法启用。**必须**将依赖此卷的 Workload 迁移至支持的替代方案，例如：
+    *   使用 Init Container 从 Git 仓库拉取代码。
+    *   采用 `git-sync` 等侧边车（Sidecar）工具。[[KEP-5040]]
+
+### 利用新特性优化
+
+3.  **利用快速 SELinux 卷标签（GA）**：此特性在 v1.36 默认对所有卷启用。Pod 作者可通过 `spec.SELinuxMount: true` 显式启用。SRE 团队应测试其与现有安全策略的兼容性，特别是涉及特权和非特权 Pod 共享卷的场景。可以通过设置 `securityContext.seLinuxChangePolicy` 字段来管理兼容性。[[KEP-1710]]
+
+4.  **启用 ServiceAccount 令牌外部签名（GA）**：如需集成云端 KMS 或 HSM，此特性升级至稳定版后，可以在 `kube-apiserver` 配置中指定外部签名服务，提升令牌安全性。[[KEP-740]]
+
+5.  **规划 DRA 新功能**：
+    *   **设备污染（Beta）**：SRE 可与平台团队协作，利用 `DeviceTaintRule` 标记需要维护或不适合特定工作负载的设备，防止被调度器分配。[[KEP-5055]]
+    *   **可分区设备（新特性）**：允许将单个硬件加速器（如 GPU）分割为多个逻辑单元进行分配。平台团队可利用此特性提高 GPU 等昂贵资源的利用率，通过为不同工作负载分配精确的设备分区来优化成本与效率。[[KEP-4815]]
+
+## SRE 要点
+
+*   **与可靠性、可观测性的关联**：
+    *   **提前规划与测试**：对弃用和移除项（如 `externalIPs`、`gitRepo`）进行影响分析，在测试环境中验证应用迁移方案，是确保升级后服务可靠性的基础。
+    *   **性能观测**：SELinux 标签加速特性 GA 后，应监控 Pod 启动时间（作为 SLI 之一）是否得到预期改善。
+    *   **安全可观测性**：启用 ServiceAccount 令牌外部签名后，需确保监控系统能够追踪到外部签名服务的状态和令牌颁发事件，这是安全事件响应的重要环节。
+
+*   **最佳实践与常见反模式**：
+    *   **最佳实践**：建立版本升级 SOP，包括特性状态检查、依赖评估、金丝雀发布等。积极关注弃用警告，将其视为待办事项。
+    *   **反模式**：忽视弃用警告，直到特性被强制移除才被迫匆忙迁移，导致服务中断。在未充分测试的情况下，于生产环境启用新的安全特性（如 SELinux 挂载策略）。
+
+*   **相关指标（SLI/SLO/SLA）**：
+    *   **升级风险 SLI**：生产集群中仍使用已弃用 API 的 Workload 比例。目标应为 0%。
+    *   **启动性能 SLI**：在 SELinux 强制模式下，Pod 从 `ContainerCreating` 到 `Running` 的时间。
+    *   **安全合规 SLI**：集群中 ServiceAccount 令牌由外部服务签名的比例。

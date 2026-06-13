@@ -1,0 +1,109 @@
+---
+title: Kubernetes 服务端分片列表与监视（Server-Side Sharded List and Watch）
+description: 介绍 Kubernetes v1.36 引入的服务端分片机制，用于解决大规模集群中控制器因监听全量资源事件而产生的性能瓶颈问题。
+category: 集群扩展与性能优化
+order: 0
+lastUpdated: 2026-05-06
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/06/kubernetes-v1-36-server-side-sharded-list-and-watch/
+    title: Kubernetes v1.36: Server-Side Sharded List and Watch
+tags: [kubernetes, sharding, watch, performance, scalability, alpha-feature]
+---
+
+## 概述
+
+随着 Kubernetes 集群规模扩展到数万节点，控制器（特别是那些监听高基数资源如 Pods 的控制器）面临严峻的扩展性挑战。在传统的客户端分片模式下，即使控制器进行水平扩展，每个副本仍需接收并处理完整的事件流，导致 CPU、内存和网络资源的严重浪费。Kubernetes v1.36 作为 Alpha 特性引入的 **服务端分片列表与监视（Server-Side Sharded List and Watch）**，通过将过滤逻辑上移至 API 服务器端，从根本上解决了这一问题，是构建超大规模、高效率 Kubernetes 集群的关键技术之一。
+
+## 核心概念
+
+### 客户端分片的困境
+在早期的解决方案（如 kube-state-metrics 的实现）中，控制器通过客户端分片来分散工作负载。每个副本被分配一个键空间的一部分，并在接收到完整事件流后丢弃不属于自己的对象。这种方式虽然实现了功能上的扩展，但并未降低从 API 服务器流向客户端的总数据量。其核心问题在于：
+- **资源放大效应**：`N 个副本 × 完整事件流`，每个副本都进行反序列化和处理，然后丢弃大部分数据。
+- **网络带宽线性增长**：带宽消耗与副本数量成正比，而非与每个分片的实际大小成正比。
+- **计算资源浪费**：大量 CPU 被消耗在反序列化最终被丢弃的对象上。
+
+### 服务端分片的工作原理
+服务端分片将过滤工作前置到 API 服务器。客户端（控制器副本）在发起列表（List）或监视（Watch）请求时，通过 `ListOptions` 中新增的 `shardSelector` 字段指定其负责的哈希范围。API 服务器根据确定性的哈希函数（FNV-1a）计算对象指定字段（如 `metadata.uid`）的 64 位哈希值，并仅返回哈希值落在客户端指定范围 `[start, end)` 内的对象。此过滤机制同时适用于列表响应和后续的监视事件流，且由于哈希函数确定性，多 API 服务器副本之间行为一致。
+
+### 关键字段与函数
+- **`shardSelector`**：添加在 `ListOptions` 中的新字段，用于指定分片查询条件。
+- **`shardRange()`**：一个辅助函数，用于生成分片选择器字符串。其签名为 `shardRange(field, start, end)`，其中 `field` 为支持的字段路径（目前为 `object.metadata.uid` 或 `object.metadata.namespace`），`start` 和 `end` 为十六进制表示的 64 位哈希范围。
+
+## 实践
+
+### 在控制器中使用分片监视
+控制器通常使用 informer 来列表和监视资源。要利用服务端分片，每个副本需要在创建 informer 工厂时，通过 `WithTweakListOptions` 注入其对应的 `shardSelector`。
+
+以下是一个使用 Go client-go 库的示例，展示了如何为一个两副本部署配置分片：
+
+```go
+import (
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/informers"
+)
+
+// Replica 0 配置：负责哈希空间的下半部分
+shardSelectorReplica0 := "shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000')"
+
+// 使用 WithTweakListOptions 将分片选择器注入 informer 的 ListOptions
+factory := informers.NewSharedInformerFactoryWithOptions(client, resyncPeriod,
+    informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+        opts.ShardSelector = shardSelectorReplica0
+    }),
+)
+
+// 对于 Replica 1，配置其负责上半部分
+// shardSelectorReplica1 := "shardRange(object.metadata.uid, '0x8000000000000000', '0x1000000000000000')"
+```
+
+一个副本也可以通过 `||` 操作符覆盖多个不连续的哈希范围。
+
+### 验证服务器是否支持分片
+客户端可以通过检查列表响应的元数据来确认 API 服务器是否应用了分片选择器。如果支持，响应中将包含一个 `shardInfo` 字段，回显所使用的 `selector`。
+
+```json
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "10245",
+    "shardInfo": {
+      "selector": "shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000')"
+    }
+  },
+  "items": [...]
+}
+```
+如果响应中缺少 `shardInfo` 字段，说明服务器未执行服务端分片（例如 API 服务器版本较旧或未启用该特性门控），客户端将接收到完整的、未经过滤的资源集合。此时，健壮的控制器应具备客户端过滤的能力，根据自身负责的分片范围丢弃多余对象，以保证功能正确性。
+
+### 启用该特性
+由于目前该特性处于 Alpha 阶段，需要在 API 服务器启动时显式启用特性门控 `ShardedListAndWatch`。
+
+## SRE 要点
+
+### 可靠性工程与事件响应关联
+服务端分片直接提升了大规模集群的**可观察性系统**和**控制器**的可靠性与效率。对于 SRE 而言，这意味着：
+- **降低核心组件负载**：API 服务器和控制器的 CPU/内存使用率随副本数线性增长的问题得到缓解，提升了系统整体稳定性，减少了因资源耗尽引发的故障。
+- **提高事件处理实时性**：控制器副本处理的事件量减少，延迟降低，使得自动化操作（如扩缩容、状态修复）能更快响应，缩短了事件响应时间。
+- **增强扩展的可预测性**：水平扩展控制器可以近似线性地增加其处理能力，而不是简单地放大资源消耗，使得容量规划更加可靠。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    1. **渐进式采用**：在关键控制器（如 operator、监控 agent）中先行试点，验证其收益和稳定性。
+    2. **设计健壮的降级逻辑**：始终在客户端实现过滤逻辑，以便在服务端不支持分片时平滑降级，保证功能可用。
+    3. **合理规划分片**：根据控制器副本数和资源基数，均匀划分哈希空间，避免数据倾斜。
+    4. **监控分片效果**：通过 `shardInfo` 和控制器指标，监控分片是否生效以及各副本的负载分布情况。
+- **常见反模式**：
+    1. **依赖单一分片**：不部署冗余副本或不进行分片，导致单个控制器处理所有事件，形成性能单点。
+    2. **忽视兼容性**：在不支持该特性的旧版 API 服务器上运行配置了 `shardSelector` 的新客户端，却不做降级处理，可能导致控制器无法获得任何数据。
+    3. **粒度过细**：分片数量过多（远超过资源数量），可能导致调度效率低下，且增加集群的协调开销。
+
+### 相关指标（SLI/SLO/SLA）
+在引入服务端分片后，可以定义和关注以下新的或改进的 SLI/SLO：
+- **API 服务器事件发送吞吐量**：相比分片前，单个 API 服务器为同一批控制器提供的有效事件流吞吐量应保持稳定或提升，同时其 CPU 使用率不应随控制器副本数增加而同比上升。
+- **控制器事件处理延迟 (P99)**：从事件发生到控制器完成处理的时间。在有效分片下，该延迟应随负载增加而保持稳定。
+- **控制器内存与 CPU 使用率**：每个控制器副本的资源消耗应与其负责的分片大小成正比，而非与集群总资源量成正比。
+- **控制器错误率**：因资源过载（OOM、CPU throttling）导致的处理失败率应下降。
+
+实施服务端分片后，SRE 团队需要更新其容量模型和监控面板，将“分片效率”和“控制器扩展性”作为新的关键可靠性维度进行观测。更多细节可参考 [[kubernetes-api-concepts]] 和 [[KEP-5866]]。

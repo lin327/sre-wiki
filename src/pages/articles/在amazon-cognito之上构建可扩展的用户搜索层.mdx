@@ -1,0 +1,65 @@
+---
+title: 在Amazon Cognito之上构建可扩展的用户搜索层
+description: 介绍如何使用AWS Lambda, DynamoDB和OpenSearch Service为Amazon Cognito构建一个可扩展、事件驱动的高级用户搜索层。
+category: 认证与访问管理
+order: 0
+lastUpdated: 2024-07-08
+confidence: high
+sources:
+  - url: https://aws.amazon.com/blogs/architecture/building-a-scalable-user-search-layer-on-top-of-amazon-cognito/
+    title: Building a scalable user search layer on top of Amazon Cognito
+tags: [cognito, opensearch, dynamodb, lambda, serverless, architecture, search]
+---
+
+## 概述
+Amazon Cognito 提供了强大的用户认证与管理功能，但在面对海量用户（例如成千上万的账户）时，其内置的 `ListUsers` API 在高级搜索场景（如模糊匹配、跨多个自定义属性的复杂过滤、亚秒级响应）下可能无法满足需求。本方案旨在通过构建一个独立的搜索层来解决这一问题，它能够实现实时数据同步与高性能查询，对于SRE快速定位用户、执行故障排查或支持团队响应工单至关重要。
+
+## 核心概念
+该架构是一个事件驱动的CQRS（命令查询职责分离）模式，通过两条数据流（摄入与搜索）将数据的写入与查询解耦。
+1.  **数据摄入流**：负责将 Cognito 中的用户变更实时同步到搜索索引中。它通过两种机制触发：
+    *   **Cognito Lambda 触发器**：在用户认证流程的关键节点（如注册后的 `PostConfirmation` 和每次登录前的 `PreTokenGeneration`）捕获用户数据，并写入 DynamoDB。
+    *   **AWS CloudTrail 与 EventBridge**：捕获通过控制台或CLI执行的管理员操作（如创建用户、更新属性），这些操作不会触发Lambda触发器。EventBridge 规则监听这些API调用，触发 Lambda 函数读取最新用户状态并更新 DynamoDB。
+2.  **搜索流**：提供高性能的查询接口。经过身份验证的用户通过 API Gateway 提交查询请求，请求经由 Lambda 函数转发至 [[amazon-opensearch-service]] 执行搜索，最终将格式化后的结果返回前端。
+
+DynamoDB 作为用户数据的权威记录存储和变更事件源（通过 DynamoDB Streams），而 OpenSearch Serverless 则提供强大的全文搜索与过滤能力。
+
+## 实践
+以下是构建此搜索层的详细步骤和关键设计点：
+
+### 1. 数据同步与索引
+*   **创建 DynamoDB 用户表**：存储用户配置文件的规范副本，包含 `cognitoUserId`（分区键）、`email`、`lastName`、`groups`、`lastLoginTime` 等字段。启用 DynamoDB Streams 以捕获所有数据变更。
+*   **部署 Cognito 触发器 Lambda**：
+    *   处理 `PostConfirmation` 事件：在用户首次注册时，在 DynamoDB 表中创建初始记录。
+    *   处理 `PreTokenGeneration` 事件：在每次用户登录时，更新 `lastLoginTime` 和使用的 `appClientId`。
+    *   **重要**：此 Lambda 部署在 VPC 内，且 Cognito 强制其执行时间不超过5秒。需确保其逻辑高效，或使用预配置并发来避免冷启动延迟。
+*   **配置 CloudTrail 与 EventBridge**：
+    *   启用 CloudTrail 以记录 Cognito 的管理平面 API 调用。
+    *   创建 EventBridge 规则，匹配 `source: ["aws.cognito-idp"]` 的事件，目标为另一个 Lambda 函数。
+    *   该 Lambda 函数接收到事件后，使用 Cognito Admin API 获取最新的用户属性，并将其写入 DynamoDB 表（覆盖或创建记录）。
+*   **构建索引管道**：
+    *   为 DynamoDB 流配置一个事件源映射，触发 `OSS-ingest-lambda`。
+    *   `OSS-ingest-lambda` 解析流事件（INSERT/MODIFY），从 DynamoDB 事件记录中提取新/旧图像数据，然后使用 OpenSearch 客户端将数据更新到 OpenSearch Serverless 索引中。
+
+### 2. 构建搜索 API
+*   **配置 OpenSearch Serverless**：创建一个集合和索引，为用户数据字段（如 `email`, `lastName`, `groups`）定义合适的映射（例如，为 `email` 启用分词器以支持前缀匹配）。
+*   **部署搜索 Lambda**：
+    *   通过 API Gateway 的 Cognito 授权器进行 JWT 验证。
+    *   该 Lambda 函数接收查询参数（如 `q`, `filterGroups`），构建 OpenSearch DSL 查询。
+    *   使用 AWS IAM 角色（具有只读权限）连接 OpenSearch Serverless，并执行查询。
+    *   处理分页（`from` 和 `size`）并将结果格式化返回。
+*   **创建 API Gateway**：配置 REST API，将搜索请求路由到搜索 Lambda 函数。
+
+## SRE 要点
+*   **与可靠性、可观测性的关联**：
+    *   **延迟与可用性**：该架构的搜索性能（SLO：如99%的查询延迟<200ms）直接依赖于 OpenSearch Serverless 的性能和搜索 Lambda 的冷启动状态。应对 Lambda 启用 **Provisioned Concurrency** 来保障搜索端的低延迟。数据摄入路径的延迟（从Cognito事件到OpenSearch索引可见）是另一个关键的SLO。
+    *   **数据一致性**：摄入管道的事件驱动特性意味着数据最终一致。SRE 需要监控 DynamoDB Streams 的延迟和失败事件，以及 Lambda 执行失败率，以确保搜索索引与 Cognito 源数据保持同步。
+*   **最佳实践与常见反模式**：
+    *   **最佳实践**：为 Cognito 触发器 Lambda 和搜索 Lambda 分别创建最小权限的 IAM 角色。使用指数退避重试来处理 OpenSearch 的 `429` 错误。为 DynamoDB 表和 OpenSearch 索引启用自动备份。
+    *   **常见反模式**：不要在 `PreTokenGeneration` 触发器中执行耗时操作（如复杂的外部API调用），这将导致认证超时。避免让索引管道依赖于单一区域的 DynamoDB Streams，以防区域性服务中断。
+*   **相关指标（SLI/SLO/SLA）**：
+    *   **摄入 SLI**：从 Cognito 事件发生到用户数据在 OpenSearch 中可搜索的端到端延迟。
+    *   **摄入可靠性**：DynamoDB 流处理失败率、Lambda 函数错误率。
+    *   **搜索 SLI**：搜索 API 的请求延迟（P90, P99）、成功率、查询吞吐量。
+    *   **搜索准确性**：关键业务查询（如按邮件前缀查找）返回预期结果的比率。
+
+此架构通过将搜索能力从核心认证服务中解耦，为SRE和运维团队提供了一个可靠、高性能的工具，用于快速检索和排查用户账户相关问题。

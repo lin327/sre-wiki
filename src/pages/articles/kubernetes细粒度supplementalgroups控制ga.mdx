@@ -1,0 +1,74 @@
+---
+title: Kubernetes细粒度supplementalGroups控制（GA）
+description: 介绍Kubernetes v1.35中毕业到GA的`supplementalGroupsPolicy`字段，用于精确控制Linux容器中的补充组，增强安全性和透明度。
+category: 容器安全
+order: 0
+lastUpdated: 2025-12-24
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2025/12/23/kubernetes-v1-35-fine-grained-supplementalgroups-control-ga/
+    title: Kubernetes v1.35: Fine-grained Supplemental Groups Control Graduates to GA
+tags: [kubernetes, security, pod-security, supplemental-groups, linux, sre, cri]
+---
+
+## 概述
+在 Kubernetes 中，容器进程以特定的用户（UID）和组（GID）身份运行，这直接决定了其对文件系统和网络资源的访问权限。传统上，Kubernetes 会隐式地将容器镜像中 `/etc/group` 文件定义的组成员关系与 Pod 清单中声明的组进行合并，这可能导致意外的、难以审计的权限提升风险，尤其是在访问持久化存储卷时。`supplementalGroupsPolicy` 字段的引入与 GA，为 SRE 和安全工程师提供了一种标准化、细粒度的方式来精确控制容器的补充组（Supplemental Groups），是实施最小特权原则和提升集群安全态势的关键实践。
+
+## 核心概念
+`supplementalGroupsPolicy` 是 `Pod.spec.securityContext` 下的一个新字段，用于控制 Kubernetes 如何计算附加到容器进程的补充组。它有两种策略：
+
+*   **`Merge`（合并）**：这是默认策略，保持了向后兼容性。它会将 Pod 清单中指定的 `fsGroup`、`supplementalGroups` 或 `runAsGroup` 与容器镜像中 `/etc/group` 文件为容器主用户定义的组成员关系进行合并。
+*   **`Strict`（严格）**：仅将 Pod 清单中明确指定的 `fsGroup`、`supplementalGroups` 或 `runAsGroup` 作为补充组附加到容器进程。容器镜像 `/etc/group` 中为该主用户定义的组成员关系将被完全忽略。
+
+例如，一个 Pod 清单中指定了 `runAsUser: 1000`，`runAsGroup: 3000` 和 `supplementalGroups: [4000]`。在 `Merge` 策略下，若镜像中 `/etc/group` 定义了用户 1000 属于组 50000，则容器内的 `id` 命令输出会包含 `groups=3000,4000,50000`。而在 `Strict` 策略下，输出仅为 `groups=3000,4000`，实现了声明式配置与实际运行时身份的完全一致。
+
+## 实践
+### 启用 `Strict` 策略配置
+要在 Pod 中启用 `Strict` 策略，需在 Pod 的安全上下文中显式设置 `supplementalGroupsPolicy: Strict`。这是一个直接的配置示例：
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: strict-supplementalgroups-policy-example
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 3000
+    supplementalGroups: [4000]
+    supplementalGroupsPolicy: Strict
+  containers:
+  - name: example-container
+    image: registry.k8s.io/e2e-test-images/agnhost:2.45
+    command: [ "sh", "-c", "sleep 1h" ]
+    securityContext:
+      allowPrivilegeEscalation: false
+```
+
+### 运行时与版本要求
+`Strict` 策略的实施依赖于符合 CRI（Container Runtime Interface）标准的容器运行时。**并非所有版本的运行时都支持此策略。** 如果使用不支持 `Strict` 策略的旧版运行时，该字段可能会被忽略，默认回退到 `Merge` 行为。支持 `Strict` 策略的最低运行时版本要求为：
+*   **containerd**: v2.0 及以上
+*   **CRI-O**: v1.31 及以上
+
+你可以通过查看节点的 `.status.features.supplementalGroupsPolicy` 字段来确认节点是否支持此特性。
+
+### 观察容器进程身份
+该功能还通过 Pod 状态 `.status.containerStatuses[].user.linux` 字段暴露了附加到容器首个进程的进程身份（UID、GID 和补充组列表）。这为可观测性提供了重要数据，允许管理员直接审计最终生效的组成员关系，而无需进入容器执行 `id` 命令。
+
+**重要注意**：此状态字段反映的是容器进程的初始身份。如果容器以足够高的特权运行，它可以在运行时通过 `setuid(2)`、`setgid(2)` 等系统调用动态更改自己的身份。因此，实际的进程身份是动态的。
+
+## SRE 要点
+### 与可靠性和安全性的关联
+*   **增强安全策略的可审计性与执行性**：在 `Merge` 策略下，依赖于镜像内部状态（`/etc/group`）的隐式组成员关系对策略引擎（如 OPA/Gatekeeper）是不可见的，难以进行事前检测和事后审计。`Strict` 策略强制所有组成员关系在 Pod 清单中声明，使得安全策略可以完全基于声明式清单进行验证和强制执行，符合“声明即事实”的原则。
+*   **降低意外访问风险**：在 Linux 中，文件权限由 UID/GID 控制。隐式的补充组可能导致容器进程拥有意外的文件访问权限，尤其是在挂载了宿主机目录或网络存储卷的场景下。`Strict` 策略消除了这种不确定性，是防范横向移动和数据泄露的关键加固措施。
+*   **升级与变更管理**：从 v1.32 及更早版本升级到 v1.35 集群时，必须注意 `supplementalGroupsPolicy` 从 beta（v1.33）引入后的行为变更。SRE 在制定升级计划时，应全面评估现有工作负载的补充组依赖情况，参考官方文档中的升级注意事项，避免因策略变更导致工作负载权限异常。
+
+### 可观测性与事件响应
+*   **增强的可观测性**：Pod 状态中的 `user.linux` 字段是一个重要的可观测性锚点。在排查文件权限相关故障或安全事件时，SRE 可以直接从 Pod 状态中获取容器启动时的精确身份信息，快速定位问题。
+*   **最佳实践**：结合 [[pod-security-standards]] 的 `Restricted` 策略，将 `supplementalGroupsPolicy: Strict`、`runAsNonRoot: true`、`allowPrivilegeEscalation: false` 等配置组合使用，构建深度防御体系。
+*   **常见反模式**：在启用 `Strict` 策略后，仍依赖未经声明的隐式组成员关系来使应用程序正常工作。这会导致策略执行失败或容器启动后因权限不足而故障。必须确保应用程序的所有合法组需求都在 Pod 清单中显式声明。
+
+### 相关指标
+虽然此特性本身不直接提供 SLI/SLO 指标，但它影响了安全与合规性指标。例如：
+*   **策略覆盖率**：可以监控集群中启用了 `supplementalGroupsPolicy: Strict` 的 Pod 比例，作为安全策略采用率的衡量标准。
+*   **合规性检查失败次数**：通过策略引擎检查 Pod 清单时，因使用了 `Merge`（或未声明）策略而触发的安全告警次数。

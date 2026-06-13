@@ -1,0 +1,73 @@
+---
+title: Chaos Mesh与混沌工程实践
+description: 介绍Chaos Mesh工具及其在提升系统可靠性中的混沌工程实践。
+category: 混沌工程
+order: 0
+lastUpdated: 2021-12-27
+confidence: low
+sources:
+  - url: https://chaos-mesh.org/blog/share-your-chaos-mesh-story/
+    title: "Share your #ChaosMeshStory!"
+tags: [ChaosMesh, 混沌工程, 故障注入, CNCF]
+---
+
+## 概述
+混沌工程（Chaos Engineering）是 SRE 和平台工程实践中主动验证系统弹性（Resilience）的关键方法论。其核心在于通过可控地在生产或类生产环境中注入故障，来发现系统的弱点和潜在风险，从而在故障发生前提前修复，提升系统整体的可靠性。Chaos Mesh 作为 CNCF 旗下的一个开源、云原生的混沌工程平台，为 Kubernetes 生态提供了强大的故障注入和实验编排能力，使团队能够系统化地进行混沌实验，将理论上的可靠性目标（SLO）转化为可验证的实践。
+
+## 核心概念
+**混沌工程**：不是简单地制造混乱，而是一门基于科学方法的工程学科。它遵循“定义稳态假设”、“引入真实世界事件”、“观察稳态偏差”、“持续改进”的循环。其目标是建立对分布式系统在生产环境中抵御突发状况能力的信心。
+
+**Chaos Mesh**：一个专为 Kubernetes 设计的混沌工程平台。它允许用户以声明式（YAML）方式定义和执行“混沌实验”（Chaos Experiment）。其核心组件包括：
+- **Chaos Controller Manager**：负责协调和管理混沌实验的生命周期。
+- **Chaos Dashboard**：提供 Web UI，用于可视化创建、管理和监控实验。
+- **Chaos Daemon**：运行在每个目标节点上的守护进程，负责实际注入系统级故障（如网络延迟、I/O 延迟、内核错误等）。
+
+通过 Chaos Mesh，可以注入的故障类型非常丰富，包括但不限于：
+- **Pod Chaos**：杀死或暂停 Pod。
+- **Network Chaos**：模拟网络延迟、丢包、分区。
+- **IO Chaos**：模拟文件 I/O 延迟或错误。
+- **Time Chaos**：让 Pod 内的时间产生偏移。
+- **Stress Chaos**：对 CPU 或内存施加压力。
+
+## 实践
+开始一次混沌实验的基本流程如下：
+
+1.  **安装 Chaos Mesh**：通过 Helm Chart 将 Chaos Mesh 部署到 Kubernetes 集群中。
+    ```bash
+    helm repo add chaos-mesh https://charts.chaos-mesh.org
+    helm install chaos-mesh chaos-mesh/chaos-mesh --namespace chaos-mesh --create-namespace
+    ```
+
+2.  **定义实验**：使用 YAML 文件声明一个混沌实验。例如，一个简单的 Pod 故障实验（`pod-chaos.yaml`）：
+    ```yaml
+    apiVersion: chaos-mesh.org/v1alpha1
+    kind: PodChaos
+    metadata:
+      name: pod-kill-example
+      namespace: default
+    spec:
+      action: pod-kill
+      mode: one
+      selector:
+        namespaces:
+          - default
+        labelSelectors:
+          app: my-app
+      duration: "60s"
+    ```
+    此实验将在 `default` 命名空间中，随机杀死一个带有标签 `app: my-app` 的 Pod，并持续 60 秒。
+
+3.  **执行与监控**：应用此 YAML 文件（`kubectl apply -f pod-chaos.yaml`），Chaos Mesh 将开始执行实验。通过 Chaos Dashboard 或查看 Chaos Mesh 的日志，可以监控实验状态。关键是同时监控应用的 **Service Level Indicators (SLIs)**，如错误率、延迟等，以观察系统稳态是否受到影响。
+
+4.  **分析与改进**：实验结束后，分析监控数据。如果 SLIs 发生了预期外的剧烈波动或超过了 **SLO** 阈值，说明系统存在弹性弱点。根据发现的问题进行架构优化、增加冗余或改进熔断限流机制，然后重新进行实验以验证改进效果。
+
+## SRE 要点
+混沌工程与 SRE 实践紧密相连，是实现“预防优于治疗”的关键手段。
+
+- **与可靠性关联**：混沌实验直接服务于 **Error Budget** 的管理。通过主动消耗 Error Budget 进行实验，可以在可控的预算内发现风险，避免在真正故障时因错误预算不足而被迫停止功能发布，从而维持开发速度与稳定性的平衡。实验结果帮助团队将抽象的 SLO 转化为可验证的、具体的可靠性要求。
+- **最佳实践与反模式**：
+    - **最佳实践**：从小规模、低风险的实验开始（如在测试环境）；始终定义清晰的“爆炸半径”（Blast Radius）和实验终止条件；将混沌实验集成到 CI/CD 流水线中，作为部署前的一道质量门禁；建立“游戏日”（Game Day）文化，定期组织团队进行实战演练。
+    - **反模式**：在没有监控和应急计划的情况下进行大规模生产实验；将混沌工程视为一次性的“黑客松”活动而非持续实践；只关注技术故障，忽略对业务流程和用户体验的潜在影响。
+- **相关指标**：混沌实验的有效性应通过其发现的风险和最终带来的可靠性提升来衡量。直接指标包括实验覆盖率（覆盖了哪些关键路径或服务）、发现的缺陷数量、**MTTR**（平均恢复时间）的缩短等。间接指标则是 **SLI/SLO** 的达成率变得更加稳定和可预测。
+
+> **关联概念**：为了更全面地理解混沌工程的实践背景，建议参阅以下相关主题：[[fault-injection]]（故障注入技术详解）、[[slo]]（服务级别目标）、[[blameless-culture]]（无责事后文化）。

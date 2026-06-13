@@ -1,0 +1,68 @@
+---
+title: "YACE：Prometheus 社区的官方 CloudWatch Exporter"
+description: "Yet Another Cloudwatch Exporter (YACE) 已正式加入 Prometheus 社区，成为监控 AWS CloudWatch 指标的标准工具。"
+category: 生态与集成
+order: 10
+lastUpdated: 2024-11-19
+confidence: high
+sources:
+  - url: https://prometheus.io/blog/2024/11/19/yace-joining-prometheus-community/
+    title: Prometheus Blog - YACE is joining Prometheus Community
+tags: [yace, cloudwatch, prometheus, aws, exporter, monitoring]
+---
+
+## 概述
+
+Yet Another Cloudwatch Exporter (YACE) 是一个用于从 AWS CloudWatch 检索指标并将其转换为 Prometheus 可以抓取的格式的开源工具。它已成为从 AWS 环境收集监控数据的关键组件。近期，YACE 项目已正式加入 Prometheus 社区，成为其官方的 Amazon CloudWatch exporter。这一举措极大地提升了该项目的可访问性、维护质量和社区参与度，使其成为 SRE 团队构建统一可观测性平台时不可或缺的一部分。
+
+## 核心概念
+
+- **YACE (Yet Another Cloudwatch Exporter)**: 一个配置驱动的 exporter，负责将 AWS CloudWatch API 暴露的指标“翻译”成 Prometheus 的指标格式。其核心优势在于支持**自动发现**，能够动态检测 AWS 资源（如 EC2、RDS、ELB 等），无需在每次基础设施变更时手动更新配置。
+- **CloudWatch**: AWS 的原生监控和管理服务，用于收集性能指标、日志和事件数据。它是 AWS 环境中事实上的监控数据源。
+- **Prometheus 生态系统**: 以 Prometheus 为核心的时序数据收集、存储和告警工具链。将 YACE 纳入社区意味着它将得到更直接的维护、更紧密的集成，并被正式推荐用于 Prometheus 监控 AWS 环境。
+- **自动发现 (Auto-discovery)**: YACE 的关键特性。它通过 AWS API 或标签来自动识别需要监控的服务和资源，这对于管理动态、弹性伸缩的云基础设施至关重要，避免了配置漂移和监控盲区。
+
+## 实践
+
+根据官方指引，使用 YACE 主要分为安装和配置两个步骤。
+
+### 安装
+
+您可以从其 [官方 GitHub 仓库](https://github.com/prometheus-community/yet-another-cloudwatch-exporter) 的安装指南中找到详细的部署说明。通常推荐使用官方提供的 Docker 镜像或二进制文件进行部署。确保运行 YACE 的 IAM 角色具有对目标 AWS 资源的 `cloudwatch:GetMetricData`、`cloudwatch:ListMetrics` 以及适当的 EC2、RDS 等 `Describe*` 权限。
+
+### 配置
+
+YACE 的行为通过一个 YAML 配置文件定义。配置的主要部分是 `discovery`，用于定义自动发现规则。以下是一个简化的配置片段，用于发现并监控所有带有特定标签的 EC2 实例的 CPU 使用率：
+
+```yaml
+discovery:
+  jobs:
+    - type: AWS/EC2
+      period: 60
+      length: 60
+      metrics:
+        - name: CPUUtilization
+          statistics: [ Average ]
+          period: 60
+      regions:
+        - us-east-1
+      searchTags:
+        - key: Environment
+          value: production
+```
+
+更多的配置示例（如监控 RDS、ALB）可以在仓库的 `examples` 目录中找到。配置完成后，启动 YACE 进程，Prometheus 即可通过配置的抓取端点获取数据。
+
+## SRE 要点
+
+- **与可靠性的关联**: YACE 是连接 AWS 环境与 Prometheus 监控栈的桥梁。通过将 CloudWatch 指标统一到 Prometheus，SRE 团队可以基于相同的工具链（如 PromQL、Grafana、Alertmanager）建立跨云的 SLI/SLO 体系。例如，可以结合 CloudWatch 的 `HealthyHostCount` 和 Prometheus 的内部指标，全面评估负载均衡器的可靠性。
+- **可观测性的提升**: YACE 极大地增强了对 AWS 托管服务的可观测性。其自动发现能力确保了对动态扩展的资源（如 Auto Scaling Group 中的实例）的持续监控，避免了因资源变更导致的监控缺口，这是保障系统可靠性的基础。
+- **最佳实践与常见反模式**:
+    - **最佳实践**：充分利用自动发现功能，减少手动配置；为 YACE 的抓取端点设置合理的抓取间隔（如 60s），以平衡数据新鲜度与 CloudWatch API 成本/限额；使用 `searchTags` 和 `include`/`exclude` 标签进行细粒度控制。
+    - **反模式**：为每个资源硬编码监控配置，这会导致配置膨胀和维护困难；忽略 CloudWatch API 的速率限制和成本，配置过多的指标或过短的周期；将 YACE 与 Prometheus 部署在不同 VPC 而没有配置适当的网络路由。
+- **相关指标 (SLI/SLO)**: 虽然 YACE 本身不定义业务 SLO，但它是获取用于定义 AWS 相关 SLI 的关键数据管道。例如：
+    - **SLI**: `avg_over_time(CloudWatch_aws_ec2_cpu_utilization[5m])` 作为 EC2 实例的平均 CPU 利用率。
+    - **SLO**: 针对某核心服务，可定义其依赖的 RDS 实例在 95% 的时间内查询延迟低于 100ms 的 SLO，此数据即通过 YACE 从 CloudWatch 获取。
+    - 监控 YACE 自身健康状况的指标（如 `yace_cloudwatch_api_calls_total`）对于确保监控管道的可靠性至关重要。
+
+欲了解更多关于 Prometheus 可观测性实践的信息，可参考 [[prometheus]] 和 [[sre-principles]] 等页面。

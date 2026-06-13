@@ -1,0 +1,73 @@
+---
+title: Kubernetes 用户命名空间 (User Namespaces) GA
+description: Kubernetes v1.36 将用户命名空间功能提升至正式发布 (GA)，允许容器内进程在隔离的用户ID空间中运行，显著提升工作负载的安全隔离性。
+category: 容器安全
+order: 0
+lastUpdated: 2024-07-19
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/04/23/kubernetes-v1-36-userns-ga/
+    title: Kubernetes v1.36: User Namespaces in Kubernetes are finally GA
+tags: [kubernetes, security, user-namespaces, rootless, sre, pod-security]
+---
+
+## 概述
+
+用户命名空间 (User Namespaces) 是 Linux 提供的一种隔离技术，它允许容器内的进程在容器本地拥有一个完全独立的用户 ID (UID) 和组 ID (GID) 命名空间。在 Kubernetes 中，这一功能的正式发布 (General Availability, GA) 是 SRE 和安全领域的一个重要里程碑。它从根本上改变了容器与主机之间的安全边界，使得以非根用户 (rootless) 方式安全运行容器成为标准实践，从而有效缓解了容器逃逸等攻击带来的风险。
+
+## 核心概念
+
+### 用户命名空间与UID 0问题
+在传统的容器运行模型中，容器内进程的 UID 映射到主机上的同一个 UID。这意味着，如果一个进程在容器内以 root (UID 0) 身份运行，它在主机内核层面也被视为 root。一旦攻击者利用漏洞突破容器隔离，他们可能直接获得主机上的 root 权限。用户命名空间通过为容器创建一个独立的 UID 空间解决了这个问题。容器内的 root (UID 0) 可以映射到主机上的一个非特权用户 ID（例如，一个高数值的 UID），从而即使发生逃逸，攻击者在主机上也只有有限的权限。
+
+### ID映射挂载：关键使能技术
+用户命名空间功能达到 GA 的一个关键前提是解决了存储卷的权限问题。如果简单地将容器用户映射到一个高 UID 范围，Kubelet 必须递归地 `chown` 卷中的所有文件，这对大型卷来说是性能无法承受的开销。Linux 内核的 **ID-mapped mounts** 技术（Linux 5.12+ 引入）完美地解决了此挑战。它在挂载时由内核透明地完成 UID/GID 的重映射，无需修改磁盘上文件的归属，实现了 O(1) 的高效操作。
+
+### `hostUsers: false` 标志
+在 Kubernetes v1.36 中，启用用户命名空间功能非常简单，只需在 Pod 规范中设置 `spec.hostUsers: false`。这个标志显式地告诉 Kubelet 和容器运行时，不要将此 Pod 的进程放在主机的用户命名空间中运行，而是为其创建一个新的、隔离的用户命名空间。设置此标志后，容器内声明的能力（Capabilities，如 `CAP_NET_ADMIN`）将变为“命名空间化”的——它们仅授予对容器本地资源的管理能力，而不会影响主机。
+
+## 实践
+
+在 Kubernetes v1.36 及以上版本中，启用用户命名空间的配置非常简洁。无需修改容器镜像，只需在 Pod 或 PodTemplate 的 `spec` 部分添加 `hostUsers: false` 即可。以下是一个示例配置：
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: isolated-workload
+spec:
+  hostUsers: false
+  containers:
+  - name: app
+    image: fedora:42
+    securityContext:
+      runAsUser: 0
+```
+
+在这个示例中，虽然容器以 root (`runAsUser: 0`) 身份运行，但因为设置了 `hostUsers: false`，该 root 身份仅存在于 Pod 的用户命名空间内。宿主机的文件系统和其他资源受到保护。此功能目前仅支持 Linux 节点。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+- **安全即可靠性**：用户命名空间显著减少了工作负载的攻击面，是纵深防御策略的关键一环。它通过限制容器逃逸的危害，直接提升了集群的整体可靠性和可用性。
+- **事件响应**：在安全事件中，用户命名空间可以有效遏制攻击者横向移动。即使某个容器被攻破，攻击者也被限制在一个低权限的命名空间中，大大降低了对主机和同节点其他工作负载的影响，为事件响应争取了宝贵时间。
+- **合规性**：对于需要满足特定安全基准（如 CIS Benchmark）的环境，用户命名空间提供了一种符合“非根容器”原则的实施路径，而无需重新设计应用镜像。
+
+### 最佳实践与常见反模式
+**最佳实践**：
+1.  **默认启用**：在支持的集群中，考虑为所有工作负载默认启用用户命名空间（通过准入策略或 PodSecurityStandard/Policy），将其作为标准安全配置。
+2.  **特权与隔离并存**：利用用户命名空间来运行那些需要特定 Linux 能力（如 `CAP_NET_ADMIN` 用于网络管理）但又不应拥有主机特权的容器。这实现了功能需求与安全隔离的平衡。
+3.  **监控与审计**：结合可观测性工具，监控用户命名空间的使用情况和相关内核事件，确保策略被正确执行。
+
+**常见反模式**：
+1.  **仅依赖镜像层面的非 root**：虽然容器镜像内应使用非 root 用户运行，但这并不能防止 UID 冲突和逃逸后的权限提升。用户命名空间提供了更底层的隔离。
+2.  **忽略节点兼容性**：该功能依赖于 Linux 内核特性（ID-mapped mounts），在部署前必须验证节点内核版本和容器运行时是否支持。
+3.  **认为它替代所有其他安全措施**：用户命名空间是强大的补充，但不能替代 Pod 安全策略/标准、网络策略、Seccomp/AppArmor 配置文件等其他安全机制。
+
+### 相关指标 (SLI/SLO/SLA)
+虽然用户命名空间本身不直接对应一个 SLI，但它对多个可靠性相关指标有积极影响：
+- **错误预算 (Error Budget)** 消耗率：通过预防由容器逃逸导致的严重安全事件，有助于保护错误预算。
+- **平均修复时间 (MTTR)**：限制了安全事件的影响范围，可能降低事件的平均修复成本和时间。
+- **配置漂移率**：如果通过 GitOps 或策略即代码（如 Kyverno/OPA）强制实施 `hostUsers: false`，可以降低配置漂移，确保安全基线。
+
+有关用户命名空间的更多技术细节和演进历程，请参考 Kubernetes 官方文档及相关的KEP-127提案。

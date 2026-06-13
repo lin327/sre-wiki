@@ -1,0 +1,80 @@
+---
+title: Kubernetes Mixed Version Proxy (MVP) Beta: 增强集群升级可靠性
+description: 在Kubernetes 1.36中，Mixed Version Proxy升级至Beta并默认启用，通过代理无法处理的请求到对等API服务器来提升集群滚动升级的安全性和可靠性。
+category: 集群管理
+order: 0
+lastUpdated: 2026-07-10
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2026/05/15/kubernetes-1-36-feature-mixed-version-proxy-beta/
+    title: Kubernetes v1.36: Mixed Version Proxy Graduates to Beta
+tags: [Kubernetes, API Server, High Availability, Upgrade, Proxy, SRE]
+---
+
+## 概述
+
+Mixed Version Proxy (MVP) 是 Kubernetes 为解决集群滚动升级过程中控制平面可靠性而引入的一项关键特性。在由多个 API 服务器组成的高可用控制平面中，升级往往无法瞬间完成，导致集群内可能同时存在不同版本的 API 服务器，它们各自支持的 API 集（如资源组、版本、种类）也有所不同。MVP 通过智能代理机制，确保客户端请求能够被正确的 API 服务器处理，即使该请求最初到达的服务器尚不支持请求的资源版本。该特性在 Kubernetes 1.28 中以 Alpha 引入，如今在 1.36 版本中晋升为 Beta 并**默认启用**，标志着其在生产环境中的成熟度和重要性得到了官方认可。对于执行定期升级的 SRE 而言，理解并利用 MVP 是保障升级期间集群可靠性、避免意外错误的关键。
+
+## 核心概念
+
+MVP 的核心目标是**防止因版本不匹配导致的错误 404 响应**，并提供一个**统一的 API 视图**给客户端。其工作原理和演进涉及以下几个关键概念：
+
+1.  **代理机制**：当一个 API 服务器收到无法本地服务的请求时（例如，请求的是一个新版本 API），它不会立即返回错误。相反，它会查询自己的“发现缓存”，找到一个能够处理该资源的对等 API 服务器，并将请求代理过去。响应会沿着相同的路径返回客户端。代理的请求头会添加 `x-kubernetes-peer-proxied` 标识。
+
+2.  **从 StorageVersion API 到聚合发现**：Alpha 版本依赖 `StorageVersion API` 来发现对等服务器的能力，但该 API 不支持 CRD 和聚合 API。Beta 版本进行了现代化改造，改用 **聚合发现（Aggregated Discovery）** 数据。API 服务器现在通过聚合发现数据动态了解对等节点的能力，这提供了更广泛、更准确的信息来源。
+
+3.  **对等聚合发现（Peer-Aggregated Discovery）**：这是 1.36 版本中补齐的重大缺失功能。以前，客户端（如 `kubectl`）进行 API 发现（列出可用的 API）时，只能看到它所连接的那个 API 服务器知道的内容。现在，API 服务器会将其本地视图与所有活动对等节点的发现数据进行合并和排序，向客户端返回一个**统一的、涵盖整个集群所有可用 API 的发现文档**。这确保了无论客户端连接到哪个 API 服务器，都能看到相同的完整 API 列表。
+
+## 实践
+
+要利用 Kubernetes 1.36 中默认启用的 MVP 功能，需要确保 API 服务器进行了正确的配置。以下是详细的配置指南和步骤。
+
+### 必需配置标志
+
+即使特性门控默认开启，仍需配置标志以允许对等服务器间的安全通信。以下是关键的 API 服务器启动参数：
+
+*   `--feature-gates=UnknownVersionInteroperabilityProxy=true`：在 1.36 中默认为 true，但明确设置可以确保一致性。
+*   `--peer-ca-file=<path-to-ca>`：**这是必需且关键的参数**。必须提供一个 CA 证书包，源 API 服务器将使用它来验证目标对等 API 服务器的提供证书。缺少此参数将因 TLS 验证错误而导致代理失败。
+*   `--peer-advertise-ip` 和 `--peer-advertise-port`：用于设置此 API 服务器在网络上对外通告的地址和端口，供其他对等服务器连接使用。如果未设置，将回退到使用 `--advertise-address` 或 `--bind-address` 的值。在使用复杂网络拓扑（例如，API 服务器通过特定内部接口通信）时，**强烈建议**显式设置这两个参数。
+
+### 使用 `kubeadm` 配置
+
+对于使用 `kubeadm` 管理的集群，可以在 `ClusterConfiguration` 文件的 `apiServer.extraArgs` 部分进行配置：
+
+```yaml
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+    # 确保特性门控已启用（1.36默认为true，可显式指定）
+    # feature-gates: "UnknownVersionInteroperabilityProxy=true"
+    peer-ca-file: "/etc/kubernetes/pki/ca.crt"
+    # 如果网络拓扑需要，取消注释并设置以下参数
+    # peer-advertise-ip: "10.0.1.10"
+    # peer-advertise-port: 6443
+```
+
+### 获取统一 API 视图
+
+配置后，客户端进行标准 API 发现（如访问 `/apis`）时，将默认获得**对等聚合发现**结果。如果需要调试或仅查看特定 API 服务器的能力，可以在请求的 `Accept` 头中添加 `profile=nopeer` 参数来获取非聚合视图：
+```
+Accept: application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;profile=nopeer
+```
+
+## SRE 要点
+
+Mixed Version Proxy 直接关联到 SRE 的核心目标——**提高系统可靠性并管理变更风险**。
+
+*   **与可靠性的关联**：MVP 是**集群滚动升级**过程中的重要安全网。它消除了因 API 服务器版本差异导致的“暂时性不一致”错误（如 404），这些错误可能触发依赖性故障（如控制器因找不到资源而行为异常），甚至导致数据损坏（如误触发垃圾回收）。它使升级过程对客户端应用更加透明和可靠。
+
+*   **最佳实践与常见反模式**：
+    *   **最佳实践**：在规划升级路径时，将 MVP 作为已验证的可靠性保障纳入方案。在升级前测试环境（staging）中预先验证 MVP 功能。监控 API 服务器日志中与代理相关的错误或警告。
+    *   **反模式**：假设 `--peer-ca-file` 配置无关紧要而省略；在复杂网络环境中依赖默认的通告地址，导致对等通信失败；升级后忘记验证 `kubectl` 等客户端工具是否能正确获取到聚合后的完整 API 列表。
+
+*   **相关指标**：
+    *   虽然 MVP 本身可能不直接暴露 SLI 指标，但其成功运行会影响相关的可靠性指标，例如：
+        *   **API 服务器错误率**：升级期间，4xx 错误（特别是 404）的比例应保持稳定或下降。
+        *   **升级持续时间与成功率**：一个成功的、无故障的滚动升级过程是 MVP 价值的体现。
+    *   SRE 可以通过检查 API 服务器的 `aggregated_discovery` 和 `mixed_version_proxy` 相关日志来监控其运行状态。
+
+与 MVP 相关的集群组件包括 [[api-server]]、[[rolling-upgrades]] 和 [[discovery]]。理解其工作原理有助于在故障排查中快速定位升级相关的问题。

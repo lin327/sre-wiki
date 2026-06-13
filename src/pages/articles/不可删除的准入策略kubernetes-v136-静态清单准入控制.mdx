@@ -1,0 +1,56 @@
+---
+title: 不可删除的准入策略：Kubernetes v1.36 静态清单准入控制
+description: Kubernetes v1.36 引入的基于磁盘文件的静态清单准入控制，确保关键安全策略在 API 服务器启动时即生效且无法通过 API 删除。
+category: 集群安全与治理
+order: 0
+lastUpdated: 2026-05-04
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/05/04/kubernetes-v1-36-manifest-based-admission-control/
+    title: Kubernetes v1.36: Admission Policies That Can't Be Deleted
+tags: [Kubernetes, 准入控制, ValidatingAdmissionPolicy, CEL, 集群引导, 安全策略]
+---
+
+## 概述
+
+在 Kubernetes 集群中强制执行一致的安全策略，常会遇到一个“先有鸡还是先有蛋”的困境。传统的基于 API 的准入控制（Admission Control）策略本身是集群中的资源对象，这意味着它们需要被显式创建，且拥有足够权限的用户可以将其删除。这导致了两个关键问题：一是集群启动阶段存在策略生效的“空白窗口期”；二是缺乏对策略自身的保护机制，无法防止其被恶意或意外删除。Kubernetes v1.36 引入的**静态清单准入控制（Manifest-Based Admission Control）**特性，通过将策略定义为磁盘上的文件，由 API 服务器在启动时加载，从根本上解决了这两个问题，为 SRE 提供了构建更可靠、更安全的集群基线的手段。
+
+## 核心概念
+
+静态清单准入控制的核心思想是将策略的生命周期与 API 服务器的进程绑定，而非与 API 服务器的 API 绑定。
+
+*   **静态清单目录 (`staticManifestsDir`)**: 在现有的 `AdmissionConfiguration` 配置文件中新增一个字段，指向一个本地目录。API 服务器会在启动时，**在服务任何请求之前**，扫描并加载该目录下的所有策略 YAML 文件。
+*   **策略命名约定**: 静态清单中定义的策略对象（如 `ValidatingAdmissionPolicy`）其名称**必须**以 `.static.k8s.io` 结尾。这一保留后缀用于区分静态加载的策略与通过 API 创建的策略，便于在监控指标和审计日志中追踪策略来源。
+*   **自我保护机制**: 静态策略因其加载方式，天然不受“策略不能拦截对其自身资源的操作”这一限制的约束。这意味着你可以编写一个静态策略来保护其他重要的、基于 API 的准入策略不被删除或修改，而这个静态策略本身无法通过 API 被移除。
+
+## 实践
+
+启用和配置静态清单准入控制涉及以下几个关键步骤。请注意，此特性在 v1.36 中为 Alpha 状态。
+
+1.  **启用特性门控**: 在每个 `kube-apiserver` 组件上启用 `ManifestBasedAdmissionControlConfig` 特性门控。
+2.  **准备静态策略文件**: 创建一个目录（例如 `/etc/kubernetes/admission/static/`），并在其中放置策略的 YAML 文件。这些文件是标准的 Kubernetes 资源定义，例如 `ValidatingAdmissionPolicy` 和 `ValidatingAdmissionPolicyBinding`。
+    *   **策略示例**: 可以编写一个策略来阻止在 `kube-system` 之外的命名空间中运行特权容器，如原始内容中的示例所示。策略文件必须严格遵守命名规范。
+    *   **自我保护示例**: 更关键的是，可以编写一个静态策略来保护其他标记了特定标签（如 `platform.example.com/protected: "true"`）的准入策略资源，防止它们被 UPDATE 或 DELETE 操作修改或删除。
+3.  **配置准入控制**: 修改 `AdmissionConfiguration` 文件（通过 `--admission-control-config-file` 参数传递给 API 服务器），在相应的插件配置中添加 `staticManifestsDir` 字段，指向你创建的策略目录。配置示意如下：
+    ```yaml
+    apiVersion: apiserver.config.k8s.io/v1
+    kind: AdmissionConfiguration
+    plugins:
+    - name: ValidatingAdmissionPolicy
+      configuration:
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: ValidatingAdmissionPolicyConfiguration
+        staticManifestsDir: "/etc/kubernetes/admission/static/"  # 指向静态策略目录
+    ```
+4.  **启动或重启 API 服务器**: 使用更新后的配置启动或重启 `kube-apiserver`。API 服务器会先验证目录下的所有清单文件，**如果任何文件无效，API 服务器将无法启动**，这是为了确保失败时能够快速暴露问题，而不是以缺失关键策略的状态运行。
+
+**运行时更新**: 静态清单文件在运行时会被监控。当你修改目录中的文件时，API 服务器会验证新配置并原子性地进行替换，无需重启 API 服务器。如果新配置验证失败，则会保持旧的有效配置并记录错误日志。这使得使用 Ansible、Puppet 或挂载的 ConfigMap 等配置管理工具进行策略变更成为可能。
+
+## SRE 要点
+
+*   **与可靠性的关联**: 此特性直接提升了集群的**可靠性**基线。它消除了集群启动阶段的安全策略空窗期，并确保了核心安全策略（如禁止特权容器）的**持续性**和**不可篡改性**，避免了因人为误操作或恶意攻击导致策略失效，从而降低了集群暴露于风险中的概率。
+*   **最佳实践与反模式**:
+    *   **最佳实践**: 将最关键的、定义集群安全基线的策略设为静态清单。为静态策略建立独立的代码仓库和审查流程。利用其运行时热重载特性，结合 GitOps 工具进行策略的版本化管理和分发。
+    *   **反模式**: **不要**将所有准入策略都转为静态清单。此特性有设计上的限制（例如，静态策略不能引用 API 资源作为参数、Webhook 不能引用 Service），因此应与 API 方式的策略协同使用。避免在静态策略目录中放置未经严格测试的文件，以免导致 API 服务器启动失败。
+*   **相关指标 (SLI/SLO)**: 应监控以 `.static.k8s.io` 结尾的策略的加载状态和命中情况。Kubernetes 在启用此特性后会暴露一个配置哈希值作为指标标签，SRE 可利用此检测多 API 服务器实例间配置的**一致性漂移**。策略是否成功拦截了违规请求，可作为安全策略有效性的 SLI。
+*   **与可观测性和事件响应的关联**: 通过 `.static.k8s.io` 后缀和指标中的配置哈希，SRE 可以清晰地在审计日志和监控仪表板中识别出静态策略做出的准入决策。在安全事件调查中，这有助于快速判断某个拒绝操作是由可靠的、不可变的静态策略触发的，还是可能已被删除的 API 策略所为。当静态策略本身出现问题时，由于其关联 API 服务器启动，相关告警会更加明确和紧急。

@@ -1,0 +1,161 @@
+---
+title: Gateway API v1.5：将实验性功能升级为稳定版
+description: Kubernetes Gateway API v1.5 发布，标志着六个广受欢迎的实验性功能升级至标准（Stable）通道，为多租户环境和流量管理提供了标准化、可靠的解决方案。
+category: API 与流量管理
+order: 0
+lastUpdated: 2026-04-21
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/04/21/gateway-api-v1-5/
+    title: Kubernetes Blog - Gateway API v1.5: Moving features to Stable
+tags: [gateway-api, kubernetes, sre, networking, traffic-management, standardization]
+---
+
+## 概述
+
+Gateway API 是 Kubernetes 中用于管理入口流量和网格流量的一套可扩展、基于角色的 API。其目标是取代 Ingress，并为更复杂的用例（如多租户和高级流量路由）提供原生支持。Gateway API v1.5 是一个重要的里程碑，它将六个广受欢迎的实验性功能升级为标准（Stable）通道。对于 SRE 团队而言，这意味着这些功能已进入生产就绪状态，遵循 GA（Generally Available）API 契约，提供更稳定的长期支持，有助于构建可靠、可预测的基础设施。
+
+## 核心概念
+
+### Gateway API 的演进与发布通道
+
+Gateway API 采用不同的发布通道来管理功能成熟度。**标准通道**（Standard Channel）等同于 GA 版本，意味着 API 已稳定且不会出现破坏性变更。**实验性通道**（Experimental Channel）则包含正在开发中的新功能。v1.5 的核心在于将实验功能“毕业”至标准通道，表明它们已准备好在生产环境中广泛使用。
+
+### 新的发布流程：Release Train 模式
+
+自 v1.5 起，Gateway API 项目采用了类似于 Kubernetes 本身的“release train”发布模式。这意味着项目在固定的“功能冻结”日期进行发布，所有已准备就绪的功能（包括实验性和标准功能）都将包含在该次发布中。文档的完备性也是功能“准备就绪”的关键前提。此模式旨在提供更可预测、更可靠的发布节奏。同时，项目引入了 Release Manager 和 Release Shadow 角色来协调这一过程。
+
+### 标准化的新功能
+
+v1.5 将以下六个功能提升至标准通道：
+
+1.  **ListenerSet**：允许将监听器定义为独立资源，然后附加到目标 Gateway 上。这解决了在多租户或团队协作场景下，所有监听器必须直接定义在 Gateway 对象上所带来的协调困难和所有权划分问题，并支持单个 Gateway 上超过 64 个监听器的规模。
+2.  **TLSRoute**：允许根据客户端 TLS 握手中呈现的服务器名称指示（SNI）来路由请求。支持 `Passthrough`（透传，端到端加密）和 `Terminate`（终止，Gateway 终结 TLS 并转发明文）两种模式，为不同安全需求提供了灵活的选择。
+3.  **HTTPRoute CORS Filter**：在 HTTPRoute 资源上提供跨源资源共享（CORS）配置。允许通过声明式方式管理 `Access-Control-Allow-Origin`、`Allow-Methods` 等 HTTP 头，是保护 Web API 安全的关键能力。
+4.  **Client Certificate Validation (mTLS)**：在 Gateway 上启用对客户端证书的验证（前端 mTLS）。通过 `frontendValidation` 配置，可以指定受信任的 CA 证书库和验证模式（如 `AllowValidOnly` 或 `AllowInsecureFallback`），增强了零信任架构下的连接安全性。
+5.  **Certificate Selection for Gateway TLS Origination**：允许 Gateway 在与上游后端建立连接时，出示客户端证书（后端 mTLS）。通过 `tls.backend.clientCertificateRef` 字段配置，确保后端服务仅接受来自授权 Gateway 的连接。
+6.  **ReferenceGrant**：该资源本身的版本被提升至 v1，正式进入标准通道。它用于控制跨命名空间的资源引用权限，是实现安全、灵活的多团队环境的基础。
+
+## 实践
+
+### 尝试与升级
+
+无需升级 Kubernetes 集群版本即可使用 Gateway API v1.5，前提是运行 Kubernetes 1.30 或更高版本。可以通过官方 [Getting Started Guide](https://gateway-api.sigs.k8s.io/guides/) 进行安装和尝试。目前已有多个实现完全符合 v1.5 标准，包括 NGINX Gateway Fabric、Traefik Proxy、GKE Gateway 等。
+
+### 配置示例：利用 ListenerSet 实现多团队监听器共享
+
+以下示例展示了中心化基础设施团队和两个应用团队如何协作。基础设施团队定义一个带有默认 HTTP 监听器的 Gateway，并允许其他命名空间附加监听器。各团队在自己的命名空间内创建 ListenerSet，为各自的域（`a.example.com`, `b.example.com`）添加 HTTPS 监听器。
+
+```yaml
+# 基础设施团队定义的 Gateway
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+  namespace: infra
+spec:
+  gatewayClassName: example-gateway-class
+  # 允许从所有命名空间附加监听器
+  allowedListeners:
+    namespaces:
+      from: All
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+---
+# 团队 A 的 ListenerSet
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+  name: team-a-listeners
+  namespace: team-a
+spec:
+  parentRef:
+    name: example-gateway
+    namespace: infra
+  listeners:
+    - name: https-a
+      protocol: HTTPS
+      port: 443
+      hostname: a.example.com
+      tls:
+        certificateRefs:
+          - name: a-cert
+---
+# 团队 B 的 ListenerSet (结构类似)
+```
+
+### 配置示例：使用 TLSRoute 进行 SNI 路由
+
+以下示例展示了如何配置 `Passthrough` 模式的 TLSRoute，将特定 SNI（`foo.example.com`）的加密流量直接转发至后端服务。
+
+```yaml
+# 定义启用 Passthrough 模式的 Gateway 监听器
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+spec:
+  gatewayClassName: example-gateway-class
+  listeners:
+    - name: tls-passthrough
+      protocol: TLS
+      port: 8443
+      tls:
+        mode: Passthrough # 关键配置
+---
+# 定义匹配 SNI 的 TLSRoute
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: foo-route
+spec:
+  parentRefs:
+    - name: example-gateway
+      sectionName: tls-passthrough
+  hostnames:
+    - "foo.example.com"
+  rules:
+    - backendRefs:
+        - name: foo-svc
+          port: 8443
+```
+
+## SRE 要点
+
+### 可靠性、可观测性与事件响应的关联
+
+- **可靠性**：功能的标准化意味着 API 的稳定性和行为的一致性，降低了因版本变动或实现差异导致生产故障的风险。采用 Release Train 模式使发布周期可预测，便于 SRE 团队规划升级和维护窗口。
+- **可观测性**：标准的资源（如 ListenerSet、TLSRoute）为流量路径提供了清晰、可审计的声明。结合 Kubernetes 的指标和日志，SRE 团队可以更精确地监控各团队或服务的流量、连接状态和错误情况。例如，可以独立监控每个 ListenerSet 引入的监听器及其关联的后端健康状态。
+- **事件响应**：当出现路由或安全问题时，标准化的 API 使得诊断过程更加结构化。例如，通过检查 TLSRoute 配置和监听器模式，可以快速判断是证书问题、SNI 不匹配还是策略拒绝。多团队的 ListenerSet 配置则有助于隔离和定位特定团队引入的变更。
+
+### 最佳实践与常见反模式
+
+**最佳实践：**
+1.  **逐步采用**：从非关键服务开始试点新功能（如 ListenerSet），再逐步推广。
+2.  **明确所有权**：利用 ListenerSet 和 ReferenceGrant 清晰地划分基础设施平台团队与应用团队之间的监听器和资源引用权限。
+3.  **安全第一**：在启用客户端证书验证（mTLS）时，**默认使用 `AllowValidOnly` 模式**。仅在充分理解风险并配合后端授权的情况下，才考虑使用 `AllowInsecureFallback`。
+4.  **标准化 TLS 策略**：根据后端安全需求，统一选择 `Passthrough`（端到端安全）或 `Terminate`（集中管理）模式，并在策略文档中明确其适用场景。
+
+**常见反模式：**
+1.  **“通配符” CORS 配置**：在生产环境广泛使用 `allowOrigins: ["*"]`，这会带来安全风险。应始终限制为具体的可信来源。
+2.  **忽略版本迁移**：在从 v1.4 或更早的实验性版本升级时，未注意资源 API 版本的变化（如从 `v1alpha2`/`v1alpha3` 迁移到 `v1`），导致现有资源无法被新控制器识别。
+3.  **滥用 `AllowInsecureFallback`**：将其作为客户端证书验证失败的默认回退策略，这等同于关闭了 mTLS 保护，将安全责任完全转移至后端，增加了系统脆弱性。
+
+### 相关指标 (SLI/SLO/SLA)
+
+虽然 Gateway API 本身不直接定义 SLO，但其配置和状态是实现流量相关 SLO 的基础：
+
+- **SLI (Service Level Indicator)**:
+    - `请求成功率`：针对 HTTPRoute，可监控 `2xx` 响应比例。
+    - `TLS 握手成功率`：针对 TLSRoute 监听器，监控 TLS 握手失败次数。
+    - `特定 SNI 的连接数`：用于跟踪多租户环境下各团队的流量。
+- **SLO (Service Level Objective)**:
+    - 可为通过特定 Gateway/Route 暴露的关键服务定义可用性目标（如 99.95% 的成功请求率）。
+    - 可定义关键 TLS 服务（如支付接口）的 TLS 握手延迟 SLO。
+- **相关性**：Gateway 的监听器配置（如 `clientCertificateValidation` 模式）直接影响连接的建立方式和失败模式，进而影响上述 SLI 的计算。SRE 团队需要将 Gateway 的配置变更与 SLO 告警和事件相关联分析。
+
+### 相关链接
+- [[gateway-api]]
+- [[kubernetes-sig-network]]

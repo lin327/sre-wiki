@@ -1,0 +1,61 @@
+---
+title: Grafana Cloud AI Observability：监控代理工作负载的完整解决方案
+description: Grafana Cloud 提供的一套 AI 可观测性方案，用于实时观察、评估和调试 AI 代理行为，将代理会话提升为一等遥测信号。
+category: 可观测性
+order: 0
+lastUpdated: 2025-10-24
+confidence: high
+sources:
+  - url: https://grafana.com/blog/ai-observability-for-agents-in-grafana-cloud/
+    title: AI Observability in Grafana Cloud: A complete solution for monitoring your agentic workloads
+tags: [AI, 可观测性, 代理, Grafana, OpenTelemetry, SRE, LLM]
+---
+
+## 概述
+
+在传统的云原生应用监控领域，我们拥有成熟的基于指标（Metrics）、日志（Logs）、链路追踪（Traces）和剖析（Profiles）的可观测性工具链。然而，当组织从“云原生”转向“AI原生”时，传统的可观测性工具无法有效回答一个核心问题：AI系统（尤其是代理）*实际上*在做什么？AI代理会做出决策、调用工具、生成内容并与其他系统交互，这些复杂的行为模式需要专门的观测手段。
+
+Grafana Cloud 推出的 **AI Observability** 功能正是为了解决这一新兴差距。它作为 Grafana Cloud 原生的完整解决方案，旨在帮助团队监控生产环境中的 AI 代理，理解其行为、评估其性能并及早发现问题。对于 SRE 而言，这意味着能够将 AI 代理的可靠性和性能管理无缝集成到现有的全栈可观测性实践中，实现端到端的信号关联。
+
+## 核心概念
+
+AI Observability 的核心在于将 AI 代理的活动视为与传统应用指标同等重要的**一等遥测信号**。其关键概念包括：
+
+- **代理会话与对话（Agent Sessions & Conversations）**：指代理与用户或系统之间的完整交互过程。AI Observability 会捕获输入、输出及完整的执行流，使其成为可查询、可分析的结构化数据。
+- **生成评估（Generation Evaluation）**：使用 LLM-as-a-judge（大语言模型充当评判者）、启发式规则或正则表达式等方法，持续评估代理输出的质量、安全性和合规性，检测如低质量回复、策略违规或异常行为等问题。
+- **版本分类（Agent Versioning）**：系统会自动对代理进行版本分类。当代理的系统提示词（System Prompt）或工具集发生变更时，会创建一个新版本，便于独立检查每个版本的性能，从而定位问题根源（例如，特定版本在特定模型上表现不佳）。
+- **成本信号（Cost Signals）**：自动关联和追踪与 AI 交互相关的资源消耗，如令牌（Token）使用量和计算成本，帮助团队理解操作开销并优化成本结构。
+
+## 实践
+
+### 接入与数据采集
+
+AI Observability 与 OpenTelemetry 兼容，能够自然融入现有的可观测性架构。实践步骤如下：
+
+1.  **一次插桩**：在你的应用或 AI 框架中集成 Grafana 提供的轻量级 SDK（如 [sigil-sdk](https://github.com/grafana/sigil-sdk)）。
+2.  **自动捕获数据**：插桩后，AI Observability 会自动采集以下数据：
+    - 代理的生成内容与完整对话线程
+    - 使用的模型及提供商元数据
+    - 工具调用的执行链路与详情
+    - 延迟、令牌使用量等关键指标
+    - 相关的成本信号
+3.  **查询与分析**：所有采集到的数据都在 Grafana Cloud 中统一存储、查询和探索。你可以按模型、提供商、时间范围、标签或环境进行过滤和聚合分析，非常适合在多提供商环境下比较同一模型在不同环境中的表现。
+
+### 调试与告警
+
+- **深度调试**：当出现问题（如用户反馈回复质量下降或成本异常）时，可以钻取到任意对话，查看完整的线程历史，包括工具调用、执行追踪、令牌用量、成本明细、评分和标注。这为定位问题（如特定工具响应缓慢或某些操作成本过高）提供了关键上下文。
+- **智能告警**：利用生成评估能力，结合 Grafana Cloud 原生的 [Alerting](https://grafana.com/products/cloud/alerting/) 功能，设置基于内容质量或行为异常的告警。例如，当检测到代理输出毒性增加时自动触发告警。
+- **集成排障**：告警可以与 Grafana Assistant 的[技能](https://grafana.com/docs/grafana-cloud/machine-learning/assistant/guides/skills/)及特定的代理运行手册（Runbook）联动。收到告警后，可直接要求 Assistant 检查对话、参考手册并提供修复建议。
+
+## SRE 要点
+
+- **可靠性关联**：AI Observability 将代理的对话和行为直接关联到传统的指标、日志和追踪信号。当出现延迟尖峰等问题时，SRE 不仅能看到指标变化，还能直接定位到是哪一次具体的代理交互、哪个工具调用或哪个模型决策导致的，实现了从宏观到微观的快速诊断。
+- **可观测性最佳实践**：
+    - **将代理视为服务**：像监控微服务一样监控 AI 代理，为其定义 SLI（如输出质量评分、任务成功率）、SLO 和 Error Budget。
+    - **版本化与回溯**：利用自动版本分类功能，严格管理代理的迭代，并能轻松回滚或对比不同版本的性能，这是保持 AI 代理可靠性的关键。
+    - **成本作为可靠性指标**：在 AI 场景下，成本突增是系统行为异常的重要信号之一。将令牌消耗和计算成本纳入监控仪表盘，与性能指标并列观察。
+- **事件响应改进**：当发生“AI 事故”（如代理产生有害内容或泄露信息）时，AI Observability 提供了事件发生时的完整上下文（对话历史、决策点），大幅缩短了根因分析（RCA）的时间。结合 Grafana Assistant 的分析能力，甚至可以半自动化地提出缓解策略。
+- **常见反模式**：
+    - **仅监控基础架构指标**：只关注 CPU/内存/延迟，而忽略对 AI 输出质量、相关性和安全性的评估。
+    - **缺乏版本控制**：频繁更新代理提示词或工具而不进行版本管理和 A/B 测试，导致问题难以追踪。
+    - **孤立看待 AI 数据**：未能将 AI 交互数据与相关的应用性能监控（APM）和业务指标进行关联分析。

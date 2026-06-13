@@ -1,0 +1,53 @@
+---
+title: Hostinger 的 Prometheus 监控实践案例研究
+description: 深入了解大型托管服务商 Hostinger 如何从 Nagios/Cacti 迁移到 Prometheus，并构建可扩展、高可用的监控体系。
+category: case-study
+order: 0
+lastUpdated: 2025-07-10
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2019/02/06/interview-with-hostinger/
+    title: Interview with Hostinger - Prometheus Blog
+tags: [prometheus, monitoring, case-study, high-availability, caching, metrics]
+---
+
+## 概述
+
+本文基于 Prometheus 官方博客对大型托管服务商 Hostinger 的采访，深入剖析了其监控系统的现代化演进历程。作为一家拥有超过 3000 万客户的国际服务商，Hostinger 从传统的 Nagios/Cacti/Ganglia (NCG) 栈迁移到 Prometheus 生态，并在此基础上解决了大规模监控下的性能、高可用性和用户体验等挑战。该案例为 SRE 团队提供了关于监控系统选型、架构演进、性能优化及构建可观测性体系的宝贵实践经验。
+
+## 核心概念
+
+在 Hostinger 的案例中，涉及了几个关键的监控与 SRE 概念：
+
+1.  **监控栈现代化**：从以阈值检查和简单绘图为主的 NCG 栈（Nagios, Cacti, Ganglia）迁移到以强大的数据模型、丰富的生态和原生支持多维数据为核心的 Prometheus 栈。
+2.  **时间序列数据库 (TSDB)**：Prometheus 作为核心存储引擎，其写入性能、查询能力和存储效率是支撑大规模监控的基础。
+3.  **高可用性 (HA) 架构**：通过部署冗余组件（如两个 Prometheus 节点、两个 Alertmanager）和使用负载均衡器（如 HAProxy），确保监控系统本身在单点故障或地域性中断时仍能持续工作。
+4.  **缓存层**：引入像 Trickster 这样的缓存代理，旨在加速仪表板查询、减少对后端 Prometheus 的重复请求，并防止在故障转移时可能出现的“雷群问题”。
+
+## 实践
+
+Hostinger 将监控视为其业务可靠性的核心支柱，并在实践中采取了以下具体措施：
+
+*   **渐进式迁移与技术评估**：在 2015 年启动自动化项目时引入 Prometheus，经历了新旧系统并行运行的过渡期，最终完全切换。迁移前评估了 TICK（Telegraf/InfluxDB/Chronograf/Kapacitor）技术栈，但因其功能局限和成熟度，选择了更简单、更成熟的 Prometheus。
+*   **充分利用 Exporter 生态**：部署了约 25 个社区开发的指标导出器，并编写了自定义导出器（如 `lxc_exporter`）。对于网络设备，在支持的“白盒”交换机（运行 CumulusOS 的 x86 架构）上直接运行 `node_exporter`，以替代传统 SNMP 方式，暴露更人类可读的指标。
+*   **业务指标集成**：通过 Prometheus 的 `textfile collector` 机制，将自定义的业务相关指标（例如与客户计费或套餐使用相关的指标）暴露给监控系统，实现了技术指标与业务指标的统一监控。
+*   **解决监控系统自身的瓶颈与高可用**：
+    *   **性能与存储**：随着基础设施规模扩大至约 2000 台服务器，Prometheus 本身成为瓶颈，磁盘占用达约 2TB，重启耗时 10-15 分钟。计划升级到 Prometheus 2.6 以利用性能改进和 WAL（预写日志）等特性。
+    *   **高可用部署**：实施了跨大洲的两节点高可用架构，包括两个独立的 Prometheus 实例和两个组成集群的 Alertmanager 实例。Alertmanager 集群能对相同告警进行去重。
+    *   **查询负载均衡与缓存**：在 Grafana 和 Prometheus 之间部署 HAProxy 和 Trickster。HAProxy 提供本地接入口和故障转移；Trickster 通过内存缓存时间序列数据，极大提升了仪表板加载速度，并能在主节点故障时避免对备份节点造成冲击。
+*   **未来扩展计划**：计划部署大量 `blackbox_exporter` 以监控所有 Hostinger 客户的网站外部可用性。长远来看，考虑对 Prometheus 进行分片，以进一步扩展和隔离故障域。
+
+## SRE 要点
+
+Hostinger 的实践深刻体现了 SRE 关注可靠性、可扩展性和效率的核心原则。
+
+*   **与可靠性的关联**：监控系统的高可用（HA）部署直接提升了其自身作为关键基础设施的可靠性。降低平均故障检测时间（MTTD）从 5 分钟级到秒级（MTTD降低4倍），是提升整个托管平台可靠性的关键。使用 `blackbox_exporter` 主动探测外部服务，体现了“任何无法监控的事物都无法被评估”的 SRE 理念。
+*   **最佳实践与反模式**：
+    *   **最佳实践**：监控一切（技术与业务指标）；通过缓存层（Trickster）保护后端系统并提升用户体验；为监控系统本身设计高可用架构；利用标准化 Exporter 避免重复造轮子。
+    *   **反模式警示**：单一监控实例造成的单点故障；未对仪表板查询进行缓存和限流可能导致后端过载（雷群问题）；忽视监控系统自身的容量规划和性能优化（如重启时间）。
+*   **相关指标（SLI/SLO/SLA）**：
+    *   **SLI (服务级别指标)**：时间分辨率（从 5 分钟提升到 15 秒）、平均故障检测时间（MTTD）、仪表板加载时间。
+    *   **SLO (服务级别目标)**：监控系统的可用性目标（如 99.9%）、告警的及时性与准确性。
+    *   **SLA (服务级别协议)**：虽然未直接提及，但监控系统的可靠性最终支撑着对客户承诺的服务可用性 SLA。
+
+通过这个案例，SRE 可以学到如何将一个开源监控工具从简单的告警系统，构建成一个支撑庞大业务、具备弹性和自我保护能力的可观测性平台。

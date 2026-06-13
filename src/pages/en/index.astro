@@ -1,0 +1,54 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="SRE Atlas" description="AI-driven SRE knowledge base covering Linux to Kubernetes">
+  <section class="welcome">
+    <h1 class="welcome__title">Welcome to SRE Atlas</h1>
+    <p class="welcome__desc">
+      AI-driven operations knowledge base covering the full Linux → Docker → Kubernetes stack. Quickly find troubleshooting guides, architecture comparisons, and best practices.
+    </p>
+  </section>
+
+  <div class="stats-row">
+    <span class="stats-row__item">21 pages</span>
+    <span class="stats-row__sep">·</span>
+    <span class="stats-row__item">7 categories</span>
+    <span class="stats-row__sep">·</span>
+    <span class="stats-row__item">Updated today</span>
+  </div>
+
+  <section class="categories">
+    <h2 class="section-title">Quick access</h2>
+    <div class="categories__grid">
+      <a href="/en/linux/process-model" class="card-link category-card">
+        <div class="category-card__header">
+          <h3 class="category-card__title">Linux</h3>
+          <span class="category-card__count">4</span>
+        </div>
+        <p class="category-card__latest">Latest: Process Model</p>
+      </a>
+      <a href="/en/docker/image-layers" class="card-link category-card">
+        <div class="category-card__header">
+          <h3 class="category-card__title">Docker</h3>
+          <span class="category-card__count">4</span>
+        </div>
+        <p class="category-card__latest">Latest: Image Layers</p>
+      </a>
+      <a href="/en/kubernetes/pod-lifecycle" class="card-link category-card">
+        <div class="category-card__header">
+          <h3 class="category-card__title">Kubernetes</h3>
+          <span class="category-card__count">3</span>
+        </div>
+        <p class="category-card__latest">Latest: Pod Lifecycle</p>
+      </a>
+      <a href="/en/runbooks/crashloopbackoff" class="card-link category-card">
+        <div class="category-card__header">
+          <h3 class="category-card__title">Runbooks</h3>
+          <span class="category-card__count">3</span>
+        </div>
+        <p class="category-card__latest">Latest: CrashLoopBackOff</p>
+      </a>
+    </div>
+  </section>
+</BaseLayout>

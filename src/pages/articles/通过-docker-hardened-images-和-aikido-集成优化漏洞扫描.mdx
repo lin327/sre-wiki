@@ -1,0 +1,84 @@
+---
+title: 通过 Docker Hardened Images 和 Aikido 集成优化漏洞扫描
+description: Aikido 与 Docker Hardened Images 集成，利用内置 VEX 声明自动过滤已验证不可利用的漏洞，显著减少开发与安全团队的漏洞分类噪音。
+category: 容器安全
+order: 0
+lastUpdated: 2025-07-04
+confidence: medium
+sources:
+  - url: https://www.docker.com/blog/docker-hardened-images-enhanced-vulnerability-scanning-with-docker-and-aikido/
+    title: Docker Blog: Docker Hardened Images enhanced vulnerability scanning with Docker and Aikido
+tags: [docker, hardened-images, vulnerability-scanning, vex, sre, container-security, sbom]
+---
+
+## 概述
+
+在现代云原生和 DevOps 环境中，容器安全扫描是保障应用供应链可靠性的关键环节。然而，扫描工具产生的大量 CVE（通用漏洞披露）误报和无关发现，正严重消耗着开发与安全团队的时间。Docker Hardened Images (DHI) 与 Aikido 安全平台的集成，通过原生支持 VEX（漏洞利用可扩展性）声明，实现了漏洞发现的自动化分类与过滤。这一改进直接关系到 SRE 实践中的**减少事件噪音、提升修复效率**，使团队能够专注于处理真正具有可利用性的漏洞，从而提升系统整体的可靠性与安全性。
+
+## 核心概念
+
+**Docker Hardened Images (DHI)**：是 Docker 官方提供的经过安全加固的基础镜像。它们通常基于 distroless 构建，只包含工作负载运行所需的软件，从而从设计上缩小了攻击面。补丁发布速度通常快于上游，且每个镜像都附带签名的软件物料清单 (SBOM) 和 OpenVEX 声明。
+
+**VEX (Vulnerability Exploitability eXchange)**：是一种用于传达漏洞可利用性状态的标准化数据格式。它允许镜像发布者（如 Docker）对已知的 CVE 进行声明，例如该漏洞“未受影响”或“已修复”，并提供相应的理由。这为漏洞扫描器提供了关键的上下文信息，用于区分真正的风险与无关或理论上的发现。
+
+**OpenVEX**：是 VEX 的一种开放、轻量级的实现格式。Docker 在其 DHI 中发布 OpenVEX 声明，Aikido 能够解析这些签名的声明以应用漏洞缓解信息。
+
+**集成工作流**：当 Aikido 扫描 DHI 时，它会识别镜像、拉取官方 SBOM 和 VEX 声明、匹配漏洞，然后应用 VEX 声明来过滤掉那些被 Docker 判定为“未受影响”或“已修复”的发现。
+
+## 实践
+
+### 前提条件
+
+要使用 Aikido 扫描 DHI，需要准备以下三项：
+
+1.  一个有效的 [Aikido 账户](https://www.aikido.dev/)。
+2.  对 [Docker Hardened Images](https://docs.docker.com/dhi/get-started/) 的访问权限。
+3.  一个具有只读权限的 [Docker Hub 个人访问令牌](https://docs.docker.com/security/access-tokens/)。
+
+### 连接 Docker Hub 到 Aikido
+
+1.  登录 Aikido 平台。
+2.  导航至 **Settings > Containers**（设置 > 容器）。
+3.  点击 **Connect Registry**（连接注册表）。
+4.  选择 **Docker Hub**。
+5.  输入你的组织命名空间、用户名以及上一步创建的个人访问令牌。
+6.  完成连接后，Aikido 将会发现并列出你的仓库以供扫描。
+
+### 扫描 Docker Hardened Image
+
+1.  注册表连接成功后，在注册表操作菜单中选择 **Scan repos in registry**（扫描注册表中的仓库）。
+2.  **无需任何针对 DHI 的额外配置**。Aikido 会在后台自动检测硬化镜像，并应用相应的数据源。
+
+扫描的底层技术流程遵循 DHI 规范：
+
+- **检测**：从镜像引用和注册表元数据中识别出 DHI 基础镜像。
+- **编目**：拉取随镜像发布的、签名的 SPDX 2.3 格式 SBOM。这通过 OCI 1.1 引用者查找或从 `/opt/docker/sbom/` 路径获取，比尝试索引 distroless 文件系统更准确、完整。
+- **匹配**：通过 PURL（Package URL）将组件与 Docker OSV 源和上游公告源进行匹配。
+- **应用 VEX**：将 Docker 为镜像发布的 OpenVEX 语句覆盖到扫描结果上，并抑制任何被证明为已解决的发现。
+
+### 理解 VEX 状态
+
+Aikido 会根据 Docker VEX 声明自动处理以下状态：
+
+| VEX 状态 | 含义 | Aikido 处理方式 |
+| :--- | :--- | :--- |
+| **Fixed (已修复)** | 该漏洞已在此镜像中被修补。 | 从活跃队列中过滤。 |
+| **Not Affected (未受影响)** | Docker 已验证该 CVE 在此上下文中是误报或无法利用。 | 默认抑制，不进入待分类队列。 |
+| **Under Investigation (调查中)** | 影响仍在评估中。 | 通常会保留，需人工关注。 |
+| **Affected (受影响)** | 该漏洞适用，且修复尚未可用。 | 在队列中高亮显示，需优先处理。 |
+
+在 Aikido 界面中，只有被判定为真正需要处理的漏洞会出现在分类队列中。被 VEX 过滤掉的发现不会显示，但其完整的 OpenVEX 语句（状态、理由、镜像摘要）会被保留用于审计和合规目的。
+
+## SRE 要点
+
+- **与可靠性、可观测性、事件响应的关联**：此集成直接提升了安全运营的可靠性，减少了因漏洞误报引发的无效事件响应。更清晰的漏洞队列提高了安全可观测性的信噪比，使 SRE 能够更快地识别和处理真正影响生产稳定性的安全问题。在事件响应中，可以快速确认某个告警的漏洞是否已被 VEX 标记为不可利用，从而加速决策。
+- **最佳实践与常见反模式**：
+    - **最佳实践**：优先选用 Docker Hardened Images 作为基础镜像；确保安全扫描工具（如 Aikido）能够集成并解析 VEX 声明；将 VEX 整合到漏洞管理流程和合规审计中。
+    - **常见反模式**：忽略 VEX 信息，继续手动分类已知无害的漏洞；使用无法解析 VEX 的传统扫描器，导致团队陷入 CVE 泥潭；对扫描结果“一刀切”，不区分漏洞的实际可利用性。
+- **相关指标 (SLI/SLO/SLA)**：虽然不直接定义 SLO，但此实践可显著改善以下与安全和效率相关的指标：
+    - **漏洞分类平均时间 (MTTR)**：预期大幅下降。
+    - **安全扫描精度**：假阳性率降低。
+    - **开发者处理安全告警所花费的时间比例**：预期减少，从而有更多时间投入核心开发工作。
+    - 可为漏洞修复设定基于可利用性（而不仅仅是存在性）的内部 SLO，例如“受 VEX 影响的高危漏洞修复时间”与“未被 VEX 降级的高危漏洞修复时间”采用不同阈值。
+
+采用此类集成是构建健壮、可维护的容器化平台的关键一步，它使得安全左移的同时，不会以牺牲团队生产力和警报疲劳为代价。

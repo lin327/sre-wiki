@@ -1,0 +1,127 @@
+---
+title: "可变挂起Job的Pod资源 (v1.36 Beta)"
+description: "允许在Job挂起状态下修改其Pod模板的资源请求与限制，提升批处理和机器学习工作负载的调度灵活性。"
+category: "Kubernetes 核心特性"
+order: 0
+lastUpdated: 2026-04-28
+confidence: high
+sources:
+  - url: "https://kubernetes.io/blog/2026/04/27/kubernetes-v1-36-mutable-pod-resources-for-suspended-jobs/"
+    title: "Kubernetes v1.36: Mutable Pod Resources for Suspended Jobs (beta)"
+tags: [kubernetes, job, suspend, resources, batch, scheduling]
+---
+
+## 概述
+
+在 Kubernetes v1.36 中，一项针对 `Job` 资源的优化功能进入了 Beta 阶段，即允许修改处于挂起（`suspend: true`）状态的 Job 的 Pod 模板中的资源请求（requests）与限制（limits）。这项特性极大地增强了批处理（batch）和机器学习（ML）等工作负载在动态集群环境中的调度灵活性，允许队列控制器（如 [Kueue](https://kueue.sigs.k8s.io/)）或管理员在任务实际运行前，根据当前集群容量、优先级和硬件（如 GPU）可用性来优化资源分配，从而提高集群整体资源利用率和作业吞吐量。
+
+## 核心概念
+
+本特性涉及以下几个关键概念：
+
+- **Job 的挂起状态**：当 Job 的 `spec.suspend` 字段设置为 `true` 时，该 Job 不会创建新的 Pod 来执行工作，已运行的 Pod 会被终止。它处于“等待”状态，通常由外部控制器（如队列管理器）管理。
+- **Pod 模板资源**：定义在 Job 的 `spec.template.spec.containers` 和 `spec.initContainers` 中的 `resources.requests` 与 `resources.limits` 字段。这些字段传统上在 Job 创建后是不可变的。
+- **队列控制器**：在 Kubernetes 生态中，专门用于管理批量作业队列的控制器（例如 Kueue）。它负责根据集群资源和策略决定作业的调度顺序和资源分配。此特性为队列控制器提供了关键的灵活性。
+- **特性门控（Feature Gate）**：`MutablePodResourcesForSuspendedJobs`。在 v1.36 中默认开启，在 v1.35 中需要手动启用。
+
+## 实践
+
+### 功能使用流程
+
+1.  **创建挂起的 Job**：首先创建一个 `spec.suspend: true` 的 Job，其 Pod 模板中定义了初始的资源需求。
+2.  **修改资源**：在 Job 处于挂起状态且符合条件时（见下文），可以安全地更新其 Pod 模板中的资源字段。这可以通过 `kubectl edit`、`kubectl patch` 或控制器直接通过 API 调用完成。
+3.  **恢复 Job**：将 Job 的 `spec.suspend` 设置为 `false`，Kubernetes 将使用更新后的资源配置来创建和运行 Pod。
+
+**示例 YAML（初始配置）**：
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: training-job-example-abcd123
+  labels:
+    app.kubernetes.io/name: trainer
+spec:
+  suspend: true # 关键：Job 处于挂起状态
+  template:
+    spec:
+      containers:
+      - name: trainer
+        image: example-registry.example.com/training:2026-04-23T150405.678
+        resources:
+          requests:
+            cpu: "8"
+            memory: "32Gi"
+            example-hardware-vendor.com/gpu: "4"
+          limits:
+            cpu: "8"
+            memory: "32Gi"
+            example-hardware-vendor.com/gpu: "4"
+      restartPolicy: Never
+```
+
+**资源修改后**：假设队列控制器发现集群中仅有 2 个 GPU 可用，它将 Job 的资源请求修改为：
+```yaml
+        resources:
+          requests:
+            cpu: "4"
+            memory: "16Gi"
+            example-hardware-vendor.com/gpu: "2" # 减少 GPU 数量
+          limits:
+            cpu: "4"
+            memory: "16Gi"
+            example-hardware-vendor.com/gpu: "2"
+```
+
+**使用 kubectl 操作示例**：
+```bash
+# 创建挂起的 Job
+kubectl apply -f my-job.yaml --server-side
+
+# 编辑资源请求
+kubectl edit job training-job-example-abcd123
+
+# 恢复 Job，使用修改后的资源
+kubectl patch job training-job-example-abcd123 -p '{"spec":{"suspend":false}}'
+```
+
+### 允许修改的条件
+
+API Server 只在满足以下条件时接受对 Job Pod 模板资源的更新：
+1.  Job 的 `spec.suspend` 值为 `true`。
+2.  如果该 Job 之前运行过，那么当前所有活跃 Pod 必须已完全终止（`status.active` 等于 0）。这确保了正在运行的 Pod 和模板之间不会出现不一致。
+
+### 可修改的字段范围
+
+修改仅限于以下 Pod 模板中的资源字段：
+- `spec.template.spec.containers[*].resources.requests`
+- `spec.template.spec.containers[*].resources.limits`
+- `spec.template.spec.initContainers[*].resources.requests`
+- `spec.template.spec.initContainers[*].resources.limits`
+
+标准的资源验证规则（例如 `limits` 必须大于等于 `requests`）仍然适用。
+
+## SRE 要点
+
+### 与可靠性和事件响应的关联
+
+此特性通过避免因资源不足导致的作业失败或延迟，直接提升了批量作业的可靠性和完成率（Throughput）。在事件响应场景中，SRE 或平台工程师可以快速干预，为关键的、因资源竞争而挂起的作业调整资源配额，使其得以运行，而不是被动地删除并重建 Job（后者会导致状态和历史记录丢失）。这增强了系统在压力下的灵活性和可操作性。
+
+### 最佳实践与常见反模式
+
+**最佳实践**：
+1.  **与队列系统集成**：将此特性与 Kueue 等作业队列管理器结合使用，实现自动化的、基于集群状态的资源动态调整。
+2.  **设置 Pod 替换策略**：对于可能失败的 Job，建议设置 `podReplacementPolicy: Failed`。这能确保替换 Pod 在前一个 Pod 完全终止后才创建，避免因重叠运行导致资源争用。
+3.  **监控资源变更**：记录对 Job 资源的修改操作，便于审计和问题排查。
+
+**常见反模式**：
+1.  **尝试修改运行中 Job 的资源**：在 `suspend: false` 或存在活跃 Pod 时尝试修改资源字段，会导致 API Server 拒绝请求。
+2.  **忽略资源验证规则**：设置不合理的 `limits < requests` 或非整数的扩展资源，仍会导致操作失败。
+3.  **混淆 ResourceClaim**：此特性不适用于动态资源分配（DRA）的 `resourceClaimTemplates`，后者仍然是不可变的。
+
+### 相关指标（SLI/SLO/SLA）
+
+- **SLI (Service Level Indicator)**：可关注 `Job` 从 `Created` 到 `Succeeded` 的**完成时间**，特别是在资源动态调整场景下的改善情况。也可以监控因资源不足导致的 `Job` **失败率或重试率**。
+- **SLO (Service Level Objective)**：对于平台提供的批处理服务，可以设定 SLO，例如“95% 的批处理作业在挂起后 5 分钟内获得资源并开始运行”，此特性有助于达成该目标。
+- **SLA (Service Level Agreement)**：对上层业务（如 ML 训练平台）的 SLA 可能包括模型训练任务的按时交付率。更灵活的资源调度是支撑此 SLA 的关键技术基础。
+
+此特性由 SIG Apps 与 WG Batch 协作开发，相关讨论和跟踪可通过 [KEP-5440](https://kep.k8s.io/5440) 以及对应的 Slack 频道进行。

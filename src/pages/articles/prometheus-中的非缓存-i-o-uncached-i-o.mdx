@@ -1,0 +1,82 @@
+---
+title: Prometheus 中的非缓存 I/O (Uncached I/O)
+description: 解析 Prometheus 如何利用直接 I/O 技术绕过页面缓存，以优化内存使用并提升可观测性。
+category: 系统优化
+order: 0
+lastUpdated: 2026-03-05
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2026/03/05/uncached-io/
+    title: Prometheus Blog - Uncached I/O in Prometheus
+tags: [Prometheus, 直接I/O, 页面缓存, 内存优化, Linux, TSDB]
+---
+
+## 概述
+
+在 Kubernetes 和 Prometheus 等云原生监控体系中，准确理解和配置内存指标（如 `container_memory_usage_bytes`、`container_memory_working_set_bytes` 和 `container_memory_rss`）至关重要。错误的选择可能导致资源限制失效、性能基准测试失真，甚至触发 OOMKilled 事件。其中一个常被忽略的关键因素是操作系统**页面缓存（Page Cache）** 对内存报告的影响。Prometheus 作为一个高频写入的时序数据库，其数据块合并（Compaction）过程会产生大量写入操作，这些数据通常不适合长期缓存在内存中。为此，Prometheus 引入了 `use-uncached-io` 特性标志，通过使用**直接 I/O (Direct I/O)** 来绕过页面缓存，从而显著降低内存使用的不可预测性，提升系统的可靠性。
+
+## 核心概念
+
+### 页面缓存与内存指标
+页面缓存是操作系统利用空闲内存缓存磁盘文件内容的一种机制，旨在加速后续的读操作。对于 Prometheus 容器，由页面缓存占用的内存量可能占其报告内存使用量的大部分，但这部分内存本质上是**可回收**的。这就解释了为何不同内存指标之间存在差异，并可能误导运维人员对容器真实内存压力的判断。
+
+### 直接 I/O (Direct I/O)
+直接 I/O 是一种绕过操作系统页面缓存的磁盘读写方式。当应用程序使用直接 I/O 写入数据时，数据不会被保留在内核的页面缓存中。这适用于那些写入后不太可能被立即重复读取的大规模数据操作，例如 Prometheus 的数据块合并过程。采用这种方式可以带来以下好处：
+1.  **内存使用更可预测**：减少 Prometheus 自身的页面缓存占用，使其内存使用模式更稳定。
+2.  **降低缓存争用**：释放被 Prometheus 占用的缓存空间，避免将其他“热点”数据（如频繁查询的数据）从缓存中逐出。
+3.  **潜在的 CPU 开销降低**：减少了因缓存分配和逐出带来的系统开销。
+
+### 对齐要求 (Alignment Requirements)
+直接 I/O 的一个关键限制是**严格的对齐要求**。与缓冲 I/O 不同，直接 I/O 要求写操作涉及的三个要素必须与底层存储设备的逻辑扇区大小（通常为 512 或 4096 字节）对齐：
+- 文件偏移量
+- 内存缓冲区地址
+- 传输数据大小
+
+这是实现该功能的主要技术挑战，也是早期未广泛采用的原因。
+
+## 实践
+
+### 启用与使用
+`use-uncached-io` 特性标志在 Prometheus `v3.5.0` 版本中引入，目前**仅支持 Linux** 操作系统。它通过内核提供的直接 I/O 系统调用实现，并要求内核版本不低于 `v2.4.10`。
+
+**启用方法：** 在启动 Prometheus 时，通过命令行参数或配置文件启用该特性标志。
+
+### 技术实现细节
+为满足直接 I/O 的对齐要求，Prometheus 实现了一个名为 `directIOWriter` 的特殊写入器。其工作原理如下：
+1.  **对齐检测**：在 Linux 内核 `v6.1` 或更高版本上，它会使用 `statx` 系统调用获取存储设备的精确对齐值。在更旧的内核上，则使用保守的默认值。
+2.  **写入缓冲**：该写入器类似 `bufio.Writer`，会内部缓冲数据，直到满足对齐条件后再执行实际的直接 I/O 写入。
+3.  **当前应用范围**：目前 `directIOWriter` 仅覆盖数据块合并（Compaction）过程中的**分块写入（chunk writes）**。尽管如此，这已占 Prometheus I/O 的很大一部分。基准测试显示，启用后页面缓存使用量（`container_memory_cache`）可降低 **20% 至 50%**。
+
+### 开发与测试
+对于贡献者或需要深度定制的用户，可以通过特定构建标签将所有 TSDB 测试运行在 `directIOWriter` 上，以验证其正确性：
+```bash
+go test --tags=forcedirectio ./tsdb/
+```
+
+## SRE 要点
+
+### 与可靠性的关联
+- **内存稳定性**：通过减少不可预测的页面缓存波动，Prometheus 的内存占用变得更加平稳，降低了因内存统计偏差而导致 OOMKilled 的风险，提高了服务的**可靠性**。
+- **性能保障**：避免了 Prometheus 自身的大规模写入操作污染共享页面缓存，从而保障了其他组件或查询的读取性能，有助于维持稳定的 **SLI（服务级别指标）**，如查询延迟和吞吐量。
+
+### 最佳实践与反模式
+**最佳实践：**
+- 在 Linux 环境下运行 Prometheus `v3.5.0` 及以上版本时，评估并考虑启用 `use-uncached-io`，特别是在资源敏感的生产环境中。
+- 结合监控 `container_memory_cache` 和 `container_memory_working_set_bytes` 等指标，验证该特性带来的实际内存改善效果。
+- 为容量规划提供更准确的数据，因为现在报告的内存使用量能更真实地反映不可回收的“工作集”。
+
+**常见反模式：**
+- 仅依赖 `container_memory_usage_bytes` 判断容器内存压力，而不理解其包含了大量可回收的页面缓存，导致误判和不必要的扩容。
+- 在不支持直接 I/O 的文件系统或旧内核上强行启用此特性，可能导致写入失败或性能下降。
+
+### 相关指标 (SLI/SLO)
+- **SLI**：`container_memory_working_set_bytes`（更准确的容器实际工作内存使用量）、`process_resident_memory_bytes`（Prometheus 进程驻留内存）。
+- **SLO**：可设置关于 Prometheus 内存使用稳定性的内部目标，例如“在 99% 的时间里，`container_memory_working_set_bytes` 的 5 分钟平均值不应超过预设阈值 X MiB”。
+- 该特性本身可能影响磁盘 I/O 性能 SLI，因此启用后应持续观测磁盘读写延迟和吞吐量。
+
+### 未来方向与贡献
+该功能仍在演进中，社区欢迎以下方面的贡献：
+1.  **覆盖更多写入路径**：扩展至索引文件和 WAL（预写日志）写入。
+2.  **增加测试与验证**：完善 `directIOWriter` 的边缘情况测试，并探索形式化验证其对齐要求。
+3.  **探索新技术**：评估 Linux 内核 `v6.14` 引入的 `RWF_DONTCACHE` 标志，在缓冲 I/O 中实现类似的非缓存效果，可能规避对齐限制。
+4.  **跨平台支持**：将该功能扩展到 Linux 以外的操作系统。

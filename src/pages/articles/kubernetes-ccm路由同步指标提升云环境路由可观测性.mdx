@@ -1,0 +1,70 @@
+---
+title: Kubernetes CCM路由同步指标：提升云环境路由可观测性
+description: 介绍Kubernetes v1.36引入的 `route_controller_route_sync_total` 指标，用于监控和优化云控制器管理器的路由同步行为。
+category: 监控与可观测性
+order: 0
+lastUpdated: 2025-10-27
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/05/15/ccm-new-metric-route-sync-total/
+    title: Kubernetes v1.36: New Metric for Route Sync in the Cloud Controller Manager
+tags: [kubernetes, cloud-controller-manager, monitoring, metrics, routing, reliability]
+---
+
+## 概述
+
+在 Kubernetes 集群与云基础设施集成的场景中，云控制器管理器（CCM）的路由控制器负责管理节点到云提供商负载均衡器或网络路由的配置。频繁且不必要的路由同步可能导致云 API 速率限制压力增大，影响集群可靠性与运维效率。Kubernetes v1.36 引入了新的计数器指标 `route_controller_route_sync_total`，它直接提供了路由控制器同步行为的关键观测点，为 SRE 团队验证优化配置（如 watch-based 路由同步）提供了数据依据，是提升云原生环境下网络可靠性和可观测性的重要工具。
+
+## 核心概念
+
+- **云控制器管理器 (Cloud Controller Manager, CCM)**: Kubernetes 中负责与底层云平台 API 交互的核心组件，管理节点、路由、负载均衡器等云资源。
+- **路由控制器 (Route Controller)**: CCM 的子控制器之一，其主要职责是维护云提供商中与 Kubernetes 节点对应的网络路由条目，确保集群内的网络流量可以正确路由。
+- **`route_controller_route_sync_total` 指标**: 在 v1.36 中新增的一个 `Counter` 类型指标。每当路由控制器尝试将路由状态与云提供商进行同步（无论是否成功）时，该计数器的值会递增。它是评估路由控制器工作负载和同步频率的直接依据。
+- **Watch-Based 路由协调 (Watch-Based Route Reconciliation)**: 在 v1.35 中引入的一项特性（通过特性门控 `CloudControllerManagerWatchBasedRoutesReconciliation` 控制）。该特性将路由控制器的传统固定间隔轮询模式，变更为基于 Watch 事件驱动的协调模式，仅在节点发生实际变更时触发同步，旨在减少对云 API 的不必要调用。
+
+## 实践
+
+### 启用与查看指标
+
+`route_controller_route_sync_total` 指标默认随 CCM 暴露。您可以通过 CCM 的 `/metrics` 端点使用 Prometheus 等工具进行采集和查询。该指标是评估和 A/B 测试 `CloudControllerManagerWatchBasedRoutesReconciliation` 特性门控效果的核心依据。
+
+### 使用新指标进行 A/B 测试
+
+为了验证 Watch-Based 路由协调特性对减少云 API 调用的有效性，可以利用 `route_controller_route_sync_total` 指标进行前后对比测试。
+
+**测试步骤：**
+
+1.  **基准测量（特性门控禁用，即默认固定间隔模式）**：
+    - 在一个相对稳定的集群（节点变动不频繁）中，确保特性门控 `CloudControllerManagerWatchBasedRoutesReconciliation` 处于 `false`（默认状态）。
+    - 观察并记录一段时间内（例如10分钟）`route_controller_route_sync_total` 指标值的增长速率。无论节点是否有变化，该值都会按固定间隔稳定递增。
+
+    ```promql
+    # 示例：观察10分钟内的增量
+    increase(route_controller_route_sync_total[10m])
+    ```
+
+2.  **实验组测量（特性门控启用）**：
+    - 启用特性门控 `CloudControllerManagerWatchBasedRoutesReconciliation`。
+    - 在相同或相似的稳定集群环境中，观察相同时间段内 `route_controller_route_sync_total` 指标的增长情况。预期该值在没有节点变更时应几乎保持不变。
+
+3.  **结果分析**：
+    - 对比两个场景下指标的增长速率。在稳定集群中，启用特性门控后应观察到显著的速率下降，这证明了 Watch-Based 模式减少了无效的同步操作，从而降低了云 API 调用次数和潜在的速率限制风险。
+
+**预期行为示例：**
+- **特性门控禁用（默认）**：指标值随时间线性稳定增长（如从60增至120）。
+- **特性门控启用**：指标值在无节点变化时长期保持不变（如保持为1），仅在节点增删或更新时才增加（如增至2）。
+
+## SRE 要点
+
+- **与可靠性和可观测性的关联**：`route_controller_route_sync_total` 为路由控制器这一关键控制平面组件提供了直接的运行时行为指标。SRE 可以利用它设置服务等级目标（SLO），例如“路由同步操作不应导致云提供商 API 频繁触发速率限制”，并通过告警监控指标异常增长，这可能是节点风暴或控制器逻辑异常的信号。它是构建云原生网络组件可观测性的重要拼图。
+- **最佳实践与常见反模式**：
+    - **最佳实践**：在升级 Kubernetes 版本或启用新特性（如 Watch-Based 路由同步）时，利用此类内置指标进行量化评估。将其集成到 Grafana 等监控面板中，与云提供商 API 调用计数、错误率等指标关联分析。遵循渐进式发布原则，在生产集群中逐步启用实验性特性，并基于指标反馈进行决策。
+    - **常见反模式**：仅依赖控制器日志来判断同步活动，而忽略结构化指标。在未进行基线对比的情况下，直接在生产环境开启实验性特性门控，可能引入未预期的行为。只关注指标的绝对值，而忽略其增长速率与集群节点活动模式的相关性分析。
+- **相关指标（SLI/SLO/SLA）**：
+    - **SLI (Service Level Indicator)**：可以将 `route_controller_route_sync_total` 在特定时间窗口内的平均增长率（例如：`rate(route_controller_route_sync_total[5m])`）作为一个 SLI，反映路由同步的请求强度。另一个更贴近业务的 SLI 可以是云提供商因路由同步触发的 API 速率限制错误计数。
+    - **SLO (Service Level Objective)**：可以设定 SLO，例如“在99%的时间内，路由同步请求的速率应低于 [基于历史数据设定的阈值]”，或者“由路由同步引发的云API速率限制错误，每周不应超过X次”。通过该指标，SRE 可以量化评估像 Watch-Based 路由同步这类优化特性对达成 SLO 的贡献。
+
+### 相关页面
+- [[cloud-controller-manager-overview]]
+- [[kubernetes-networking-observability]]
+- [[feature-gates-best-practices]]

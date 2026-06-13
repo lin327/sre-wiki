@@ -1,0 +1,53 @@
+---
+title: Prometheus String Labels 优化
+description: Prometheus 2.43 引入的字符串标签存储优化，通过将标签对存储为单一字符串减少内存占用并提升性能。
+category: 监控与可观测性
+order: 0
+lastUpdated: 2024-07-26
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2023/03/21/stringlabel/
+    title: Prometheus Blog: stringlabels 优化 FAQ
+tags: [prometheus, 性能优化, 内存, label]
+---
+
+## 概述
+
+Prometheus 2.43 版本引入了名为 `stringlabels` 的重大内存优化。在监控系统中，时间序列的标签是存储和查询的核心元素。传统实现中，每个标签键值对都是一个独立的字符串对象，这在具有大量标签或高基数时间序列的环境中可能导致显著的堆内存开销。`stringlabels` 优化通过改变底层数据结构，将所有标签键和值打包存储在单个字符串中，旨在减少内存占用并提升处理速度，对于大规模 Prometheus 部署的可靠性和成本效益具有重要意义。
+
+## 核心概念
+
+`stringlabels` 是一种新的标签存储格式。其核心思想是将一个时间序列的所有标签（如 `job="prometheus"`, `instance="localhost:9090"`）序列化为一个紧凑的单一字符串，而非每个标签对一个 `go-string` 对象。这种方法减少了 Go 运行时需要管理的内存分配次数和对象数量，从而直接降低了堆内存占用。根据基准测试，这种优化通常能带来内存节省和查询/写入性能提升，尤其是在处理高基数（high-cardinality）指标时效果显著。
+
+值得注意的是，这种优化在发布时属于实验性功能，并未包含在 2.43.0 的默认二进制文件中。它需要通过使用 Go 构建标签 `stringlabels` 来单独编译或下载特定版本。这是因为该功能需要进行充分的生产环境验证后，才会在后续的默认版本（如 2.44）中启用。
+
+## 实践
+
+### 获取与启用
+要使用 `stringlabels` 优化，不能直接使用 2.43.0 的标准版本。你需要获取特定版本：
+- **二进制文件**：从 Prometheus GitHub 仓库的 [2.43.0+stringlabels 发布页](https://github.com/prometheus/prometheus/releases/tag/v2.43.0%2Bstringlabels) 下载。
+- **Docker 镜像**：使用标签为 `v2.43.0-stringlabels` 的镜像（来自 Quay.io）。
+
+请遵循官方[升级指南](https://prometheus.io/docs/prometheus/latest/getting_started/)进行部署。在切换到此版本前，强烈建议在类生产环境中进行充分测试，以验证其兼容性和性能收益。
+
+### 版本命名说明
+发布版本号（`v2.43.0+stringlabels`）与 Docker 镜像标签（`v2.43.0-stringlabels`）的差异源于语义化版本规范和 Docker 标签限制。`+` 号在语义化版本中表示构建元数据，但 Docker 标签不允许使用 `+`，因此替换为 `-` 号，同时仍能被 Prometheus Operator 等工具正确识别。
+
+### 2.43 的其他重要特性
+除 `stringlabels` 外，2.43 版本还增强了配置灵活性，这对运维同样关键：
+- **配置拆分**：支持 `scrape_config_files` 字段，允许从多个文件加载采集配置，便于模块化管理和维护复杂的监控配置。
+- **HTTP 代理控制**：HTTP 客户端新增 `no_proxy` 和 `proxy_from_environment` 配置，使得在不同网络环境中管理 Prometheus 的出站 HTTP 请求更为便捷。
+
+## SRE 要点
+
+- **可靠性关联**：内存是 Prometheus 实例稳定性的关键资源。`stringlabels` 优化通过降低内存占用，直接减少了因内存压力导致 OOM（内存不足）崩溃的风险，从而提升了监控系统本身的可用性。这有助于在资源受限或规模扩大的环境中维持稳定的 SLO。
+- **可观测性权衡**：此优化主要作用于存储层，不影响 Prometheus 的外部可观测性接口（如 PromQL、API）。SRE 团队在采纳时应关注其对内部运维指标（如进程内存、GC 频率）的影响。
+- **容量规划与成本**：对于管理数百万时间序列的集群，内存节省可以转化为更低的硬件成本或更高的部署密度。在进行资源规划时，应将此优化的潜在收益纳入考量。
+- **最佳实践与反模式**：
+  - **渐进式采用**：切勿在未经测试的情况下直接用于关键生产集群。应先在非关键环境或生产环境的影子副本上验证。
+  - **版本管理**：注意跟踪此功能在后续正式版本（如 2.44+）中的默认启用情况，以便规划升级路径。
+  - **反模式**：忽略版本差异，直接从标准 2.43.0 版本切换到 `stringlabels` 版本可能导致配置或兼容性问题，必须使用对应的特定构建。
+- **相关指标**：监控采用 `stringlabels` 后的效果，可重点关注以下 SLI/指标：
+  - `process_resident_memory_bytes`：观察内存使用量变化。
+  - `prometheus_tsdb_head_series`：在高基数场景下测试性能。
+  - 垃圾回收（GC）暂停时间和频率，可能因对象减少而改善。

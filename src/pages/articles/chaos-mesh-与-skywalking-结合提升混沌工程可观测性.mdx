@@ -1,0 +1,83 @@
+---
+title: Chaos Mesh 与 SkyWalking 结合：提升混沌工程可观测性
+description: 介绍如何结合 Chaos Mesh 进行故障注入与 SkyWalking 进行性能监控，以实现混沌实验期间对应用服务性能影响的实时、直观观测。
+category: 混沌工程
+order: 0
+lastUpdated: 2024-07-10
+confidence: medium
+sources:
+  - url: https://chaos-mesh.org/blog/better-observability-for-chaos-engineering/
+    title: Chaos Mesh + SkyWalking: Better Observability for Chaos Engineering
+tags: [chaos-engineering, observability, chaos-mesh, skywalking, kubernetes, 故障注入, 性能监控]
+---
+
+## 概述
+
+混沌工程的核心价值在于通过主动注入故障来验证系统的弹性。然而，仅知道故障被注入是不够的，SRE 和开发人员更需要精确地观测这些故障在何时、以何种程度影响了应用的服务性能（如吞吐量、延迟）。Chaos Mesh 与 Apache SkyWalking 的集成正是为了解决这一可观测性缺口。Chaos Mesh 负责在 Kubernetes 环境中模拟真实故障，而 SkyWalking 作为分布式链路追踪和性能监控工具，则能清晰地将故障事件与应用性能指标（Metrics）关联起来，为混沌实验提供关键的反馈闭环，从而增强我们对系统可靠性的信心。
+
+## 核心概念
+
+### Chaos Mesh
+[[chaos-mesh]] 是一个云原生的混沌工程平台，运行于 Kubernetes 之上。它允许用户通过声明式 API 方便地向 Pod、节点或网络等目标注入多种类型的故障（如 Pod Kill、Network Delay、CPU Stress 等），模拟生产环境中可能出现的各类异常。其自带的 Chaos Dashboard 提供了实验管理的界面，但本身不提供细粒度的应用性能监控。
+
+### Apache SkyWalking
+[[observability]]（可观测性）是可靠性工程的支柱之一，而 Apache SkyWalking 是一个强大的开源应用性能监控（APM）和可观测性分析平台。它特别擅长监控和诊断云原生、容器化的分布式系统，通过收集 Metrics、Traces 和 Logs，提供对系统运行状态的全景视图。在混沌工程场景中，SkyWalking 的关键作用在于将混沌实验产生的 Kubernetes 事件与系统性能指标关联并可视化。
+
+### SkyWalking Kubernetes Event Exporter
+这是一个将 Kubernetes 集群中产生的事件（特别是由 Chaos Mesh 注入故障时产生的事件）转发至 SkyWalking 后端的组件。它监听、过滤并发送事件，使得 SkyWalking 能在性能监控面板上直接标注出故障注入的时间点，从而让观察者能够直观对比故障注入前后的服务性能变化。
+
+## 实践
+
+以下步骤展示了如何搭建一个结合 Chaos Mesh 和 SkyWalking 的观测环境，并观察压力型故障对服务性能的影响。
+
+### 1. 准备环境
+在开始之前，你需要完成以下准备工作：
+- **部署 SkyWalking 集群**：按照 SkyWalking 官方文档在 Kubernetes 集群中部署 SkyWalking。
+- **部署 Chaos Mesh**：使用 Helm 在同一个 Kubernetes 集群中安装 [[chaos-mesh]]。
+- **准备负载生成工具**：安装 JMeter 或其他压测工具，用于为目标应用生成稳定的请求负载。
+- **（可选）部署演示应用**：可以使用如 Spring Boot 的简单微服务作为监控和注入故障的目标。需要注意配置端口，避免与 SkyWalking 默认端口（8080）冲突。
+
+### 2. 部署 SkyWalking Kubernetes Event Exporter
+这是打通混沌实验与性能监控的关键一步。部署该导出器后，它将开始监听集群中的事件。
+- 根据官方指南配置并应用 `exporter-deployment.yaml` 文件。
+- 在配置文件中自定义 `filters` 和 `exporters` 部分，以确保 Chaos Mesh 产生的事件能被正确捕获并发送到 SkyWalking 后端。
+
+### 3. 生成基线负载
+在注入故障前，需要为目标应用（例如 Spring Boot Demo）建立一个稳定的性能基线。
+- 使用 JMeter 对目标应用端点（如 `localhost:8079`）施加持续负载，例如设置5个并发线程。
+- 在 SkyWalking UI 中观察并记录此时服务的性能指标，例如调用频率（CPM）和访问成功率。图中示例显示基线 CPM 约为 5300。
+
+### 4. 注入故障并观测性能变化
+利用 Chaos Mesh 的 Chaos Dashboard 创建一个压力型故障实验，例如模拟 CPU 负载。
+- 在 Chaos Dashboard 中配置一个 `StressChaos`，目标为运行 Spring Boot 的 Pod，并设定具体的 CPU 压力值。
+- 启动实验。在 SkyWalking 的监控面板上，你会看到事件导出器标注出的故障注入时间点。
+- **观测结果**：
+    - **低负载（10% CPU）**：服务 CPM 可能小幅下降（如至4929），实验结束后恢复。
+    - **中负载（50% CPU）**：服务 CPM 下降更明显（如至4307）。
+    - **高负载（100% CPU）**：由于操作系统调度机制，服务可能仍能处理部分请求（如基线的40%），但性能严重衰减。
+    通过对比故障注入期间与基线期的 SkyWalking 指标图表，你可以直观地量化每种故障对服务性能的具体影响程度。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+- **验证 SLO**：通过量化故障对性能的影响，可以更精确地评估潜在故障对服务等级目标（SLO）的冲击，帮助设定更合理的 Error Budget。
+- **增强可观测性闭环**：Chaos Mesh 提供“扰动”，SkyWalking 提供“观测”，两者结合形成了一个完整的“实验-观测-学习”循环，是 [[observability]] 在混沌工程中的高级应用。
+- **辅助事件响应训练**：在受控环境中观察故障影响，有助于团队预演真实故障，优化事件响应流程和升级策略。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    1.  **从基线开始**：在稳定负载下进行观测，确保有清晰的对比基准。
+    2.  **控制变量**：每次实验只注入一种故障类型，以准确关联性能变化的原因。
+    3.  **监控全覆盖**：确保关键服务的监控指标（如 Latency, Error Rate, Saturation, Traffic）都已接入 SkyWalking。
+    4.  **自动化**：将 Chaos 实验与性能监控的启动、停止流程脚本化，实现快速、可重复的实验。
+- **常见反模式**：
+    1.  **只看实验状态**：仅关注 Chaos Mesh 是否成功注入故障，而忽略对应用性能指标的深度分析。
+    2.  **在复杂环境下开始**：在未经验证的简单环境中逐步进行实验，而非直接在生产环境“盲测”。
+    3.  **忽略恢复阶段**：故障恢复后的性能回归正常同样是重要的观测点，表明系统具备自愈能力。
+
+### 相关指标（SLI/SLO/SLA）
+此集成直接服务于与性能相关的 SLI（服务水平指标）观测，例如：
+- **吞吐量 (Traffic)**：单位时间内的请求数（如 CPM/RPS），故障注入后该指标的变化是首要观测对象。
+- **错误率 (Errors)**：故障注入是否导致请求失败率上升。
+- **延迟 (Latency)**：故障注入是否引起请求响应时间变长。
+通过量化这些 SLI 在故障下的表现，可以更科学地定义和验证相关的 [[slo]] 与 [[sla]]。

@@ -1,0 +1,57 @@
+---
+title: Canonical 基于 Prometheus 的监控栈迁移实践
+description: 介绍了 Canonical 公司如何从传统监控工具迁移到 Prometheus，及其在管理大规模 OpenStack 云环境中的经验与挑战。
+category: 监控与可观测性
+order: 0
+lastUpdated: 2025-04-16
+confidence: high
+sources:
+  - url: https://prometheus.io/blog/2016/11/16/interview-with-canonical/
+    title: Interview with Canonical (Prometheus Blog)
+tags: [Prometheus, 监控迁移, OpenStack, 云服务, Canonical, Ubuntu]
+---
+
+## 概述
+
+Canonical 是 Ubuntu Linux 背后的公司，同时也是 OpenStack 等关键开源项目的重要贡献者与支持者。其 BootStack 部门为客户提供完全托管的私有 OpenStack 云服务，运维着生产环境中超过半数的 OpenStack 云。为了应对内部及客户云环境日益增长的监控与报告需求，Canonical 决定从传统的 Nagios 和 Graphite 监控栈，迁移到以 Prometheus 为核心的新一代可观测性平台。本案例详细记录了这一转型过程中的考量、实践与挑战，为 SRE 在大规模云环境中构建和演进监控系统提供了宝贵参考。
+
+## 核心概念
+
+在深入 Canonical 的实践之前，需先理解几个关键概念：
+
+- **Prometheus 数据模型**：Prometheus 使用基于 **标签** 的多维时序数据模型。每个时间序列由指标名称和一组键值对标签唯一标识，这使得数据聚合与切片变得极其灵活和强大。
+- **Exporter**：这是将第三方系统（如 OpenStack、Node 等）的指标转换为 Prometheus 能理解格式的适配器或插件。一个设计良好的 exporter 是 Prometheus 生态系统的基石。
+- **时序数据库**：Prometheus 内置了高效的本地时序数据库用于存储采集到的数据，但其原生设计更侧重于实时监控与告警，而非长期存储与复杂聚合。
+- **统一监控栈**：Canonical 的一个重要目标是用 Prometheus 这单一工具同时替代用于告警的 Nagios 和用于趋势图表的 Graphite/StatsD，从而简化技术栈。
+
+## 实践
+
+Canonical 的迁移是一个渐进且充满洞察的过程，其关键步骤与挑战如下：
+
+1.  **评估与选择**：
+    在迁移前，Canonical 使用 Nagios 进行告警，结合 Graphite/StatsD 及自研 Django 应用进行趋势分析。这套组合无法满足其灵活报告的需求。经过对 InfluxDB 等方案的评估，他们最终选择了 Prometheus，因其兼具“简洁与强大”。团队成员对 Google 内部类似系统 Borgmon 的经验，也加深了他们对 Prometheus 的认同。
+
+2.  **迁移挑战与解决方案**：
+    - **Exporter 的选择与开发**：团队最初尝试使用 `collectd` 作为 exporter，但遇到了限制。随后，他们开始着手开发自己的 `prometheus-openstack-exporter`。这个过程暴露了当时社区中缺乏从零编写 exporter 清晰示例的问题。一旦掌握了方法，他们发现 exporter 开发非常便捷，并能产出极具价值的指标。
+    - **存储限制**：他们遇到了 Prometheus 当时（2016年）缺乏原生长期存储和数据降采样支持的挑战。默认的 2 周数据保留期对于需要历史趋势分析的云运维场景来说可能不足。
+    - **与现有工具链集成**：作为使用 Juju 进行云编排的公司，他们希望 Prometheus 能与 Juju 无缝集成，并正为此进行开发。
+
+3.  **采纳与成效**：
+    尽管告警部分尚未完全上线，但 Prometheus 已在内部开发运维和 Web 运维团队中获得了快速采纳。其灵活的查询和标签功能使得跨团队的数据探索和共享变得容易。
+
+## SRE 要点
+
+Canonical 的案例为 SRE 实践提供了以下重要启示：
+
+- **与可靠性及可观测性的关联**：
+    迁移至 Prometheus 旨在提供更全面、灵活的可观测性，从而提升云环境的可靠性。通过统一的指标采集、存储和告警平台，SRE 能够更快地发现异常、理解系统行为，并响应事件。
+
+- **最佳实践与常见反模式**：
+    - **最佳实践**：从小处着手，逐步替换；重视 exporter 的开发与维护；利用标签实现多维度监控。
+    - **反模式**：警惕对时序数据库存储能力的过度简化预估。在规划阶段就应考虑长期存储、数据保留策略和成本，可考虑与 [[thanos]] 或 [[mimir]] 等长期存储方案集成。
+
+- **相关指标（SLI/SLO/SLA）**：
+    对于提供托管云服务的 Canonical/BootStack 而言，Prometheus 采集的指标直接服务于其 SLI（例如 API 可用性、实例启动成功率）。这些 SLI 被用于定义对客户的 SLO，并最终体现在 SLA 中。监控系统的可靠性本身也需用 SLO 来衡量。
+
+- **技术栈演进洞察**：
+    此案例典型地展示了从传统告警+图表分立模式，向云原生时代统一、基于指标（Metrics-first）的监控范式转变。Prometheus 的标签模型为此类复杂分布式系统的监控提供了强大的基础。

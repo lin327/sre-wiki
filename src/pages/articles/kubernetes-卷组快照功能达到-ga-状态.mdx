@@ -1,0 +1,120 @@
+---
+title: Kubernetes 卷组快照功能达到 GA 状态
+description: Kubernetes v1.36 将卷组快照功能提升至通用可用性（GA），允许用户为一组持久卷声明（PVC）创建崩溃一致的快照，极大地增强了多卷应用的数据保护与灾难恢复能力。
+category: storage
+order: 0
+lastUpdated: 2026-05-10
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/05/08/kubernetes-v1-36-volume-group-snapshot-ga/
+    title: Kubernetes v1.36: Moving Volume Group Snapshots to GA
+tags: [kubernetes, storage, snapshot, csi, data-protection]
+---
+
+## 概述
+
+在 Kubernetes 生态系统中，数据保护是保障工作负载可靠性的核心环节。传统的卷快照（VolumeSnapshot）API 虽然强大，但在处理包含多个卷的复杂应用时，难以保证快照间的数据一致性。Kubernetes 卷组快照（Volume Group Snapshot）功能旨在解决这一痛点，它允许用户将一组相关的持久卷声明（PersistentVolumeClaim, PVC）作为一个整体进行快照操作，确保这些卷在某个特定时间点处于崩溃一致的状态。这一功能在 v1.36 中达到通用可用性（GA）状态，标志着它已成为 Kubernetes 存储领域一个稳定可靠的数据保护原语，对于构建和运维关键业务应用至关重要。
+
+## 核心概念
+
+卷组快照的核心思想是利用底层存储系统的组快照能力，在 Kubernetes 中实现一个协调一致的、面向多卷的备份点。它依赖于一组基于自定义资源定义（CRD）的扩展 API，这些 API 在 GA 版本中已提升至 `groupsnapshot.storage.k8s.io/v1`。其工作原理是通过标签选择器（label selector）将多个 PVC 分组，然后向支持该功能的 CSI 驱动请求创建这些卷的统一快照。
+
+该功能涉及三个核心的自定义资源：
+
+1.  **VolumeGroupSnapshotClass**：由集群管理员创建，定义了如何创建卷组快照的策略和参数，例如指定的 CSI 驱动和删除策略（`Delete` 或 `Retain`）。它类似于存储类（StorageClass）的概念。
+2.  **VolumeGroupSnapshot**：由用户或自动化工具创建，表达“请求为一组匹配特定标签的 PVC 创建一个卷组快照”。它是创建快照的声明性对象。
+3.  **VolumeGroupSnapshotContent**：由卷组快照控制器动态创建，代表实际创建的快照集群资源，并与对应的 `VolumeGroupSnapshot` 对象一对一绑定。它包含了快照的详细信息，如 `restoreSize`。
+
+这些资源协同工作，使得为多卷应用（例如数据库与日志卷的组合）创建一致的恢复点成为可能，而无需应用层的静默（quiesce）操作。此功能仅限于 CSI 卷驱动。
+
+## 实践
+
+使用卷组快照主要分为两个阶段：创建快照和从快照恢复。
+
+### 创建卷组快照
+
+首先，需要为要一起备份的 PVC 设置相同的标签。例如，将 `pvc-0` 和 `pvc-1` 标记为属于同一个组：
+
+```bash
+kubectl label pvc pvc-0 group=myGroup
+kubectl label pvc pvc-1 group=myGroup
+```
+
+然后，定义一个 `VolumeGroupSnapshotClass` 资源（如果尚未存在）：
+
+```yaml
+apiVersion: groupsnapshot.storage.k8s.io/v1
+kind: VolumeGroupSnapshotClass
+metadata:
+  name: csi-groupSnapclass
+driver: example.csi.k8s.io
+deletionPolicy: Delete
+```
+
+最后，创建 `VolumeGroupSnapshot` 对象来触发快照创建。`spec.source.selector` 中的 `matchLabels` 用于选择目标 PVC：
+
+```yaml
+apiVersion: groupsnapshot.storage.k8s.io/v1
+kind: VolumeGroupSnapshot
+metadata:
+  name: snapshot-daily-20260422
+  namespace: demo-namespace
+spec:
+  volumeGroupSnapshotClassName: csi-groupSnapclass
+  source:
+    selector:
+      matchLabels:
+        group: myGroup
+```
+
+### 从卷组快照恢复数据
+
+恢复过程是创建新的 PVC，并将其 `dataSource` 指向 `VolumeGroupSnapshot` 中生成的各个独立的 `VolumeSnapshot`。您需要为组中的每个卷重复此操作：
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: examplepvc-restored-2026-04-22
+  namespace: demo-namespace
+spec:
+  storageClassName: example-sc
+  dataSource:
+    name: snapshot-0962a745b2bf930bb385b7b50c9b08af471f1a16780726de19429dd9c94eaca0
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+  accessModes:
+    - ReadWriteOncePod
+  resources:
+    requests:
+      storage: 100Mi
+```
+
+成功恢复后，新 PVC 中的数据将处于快照创建时的崩溃一致点，可以安全地挂载到应用 Pod 中使用。
+
+## SRE 要点
+
+卷组快照作为一项 GA 特性，对 SRE 实践具有深远影响，尤其是在数据保护、灾难恢复和事件响应方面。
+
+### 与可靠性及数据保护的关联
+这是卷组快照最直接的价值。对于运行如数据库、消息队列或任何多状态组件工作负载的 SRE 团队而言，能够可靠地创建崩溃一致的组快照，意味着更简化、更可靠的备份策略。它将应用的数据恢复点目标（RPO）从一个模糊的、依赖多个独立快照一致性的时间点，转变为一个明确的、原子的组快照点。这极大地提升了在数据损坏、人为错误或服务故障后的恢复速度和成功率。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    *   **标签策略**：使用清晰、一致的标签（如 `app=myapp`, `role=database`）来分组相关卷，便于管理和自动化。
+    *   **测试恢复流程**：定期将快照恢复到测试环境，并验证应用的一致性。备份只有在成功恢复后才有意义。
+    *   **监控快照状态**：监控 `VolumeGroupSnapshot` 和 `VolumeGroupSnapshotContent` 的状态以及底层存储系统的快照成功率与延迟。
+    *   **定义清晰的 `VolumeGroupSnapshotClass`**：明确 `deletionPolicy`，并与团队的备份保留策略保持一致。
+*   **常见反模式**：
+    *   **忽视 CSI 驱动兼容性**：并非所有 CSI 驱动都支持组快照。在采用前必须确认您的存储提供商和驱动版本。
+    *   **过度分组**：将不相关的卷放入同一个组快照可能会增加复杂性和存储开销，且没有实际收益。
+    *   **忽略快照资源管理**：创建的快照（`VolumeGroupSnapshot`）本身也会占用存储资源，需要有相应的清理策略。
+
+### 相关指标（SLI/SLO/SLA）
+卷组快照的成功与否可以直接转化为 SRE 关注的可靠性指标：
+*   **SLI（服务级别指标）**：
+    *   卷组快照创建成功率（例如：`/99.9%` 的 `VolumeGroupSnapshot` 在 10 分钟内达到 `Ready` 状态）。
+    *   从组快照恢复 PVC 的成功率与耗时。
+    *   底层存储驱动报告的快照创建/删除延迟与错误率。
+*   **SLO（服务级别目标）**：可以为关键应用的数据保护能力设定目标，例如“核心数据库应用的卷组快照必须每日成功创建，并能在 1 小时内完成恢复演练”。
+*   **SLA（服务级别协议）**：对于提供托管 Kubernetes 服务的团队，卷组快照功能的稳定性和性能（GA 特性本身带来的可靠性）可以直接体现在面向客户的 SLA 中，承诺一定的数据保护能力。

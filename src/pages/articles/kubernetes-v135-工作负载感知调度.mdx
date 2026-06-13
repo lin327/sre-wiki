@@ -1,0 +1,106 @@
+---
+title: Kubernetes v1.35 工作负载感知调度
+description: Kubernetes v1.35引入Workload API和原生Gang调度，为AI/ML等大型工作负载提供全有或全无的调度保障。
+category: Scheduling
+order: 0
+lastUpdated: 2025-12-29
+confidence: high
+sources:
+  - url: https://kubernetes.io/blog/2025/12/29/kubernetes-v1-35-introducing-workload-aware-scheduling/
+    title: Kubernetes v1.35: Introducing Workload Aware Scheduling
+tags: [kubernetes, scheduling, workload, gang-scheduling, ai, ml, sre]
+---
+
+## 概述
+
+在 Kubernetes 集群中，调度单个 Pod 与调度由多个 Pod 组成的大型工作负载（如 AI/ML 训练任务）存在本质区别。后者通常要求将关联的 Pod 作为一个整体进行策略性放置，例如将所有工作节点放置在同一机架内，以最大化网络带宽和计算效率。传统的逐个 Pod 独立调度方式无法满足这种需求，可能导致资源碎片化、任务部分启动或死锁。Kubernetes v1.35 引入的“工作负载感知调度”正是为了解决这一挑战，它通过引入新的 `Workload` API 和原生支持 Gang 调度，将工作负载提升为调度器的“一等公民”，为在 Kubernetes 上高效运行大规模、关联性强的工作负载奠定了基础。这对于需要保证作业原子性的场景（如分布式训练）至关重要，是提升集群资源利用率与应用可靠性的关键演进。
+
+## 核心概念
+
+Kubernetes v1.35 的工作负载感知调度主要包含三个核心概念：
+
+1.  **Workload API**：这是一个新的 API 资源（属于 `scheduling.k8s.io/v1alpha1`），用于以结构化、机器可读的方式定义一组 Pod 的调度需求。与定义“运行什么”的 Job 不同，Workload 资源定义了“如何调度”这组 Pod。它通过 `podGroups` 字段将一组 Pod 逻辑分组，并为每个组应用特定的调度策略。
+
+2.  **Gang 调度**：这是首个实现的调度策略，强制执行“全有或全无”（all-or-nothing）的放置原则。调度器会将属于同一 Pod 组的 Pod 视为一个不可分割的整体。只有当整个组的最小数量（`minCount`）的 Pod 都能在集群中找到合适的节点时，调度才会被批准。这避免了工作负载因部分 Pod 调度成功而部分运行、从而白白占用资源却无法产出结果的浪费和潜在死锁问题。
+
+3.  **机会性批处理（Opportunistic Batching）**：这是一个在 Beta 阶段默认启用的优化特性。它无需用户显式配置，能自动识别队列中具有相同调度需求（如镜像、资源请求、亲和性等）的 Pod。当调度器为一个 Pod 计算了可行节点后，可以将此结果复用给后续的相同 Pod，从而显著降低这类批量 Pod 的调度延迟。这极大提升了运行大量相同 Pod（例如无状态服务的副本或批处理任务的 Worker）的调度效率。
+
+## 实践
+
+要在 Kubernetes v1.35 中使用工作负载感知调度，需要启用相应的特性门（Feature Gates）并创建相关资源。
+
+### 启用特性
+
+*   **Workload API 与 Gang 调度**：
+    *   在 `kube-apiserver` 和 `kube-scheduler` 上启用 `GenericWorkload` 特性门。
+    *   在 `kube-scheduler` 上启用 `GangScheduling` 特性门（依赖 `GenericWorkload`）。
+    *   确保 API Server 已启用 `scheduling.k8s.io/v1alpha1` API 组。
+*   **机会性批处理**：
+    *   在 v1.35 中作为 Beta 功能默认启用。如需禁用，可在 `kube-scheduler` 上设置 `OpportunisticBatching=false`。
+
+### 创建 Workload 资源
+
+定义一个 Workload 资源，描述 Pod 组和 Gang 调度策略。例如，一个需要 4 个 Worker 同时启动的训练作业：
+
+```yaml
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: Workload
+metadata:
+  name: training-job-workload
+  namespace: some-ns
+spec:
+  podGroups:
+  - name: workers
+    policy:
+      gang:
+        # Gang 调度至少需要 4 个 Pod 同时被调度才能成功
+        minCount: 4
+```
+
+### 创建关联的 Pod
+
+创建 Pod 时，通过新的 `workloadRef` 字段将其链接到上述 Workload 的特定 Pod 组：
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-0
+  namespace: some-ns
+spec:
+  workloadRef:
+    name: training-job-workload
+    podGroup: workers
+  # ... 其他 Pod 规约
+```
+
+### Gang 调度工作流程
+
+当调度器处理属于 Gang 组的 Pod 时，其内部流程大致如下：
+1.  **等待**：调度器会暂时阻止 Pod 的调度，直到满足条件：关联的 `Workload` 对象存在，且该 Pod 组中待调度的 Pod 数量达到 `minCount`。
+2.  **尝试放置与等待门控**：条件满足后，调度器会尝试为整个组寻找节点，但不会立即将 Pod 绑定到节点。Pod 会停留在一个“许可（Permit）”门控状态。
+3.  **决策**：
+    *   **成功**：如果为整个组（至少 `minCount` 个 Pod）找到了有效节点，门控打开，所有 Pod 同时被绑定到节点。
+    *   **失败**：如果在超时（默认为 5 分钟）内只为部分 Pod 找到了节点，调度器会**拒绝**该组中的**所有** Pod，将它们放回调度队列，从而释放之前预留的资源。
+
+## SRE 要点
+
+### 与可靠性的关联
+Gang 调度直接提升了分布式工作负载的启动可靠性。它通过原子性调度避免了“半拉子”作业占用资源却不工作的状态，这是资源效率和应用可用性的重要保障。对于关键业务作业，可以将其 `minCount` 设置为确保作业有最低运行能力的值，从而将“部分启动”的风险降至最低。
+
+### 最佳实践与反模式
+*   **最佳实践**：
+    *   对于需要强关联调度的工作负载（如分布式训练、HPC作业），优先考虑使用 `Workload` API 和 Gang 调度。
+    *   对于大规模的无状态服务部署或批处理任务，`kube-scheduler` 的**机会性批处理**特性会自动提供加速，无需额外配置，SRE 团队应了解此特性以解释调度性能的提升。
+    *   在升级集群前，在测试环境中验证启用新特性门对现有调度行为的影响。
+*   **常见反模式**：
+    *   **过度使用 Gang 调度**：对于没有严格关联性要求的普通 Pod，强行使用 Gang 调度会人为制造调度瓶颈，可能导致整体调度延迟上升。
+    *   **忽略机会性批处理的限制**：该特性要求 Pod 的调度上下文（镜像、资源等）完全相同。如果混入了不同的 Pod，可能会禁用批处理优化。应检查 `kube-scheduler` 配置，确保没有意外禁用此特性。
+
+### 相关指标（SLI/SLO）
+监控工作负载感知调度的影响，可以关注以下指标：
+*   **Gang 调度 SLI**：`SchedulingGangSuccessRate`（成功调度的 Gang 组占尝试调度组的比例），`GangSchedulingLatency`（从 Gang 组就绪到调度完成的耗时）。
+*   **机会性批处理 SLI**：`SchedulerBatchSize`（批量处理的 Pod 数量），`BatchingHitRatio`（命中批处理优化的 Pod 比例）。
+*   **通用 SLO**：整体 `PodSchedulingLatency` 应保持稳定或下降。对于 Gang 调度的工作负载，其 `JobCompletionRate`（作业成功率）应得到提升。
+
+相关的集群可靠性概念还包括 [[scheduler-performance-tuning]]（调度器性能调优）、[[dynamic-resource-allocation]]（DRA，动态资源分配）以及基于这些 SLI 制定的 [[slo]]（服务级别目标）。

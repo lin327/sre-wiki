@@ -1,0 +1,75 @@
+---
+title: Kubernetes 1.35 kuberc 凭证插件策略与允许列表
+description: 介绍 Kubernetes 1.35 中引入的 kuberc 配置项，用于通过凭证插件策略和允许列表限制 kubeconfig 中 exec 插件的执行，增强 kubectl 客户端的安全性。
+category: 安全与访问控制
+order: 0
+lastUpdated: 2026-01-09
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/01/09/kubernetes-v1-35-kuberc-credential-plugin-allowlist/
+    title: Kubernetes v1.35: Restricting executables invoked by kubeconfigs via exec plugin allowList added to kuberc
+tags: [Kubernetes, kubectl, kuberc, 安全, exec-plugin, kubeconfig]
+---
+
+## 概述
+
+在 Kubernetes 生态中，`kubectl` 客户端通过 `kubeconfig` 文件连接集群。该文件的一个强大特性是允许通过 `users[n].exec.command` 字段指定一个可执行文件（凭证插件），自动获取认证凭证，这对于集成外部身份提供商非常有用。然而，这一特性也引入了安全风险：如果 `kubeconfig` 文件被篡改或其生成管道受到供应链攻击，恶意代码可能以用户权限在本地系统上被静默执行。为解决此问题，Kubernetes v1.35 引入了凭证插件策略（Credential Plugin Policy）和允许列表（Allowlist）功能，允许用户精确控制 `kubectl` 允许执行哪些插件，从而提升了客户端运行时环境的安全性。
+
+## 核心概念
+
+*   **Exec Credential Plugin**：`kubeconfig` 文件中定义的一种外部程序，`kubectl` 会在需要认证时执行它以获取临时凭证。它提供了灵活的认证方式，但也意味着 `kubectl` 会运行外部代码。
+*   **kuberc**：`kubectl` 的全局偏好配置文件（`Preference`），用于设置用户的通用配置选项，例如外观、默认行为等。在此基础上，v1.35 扩展了其安全配置能力。
+*   **credentialPluginPolicy**：在 `kuberc` 中新增的字段，定义了 `kubectl` 如何处理凭证插件执行请求的策略。支持三种模式：
+    *   `AllowAll`（默认，显式设置时）：允许执行任何凭证插件，保持向后兼容。
+    *   `DenyAll`：拒绝执行所有凭证插件。适用于不确定是否使用了插件或希望严格排查的场景。
+    *   `Allowlist`：仅允许执行在 `credentialPluginAllowlist` 中明确列出的插件。
+*   **credentialPluginAllowlist**：与 `Allowlist` 策略配合使用的字段，是一个插件列表，定义了允许执行的插件名称或完整路径。
+
+## 实践
+
+配置通过 `kuberc` 文件（通常位于 `~/.kube/kuberc`）进行。以下是几种配置场景的具体示例：
+
+**1. 默认行为（允许所有插件）**
+不配置任何新字段，或显式设置为 `AllowAll`。这是当前最兼容的设置。
+```yaml
+apiVersion: kubectl.config.k8s.io/v1beta1
+kind: Preference
+# 等同于以下显式配置
+# credentialPluginPolicy: AllowAll
+```
+
+**2. 严格策略：禁止所有插件**
+如果你怀疑环境安全或需要审计，可以设置为 `DenyAll`。执行任何凭证插件都会被 `kubectl` 阻止并报错。
+```yaml
+apiVersion: kubectl.config.k8s.io/v1beta1
+kind: Preference
+credentialPluginPolicy: DenyAll
+```
+报错示例：`Unable to connect to the server: getting credentials: plugin "cloudco-login" not allowed: policy set to "DenyAll"`。此时可使用 `kubectl get pods --verbosity 5` 命令增加日志级别以获取更多调试信息。
+
+**3. 推荐实践：使用允许列表**
+设置策略为 `Allowlist` 并明确指定可执行文件。
+```yaml
+apiVersion: kubectl.config.k8s.io/v1beta1
+kind: Preference
+credentialPluginPolicy: Allowlist
+credentialPluginAllowlist:
+  - name: /usr/local/bin/cloudco-login  # 推荐：使用完整路径，更安全
+  - name: get-identity                  # 使用 basename，将通过 PATH 查找
+```
+*   **完整路径 vs. 基名**：强烈建议使用完整路径（如 `/usr/local/bin/cloudco-login`），因为它限制了可执行文件的确切位置。使用 basename 时，系统会使用 `exec.LookPath` 函数在 `PATH` 中查找，这可能引入路径劫持风险。
+*   **限制**：当前版本不支持通配符（globbing）。
+
+## SRE 要点
+
+*   **与可靠性及安全的关联**：此功能是实现**最小权限原则**在客户端工具层面的关键一步。通过限制 `kubectl` 可执行的外部程序，SRE 团队可以显著降低因配置文件泄露或供应链攻击导致本地主机被入侵的风险，从而保护开发人员和 CI/CD 管道的可靠性基础。
+*   **可观测性与事件响应**：设置 `DenyAll` 策略并观察 `kubectl` 命令的失败输出，是一种快速的**安全审计**手段，可以发现环境中正在运行的、可能不为人知的凭证插件。提高日志级别（`--verbosity`）有助于调试和关联事件。
+*   **最佳实践**：
+    *   **渐进式启用**：在团队中推广时，可先在部分开发者的 `kuberc` 中设置为 `DenyAll` 进行测试和发现，然后逐步过渡到基于 `Allowlist` 的精细化管控。
+    *   **与 CI/CD 集成**：在构建和部署流水线中，为运行 `kubectl` 的服务账户或机器用户配置严格的 `Allowlist`，防止流水线凭证被滥用执行非预期操作。
+    *   **使用完整路径**：在允许列表中始终优先使用插件的完整绝对路径。
+*   **常见反模式**：
+    *   **继续使用默认 `AllowAll` 而不评估**：在安全要求较高的环境中，这是一种风险忽视。
+    *   **滥用 `Allowlist` 中的 basename**：这削弱了策略的有效性，应尽可能避免。
+    *   **忽略调试信息**：当策略拒绝执行时，应利用 `--verbosity` 命令获取详细日志，而非简单回退到宽松策略。
+*   **相关指标 (SLI/SLO)**：虽然此功能直接影响客户端而非服务端，但它是构建整体安全态势的一部分。SRE 团队可以将“关键 CI/CD 流水线中 `kubectl` 凭证插件策略合规率”作为一个安全 SLI，并设定 SLO（如100%的关键流水线必须配置 `Allowlist` 策略），以确保安全控制措施得到落实。相关联的概念包括 [[kubeconfig-security]] 和 [[kubectl-kuberc]]。

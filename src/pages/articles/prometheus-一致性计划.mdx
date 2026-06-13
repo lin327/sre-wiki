@@ -1,0 +1,47 @@
+---
+title: Prometheus 一致性计划
+description: 介绍 Prometheus 一致性计划，该计划为组件合规性及与 Prometheus 生态系统的兼容性提供认证。
+category: 监控与可观测性
+order: 0
+lastUpdated: 2024-05-21
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/
+    title: Introducing the Prometheus Conformance Program
+tags: [prometheus, monitoring, interoperability, cloud-native, compliance]
+---
+
+## 概述
+
+Prometheus 是云原生乃至更广泛领域的指标监控标准。为了确保组件间的互操作性，避免用户在集成或迁移时遇到意外问题，并鼓励生态内的并行创新，Prometheus 项目在 CNCF 的协助下推出了 **Prometheus 一致性计划**。该计划旨在为项目和供应商提供一个公开的、可验证的框架，以证明其组件符合 Prometheus 的规范和标准。对于 SRE 团队而言，依赖经认证的组件是构建可靠、可预测监控平台的关键一步。
+
+## 核心概念
+
+该计划围绕两个核心认证等级展开：
+
+1.  **组件合规性**：针对特定的 Prometheus 组件或协议。例如，一个远程写入库可以声明符合 `Prometheus Remote Write 2021-05 compliant`。这确保了该组件正确实现了指定版本的规范。
+2.  **生态系统兼容性**：针对一个完整的软件产品。例如，一个监控系统可以声明为 `Prometheus 2.26 compatible`。这个标记是基于该产品所有相关组件合规性得分的乘积计算得出的。它表明该产品能与指定版本的 Prometheus 生态系统良好集成。
+
+这两个等级的认证都具有时效性，有效期为 **2 个次要版本或 12 周**（以较长者为准）。这促使供应商和项目持续更新其产品以保持认证的有效性。
+
+## 实践
+
+一致性计划通过一套公开且不断扩展的 [测试套件](https://github.com/prometheus/compliance) 来运行。项目和供应商可以使用这些测试来验证自身的合规性，并向计划提交文档以获取认证标记。
+
+在计划推出时，提供了以下三个组件的合规测试：
+
+-   **PromQL**：Prometheus 的查询语言。目前需要手动解读测试结果，覆盖范围基本完整。
+-   **Remote Read-Write**：用于远程存储数据的协议。测试已完全自动化，但仍在开发完善中（WIP）。
+-   **OpenMetrics**：一个面向云原生的监控与遥测数据格式标准。测试部分自动化，覆盖范围基本完整，但可能需要额外问卷。
+
+计划还计划在未来增加对 **Prometheus Remote Read** 和 **TSDB**（时序数据库）的测试。整个社区被邀请来改进现有测试并贡献新的测试用例。
+
+## SRE 要点
+
+-   **与可靠性的关联**：在构建 SLO（服务级别目标）和 Error Budget 系统时，底层监控数据的采集与查询路径的稳定性至关重要。使用经过一致性认证的组件，可以大幅降低因协议实现不一致导致的指标丢失、查询错误或意外行为，从而直接提升监控系统的可靠性。这减少了“监控系统本身成为故障源”的风险。
+-   **最佳实践与反模式**：
+    -   **最佳实践**：在选择新的监控组件（如长期存储、仪表板工具或告警管理器）时，优先考虑那些拥有 `Prometheus x.y compatible` 认证的产品。这为与现有 Prometheus 栈的集成提供了可预测性保证。
+    -   **反模式**：仅仅因为一个工具“支持 Prometheus 格式”就假定它完全兼容。未经认证的“兼容”可能存在细微但关键的实现差异，可能在特定查询或高负载下暴露问题，增加事件响应时调查问题的复杂度。
+-   **相关指标（SLI/SLO）**：该计划本身关注的是互操作性，是构建可靠监控系统的**前提条件**。一个可靠的监控系统，其 SLO 可能包括诸如“Prometheus 查询延迟 P99 < 1s”或“指标采集可用性 > 99.9%”等。使用认证组件有助于更稳定地达成这些 SLO。
+
+[[observability-principles]]

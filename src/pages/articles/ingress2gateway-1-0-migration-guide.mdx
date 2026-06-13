@@ -1,0 +1,99 @@
+---
+title: ingress2gateway-1-0-migration-guide
+description: 帮助从Ingress控制器（如Ingress-NGINX）安全迁移到Kubernetes Gateway API的官方迁移助手工具1.0版本发布与使用指南。
+category: Kubernetes
+order: 0
+lastUpdated: 2026-03-21
+confidence: medium
+sources:
+  - url: https://kubernetes.io/blog/2026/03/20/ingress2gateway-1-0-release/
+    title: Announcing Ingress2Gateway 1.0: Your Path to Gateway API
+tags: [ingress2gateway, gateway-api, migration, ingress-nginx, kubernetes-networking, sre-tooling]
+---
+
+## 概述
+
+随着 Ingress-NGINX 控制器计划于2026年3月退役，Kubernetes 网络生态正经历重大转变。对于许多组织而言，迁移至 [[gateway-api]] 已成为必然趋势。然而，从传统的 Ingress 资源及控制器（如 Ingress-NGINX）迁移到 Gateway API，涉及从简单但非标准的注解模型到模块化、标准化 API 的根本性设计转换，过程复杂且充满风险。**Ingress2Gateway** 正是在此背景下由 SIG Network 推出的一款官方迁移助手工具，旨在帮助团队安全、自信地完成这一现代化过渡。对于 SRE 团队而言，使用此类经过验证的自动化工具，是降低迁移风险、保障服务可靠性、实现平滑过渡的关键实践。
+
+## 核心概念
+
+### Ingress 到 Gateway API 的转变
+
+Ingress API 设计简单，但其功能高度依赖于具体控制器实现的扩展，如 Ingress-NGINX 通过各种专有注解、ConfigMaps 和 CRD 来增强功能。这种模式导致了供应商锁定和配置碎片化。相比之下，Gateway API 提供了一个模块化、角色分离且原生支持 Kubernetes RBAC 的标准化 API，旨在提供更好的可移植性和更丰富的功能。
+
+### Ingress2Gateway 的作用
+
+Ingress2Gateway 的核心功能是**翻译**。它能够读取现有的 Ingress 资源清单，并将其转换为对应的 Gateway API 资源（主要是 `Gateway` 和 `HTTPRoute`）。其关键能力包括：
+1.  **注解转换**：将控制器特定的注解（如 `nginx.ingress.kubernetes.io/*`）映射到 Gateway API 的标准特性或过滤器。1.0 版本支持超过 30 个常见的 Ingress-NGINX 注解（如 CORS、正则路径匹配、超时等）。
+2.  **行为等效性**：其转换经过严格的控制器级集成测试验证，确保生成的 Gateway API 配置在运行时（路由、重定向、重写等）与原 Ingress-NGINX 行为一致，而不仅仅是 YAML 结构的对应。
+3.  **诊断与建议**：对于无法完美转换的配置（如 `configuration-snippet` 注解），工具会发出警告，并提示可能的替代方案或需要手动复查的项目。
+
+## 实践
+
+Ingress2Gateway 是一个交互式助手，而非一键式替换工具。其目标是引导团队完成迁移、识别不支持的配置并重新评估现有设置。以下是其标准工作流程：
+
+### 1. 安装
+
+可以通过多种方式安装 Ingress2Gateway v1.0.0：
+```bash
+# 使用 Go 安装
+go install github.com/kubernetes-sigs/ingress2gateway@v1.0.0
+
+# 使用 Homebrew 安装 (macOS/Linux)
+brew install ingress2gateway
+
+# 或从 GitHub Releases 下载二进制文件，或从源代码构建
+```
+
+### 2. 运行翻译
+
+工具可以处理本地清单文件或直接从集群读取。
+```bash
+# 处理本地文件
+ingress2gateway print --input-file my-ingress.yaml --providers=ingress-nginx > gateway-api.yaml
+
+# 处理特定命名空间中的所有 Ingress
+ingress2gateway print --namespace my-app --providers=ingress-nginx > gateway-api.yaml
+
+# 处理整个集群中的所有 Ingress（谨慎操作）
+ingress2gateway print --providers=ingress-nginx --all-namespaces > gateway-api.yaml
+```
+
+可以通过 `--emitter` 参数指定输出为特定实现的扩展配置，如 `--emitter envoy-gateway`。
+
+### 3. 审查输出（关键步骤）
+
+运行命令后，除了生成 `gateway-api.yaml` 文件，还会输出警告和信息日志。必须仔细审查这些信息。
+*   **成功转换示例**：`nginx.ingress.kubernetes.io/enable-cors: "true"` 会被转换为 `HTTPRoute` 中的 `CORS` 过滤器。
+*   **需要手动处理的警告示例**：
+    *   `Unsupported annotation nginx.ingress.kubernetes.io/configuration-snippet`：此注解无法自动转换，需查阅目标 Gateway API 实现的文档寻找替代方案。
+    *   `Using case-insensitive regex path matches`：提示工具生成的正则表达式是大小写不敏感的，可能需要根据需求调整。
+    *   关于超时（`proxy-read/send-timeout`）和请求体大小（`proxy-body-size`）的“最佳努力转换”或“不支持”警告，提示需要人工验证或确认默认值是否符合预期。
+
+### 4. 验证与部署
+
+生成的 Gateway API 清单在部署前必须在开发环境中进行彻底测试。验证通过后，建议采用渐进式策略部署：将 Gateway API 配置与现有 Ingress 并行部署，通过加权 DNS、云负载均衡器或平台的流量分割功能逐步切换流量。待所有流量稳定迁移至新控制器后，再下线旧的 Ingress 资源和控制器。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+*   **风险管理**：网络配置变更是服务中断的主要风险来源之一。使用 Ingress2Gateway 等经过广泛测试的工具，可以显著减少因手动转换错误导致的配置漂移和故障。它通过提前发现不兼容项，将风险从生产环境的“黑天鹅”事件前移至开发阶段的“已知问题”。
+*   **渐进式发布与错误预算**：工具支持生成并行配置，便于实施渐进式发布（canary/blue-green）。SRE 团队可以结合 [[error-budget]] 策略，在迁移期间更精细地控制风险，一旦新路径出现稳定性问题，能快速回滚。
+*   **事件响应**：迁移期间应预先制定详细的回滚计划。当通过可观测性信号（如错误率上升、延迟增加）发现问题时，团队应能快速切换回原有的 Ingress 路径。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    1.  **分阶段迁移**：按服务、命名空间或域名逐步迁移。
+    2.  **完整测试**：不仅在开发环境测试翻译后的功能，还要测试故障切换、监控和告警。
+    3.  **代码化管理**：将生成的 Gateway API 清单纳入 GitOps 工作流，进行版本控制。
+    4.  **关注警告**：工具的所有警告信息都应被视为“行动项”，进行逐一确认和解决。
+*   **常见反模式**：
+    1.  **“一键迁移”幻想**：忽视工具输出的警告，期望工具能完美处理所有非标准配置。
+    2.  **跳过验证**：直接在生产环境应用未经验证的清单。
+    3.  **忽视实现差异**：假设不同 Gateway API 实现（如 Istio, Envoy Gateway）的行为与 Ingress-NGINX 完全一致，忽略了 URL 规范化、默认超时等行为差异。
+
+### 相关指标（SLI/SLO/SLA）
+迁移期间和之后，应重点关注以下网络层面的可靠性指标：
+*   **SLI**：HTTP 请求成功率、延迟（特别是 p95/p99）、5xx 错误率。对比迁移前后的指标，确保新路径性能不低于旧路径。
+*   **SLO**：为迁移期间设置临时的、更严格的错误预算（例如，将可用性目标从 99.9% 临时提高到 99.95%），以激励团队更加谨慎。
+*   **变更管理 SLA**：建立从变更应用、验证到完全生效的端到端时间 SLA，确保迁移窗口可控。

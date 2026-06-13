@@ -1,0 +1,61 @@
+---
+title: Prometheus Conformance Program 兼容性测试首轮结果
+description: 介绍 Prometheus 兼容性计划的目标、首批测试分类与结果，并阐述其对 SRE 构建可靠监控生态的重要性。
+category: Prometheus 监控
+order: 0
+lastUpdated: 2023-10-27
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2021/10/14/prometheus-conformance-results/
+    title: Prometheus Conformance Program: First round of results
+tags: [prometheus, monitoring, conformance, compatibility, SRE]
+---
+
+## 概述
+
+Prometheus Conformance Program 是由 Prometheus 社区发起的一个计划，旨在确保 Prometheus 监控生态系统中不同项目与厂商软件之间的互操作性。对于 SRE 而言，该计划至关重要，因为它提供了评估和选择监控组件的客观标准，有助于构建一个标准化、可靠且可无缝集成的监控技术栈，从而降低运维复杂性和供应商锁定风险。
+
+## 核心概念
+
+该计划围绕三个关键术语展开，其定义有助于清晰沟通：
+- **Conformance**：指计划本身。
+- **Compliant**：指软件通过了特定类别的测试套件。
+- **Compatibility**：指软件基于测试结果所获得的兼容性评级。
+
+为了更好地对各类软件进行测试和归类，计划引入了四个新类别：
+1.  **Metrics Exposers (指标暴露器)**：指能够以 Prometheus 格式暴露指标的软件库或应用程序。
+2.  **Agents/Collectors (代理/收集器)**：指负责采集、转发或处理指标数据的组件。
+3.  **Prometheus Storage Backends (Prometheus 存储后端)**：指能够存储和查询 Prometheus 时间序列数据的系统。
+4.  **Full Prometheus Compatibility (完全 Prometheus 兼容性)**：指提供与 Prometheus 核心功能（如 PromQL 查询、数据摄取）高度兼容的完整解决方案。
+
+## 实践
+
+参与该计划的流程相对直接：
+1.  **注册**：希望参与测试的项目或厂商可以通过 Prometheus 官方社区渠道（如邮件列表、Slack 等）与维护团队取得联系进行注册。
+2.  **测试**：维护团队或指定的工作组（如计划成立的 WG Conformance）将依据预定义的测试套件对注册软件进行评估。
+3.  **结果发布**：通过测试的软件将被列入官方兼容性列表，并获得相应的评级。计划初期的测试可能包含一些手动或半自动环节，例如借助 Julius Volz 的 PromQL 兼容性测试来评估远程写入功能。
+
+截至 2021 年 10 月的首轮测试结果展示了生态系统的现状：
+- **完全兼容性项目**：Cortex、M3、Promscale、Thanos 已通过；VictoriaMetrics 未通过且未计划通过。
+- **完全兼容性服务 (aaS)**：Chronosphere、Grafana Cloud 已通过；AWS Managed Service for Prometheus、Google Cloud Managed Service for Prometheus、New Relic、Sysdig Monitor 未通过（其中 AWS 服务基于 Cortex，预计未来更新后可能通过）。
+- **代理/收集器**：Grafana Agent、OpenTelemetry Collector、Prometheus 自身已通过；Telegraf、Vector、VictoriaMetrics Agent 未通过。
+
+## SRE 要点
+
+**与 SRE 核心领域的关联**
+- **可靠性**：使用经过认证（Compliant）的组件有助于构建更可靠、行为可预测的监控系统。例如，确认一个存储后端与 Prometheus 兼容，可以确保在故障转移或迁移时数据格式和查询行为的一致性，降低操作风险。
+- **可观测性**：该计划强化了基于 Prometheus 生态的可观测性标准。当收集器、存储和查询层都遵循同一兼容性规范时，整个可观测性管线更加稳定，减少了数据丢失或解析错误的可能性。
+- **事件响应**：在事件响应过程中，使用标准化的工具链能减少上下文切换。如果 SRE 团队和开发团队使用兼容的监控工具，可以更高效地协作排查问题。
+
+**最佳实践与反模式**
+- **最佳实践**：在选型评估中，将“通过 Prometheus 兼容性测试”作为一项重要技术选型标准；积极关注并参与 WG Conformance 等工作组，推动生态健康发展。
+- **常见反模式**：仅因为某软件自称“Prometheus 兼容”或“可直接替代 Prometheus”就盲目信任，而不参考官方的认证结果和测试范围（如 VictoriaMetrics 的案例）。忽略兼容性差异可能在长期运维中导致隐蔽的查询错误或数据不一致。
+
+**相关指标 (SLI/SLO/SLA)**
+该计划直接影响与监控系统自身可靠性相关的 SLI/SLO 定义。例如：
+- **SLI (服务级别指标)**：可以是“通过 Prometheus 认证的存储后端查询返回正确结果的请求百分比”。
+- **SLO (服务级别目标)**：可以为关键监控数据路径上的核心组件设定“100% 使用通过 Conformance 测试的软件版本”这一内部目标。
+采用认证组件有助于确保监控系统提供的数据指标（SLI）本身是准确可靠的，这是定义和实现上层业务 SLO 的基础。更多关于可观测性与 SRE 的基础概念，可参考 [[reliability-engineering]] 和 [[observability]]。
+
+- 探索如何基于可靠的监控数据定义 SLI，请查阅 [[slis-and-slos]]。
+- 了解 Prometheus 生态系统中的核心概念，请参阅 [[prometheus-core-concepts]]。

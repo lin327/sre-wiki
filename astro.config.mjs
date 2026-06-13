@@ -9,6 +9,15 @@ import wikilinks from './src/lib/remark-wikilinks.mjs';
 
 // https://astro.build/config
 export default defineConfig({
+  i18n: {
+    defaultLocale: "zh",
+    locales: ["zh", "en"],
+    routing: {
+      prefixDefaultLocale: false,
+      redirectToDefaultLocale: false,
+    },
+  },
+
   integrations: [
     react(),
     mdx({

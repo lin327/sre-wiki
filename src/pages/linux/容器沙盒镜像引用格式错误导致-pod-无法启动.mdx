@@ -1,0 +1,89 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "容器沙盒镜像引用格式错误导致 Pod 无法启动"
+description: "在containerd 2.3.x版本中，使用tag+digest格式配置沙盒镜像会导致所有Pod无法启动，影响节点可用性。"
+category: 容器运行时
+order: 0
+lastUpdated: 2024-10-24
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/issues/13529
+    title: "CRI: tag+digest sandbox image breaks RunPodSandbox"
+tags: [containerd, cri, sandbox, pod, kubernetes, reliability, bug]
+---
+
+## 概述
+
+在 Kubernetes 集群中，每个 Pod 的启动都依赖于一个称为沙盒（sandbox）的基础镜像（通常是 pause 镜像）来初始化其网络命名空间和共享进程空间。容器运行时接口（CRI）插件（如 containerd 的 CRI）负责解析和拉取此镜像。本页记录了 containerd 在特定版本（2.3.x）中的一个关键缺陷：当沙盒镜像的配置使用了 `tag@digest` 格式（如 `pause:3.10.1@sha256:...`）时，会导致 `RunPodSandbox` RPC 调用失败，进而使得整个节点无法调度任何 Pod。这是一个严重的可靠性问题，直接违反了节点的可用性 SLO。
+
+## 核心概念
+
+### CRI 与沙盒镜像
+
+*   **CRI (Container Runtime Interface)**: Kubernetes 定义的容器运行时与 kubelet 之间的标准接口。containerd 通过内置的 CRI 插件实现此接口。
+*   **沙盒镜像 (Sandbox Image)**: Pod 沙盒的核心镜像，由 CRI 插件配置中的 `pinned_images.sandbox`（或遗留配置 `sandbox_image`）字段指定。kubelet 在调用 `RunPodSandbox` 时会引用此镜像。
+
+### 镜像引用格式
+
+容器镜像引用可以有多种格式：
+*   `registry/image:tag` (最常用)
+*   `registry/image@digest` (基于内容哈希的不可变引用)
+*   `registry/image:tag@digest` (同时包含标签和摘要，旨在提供唯一性和人类可读性)
+
+### 问题本质
+
+此缺陷暴露了 containerd CRI 插件在镜像解析逻辑上的一个回归。在 2.3.x 版本中，插件在执行 `RunPodSandbox` 时，无法正确处理 `tag@digest` 格式的引用。尽管容器运行时在接收到请求后能够成功拉取该镜像，但其内部查找逻辑（可能在后续步骤中）将镜像存储为其规范名称（即仅 `@digest` 形式），导致使用包含标签的原始引用进行查找时报告“未找到”。
+
+## 实践
+
+### 复现步骤
+
+1.  **环境准备**: 获取 containerd 2.3.x 版本和 `crictl` 工具。
+2.  **配置 containerd**: 创建一个配置文件，在 `pinned_images.sandbox` 字段中使用 `tag@digest` 格式指定镜像。
+    ```toml
+    [plugins."io.containerd.cri.v1.images".pinned_images]
+      sandbox = "registry.k8s.io/pause:3.10.1@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c"
+    ```
+3.  **启动测试 containerd**: 使用该配置文件启动一个独立的 containerd 实例。
+4.  **尝试启动 Pod**: 使用 `crictl runp` 命令尝试创建一个 Pod 沙盒。
+5.  **观察失败**: 命令会立即失败，返回 `NotFound` 错误，提示无法找到沙盒镜像。
+6.  **验证镜像存在**: 使用 `ctr images ls` 检查 containerd 的镜像存储，会发现镜像确实已被拉取并存储，但名称格式为 `registry.k8s.io/pause@sha256:278fb9...`（仅有摘要）。
+
+### 解决方案与规避措施
+
+1.  **升级版本**: 关注并升级到已修复此问题的 containerd 版本（参考关联的 PR #13513）。
+2.  **修改配置格式 (推荐)**: 避免在沙盒镜像配置中使用 `tag@digest` 格式。仅使用单一标识符：
+    *   **仅使用标签**: `pause:3.10.1`
+    *   **仅使用摘要**: `pause@sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c`
+    使用仅摘要的格式通常是最佳实践，因为它确保了不可变性和可重复性。
+
+## SRE 要点
+
+### 对可靠性的影响
+
+这是一个 **P0 级别的可靠性缺陷**。它会导致受影响节点完全无法工作（`NotReady` 状态），无法调度任何新的 Pod，从而直接降低集群容量并可能导致工作负载中断。此类问题会严重影响节点的 SLO，特别是“Pod 启动成功率”和“节点可用性”指标。
+
+### 事件响应与故障排查
+
+当集群中出现多个节点 Pod 无法启动，且错误信息涉及沙盒镜像未找到时，SRE 应立即：
+1.  检查节点 containerd 的版本。
+2.  审查容器运行时配置中的 `pinned_images.sandbox` 或 `sandbox_image` 字段，确认是否使用了 `tag@digest` 格式。
+3.  通过 `crictl pods` 或 `kubectl describe pod <pod-name>` 查看 Pod 事件，确认失败原因为“failed to get sandbox image”。
+
+### 最佳实践与反模式
+
+*   **最佳实践**:
+    *   在关键基础设施配置（如沙盒镜像）中使用**摘要（digest）引用**，以确保一致性和防止供应链攻击。
+    *   保持容器运行时（containerd、CRI-O）及其配置与 Kubernetes 主版本的兼容性矩阵。
+    *   对节点初始化配置和关键组件配置进行版本管理和变更记录。
+*   **反模式**:
+    *   在生产环境中使用未充分测试的或包含已知缺陷的容器运行时版本。
+    *   使用复杂且可能被不同组件以不同方式解析的复合引用格式（如 `tag@digest`）配置关键镜像。
+
+### 相关指标与监控
+
+*   **SLI**: 节点上 Pod 调度成功率、节点状态为 `Ready` 的时间比例。
+*   **SLO**: 集群应确保节点可用性（例如 99.9%），此缺陷会直接导致违反该 SLO。
+*   **监控建议**: 监控 kubelet 和 containerd 日志中与“sandbox image”、“not found”相关的错误模式，并设置告警。同时监控节点状态变化。
+
+**关联页面**: [[containerd-cri]] [[kubernetes-pod-scheduling]] [[node-health-monitoring]] [[incident-response-runbook]]

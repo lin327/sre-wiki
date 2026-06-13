@@ -1,0 +1,106 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "etcd WebSocket 认证令牌失效"
+description: "解决通过 WebSocket 连接 etcd Watch 端点时，使用 “Bearer” 方案传递的认证令牌导致 `invalid auth token` 错误的问题。"
+category: SRE
+order: 0
+lastUpdated: 2025-04-16
+confidence: high
+sources:
+  - url: https://github.com/etcd-io/etcd/issues/19752
+    title: "etcd GitHub Issue #19752"
+tags: [etcd, websocket, authentication, grpc, kubernetes, observability]
+---
+
+## 概述
+
+在构建基于 etcd 的分布式系统监控或配置管理应用时，使用 WebSocket 持续观察（Watch）键值变化是一种常见且高效的模式。当 etcd 集群启用认证后，确保 WebSocket 客户端能够正确通过身份验证是保证数据流连续性的关键。本文档根据一个典型的生产问题，深入分析了使用 Kotlin 等非 gRPC 客户端通过 WebSocket 连接 etcd 时，可能遇到的 `etcdserver: invalid auth token` 认证失败错误，并提供了根本原因分析和解决方案。此问题直接影响到依赖实时数据同步的应用的可观测性与可靠性。
+
+## 核心概念
+
+要理解此问题，需要区分 etcd 提供的两种主要 API 协议及其认证机制：
+
+1.  **HTTP/JSON API (v3)**：提供包括 Watch 在内的 RESTful 接口。客户端通过 HTTP 头传递 JSON Web Token (JWT) 进行认证。
+2.  **gRPC API (v3)**：这是 etcd 的原生、高性能 API，包括 Watch 在内的所有功能都通过 gRPC 提供。当 WebSocket 连接 `/v3/watch` 端点时，etcd 服务器会将 WebSocket 帧封装为 gRPC 消息进行处理。
+
+关键点在于，etcd 的 WebSocket 代理在处理认证时，其行为更接近 **gRPC 服务器**，而非 HTTP 服务器。因此，它对认证令牌的传递方式有特定要求。
+
+-   **“Bearer” 方案**：这是 HTTP Authorization 头的标准格式（`Authorization: Bearer <token>`）。许多 HTTP 客户端库会默认或手动采用此格式。
+-   **“gRPC” 方案**：在 gRPC 协议中，客户端通常通过 `Authorization: grpc-token=...` 或自定义头来传递令牌。etcd 的 WebSocket 代理要求使用一种与之兼容的格式。
+
+在上述案例中，用户将令牌放入 `Sec-WebSocket-Protocol` 头并附加 `Bearer` 前缀，虽然这是一种创意用法，但**不符合 etcd WebSocket 代理对认证令牌的解析期望**，导致后端 gRPC 层无法正确提取和验证令牌。
+
+## 实践
+
+### 问题复现与错误分析
+
+1.  **前提**：已启用 etcd 认证。
+2.  **操作**：使用客户端先进行 HTTP 认证获取令牌，然后使用该令牌通过 WebSocket 连接 `/v3/watch`。
+3.  **错误客户端代码（示例）**：
+    ```kotlin
+    httpClient.ws(method = HttpMethod.Get, host = "localhost", port = 2379, path = "/v3/watch") {
+        // 错误：将令牌放入 Sec-WebSocket-Protocol 头
+        header(HttpHeaders.SecWebSocketProtocol, "Bearer, $token")
+    }
+    ```
+4.  **服务器端日志**：
+    ```json
+    {"level":"warn","ts":"...","logger":"etcd-server","caller":"v3rpc/server.go:186","msg":"failed to authenticate the request","error":"etcdserver: invalid auth token"}
+    ```
+    该日志明确指出了认证失败。
+
+### 解决方案：正确的认证方式
+
+根据 etcd 源代码和社区实践，通过 WebSocket 访问受保护的端点时，令牌应通过标准的 **`Authorization` 头** 传递。`Sec-WebSocket-Protocol` 头的主要用途是协商 WebSocket 子协议，而非传递认证凭据。
+
+**正确的客户端连接代码示例：**
+```kotlin
+httpClient.ws(method = HttpMethod.Get, host = "localhost", port = 2379, path = "/v3/watch") {
+    // 正确：使用标准的 Authorization 头
+    header(HttpHeaders.Authorization, "Bearer $token")
+}
+```
+
+**服务器配置检查：**
+确保 etcd 服务器配置了基于令牌的认证。检查启动参数或环境变量：
+```bash
+# 例如，在启动命令中应包含以下参数
+--auth-token=jwt --auth-token-options='{"sign-method":"HS256","private-key":"path/to/key"}'
+```
+如果使用的是 Kubernetes 环境下的内嵌 etcd，请检查相关配置。[[etcd-cluster-health]]
+
+### 监控与调试
+
+如果问题依旧，请在客户端和服务器端增加详细日志。对于 etcd 服务器，可提高 `--log-level` 到 `debug`，并关注与 `auth` 相关的日志输出。同时，可以使用 `etcdctl` 工具验证令牌本身是否有效：
+```bash
+ETCDCTL_API=3 etcdctl --endpoints=http://localhost:2379 \
+  --user=<用户名>:<密码> \
+  auth status
+```
+
+## SRE 要点
+
+### 与可靠性及可观测性的关联
+
+-   **监控数据流中断**：Watch 是获取 etcd 状态变更的实时管道。认证失败会导致这条关键的可观测性路径完全中断，使得运维人员或自动化系统无法感知集群状态的实时变化，可能延误故障发现和响应。[[websocket-watch]]
+-   **服务依赖风险**：任何依赖 etcd Watch 进行配置下发、服务发现或锁服务的组件，都会因认证问题而发生级联故障，直接影响整体服务的 SLO。
+
+### 最佳实践与常见反模式
+
+-   **最佳实践**：
+    1.  **明确协议差异**：在设计客户端时，必须明确其连接的是 etcd 的 HTTP 接口还是 WebSocket（本质是 gRPC）接口，并采用对应的认证头格式。
+    2.  **统一认证代码库**：封装一个 etcd 客户端库，统一处理 HTTP 和 WebSocket 连接的认证逻辑，避免下游使用者混淆。
+    3.  **密钥轮换**：对用于认证的 JWT 私钥实施定期轮换策略，并确保所有客户端都能在密钥失效前更新。
+
+-   **常见反模式**：
+    1.  **假设 HTTP 行为适用于所有接口**：错误地认为所有端点都遵循相同的 HTTP 认证规范。
+    2.  **混淆头信息用途**：将认证信息放入 `Sec-WebSocket-Protocol` 等非标准位置，导致协议解析失败。
+    3.  **缺乏端到端验证**：在部署认证配置后，未对包括 WebSocket 在内的所有访问路径进行回归测试。
+
+### 相关指标 (SLI/SLO/SLA)
+
+-   **SLI**：
+    -   `etcd.watch.connection_success_rate`：通过 WebSocket 成功建立 Watch 连接的比例。
+    -   `etcd.watch.auth_failure_rate`：因认证问题导致 Watch 连接失败的次数。
+-   **SLO**：针对依赖实时监控的关键系统，应设定类似“WebSocket Watch 连接成功率 &gt; 99.9%”的 SLO，并将认证错误率作为核心告警指标。[[grpc-authentication]]
+-   **Error Budget**：当认证错误消耗过多 Error Budget 时，应触发根本原因调查，而非简单地重启客户端服务。

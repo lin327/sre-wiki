@@ -1,0 +1,73 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 饼图值映射颜色覆盖问题分析与解决"
+description: "分析 Grafana 11.6.0 版本中饼图（Pie Chart）插件值映射功能无法覆盖颜色的已知问题及其对 SRE 监控可视化的影响与应对方案。"
+category: bug
+order: 0
+lastUpdated: 2025-05-07
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/105084
+    title: "Grafana Issue #105084: Pie Chart Value Mapping Color Override Failure"
+tags: [grafana, pie-chart, value-mapping, visualization, bug]
+---
+
+## 概述
+
+在 Grafana 作为 SRE 核心可观测性平台的实践中，精确且直观的数据可视化对于快速识别系统状态、响应事件和生成报告至关重要。饼图（Pie Chart）常用于展示比例数据，而“值映射”（Value Mapping）功能允许 SRE 工程师将原始数据值（如 `Approved`/`Not_Approved`）转换为更具可读性的文本和特定的颜色。然而，在 Grafana OSS 11.6.0 版本中，已发现一个已知缺陷：饼图的值映射功能能够覆盖数据标签的文本，却无法覆盖其颜色。这直接影响了通过颜色快速区分关键状态（如错误、警告）的监控效率，是一个需要关注和规避的可靠性与可视化问题。
+
+## 核心概念
+
+- **值映射（Value Mapping）**：Grafana 提供的一项数据转换功能，允许用户根据预定义的规则（例如“当值等于 `Not_Approved` 时”）将数据点的原始值（Value）替换为自定义的显示文本（Text），并可以同时指定该数据点在图表中的特定颜色（Color）。
+- **饼图插件（Pie Chart Plugin）**：Grafana 内置或通过社区插件提供的图表类型，用于显示不同类别数据占整体的比例。
+- **问题本质**：在该特定版本的饼图实现中，值映射规则中的 `color` 属性未能正确应用到渲染层，导致图表始终使用默认调色板（Default Palette）中的颜色分配规则。
+
+## 实践
+
+### 问题重现与验证
+
+要确认此问题是否影响您的 Grafana 环境，可以遵循以下步骤：
+
+1.  **准备数据源**：使用支持的 SQL 数据源（如 PostgreSQL）执行一个返回分类数据的查询。例如：
+    ```sql
+    SELECT
+      CASE WHEN approved THEN 'Approved' ELSE 'Not_Approved' END AS status,
+      count(*) as count
+    FROM ami
+    WHERE
+      ami in ($AMI) AND instance_id in ($Instance)
+    GROUP BY status
+    ```
+2.  **创建饼图面板**：在仪表盘中添加一个饼图面板，选择上述查询作为数据源。
+3.  **配置值映射**：进入面板的“转换”（Transform）或“字段”（Fields）选项卡，找到“值映射”（Value Mapping）设置。
+4.  **添加映射规则**：
+    - 添加一个“值”（Value）映射：将值 `Not_Approved` 映射为文本 `Not Approved`，并尝试在颜色选择器中指定为 **红色**。
+5.  **观察结果**：饼图中代表 `Not Approved` 的扇形区域应显示为红色，但实际观察会发现它仍然使用了默认调色板中的某种颜色（如蓝色或橙色），而非指定的红色。文本标签则能正确显示为 `Not Approved`。
+
+### 规避方案与最佳实践
+
+在官方修复此缺陷前，可以采用以下临时方案来确保监控可视化的效果：
+
+1.  **使用其他图表类型**：考虑用**条形图（Bar Chart）** 或**柱状图（Bar Gauge）** 替代饼图来展示这些分类数据。这些图表类型在颜色覆盖方面通常表现更稳定。
+2.  **利用 `Overrides`（覆盖）功能**：作为替代方案，可以尝试使用面板的“覆盖”（Overrides）功能来设置颜色。步骤如下：
+    - 在面板编辑器的“覆盖”（Overrides）选项卡下，点击“添加字段覆盖”（Add field override）。
+    - 在“选择字段”（Choose）中，选择“按名称”（By name）并输入您希望修改颜色的数据系列名称（例如 `Not_Approved`）。
+    - 在“属性”（Properties）部分，添加“颜色”（Color）属性，并指定您需要的颜色。
+3.  **升级或等待修复**：密切关注 Grafana 的官方发布说明和上述 GitHub Issue 的进展。在后续版本（如 11.6.x 的补丁版本或更高版本）中，此问题可能已被修复。及时升级到稳定版本是根本的解决之道。
+
+## SRE 要点
+
+### 与可靠性的关联
+此问题直接影响了**监控系统的可靠性**。颜色是 SRE 在事件响应（Incident Response）中快速获取信息的关键视觉线索。如果“未批准”或“错误”状态无法用醒目的红色高亮，可能会延迟问题的发现和诊断，从而影响系统的整体可用性指标（如 [[sli-slo-sla]]）。
+
+### 最佳实践与反模式
+- **最佳实践**：在关键监控面板中实施变更后，进行**视觉回归测试**，确保所有数据点（包括文本和颜色）都按预期渲染。将重要仪表盘的截图作为配置的黄金标准进行保存和比对。
+- **常见反模式**：过度依赖单一图表类型（如仅使用饼图）来呈现关键数据。应根据数据特性和阅读场景（如报告、实时告警）混合使用多种图表类型，以提高可视化的鲁棒性。
+
+### 相关指标（SLI/SLO/SLA）
+虽然这是一个可视化工具的问题，但它间接影响以下指标的**可见性**：
+- **SLI**：如“请求成功率”、“错误请求比例”等。若这些比例通过饼图展示且颜色失效，SRE 可能无法直观感知 SLI 是否偏离预期。
+- **Error Budget**：当 Error Budget 消耗过快时，仪表盘上的颜色警报（如红色）是提醒团队注意的关键信号。此缺陷可能使这种信号变得不明显。
+
+## 建议与后续行动
+对于遇到此问题的 SRE 团队，建议立即检查所有使用饼图和值映射的关键仪表盘，并根据上述规避方案进行调整。同时，将此问题记录在内部的“已知问题”知识库中，并跟踪 Grafana 的版本更新。在 [[incident-response]] 流程中，应明确记录监控面板可能存在的已知可视化缺陷，避免在事件分析中产生误判。

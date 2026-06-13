@@ -1,0 +1,64 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "CSI卷重建的全局挂载回退机制"
+description: "解决kubelet重启后因卷重建失败导致全局挂载泄漏，进而引发多节点挂载数据损坏的问题。"
+category: 存储与卷管理
+order: 0
+lastUpdated: 2026-04-18
+confidence: medium
+sources:
+  - url: https://github.com/kubernetes/kubernetes/pull/138454
+    title: "[KEP] csi: global mount fallback for reconstruction"
+tags: [CSI, 卷管理, 全局挂载, 卷重建, kubelet, 存储可靠性]
+---
+
+## 概述
+
+在 Kubernetes 集群中，节点（kubelet）负责管理 Pod 所使用的存储卷。当 kubelet 因重启而恢复时，它需要一个“重建”过程来重新识别和管理之前已经挂载的卷。如果这个过程失败，可能会导致严重的可靠性问题：全局挂载（global mount）成为“孤儿”，没有被 Pod 关联，但也没有被卸载。[[kubelet-restart]] 问题在于，[[attach-detach-controller]] 可能认为该卷不再被当前节点使用，从而将其挂载到另一个节点，最终导致多节点挂载同一块读写（RWO）卷，引发文件系统损坏（如 EBS, iSCSI, FC）。本文介绍的修复针对 CSI 卷，通过增加从全局挂载目录回退读取卷数据的能力，防止此类故障，提升存储的可靠性。
+
+## 核心概念
+
+要理解本次修复，需要明确以下概念及其关系：
+
+*   **`vol_data.json`**：这是 kubelet 为每个已挂载卷维护的元数据文件，包含重建卷规格（`volume.Spec`）所需的关键信息，如 `specVolID`（卷标识符）和 `volumeLifecycleMode`（是 `Persistent` 还是 `Ephemeral`）。它是卷状态的“真相来源”之一。
+*   **全局挂载 (Global Mount)**：CSI 驱动在节点级别创建的、供所有使用该卷的 Pod 共享的挂载点（例如 `/var/lib/kubelet/plugins/kubernetes.io/csi/<driver>/<vol>/mount`）。一个 Pod 本地挂载通常通过绑定挂载（bind-mount）指向这个全局挂载。
+*   **Pod 本地挂载**：位于 Pod 沙箱目录内，直接由 Pod 使用的挂载点。
+*   **卷重建 (Volume Reconstruction)**：kubelet 启动时，通过扫描其状态目录来发现和恢复之前挂载的卷的过程。它会读取 Pod 本地目录和全局挂载目录下的 `vol_data.json` 来重建卷信息。
+*   **`VolumeReconstructionFallback` 特性门控**：一个新增的 alpha 特性开关，用于控制是否启用此回退机制。
+
+**问题的根因**：在修复前，如果 Pod 本地的 `vol_data.json` 丢失或损坏，卷重建就会失败。该卷会被标记为重建失败（`volumesFailedReconstruction`），其 `cleanupMounts` 过程只会尝试卸载 Pod 本地的绑定挂载，而**不会**清理全局挂载。结果是一个活跃的、孤立的全局挂载残留在节点上。
+
+## 实践
+
+此 PR 通过两个关键改变和特性门控来修复上述问题：
+
+1.  **丰富全局挂载的 `vol_data.json`**：`csiAttacher.MountDevice` 函数在创建全局挂载时，现在除了原有信息外，还会将 `specVolID` 和 `volumeLifecycleMode` 这两个字段写入该挂载目录下的 `vol_data.json`。这使得该文件具备了独立重建 `volume.Spec` 的全部必要信息。
+
+2.  **实现回退逻辑**：当 kubelet 的 `ConstructVolumeSpec` 函数尝试从 Pod 本地目录加载 `vol_data.json` 失败时，如果 `VolumeReconstructionFallback` 特性开启，它会调用一个新的辅助函数 `findGlobalMountDataBySpecVolID`。该函数会扫描所有 CSI 全局挂载路径（`/var/lib/kubelet/plugins/kubernetes.io/csi/*/*/vol_data.json`），寻找与已知 `specVolID` 匹配的全局 `vol_data.json` 文件，并使用其数据来重建卷规格。这确保了即使 Pod 本地状态丢失，全局挂载也能被正确识别和关联。
+
+3.  **通过特性门控发布**：此功能默认关闭，需显式启用 `--feature-gates=VolumeReconstructionFallback=true`。这允许在生产环境中进行渐进式部署和验证。
+
+**使用示例与流程**：
+```
+1. kubelet 启动，触发卷重建。
+2. 对于一个 CSI 卷，尝试读取其 Pod 本地 `vol_data.json`。
+3. (假设) 文件丢失，读取失败。
+4. 检查 `VolumeReconstructionFallback` 是否开启。
+5. 若开启，通过 `specVolID` 在节点所有 CSI 全局挂载目录中搜索匹配的 `vol_data.json`。
+6. 找到后，使用全局文件信息成功重建 `volume.Spec`，该卷正常关联回 Pod。
+7. 避免了因重建失败导致的全局挂载泄漏。
+```
+
+## SRE 要点
+
+*   **与可靠性和事件响应的关联**：这是一个典型的、由软件缺陷导致的存储可靠性问题，可能引发数据损坏（Data Corruption），属于 P0 级别的事件。此修复通过增加冗余状态路径（全局挂载文件作为回退），显著提高了 kubelet 重启后存储恢复的成功率，减少了人工介入处理“孤儿挂载”的事件。在事件响应中，发现节点有异常的全局 CSI 挂载且无关联 Pod，可优先考虑此已知问题。
+
+*   **最佳实践与常见反模式**：
+    *   **最佳实践**：在升级到包含此修复的 Kubernetes 版本后，应评估并计划启用 `VolumeReconstructionFallback` 特性门控。同时，加强对于 CSI 卷状态（如 `node.status.volumesInUse`）和挂载点一致性的监控。
+    *   **常见反模式**：忽略 kubelet 重启后的卷重建失败告警；在文件系统损坏后仅关注应用层恢复，而不追究底层存储挂载状态的正确性；对于使用 RWO 陈旧卷的集群，不评估和部署此类关键的稳定性修复。
+
+*   **相关指标 (SLI/SLO/SLA)**：此问题影响存储的**可用性**和**持久性** SLI。相关的监控指标应包括：
+    *   `kubelet_volumes_failed_reconstruction_total`（新增或现有指标，计数重建失败的卷）。
+    *   CSI 驱动相关的挂载/卸载操作成功率。
+    *   节点上未关联到任何 Pod 的“孤儿”全局挂载点数量（可通过自定义脚本或指标采集）。
+    *   SLO 目标：与存储挂载相关的、由卷状态不一致导致的应用停机时间比例应趋近于零。

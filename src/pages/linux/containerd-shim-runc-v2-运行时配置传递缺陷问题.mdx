@@ -1,0 +1,97 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "containerd-shim-runc-v2 运行时配置传递缺陷问题"
+description: "分析 containerd v2.2.1 中，CRI 插件运行时配置的 BinaryName 参数未正确传递给 shim 导致容器启动失败的已知问题与解决方案。"
+category: 容器运行时
+order: 0
+lastUpdated: 2026-05-06
+confidence: medium
+sources:
+  - url: https://github.com/containerd/containerd/issues/13352
+    title: "containerd/containerd issue #13352: containerd-shim-runc-v2 does not receive correct BinaryName for cri implementation in info calls"
+tags: [containerd, containerd-shim-runc-v2, runc, crun, CRI, runtime, configuration]
+---
+
+## 概述
+
+在 containerd v2.2.1 版本中，当通过 CRI（Container Runtime Interface）插件配置一个非 `runc` 的 OCI 运行时（例如 `crun`）作为默认运行时时，`containerd-shim-runc-v2` 进程在执行初始信息查询（`-info` 调用）时，可能无法从 containerd 主进程接收到正确的 `BinaryName` 参数。此 bug 会导致 shim 尝试在默认路径查找 `runc` 而非用户指定的运行时（如 `crun`），从而引发容器启动失败。对于需要使用特定版本或不同 OCI 运行时（如 `crun`、`kata` 等）的 SRE 环境，此问题会直接影响服务的部署与伸缩能力。
+
+## 核心概念
+
+### containerd 运行时架构
+
+containerd 采用分层架构，其中运行时管理通过 shim 进程实现。`containerd-shim-runc-v2` 是用于管理基于 runc 类 OCI 运行时的默认 shim。当 CRI 插件收到创建容器的请求时，它会根据配置的 `runtime_type` 启动相应的 shim 进程（例如 `io.containerd.runc.v2`）。随后，containerd 主进程会通过 shim 管理容器生命周期。
+
+### BinaryName 参数的作用
+
+在 CRI 运行时配置中，`options.BinaryName` 字段用于指定底层 OCI 运行时（如 `runc`, `crun`）的二进制文件路径。此参数至关重要，因为 shim 进程需要调用这个二进制文件来实际创建和执行容器（例如执行 `create`, `start`, `kill` 等操作）。如果此参数未被正确传递，shim 将回退到在其 `$PATH` 环境变量中查找名为 `runc` 的可执行文件，导致在自定义安装路径下查找失败。
+
+## 实践
+
+### 问题复现与诊断
+
+1.  **问题现象**：在 containerd 日志中出现类似以下错误，表明 shim 无法找到指定的运行时：
+    ```
+    time="2026-05-06T11:46:58.461730753Z" level=error msg="failed to load runtime info" error="failed to run [/mnt/k8s/bin/containerd-shim-runc-v2-2.2.1 -info]: exit status 1 (stderr: 'io.containerd.runc.v2: failed to look up the path of \'runc\': exec: \'runc\': executable file not found in $PATH')" runtime=/mnt/k8s/bin/containerd-shim-runc-v2-2.2.1
+    ```
+2.  **关键配置检查**：问题通常出现在 `containerd` 配置文件（`config.toml`）的 `[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes]` 部分。一个典型的、存在问题的配置示例如下（对应于使用 `crun` 的场景）：
+    ```toml
+    [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.crun]
+      runtime_type = 'io.containerd.runc.v2'
+      runtime_path = '/mnt/k8s/bin/containerd-shim-runc-v2-2.2.1'
+      # ... 其他选项 ...
+      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.crun.options]
+        BinaryName = '/mnt/k8s/bin/crun-1.27.1'
+        SystemdCgroup = true
+    ```
+    尽管 `BinaryName` 指向了 `crun`，但 shim 进程的 `-info` 调用并未使用它。
+
+### 解决方案
+
+目前，针对此问题的可靠解决方案是升级 containerd 至修复了该缺陷的版本。请查阅 containerd 官方发布说明或相关 issue 以获取修复版本信息。
+
+在修复版本可用前，可考虑以下 **临时解决方法**（需权衡风险）：
+
+1.  **符号链接或移动文件**：将指定的 OCI 运行时二进制文件（如 `crun`）复制或链接到系统 `$PATH` 中，并命名为 `runc`。这是最直接但不优雅的方法，可能污染系统环境。
+2.  **修改 shim 启动环境**：通过修改 containerd 服务的启动环境或 wrapper 脚本，为 `containerd-shim-runc-v2` 进程设置一个包含自定义运行时路径的 `PATH` 环境变量。这需要谨慎操作，确保不影响其他组件。
+
+### 配置验证
+
+在问题解决后，验证 OCI 运行时是否被正确识别：
+1.  使用 `crictl` 或直接调用 shim 的 `-info` 命令检查运行时信息。成功的调用应返回包含正确运行时路径的 JSON 信息。
+    ```bash
+    /mnt/k8s/bin/containerd-shim-runc-v2-2.2.1 -info
+    ```
+2.  检查 containerd 日志，确认不再有 `failed to look up the path of` 相关的错误。
+3.  尝试启动一个简单的容器，观察其是否能成功运行并使用预期的运行时（可通过 `docker inspect` 或检查进程树确认）。
+
+## SRE 要点
+
+### 对可靠性的影响
+
+此问题直接影响容器运行时的可用性，属于 P1/P2 级别的事件。一旦触发，将导致：
+*   **服务部署中断**：所有依赖该运行时的新容器（包括 Pod 的 Sandbox 和用户容器）均无法启动。
+*   **伸缩失败**：基于该运行时的 Deployment 或 StatefulSet 无法扩展，影响自动伸缩。
+*   **故障恢复受阻**：在节点重启或容器崩溃后，相关 Pod 无法重新调度到该节点。
+
+### 最佳实践与反模式
+
+*   **最佳实践**：
+    *   **版本管理**：严格测试并锁定 containerd 及其相关组件（如 shim、运行时）的版本组合，并在升级前进行充分验证。
+    *   **配置即代码**：将 `containerd` 的 `config.toml` 纳入版本控制，并通过 Ansible、Puppet 等工具统一部署，避免配置漂移。
+    *   **监控与告警**：监控 containerd 日志中与运行时相关的错误（如本例中的 `failed to load runtime info`），并设置告警，确保问题能被第一时间发现。
+    *   **标准化运行时**：在集群中尽可能统一 OCI 运行时，减少因多运行时配置引入的复杂性和潜在问题。
+*   **常见反模式**：
+    *   **手动修改节点配置**：在生产节点上随意手动修改 `config.toml` 或二进制文件，导致配置不一致。
+    *   **忽略日志错误**：对 containerd 或 kubelet 的错误日志视而不见，未能及时发现潜在问题。
+    *   **未验证的升级**：在未进行预发布环境测试的情况下，直接升级集群核心组件。
+
+### 相关指标 (SLI/SLO/SLA)
+
+*   **SLI (Service Level Indicator)**:
+    *   `pod_startup_success_rate`: 指定运行时下，Pod 从 `Pending` 状态转变为 `Running` 状态的成功率。此问题会直接导致该指标下降。
+    *   `container_runtime_errors_total` (从 Prometheus 指标 `container_runtime_operations_errors_total` 或 containerd 指标中衍生): 特定错误类型（如运行时启动失败）的计数。
+*   **SLO (Service Level Objective)**: 可设定“由运行时配置错误导致的 Pod 启动失败率低于 0.1%”。
+*   **SLA (Service Level Agreement)**: 对内部客户承诺的、由特定运行时支持的工作负载的可用性等级。
+
+**关联页面**：[[containerd]]， [[container-cri-runtime]]

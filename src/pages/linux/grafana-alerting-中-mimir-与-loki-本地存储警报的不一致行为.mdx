@@ -1,0 +1,84 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Alerting 中 Mimir 与 Loki 本地存储警报的不一致行为"
+description: "当 Grafana 同时连接使用本地存储的 Mimir 和 Loki 数据源时，警报管理界面会呈现不一致的行为，影响运维体验。"
+category: SRE可观测性实践
+order: 0
+lastUpdated: 2024-02-18
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/83032
+    title: "Alerting: Fix inconsistent behavior between loki and mimir when using filesystem provisioned alerts"
+tags: [Grafana, Alerting, Mimir, Loki, SRE, Observability, Consistency]
+---
+
+## 概述
+
+在构建基于 Grafana 的可观测性平台时，统一监控多个后端数据源（如用于日志的 Loki 和用于指标的 Mimir）的用户体验是运维效率的关键。本案例分析了在 Grafana 10.3.3 中，当 Mimir 和 Loki 均使用**本地文件系统存储 (Local Storage/Rule Provisioning)** 时，其警报（Alerting）管理界面表现出的功能不一致性。这种差异不仅影响了运维人员的预期，也揭示了在前端交互设计与后端能力匹配方面需要关注的一致性问题。
+
+## 核心概念
+
+理解此问题需要明确几个关键概念：
+
+1.  **本地文件系统存储 (Local Storage)**：Mimir 和 Loki 的 Ruler 组件均支持将警报规则（Alerting Rules）配置为从本地文件系统目录读取。这是一种简单、适用于开发测试或单体部署的配置方式，但通常不支持通过 API 动态修改规则。
+2.  **警报管理能力差异**：
+    *   **Mimir (使用本地存储)**：其 Ruler 组件虽然从本地文件加载规则，但 Grafana 前端仍显示了“编辑”和“删除”警报规则的操作按钮。当用户点击时，会因后端不支持此操作而返回错误。
+    *   **Loki (使用本地存储)**：其 Ruler 组件同样不支持动态修改本地存储的规则。Grafana 前端正确地识别了这一限制，并隐藏了“编辑”和“删除”按钮，提供了符合后端能力的界面。
+3.  **Grafana Alerting UI**：Grafana 统一的警报管理界面，负责与不同数据源的警报后端（如 Mimir 或 Loki 的 `/rules` API）交互。其功能按钮的显示与否应准确反映后端数据源的实际能力。
+
+## 实践
+
+以下是重现此不一致行为的具体步骤，该过程清晰地展示了问题的两个方面。
+
+### 重现 Mimir 侧的问题行为
+
+1.  **配置 Mimir 使用本地存储**：在 Mimir 的配置文件 (`mimir.yaml`) 中，设置 Ruler 的规则源为本地目录。
+    ```yaml
+    ruler:
+      alertmanager_url: http://alertmanager:9093
+      rule_path: /data/rules
+      storage:
+        backend: local
+        local:
+          directory: "/mimir/config/rules" # 指向包含警报规则文件的目录
+    ```
+2.  **放置警报规则文件**：在指定的目录 (`/mimir/config/rules`) 中创建一个 YAML 文件，定义一个警报规则组。
+    ```yaml
+    groups:
+      - name: tempo_alerts
+        rules:
+          - alert: TempoRequestLatency
+            annotations:
+              summary: "{{ $labels.service_component }} {{ $labels.route }} latency is high."
+            expr: cluster_namespace_job_route:tempo_request_duration_seconds:99quantile{} > 3
+            for: 15m
+            labels:
+              severity: crit
+    ```
+3.  **启动 Mimir**：通过开发脚本或 Docker Compose 启动 Mimir。
+4.  **访问 Grafana Alerting 页面**：登录 Grafana，导航至警报列表页面 (`/alerting/list`)。**此时，对于来自 Mimir 的警报规则，界面会显示“编辑”和“删除”按钮。**
+5.  **触发错误**：点击上述任一按钮。由于 Mimir 的本地存储后端不支持通过 API 修改规则，界面将显示错误信息，表明操作失败。
+
+### 重现 Loki 侧的预期行为
+
+1.  **配置 Loki 使用本地存储并启用 Alerting**：在 Grafana 的数据源配置中，为 Loki 数据源启用 `manageAlerts: true`，确保 Grafana 使用 Loki 的 Ruler API 进行警报管理。
+2.  **配置 Loki Ruler 为本地存储**：在 Loki 配置中，同样将 Ruler 配置为从本地目录读取规则。
+3.  **放置警报规则文件**：在 Loki 规则目录下放置类似的警报规则文件。
+4.  **启动 Loki 和 Grafana**。
+5.  **访问 Grafana Alerting 页面**：导航至警报列表页面。**此时，对于来自 Loki 的警报规则，界面不会显示“编辑”和“删除”按钮。** 这符合 Loki 本地存储不支持动态修改的预期。
+
+通过以上对比，可以清晰地看到 Grafana 在处理来自不同数据源但具有相同限制（本地存储）的警报时，前端交互逻辑存在不一致。
+
+## SRE 要点
+
+此问题虽然看似一个前端 UI 缺陷，但从 SRE 视角看，它涉及多个重要方面：
+
+*   **可靠性与错误预算**：用户尝试进行一个注定失败的操作（编辑/删除），这不仅会产生错误响应，还可能导致用户困惑，浪费其排查问题的时间，间接消耗了运维的“错误预算”。一个设计良好的系统应**预防错误于未然**。
+*   **一致性与用户体验**：在统一的 Grafana 平台中管理多种后端时，保持交互逻辑的一致性至关重要。SRE 团队依赖于一致、可预测的界面来快速定位问题和执行操作。不一致的行为会降低工具的可信度和操作效率。
+*   **可观测性工具的可观测性**：这个 issue 本身就是一个关于监控工具自身行为的可观测性问题。它提醒我们，监控系统的 UI/UX 本身也需要被测试和验证，确保其行为与后端能力匹配。
+*   **相关 SLI/SLO**：对于 Grafana 平台本身，可以设定与警报管理 UI 功能可用性相关的 SLI。例如，“用户能够成功点击并执行一个有效的警报管理操作（如编辑、删除）的成功率”。此类 UI 行为的不一致直接影响该 SLI 的测量值。
+*   **最佳实践与建议**：
+    *   **前端防御性设计**：Grafana 应在 UI 层面，根据数据源类型及其配置（如本地存储 vs. 对象存储），动态且一致地禁用不支持的操作按钮。Loki 的现有行为是正确示范。
+    *   **使用声明式与兼容的 API**：在设计系统时，应优先考虑通过支持动态修改的后端（如 Mimir 使用对象存储）来提供完整的 API 功能。如果必须使用本地存储，应在 UI 和文档中明确告知其功能限制。
+    *   **统一测试用例**：在开发和测试 Grafana 与不同数据源的集成时，应包含针对所有主要功能（尤其是 CRUD 操作）的场景测试，覆盖不同的后端配置，以确保行为一致性。
+    *   **关联页面**：此问题与 [[监控栈]]、[[可观测性]] 和 [[事件响应]] 等实践紧密相关。一个稳定、一致的监控系统是高效 [[事件响应]] 的基础。

@@ -1,0 +1,83 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Containerd快照层残留问题"
+description: "当Docker使用containerd快照器时，中断的镜像拉取会留下无法通过常规命令清理的磁盘数据。"
+category: 容器运行时与编排
+order: 0
+lastUpdated: 2024-08-08
+confidence: medium
+sources:
+  - url: https://github.com/containerd/containerd/issues/10548
+    title: "Containerd snapshotter saves layers that can't be cleared easily"
+tags: [docker, containerd, snapshotter, overlayfs, storage-cleanup, disk-space]
+---
+
+## 概述
+
+在现代容器化环境中，Docker 引擎逐渐将其底层存储管理迁移至 containerd。当启用 `containerd-snapshotter` 特性后，镜像层的存储由 containerd 的快照组件管理。然而，一个已知的问题是：**中断的镜像拉取（pull）操作会永久性地占用磁盘空间，且无法通过 `docker system prune` 等标准命令清除**。这为 SRE 的日常运维（如磁盘空间监控与回收）带来了额外挑战，可能引发因磁盘空间耗尽导致的生产事故。理解此问题的根源和解决方案，对于保障主机的可靠性和存储健康至关重要。
+
+## 核心概念
+
+- **Containerd Snapshotter**: containerd 中的一个插件，负责管理容器运行所需的文件系统快照。当 Docker 配置使用此功能时，`docker pull` 的层提取操作由快照器处理，数据存储在 containerd 的目录结构中。
+- **Overlayfs 快照 (`io.containerd.snapshotter.v1.overlayfs`)**: 这是快照器的一种具体实现，用于存储解压后的镜像层。中断的拉取操作会留下未完成或孤立的快照数据。
+- **内容寻址存储 (`io.containerd.content.v1.content`)**: 存储从仓库下载的原始镜像层包（通常是压缩的 tar 文件）。即使快照被清理，这些内容也可能因引用关系而残留。
+- **垃圾回收 (Garbage Collection, GC)**: containerd 用于清理未引用对象的机制。它通常由 Docker daemon 或 containerd 自身定期运行，但可能存在策略限制，无法清理特定状态的残留数据。
+- **租约 (Lease)**: containerd 用于追踪一组相关对象（如一次拉取操作涉及的所有内容和快照）生命周期的机制。中断的操作可能产生一个未被正确释放的租约，从而阻止 GC 回收其关联的数据。
+
+## 实践
+
+### 1. 诊断问题
+首先确认问题是否存在。中断一次拉取后，使用以下命令检查磁盘占用：
+```bash
+# 查看Docker报告的磁盘使用，注意Images部分
+docker system df -v
+
+# 直接查看containerd存储目录的磁盘使用
+du -sh /var/lib/docker/io.containerd.snapshotter.v1.overlayfs
+du -sh /var/lib/docker/io.containerd.content.v1.content
+```
+如果这些目录持续增大，且`docker system prune -a`无法释放其空间，则问题存在。
+
+### 2. 检查与清理孤立租约
+使用 containerd 的命令行工具 `ctr` 检查未完成的租约。这是释放关联数据的关键。
+```bash
+# 列出所有租约
+sudo ctr -n moby leases ls
+
+# 查找可能由中断拉取创建的、状态异常的租约（通常没有标签或关联引用）
+# 删除可疑的租约（请谨慎操作，确认其不属于正常运行）
+sudo ctr -n moby leases rm <lease-id>
+```
+删除租约后，containerd 的垃圾回收可能在下次运行时回收关联的数据。
+
+### 3. 强制清理与手动干预
+如果上述方法无效，可能需要停止 Docker 服务后手动清理，但这会导致所有容器停止，**应在维护窗口进行**：
+```bash
+# 停止Docker服务
+sudo systemctl stop docker
+
+# 谨慎删除残留的快照和内容目录（路径需根据实际环境确认）
+sudo rm -rf /var/lib/docker/io.containerd.snapshotter.v1.overlayfs/???
+sudo rm -rf /var/lib/docker/io.containerd.content.v1.content/blobs/sha256/???
+
+# 重启Docker服务
+sudo systemctl start docker
+```
+**注意：** 手动删除是最后的手段，务必确保不误删正在使用的快照。最佳实践是在删除前进行备份或仔细核对目录内容。
+
+## SRE 要点
+
+- **与可靠性的关联**：此问题直接威胁主机的存储可靠性。未释放的磁盘空间可能导致关键服务（如数据库、应用容器）因写入失败而崩溃，属于潜在的单点故障。SRE 需将此类存储泄漏纳入容量规划和告警监控。
+- **可观测性缺口**：标准的 Docker 监控工具（`docker system df`）无法准确反映 containerd 快照器管理的真实磁盘使用情况，造成了可观测性的盲区。SRE 需要建立对 `/var/lib/docker/` 下特定目录的监控，并设置磁盘空间使用率告警。
+- **事件响应与最佳实践**：
+    - **最佳实践**：在生产环境中，对于启用 `containerd-snapshotter` 的节点，应建立定期（如每日）检查租约并清理异常租约的运维脚本。将其纳入自动化运维流程。
+    - **反模式**：忽视 `docker system df` 与实际 `du` 值之间的持续差异；在没有确认安全的情况下直接执行 `rm -rf`。
+    - **操作流程**：当收到磁盘空间告警时，应优先使用 `du` 结合 `ctr leases` 进行诊断，优先尝试通过清理租约让 GC 生效，而非直接手动删除文件。
+- **相关指标 (SLI/SLO)**：
+    - **SLI (Service Level Indicator)**：可以定义“容器主机可用磁盘空间百分比”作为存储可靠性的 SLI。
+    - **SLO (Service Level Objective)**：为该 SLI 设置目标，例如“在 99.9% 的时间里，Docker 根目录 (`/var/lib/docker`) 的可用空间大于 15%”。
+    - 通过监控此 SLI，可以提前发现因存储泄漏导致的容量问题，并触发相应的运维操作（如执行上述清理流程），从而避免违反 SLO。
+
+[[docker-storage-cleanup]]
+[[containerd-garbage-collection]]
+[[disk-capacity-planning]]

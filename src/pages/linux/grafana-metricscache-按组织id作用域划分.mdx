@@ -1,0 +1,53 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana MetricsCache 按组织ID作用域划分"
+description: "通过在缓存键中包含组织ID，优化Grafana MetricsCache在多租户环境下的隔离性和准确性。"
+category: 可观测性平台
+order: 0
+lastUpdated: 2025-10-27
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/pull/125514
+    title: "Suggested Dashboards: dashvalidator scope metrics cache entries by org"
+tags: [grafana, caching, multi-tenancy, performance]
+---
+
+## 概述
+
+在 Grafana 这样的多租户可观测性平台中，高效的缓存机制对于性能和数据隔离至关重要。`MetricsCache` 是 Grafana 内部用于缓存数据源相关元数据（例如仪表板建议）的组件。本次更新旨在优化其缓存键结构，确保在多组织（multi-org）环境下缓存数据能被正确隔离，从而提升系统的准确性与可靠性。
+
+## 核心概念
+
+**MetricsCache**：这是 Grafana 内部的一个缓存服务，用于存储与数据源（datasource）相关的计算结果或元数据，例如 `dashvalidator` 功能所使用的、用于生成仪表板建议的指标条目。引入缓存的目的是避免重复进行耗时的查询或计算，提升用户体验和系统性能。
+
+**多租户模型（Multi-org Model）**：Grafana 支持通过组织（Organization，简称 org）来隔离不同的租户。每个组织都有独立的用户、仪表板和数据源配置。一个数据源（通过 `datasourceUID` 标识）可能属于特定的组织，但 `UID` 在全局范围内理论上是唯一的。然而，从缓存隔离的角度看，仅使用 `datasourceUID` 作为缓存键是不够的，因为不同组织可能存在同名或语义相似的数据源。
+
+**缓存键作用域（Cache Key Scoping）**：为了确保缓存条目的唯一性和正确性，缓存键必须能够唯一标识一个缓存条目所服务的上下文。在单租户模型中，`(datasourceUID)` 可能足够。但在 Grafana 的多租户模型中，正确的上下文由 `(orgID, datasourceUID)` 共同定义。本次变更将缓存键从 `datasourceUID` 升级为 `(orgID, datasourceUID)`，实现了缓存条目按组织进行作用域划分。
+
+## 实践
+
+此变更主要发生在 Grafana 的后端代码层面，对于终端用户是透明的，但能带来更优的体验。其核心实现遵循了 Grafana 已有的最佳实践。
+
+1.  **对齐现有模式**：新的缓存键结构与 Grafana 已有的、位于 `pkg/services/datasources/service/cache.go` 中的数据源缓存服务保持一致。这种模式在代码库中已有成功应用，确保了设计的一致性和可维护性。
+2.  **实现逻辑**：在生成或查询 `MetricsCache` 时，系统会同时获取当前请求所属的 `orgID` 和目标 `datasourceUID`，并将它们组合成缓存键。例如，对于组织 1 中的某个仪表板建议计算，其缓存键将明确关联到 `orgID=1`，而不是一个全局的 `datasourceUID`。
+3.  **用户收益**：
+    - **数据准确性**：在共享 Grafana 实例的不同组织之间，避免了因缓存键冲突而导致的“数据串租户”风险，确保每个组织看到的仪表板建议或相关指标都是基于自身数据源配置计算的。
+    - **性能优化**：在修正隔离性的同时，依然保留了缓存带来的性能优势，即对于同一组织内的同一数据源，重复请求可以直接从缓存中获取结果。
+
+## SRE 要点
+
+- **与可靠性、可观测性、事件响应的关联**：
+    - **可靠性**：此变更直接提升了 Grafana 平台在多租户场景下的可靠性，防止了潜在的跨租户数据泄露或错误关联，这是 SaaS 服务的核心要求之一。
+    - **可观测性**：作为可观测性平台自身，Grafana 的内部缓存机制是其“可观测性”的一部分。一个配置错误的缓存可能误导运维人员。此修复确保了 Grafana 自身组件行为的正确性和可预测性。
+    - **事件响应**：如果在多租户环境中出现用户报告仪表板建议错误或数据不一致的问题，SRE 在排查时应将 Grafana 后端的缓存隔离情况（如本次变更）纳入考虑范围，特别是涉及 `dashvalidator` 或类似功能时。
+
+- **最佳实践与常见反模式**：
+    - **最佳实践**：在设计多租户系统的缓存时，应始终将租户标识（如 `orgID`）作为缓存键的一部分。优先参考并采用系统内已有的、经过验证的缓存模式（如 Grafana 的数据源缓存），以保证设计的一致性。
+    - **常见反模式**：仅使用全局唯一标识符（如 `UID`）作为缓存键，而忽略了租户上下文。这在系统演进到支持多租户时，会成为难以发现和修复的潜在漏洞。
+
+- **相关指标（SLI/SLO/SLA）**：
+    - **SLI（服务等级指标）**：可以监控 `MetricsCache` 的命中率（Hit Rate）和隔离有效性。隔离有效性可以通过采样不同组织的缓存键，检查是否存在异常交叉来衡量。
+    - **SLO（服务等级目标）**：对于 `dashvalidator` 功能，可以设立 SLO，例如“为99%的用户提供基于其自身组织数据源生成的准确仪表板建议”。本次变更是实现此 SLO 的关键技术保障之一。
+    - **SLA（服务等级协议）**：在多租户平台的 SLA 中，数据隔离是核心条款。此变更通过技术手段支撑了 SLA 中关于数据隔离性的承诺。
+
+此优化是 Grafana 向更成熟、更安全的多租户架构演进的一个缩影，体现了在缓存策略上对精确性和隔离性的重视。相关设计模式可参考 [[multi-tenancy]] 和 [[caching-strategies]]。

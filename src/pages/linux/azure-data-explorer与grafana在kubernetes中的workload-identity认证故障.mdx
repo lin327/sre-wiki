@@ -1,0 +1,71 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Azure Data Explorer与Grafana在Kubernetes中的Workload Identity认证故障"
+description: "分析在Kubernetes中Grafana 12.4.0版本无法使用AKS Workload Identity访问Azure Data Explorer的认证失败问题。"
+category: 故障排除
+order: 0
+lastUpdated: 2026-03-10
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/119965
+    title: "ADX plugin is no more working with AKS Workload Identity"
+tags: [azure-data-explorer, grafana, kubernetes, workload-identity, authentication, aks]
+---
+
+## 概述
+在 Kubernetes 环境中运行 Grafana 时，通过 Azure Data Explorer (ADX) 插件连接数据源是一种常见模式。为了安全且无密钥地进行认证，通常使用 AKS Workload Identity（基于联合身份）。本知识页面分析了一个在 Grafana 从 12.3.x 升级至 12.4.0 后出现的认证回归问题，该问题导致 ADX 插件报告 “no client ID specified” 错误，从而使数据源连接完全中断。解决此类认证问题是保障 Grafana 平台 [[observability]] 可靠性的关键一环。
+
+## 核心概念
+**AKS Workload Identity**：这是 Azure Kubernetes Service 提供的一种无密钥认证机制。它允许 Kubernetes Pod 中的应用（如 Grafana）通过一个关联到 Azure AD 服务主体（Service Principal）的联合身份进行身份验证。实现通常依赖于两个部分：1）在 Pod 上添加特定的注解（`azure.workload.identity/client-id`）；2）在 Azure AD 中为服务主体配置联合身份凭据，该凭据与特定 Kubernetes 命名空间和服务账户绑定。此机制避免了在 Pod 中显式存储客户端密钥或证书。
+
+**ADX 插件认证流程**：Grafana 的 Azure Data Explorer 插件需要有效的 Azure AD 访问令牌来查询 ADX 集群。当配置为使用 Workload Identity 时，插件会期望从 Pod 环境中自动获取到 `AZURE_CLIENT_ID`、`AZURE_TENANT_ID` 和 `AZURE_FEDERATED_TOKEN_FILE` 等环境变量，或者通过配置选项直接指定 ClientID。插件利用这些信息向 Azure AD 请求令牌。
+
+**错误分析**：“failed to retrieve Azure access token: no client ID specified” 这个错误明确指出，插件在尝试获取 Azure 访问令牌时，未能确定所使用的客户端标识（Client ID）。这表明在插件初始化或运行时，其所需的客户端 ID 信息缺失，这可能是配置方式变更、环境变量未正确注入或插件代码逻辑调整所导致。
+
+## 实践
+### 故障排查与验证步骤
+面对此问题，SRE 或平台工程师可以遵循以下排查流程：
+
+1.  **版本确认**：首先确认组件版本。根据报告，问题出现在 Grafana `12.4.0` 和 `azure-data-explorer-datasource` `7.2.3` 的组合上，且在 `12.3.x` 版本中工作正常。这强烈暗示这是一个由 Grafana 核心或插件更新引入的回归缺陷。
+
+2.  **检查 Pod 配置**：登录到运行 Grafana 的 Kubernetes Pod，或查看其 YAML 描述，验证 Workload Identity 的配置是否正确应用。
+    ```bash
+    # 查看 Pod 注解
+    kubectl get pod <grafana-pod-name> -o jsonpath='{.metadata.annotations}'
+    ```
+    确认注解 `azure.workload.identity/client-id: <your-azure-sp-client-id>` 存在且值正确。
+
+3.  **检查环境变量**：进入 Pod 内部，检查所需的环境变量是否已被 Workload Identity Webhook 自动注入。
+    ```bash
+    kubectl exec -it <grafana-pod-name> -- env | grep AZURE
+    ```
+    期望看到 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE` 等变量。如果缺失，说明 Webhook 未正确工作或 Pod 未被正确标记为使用 Workload Identity。
+
+4.  **尝试在插件配置中显式指定**：作为临时解决方案，可以绕过自动发现，直接在 Grafana UI 的 ADX 数据源配置中，手动填入 “Client ID” 字段。如果此举能恢复功能，则进一步证实了问题出在自动获取客户端 ID 的流程上。
+
+5.  **检查网络与权限**：确保 Pod 网络允许访问 Azure AD 端点 (`https://login.microsoftonline.com`) 和 ADX 集群端点。同时，确认关联的 Azure 服务主体具有访问目标 ADX 集群的适当角色（如 `AllDatabasesViewer`）。
+
+### 关联资源与临时解决方案
+- 本问题与 Grafana ADX 插件自身的 GitHub issue 跟踪相关：[azure-data-explorer-datasource#1675](https://github.com/grafana/azure-data-explorer-datasource/issues/1675)。
+- **临时解决方案**：在官方修复发布前，一个可行的临时方案是回退到确认可用的 Grafana 版本（如 `12.3.x`），或者采用上述第 4 步，在数据源配置中显式设置 Client ID。如果 Client ID 已通过注解定义，此方法通常有效且安全。
+
+## SRE 要点
+### 与可靠性、可观测性、事件响应的关联
+*   **可靠性与可观测性**：此故障直接导致 Grafana 失去其核心数据源之一，使得依赖 ADX 数据的仪表板和告警完全失效，严重影响系统的全局可观测性。这是典型的**可用性事件**，需要被监控系统捕获并触发 [Incident Response](https://sre.google/sre-book/incident-response/)。
+*   **事件响应**：SRE 团队需要快速响应，执行上述排查步骤以确定根本原因（版本回归），并实施临时缓解措施（回退版本或手动配置），同时跟踪上游修复进度。这体现了**版本管理**和**依赖项监控**的重要性。
+*   **变更管理**：该事件强调了在升级关键组件（如 Grafana）前，必须在 staging 环境进行充分测试，特别是涉及核心认证机制的集成点。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    1.  **版本锁定与升级策略**：在生产环境中，应对关键软件版本进行一定程度的锁定，并制定包含兼容性测试的渐进式升级计划。
+    2.  **凭证管理**：始终优先使用平台提供的原生无密钥机制（如 Workload Identity），避免在代码或配置中硬编码密钥。确保相关 Pod、ServiceAccount 和 Azure 资源的权限遵循最小权限原则。
+    3.  **监控与告警**：为数据源连接状态（如 ADX 查询成功率）设置监控和告警，以便在认证失败时能快速发现。
+*   **常见反模式**：
+    1.  **忽略版本发布说明**：直接升级到新版本而不审查其变更日志，可能引入未经注意的破坏性变更。
+    2.  **缺乏集成测试**：未对涉及云服务认证的关键路径进行端到端测试，导致此类问题在生产环境暴露。
+    3.  **临时配置永久化**：将临时绕过方案（如手动填写 Client ID）作为永久解决方案，而忽略了其可能带来的管理负担和与自动机制的偏离。
+
+### 相关指标（SLI/SLO/SLA）
+- **SLI**：可以定义 “Grafana ADX 数据源连接成功率” 作为服务级别指标。该指标可以通过监控 Grafana 日志中 “failed to retrieve Azure access token” 错误的频率来衡量。
+- **SLO**：团队可为此 SLI 设定目标，例如 “月度成功率 &gt; 99.5%”。
+- **SLA**：此内部 SLO 支撑着对业务部门的 SLA 承诺，确保他们能可靠地通过 Grafana 获取 ADX 中的数据进行业务决策和告警。本次故障直接威胁到相关 SLA 的达成。

@@ -1,0 +1,81 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "gVisor gofer 根文件系统绑定挂载在符号链接路径下的失败"
+description: "在containerd升级后，gVisor gofer因无法正确处理/var/run到/run的符号链接，导致Kubernetes沙箱创建失败。"
+category: 容器运行时
+order: 0
+lastUpdated: 2026-05-21
+confidence: medium
+sources:
+  - url: https://github.com/containerd/containerd/issues/13463
+    title: "release-20260520.0: runsc gofer fails rootfs self-bind when bundle path uses /var/run symlink to /run"
+tags: [gvisor, containerd, symlink, rootfs, gofer, sandbox]
+---
+
+## 概述
+
+本文档详细阐述了一个影响 gVisor (`runsc`) 与 containerd 集成环境的特定回归问题。在 containerd 和 gVisor 版本升级后，由于对符号链接路径的处理不一致，导致 Kubernetes Pod 在创建沙箱阶段失败。此问题凸显了在分布式系统和容器运行时中，对文件系统路径进行规范化和验证时的复杂性，是 SRE 在管理容器平台可靠性和处理升级相关事件时需要关注的典型案例。
+
+## 核心概念
+
+1.  **符号链接与路径解析**：操作系统中，符号链接（Symlink）是一个指向另一个文件或目录的引用。当程序访问该链接时，操作系统通常会解析（或跟随）到其目标路径。例如，`/var/run` 在许多 Linux 发行版中是指向 `/run` 的符号链接。关键的 SRE 考量在于，不同的程序或系统调用可能以不同的方式（是否解析）处理路径，这可能导致意料之外的不一致。
+
+2.  **gVisor 与 Gofer 进程**：gVisor 是一个容器化应用的内核代理，通过用户空间进程（Gofer）和 Sentry 来提供安全沙箱。Gofer 负责在沙箱启动前处理文件系统挂载和访问等操作。在本次问题中，gVisor 在为创建容器钩子（`createContainer` hooks）设置根文件系统（rootfs）时执行了一个新的“自绑定挂载”（self-bind mount）操作。
+
+3.  **安全挂载检查**：gVisor 为防止潜在的攻击或配置错误，引入了一种安全检查机制。该机制在执行绑定挂载前，会对比程序传入的原始路径和通过 `open()` 系统调用获得的已解析路径。只有当两者匹配时，才认为操作是安全的并继续执行。本问题正源于此检查逻辑在 `/var/run` -&gt; `/run` 符号链接场景下的失败。
+
+## 实践
+
+### 问题诊断流程
+
+当 Kubernetes 集群升级至 containerd `v2.2.2` 和 gVisor `release-20260520.0` 后，若发现 `runsc` 支持的 Pod 持续无法启动，可按以下步骤诊断：
+
+1.  **检查事件与日志**：在 Kubernetes 事件和容器运行时日志中，查找类似 `failed to create sandbox`、`OCI runtime create failed`、`waiting for sandbox to start: EOF` 的错误信息。
+2.  **启用 Gofer 调试日志**：在 gVisor 的运行时配置中（如 containerd 的 `config.toml`）启用详细日志记录：
+    ```toml
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+      runtime_type = "io.containerd.runsc.v1"
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
+        TypeUrl = "io.containerd.runsc.v1.options"
+        ConfigPath = "/etc/containerd/runsc.toml"
+    ```
+    在 `/etc/containerd/runsc.toml` 中配置：
+    ```toml
+    debug = true
+    debug-log = "/tmp/runsc-debug/%ID%/%COMMAND%.log"
+    debug-command = "gofer,boot"
+    ```
+3.  **分析 Gofer 日志**：查看生成的 `gofer.log` 文件。关键错误信息形如：
+    ```
+    FATAL ERROR: Error setting up root FS: self-bind-mounting rootfs "/var/run/.../rootfs" for hooks:
+    failed to safely mount: expected to open /var/run/.../rootfs, but found /run/.../rootfs
+    ```
+    此错误明确指出，gVisor 期望路径是 `/var/run/...`，但实际打开并解析后得到的是 `/run/...`，导致安全检查失败。
+
+### 根本原因与验证
+
+该问题的根本原因在于 gVisor `release-20260520.0` 中引入的、用于支持 CDI 规范中创建容器钩子的新代码路径。该路径在执行 `safeMount` 检查时，未对符号链接进行预解析或比较规范化后的路径。当 containerd 传递给 `runsc` 的 `--bundle` 参数包含 `/var/run` 时，此不匹配即触发。
+
+可以通过以下方式验证：
+*   **回退版本**：将 gVisor 回退至 `release-20260511.0`，确认问题不再复现。
+*   **路径统一**：尝试配置 containerd，使其始终使用 `/run/docker/containerd/...` 而非 `/var/run/docker/containerd/...` 作为工作目录，但这可能受制于上游 Kubernetes 配置。
+
+## SRE 要点
+
+### 与可靠性的关联
+此问题直接影响 **Pod 启动成功率** 这一关键 SLI（服务水平指标）。一个本应工作的环境在升级后出现大面积启动失败，属于严重的可靠性事件，触发了 SRE 的错误预算（Error Budget）消耗。它揭示了在升级依赖组件时，必须进行充分的集成测试，特别是涉及符号链接、路径处理等底层行为时。
+
+### 最佳实践与反模式
+*   **最佳实践 - 路径规范化**：在系统间传递文件路径时，尤其是在涉及安全检查或权限验证时，应**始终**使用绝对、规范化（resolved）的路径。程序不应假设特定路径不存在符号链接。
+*   **最佳实践 - 升级前的沙箱测试**：对于容器运行时等核心组件的升级，应在与生产环境高度一致的预发环境中进行完整的功能和压力测试，覆盖包括符号链接在内的边缘场景。
+*   **反模式 - 路径字符串的严格比较**：依赖原始路径字符串的直接比较来作为安全检查的依据是脆弱的。更健壮的做法是先通过 `realpath()` 等系统调用获取并比较最终解析后的真实路径。
+
+### 相关指标（SLI/SLO/SLA）
+*   **SLI**: `pod_sandbox_creation_success_rate`（沙箱创建成功率）。
+*   **SLO**: 在核心组件升级后的一段时间内（如1小时），该 SLI 不应低于预设目标（如 99.9%）。
+*   **关联**: 此类问题会直接导致 SLI 下降，并可能快速耗尽月度错误预算。
+
+### 规避与事件响应
+*   **即时缓解**：回退 gVisor 版本至 `release-20260511.0`。
+*   **长期解决**：需要上游 gVisor 项目修复路径比较逻辑（例如，在比较前规范化路径），或由容器平台运维方调整工作目录配置以规避问题。事件响应中，应检查其他可能受类似符号链接影响的路径配置（如日志路径、挂载点路径）。
+*   **监控**：增强对沙箱创建失败日志的监控和告警，快速感知此类回归问题。

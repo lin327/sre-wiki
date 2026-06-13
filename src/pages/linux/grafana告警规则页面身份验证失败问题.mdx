@@ -1,0 +1,62 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana告警规则页面身份验证失败问题"
+description: "解决在使用Cookie进行身份验证时，Grafana告警规则页面返回401错误的问题。"
+category: Grafana
+order: 0
+lastUpdated: 2024-05-06
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/87386
+    title: "Alerting: Forward cookies not working on alert routes"
+tags: [grafana, alerting, authentication, cookie, proxy, datasource]
+---
+
+## 概述
+
+在SRE实践中，确保监控系统的告警通道畅通无阻是保障服务可靠性的基石。当告警规则页面因身份验证问题无法访问时，将严重阻碍团队发现和响应潜在故障的能力。本文档详细说明了一个在Grafana中使用Cookie进行数据源身份验证时，告警规则页面（Alert Rules）发生401认证失败的具体问题及其解决方案。该问题揭示了Grafana在代理不同功能请求时，身份验证上下文处理可能存在差异，对于依赖此类认证机制的监控架构而言，是一个需要关注和规避的典型陷阱。
+
+## 核心概念
+
+此问题的核心在于Grafana作为代理服务器，向后端数据源（如Prometheus或Mimir）转发请求时的身份验证机制。
+
+1.  **转发身份验证（Forward Authentication）**：这是一种常见的安全模式，由前端应用（如Grafana）负责验证用户身份，并将携带用户凭证的凭据（如Cookie、HTTP头）原样转发给后端服务。后端服务信任前端传来的凭证并据此进行授权。在此案例中，Prometheus/Mimir被配置为依赖特定的Cookie进行身份验证。
+2.  **Cookie 转发**：Grafana的数据源配置中提供了“Forward cookie”的选项。启用后，当Grafana作为代理向数据源发起查询请求时，会将浏览器发送给Grafana的、名称匹配的Cookie一并附加到请求中，从而让后端数据源能够验证用户会话。
+3.  **功能路径差异**：Grafana内部不同的功能模块（如探索（Explore）、仪表盘面板查询、告警规则评估）在请求数据源时，可能会走不同的代码路径。此bug表明，告警规则相关的API路由在请求后端时，可能未正确应用数据源配置的“转发Cookie”策略，导致请求中缺少必要的身份验证Cookie。
+
+## 实践
+
+### 问题重现与现象
+
+根据问题报告，在满足以下条件时会出现该问题：
+- **环境**：Kubernetes上的 Grafana v10.4.2。
+- **数据源**：Prometheus或Mimir，并配置了基于Cookie的身份验证。
+- **Grafana配置**：在数据源设置中启用了“Forward Cookie”选项。
+- **症状**：
+  - 使用Grafana的“Explore”功能或查询仪表盘面板，可以正常访问数据。
+  - 访问“告警” -&gt; “规则”页面时，页面加载失败，提示“Authentication to data source failed”，并在浏览器开发者工具中看到返回401状态码。
+- **直接验证**：使用curl命令直接携带正确的Cookie访问后端API，可以得到200 OK响应，证明后端认证逻辑本身正常。
+
+### 临时解决方案与注意事项
+
+由于这是一个已知的Grafana前端缺陷（截至Issue #87386创建时），**目前没有官方提供的根本修复版本**。SRE或平台工程师可以考虑以下临时方案：
+
+1.  **切换身份验证方式**：
+    - 如果后端数据源支持，考虑将认证方式从依赖特定Cookie切换到更通用的HTTP头部认证（如Bearer Token）。在Grafana数据源配置中使用“Custom HTTP Headers”来传递Token。这种方式在所有Grafana功能中通常能被更一致地转发。
+2.  **使用API密钥或服务账户**：
+    - 为告警评估创建一个专用的Grafana服务账户或API密钥，使用它来访问数据源。这可以绕过复杂的用户会话Cookie转发机制。在数据源配置中使用“Basic authentication”或“Auth token”来填写该凭证。
+3.  **监控官方修复**：
+    - 关注上述GitHub Issue的进展，及时升级到包含修复的Grafana版本。
+
+**重要提醒**：在实施任何变通方案时，必须严格评估其安全性。例如，避免将长期有效的、高权限的Token硬编码在配置中，而应使用具有最小权限范围的短期凭证。
+
+## SRE 要点
+
+- **对可靠性与可观测性的影响**：此问题直接威胁到告警管理流程的可靠性。告警规则页面无法访问，意味着SRE团队无法创建、查看或调试关键的服务级SLO告警，可能导致故障被延迟发现。这破坏了监控系统的可观测性闭环。
+- **事件响应关联**：在事件响应过程中，快速检查和调整相关告警规则是关键步骤。身份验证失败会阻碍这一流程，增加事件的平均恢复时间（MTTR）。
+- **最佳实践与反模式**：
+    - **实践**：在采用非标准（如特定Cookie）的认证集成时，应在测试环境中全面验证Grafana的所有核心功能（查询、仪表盘、告警、通知）。
+    - **反模式**：过度依赖复杂的、通过浏览器Cookie传递的会话认证来保护内部监控数据源，这可能会在Grafana的不同功能路径中引发兼容性问题。
+- **相关指标（SLI/SLO）**：此问题可能影响到与“告警系统可用性”相关的SLI。可以定义SLI为“成功加载告警规则页面的请求百分比”，并为其设定SLO（如99.9%）。当此SLI下降时，应触发内部运维工单。
+
+&gt; 相关知识：更多关于Grafana身份验证的配置与最佳实践，可参考 [[authentication-methods]] 和 [[alerting]] 章节。

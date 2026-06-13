@@ -1,0 +1,98 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 版本升级失败：资源版本缺失与启动失败"
+description: "解决从 Grafana 12.x 升级至 13.x 时，因内部数据库资源版本不兼容导致服务无法启动的问题。"
+category: Grafana 故障处理
+order: 10
+lastUpdated: 2026-05-14
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/124775
+    title: "Update to 13.0.x failed (from 12.4.x) - No last resource version found, starting from scratch"
+tags: [grafana, upgrade, database, versioning, startup-failure]
+---
+
+## 概述
+
+本文档描述了 Grafana 从一个主要版本（如 12.4.x）升级到另一个主要版本（如 13.0.x）时可能遇到的一个关键故障：升级过程本身看似成功，但 Grafana 服务无法正常启动，用户无法访问仪表盘界面。该问题通常由 Grafana 内部数据库的架构版本不兼容或资源版本信息缺失引起。对于 SRE 而言，此类问题直接影响系统的可用性，需要快速诊断和恢复，以避免监控和可视化平台的中断。
+
+## 核心概念
+
+此问题的核心在于 Grafana 的内部数据库版本管理机制。Grafana 使用数据库（通常是 SQLite、MySQL 或 PostgreSQL）来存储仪表盘、数据源、用户等配置。每个主要版本的 Grafana 会对其数据库模式（Schema）进行特定的迁移和更新。
+
+- **资源版本 (Resource Version)**: Grafana 内部用于跟踪数据库模式当前版本的元数据。当 Grafana 启动时，它会检查此版本以确定需要运行哪些数据库迁移脚本。
+- **“Starting from scratch”**: 这是 Grafana 日志中出现的错误信息片段，完整上下文通常为 `No last resource version found, starting from scratch`。这表示 Grafana 在数据库中找不到预期的版本标记，错误地认为需要从头初始化数据库，这会导致数据丢失或启动流程中断，因为已有数据与“全新”的初始化状态冲突。
+
+此错误通常表明，从旧版本直接升级至新版时，数据库迁移路径未能正确识别或执行。
+
+## 实践
+
+当遇到此升级故障时，应遵循以下诊断与恢复步骤。
+
+### 1. 立即回滚到上一个稳定版本
+
+这是恢复服务可用性的最快方法。如果您使用 Docker、Kubernetes 或包管理器，请将 Grafana 容器或服务镜像回滚到升级前的稳定版本（例如 12.4.x）。
+
+```bash
+# 示例：使用 Docker 回滚
+docker stop grafana-container
+docker run -d --name grafana-previous -p 3000:3000 grafana/grafana:12.4.0
+```
+
+服务恢复后，再进行深入分析。
+
+### 2. 诊断数据库状态
+
+检查 Grafana 日志以获取更详细的错误信息。关注与数据库迁移、连接和版本相关的条目。如果可能，直接检查 Grafana 所使用的数据库。
+
+```sql
+-- 如果使用 SQLite，可以查看 sqlite_master 表或使用特定工具检查版本信息。
+-- 通常版本信息存储在某个特定的表中，例如 `dashboard_version` 或其他内部表。
+SELECT * FROM dashboard_version; -- 此查询仅为示例，具体表名需参考 Grafana 源码
+```
+
+### 3. 尝试从备份恢复数据库
+
+在执行任何修复操作前，务必备份当前（可能损坏的）数据库文件。
+
+- **对于 SQLite**: 备份整个 `.db` 文件。
+- **对于 MySQL/PostgreSQL**: 使用 `mysqldump` 或 `pg_dump` 进行逻辑备份。
+
+### 4. 使用升级工具或手动修复（高风险，需谨慎）
+
+Grafana 提供了 `grafana-cli` 工具，有时可以用于数据库修复或迁移。尝试使用它强制执行升级：
+
+```bash
+# 查看当前数据库版本
+grafana-cli --raw admin reset-admin-password newpassword  # 示例命令，不一定直接相关
+grafana-cli plugins ls-remote  # 这个命令主要管理插件，但用于验证工具可用性
+
+# 尝试强制升级数据库（命令名称和参数可能随版本变化）
+grafana-cli admin data-migration run
+```
+
+**重要提示**: 手动修复数据库风险极高，可能导致数据永久丢失。在测试环境中充分验证后，方可考虑在生产环境操作。优先考虑从备份恢复，或使用 Grafana 官方提供的兼容版本进行中间升级。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+- **可靠性**: Grafana 作为核心可观测性平台的可视化层，其不可用会严重影响团队对系统健康状态的感知和故障排查效率，属于关键基础设施的可靠性事件。
+- **可观测性**: 此事件本身就是对监控系统可靠性的挑战。需要确保有独立于 Grafana 的监控（如系统指标、日志本身）来发现 Grafana 的宕机。
+- **事件响应**: 应定义针对 Grafana 升级失败的标准故障响应流程，包括回滚、通知、事后复盘等步骤。
+
+### 最佳实践与常见反模式
+- **最佳实践**:
+  1.  **升级前备份**: 对任何主要版本升级，必须对 Grafana 的数据库进行完整备份。
+  2.  **分阶段升级**: 如果跨多个大版本，应考虑先升级到中间版本，完成所有迁移后，再升级到目标版本。
+  3.  **非生产环境测试**: 在 staging 或测试环境中完整模拟生产环境的升级过程。
+  4.  **利用容器镜像标签**: 使用具体版本标签（如 `grafana/grafana:12.4.0`），避免使用 `latest` 标签，确保升级可控。
+- **常见反模式**:
+  1.  **无备份直接升级**: 这是导致数据无法恢复的最危险操作。
+  2.  **忽略预检与日志**: 升级前不检查官方升级指南，失败后不仔细分析完整日志。
+  3.  **升级后立即进行重大配置变更**: 升级失败后急于修改配置，可能掩盖根本问题。
+
+### 相关指标（SLI/SLO/SLA）
+- **SLI (Service Level Indicator)**: `Grafana 可用性` - 测量用户能否成功加载 Grafana 登录页面及仪表盘。
+- **SLO (Service Level Objective)**: 例如，月度可用性 &gt;= 99.9%。
+- **SLA (Service Level Agreement)**: 对内部团队或外部客户的可用性承诺。
+此升级失败事件将直接导致 SLI 在故障期间降为 0，可能威胁到 SLO 的达成。

@@ -1,0 +1,68 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "PostgreSQL 数据源：恢复 EXPLAIN 查询结果返回"
+description: "修复 Grafana PostgreSQL 数据源中 EXPLAIN 查询无法返回结果的问题，使查询优化分析功能恢复正常。"
+category: 数据源
+order: 0
+lastUpdated: 2026-04-15
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/pull/122739
+    title: "PostgreSQL: Allow sql_engine to return results for EXPLAIN queries"
+tags: [postgresql, query-optimization, grafana, regression-fix]
+---
+
+## 概述
+
+在 Grafana 的可观测性实践中，对数据库查询的性能分析至关重要。`EXPLAIN ANALYZE` 是 PostgreSQL 中用于理解查询执行计划和成本的强大工具。它允许 SRE 和开发者评估查询效率，并识别潜在的优化机会，从而提升仪表板的响应速度和用户体验。此修复确保了 Grafana PostgreSQL 数据源能够正确处理和返回 `EXPLAIN` 查询的结果，恢复了该关键的性能分析能力。
+
+## 核心概念
+
+*   **EXPLAIN/EXPLAIN ANALYZE**: PostgreSQL 的内置命令。`EXPLAIN` 显示数据库为执行一个查询所规划的步骤（执行计划），而 `EXPLAIN ANALYZE` 会实际执行查询并报告真实的运行时统计信息，如行数、时间和资源消耗。
+*   **pgx 库**: 一个快速且高效的 Go 语言 PostgreSQL 驱动库。Grafana 在迁移到 `pgx` 时，为适配其 API 引入了查询过滤机制。
+*   **SELECT 查询过滤器**: 在切换到 `pgx` 库后，为识别哪些查询会返回数据行，代码中添加了一个过滤器，最初仅允许 `SELECT` 类型的查询通过。这无意中阻止了 `EXPLAIN` 等非 `SELECT` 查询返回结果。
+*   **FieldDescriptions**: 在 `pgx` 的 API 中，`FieldDescriptions` 代表了查询结果集的列描述元数据。所有会返回结果（即使是像 `EXPLAIN` 这样返回计划文本的结果）的查询，都会提供这些描述。
+
+## 实践
+
+本次修复的核心是**将查询结果过滤的逻辑基础，从特定的查询类型（`SELECT`）转移到更通用的结果特征（`FieldDescriptions`）**。
+
+1.  **问题根源**: Grafana 的 PostgreSQL 数据源在解析查询时，原本的逻辑大致如下：
+    ```
+    if queryType == "SELECT" {
+        // 执行查询，处理结果行
+    } else {
+        // 可能不处理或错误处理非 SELECT 结果
+    }
+    ```
+    这种设计使得 `EXPLAIN ANALYZE my_dashboard_query;` 这样的语句无法返回其执行计划文本，导致功能在用户界面的“Explore”面板中失效。
+
+2.  **修复方案**: 修复后的逻辑变为：
+    ```
+    if query 提供了 FieldDescriptions {
+        // 执行查询，处理结果行
+    } else {
+        // 特殊情况处理或报错
+    }
+    ```
+    因为 `EXPLAIN ANALYZE` 查询的结果同样包含列描述（例如，一个名为 `QUERY PLAN` 的列），所以它现在能被正确处理和返回。
+
+3.  **用户验证**: SRE 或用户可以在 Grafana 的 **Explore** 视图中验证修复效果：
+    *   连接一个 PostgreSQL 数据源。
+    *   编写一个需要分析的查询，例如：`EXPLAIN ANALYZE SELECT * FROM metrics WHERE time &gt; now() - interval '1 hour';`。
+    *   执行查询，现在应该能看到详细的执行计划文本结果，而不是空响应或错误。
+
+## SRE 要点
+
+*   **与可靠性的关联**:
+    *   **可观测性**: 能够执行 `EXPLAIN ANALYZE` 是深入理解数据库查询性能的基石。修复此问题确保了 Grafana 作为监控工具，自身也能有效地“监控”其查询行为，这是实现数据源层面可观测性的关键一步。
+    *   **性能优化**: 在制作或调试仪表板时，SRE 需要确保背后的查询是高效的。此功能的恢复使得识别慢查询和优化仪表板性能成为可能，直接关系到 Grafana 实例的响应速度和可靠性。
+*   **最佳实践与常见反模式**:
+    *   **实践**: 在升级数据源驱动库（如从 `lib/pq` 到 `pgx`）时，必须进行全面的功能回归测试，特别是对于非标准但重要的查询类型（如 `EXPLAIN`、`SHOW` 等）。应建立针对不同查询模式的自动化测试用例。
+    *   **反模式**: 基于查询“类型”（字符串匹配）而非查询“结果特征”进行业务逻辑判断，是一种脆弱的设计。它容易在库升级或边缘情况下失效。更健壮的方法是依赖驱动库提供的、描述结果本身的元数据（如 `FieldDescriptions`）。
+*   **相关指标 (SLI/SLO)**:
+    *   此修复不直接定义新的 SLI，但支持了现有性能 SLI 的观测。例如，为了达成“P95 仪表板加载时间 < 2秒”的 SLO，需要能够分析和优化慢查询，而 `EXPLAIN` 是必不可少的工具。修复确保了这个工具链的完整性。
+
+## 另请参阅
+* [[grafana-postgres-datasource]]
+* [[query-performance-optimization]]

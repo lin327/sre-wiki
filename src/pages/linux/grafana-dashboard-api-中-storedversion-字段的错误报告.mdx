@@ -1,0 +1,76 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Dashboard API 中 storedVersion 字段的错误报告"
+description: "Dashboard API 响应中 status.conversion.storedVersion 字段始终显示为 v0alpha1，而未反映实际存储版本，导致可观测性缺失和迁移验证困难。"
+category: dashboard
+order: 0
+lastUpdated: 2026-05-12
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/124675
+    title: "Dashboards: API response always reports storedVersion: v0alpha1 regardless of actual storage version"
+tags: [grafana, api, storage-version, observability]
+---
+
+## 概述
+
+在 Grafana 的 Dashboard API 中，`status.conversion.storedVersion` 字段是一个重要的元数据，用于标识资源在统一存储（Unified Storage）中实际编码的版本。然而，当前的实现存在一个显著的缺陷：无论仪表板以何种版本（如 `v1`、`v2beta1`）存储，API 响应中的该字段始终硬编码返回 `v0alpha1`。这个问题不仅违反了 Kubernetes 风格 API 的契约，更严重削弱了 SRE 团队对存储版本迁移状态的**可观测性**，使得验证 Schema V2 升级进度等关键运维活动无法进行。
+
+## 核心概念
+
+- **storedVersion**：这是 Kubernetes API 资源 `status.conversion` 子对象的一部分，用于指示该资源对象在存储层（etcd 或其他统一存储后端）中的编码版本。它与请求的 API 版本（`requestedVersion`）和实际解码版本（`decodedVersion`）是三个不同的概念。
+- **存储版本迁移**：当系统的 API 版本演进时（例如从 `v1` 到 `v2`），存储中的旧版本对象通常需要被转换为新版本，或者在读取时进行实时转换。`storedVersion` 字段对于跟踪迁移的进度和一致性至关重要。
+- **读时转换（Conversion on Read）**：一种模式，存储层保存特定版本的字节，当客户端请求不同版本的 API 时，API 服务器在读取后实时转换对象格式。本缺陷正是发生在“读”这一环节，未能正确标记转换源版本。
+
+## 实践
+
+### 问题复现与影响
+
+此问题的复现步骤清晰地展示了缺陷的表现：
+1.  启用统一存储的 Grafana 仪表板 API。
+2.  通过 `v2beta1` 或任何非 `v0alpha1` 版本写入一个仪表板。
+3.  使用相同版本（`v2beta1`）重新获取该仪表板。
+4.  在 API 响应的 `status.conversion` 中，`storedVersion` 的值仍然是 `"v0alpha1"`。
+5.  此问题在 `v1`、`v2alpha1`、`v2` 等多个版本间均会复现。
+
+其直接影响包括：
+- **API 正确性**：公开 API 文档承诺该字段应反映存储版本，当前行为与文档不符。
+- **运维调试**：运维人员无法通过 API 判断仪表板的磁盘格式，导致存储版本迁移和滚动更新无法被验证。
+- **监控指标失效**：代码中使用该字段作为 `fallbackCounter` 指标的标签和客户端版本选择依据。由于值恒定，该指标失去意义，回退逻辑也总是选择相同的客户端。
+
+### 修复方向
+
+修复方案分为两个层次，核心是在读取路径上正确计算该值：
+
+1.  **存储层（主要修复）**：在 `pkg/storage/unified/apistore/store.go` 文件中，应在调用 `s.codec.Decode(...)` 之后，从解码对象的 GVK（GroupVersionKind）中提取版本，并填充到 `storedVersion` 字段。这确保了所有读取路径（包括 `Get`、`List` 和 `dto` 子资源）都获得一致的正确值。
+2.  **DTO 闭包（纵深防御）**：在 `pkg/registry/apis/dashboard/register.go` 的 `newDTOFunc` 闭包中，作为补充检查，如果 `Status.Conversion.StoredVersion` 为空，则同样从解码对象的 GVK 中填充。此层修复提供了额外的保障。
+
+**关键原则**：该字段的值必须来源于编解码器（codec）解码出的 GVK，或者由 GroupResource 配置的存储版本方案（scheme）决定，绝不能是硬编码常量。
+
+## SRE 要点
+
+### 与可靠性的关联
+
+- **版本迁移验证**：在规划或执行仪表板 Schema 从 `v1` 到 `v2` 的升级（GA）时，SRE 需要准确统计有多少仪表板已实际存储为新版本。`storedVersion` 字段是实现此**可观测性**的基石，当前缺陷使得此统计无法进行。
+- **事件响应与诊断**：当出现与仪表板序列化/反序列化相关的奇怪问题时（例如特定版本独有的字段丢失），正确的 `storedVersion` 能快速将调查方向引导至存储格式，极大缩短 **MTTR（平均恢复时间）**。
+- **API 契约与可靠性**：遵循明确的 API 规范是系统可靠性的体现。修复此问题是为了恢复 API 的承诺行为，避免对依赖此字段的客户端或运维脚本产生误导。
+
+### 最佳实践与常见反模式
+
+- **最佳实践**：
+  - 在实现涉及版本转换的 API 时，应在读取路径的统一出口处正确填充元数据。
+  - 为 `storedVersion` 这类反映内部状态的字段编写明确的单元测试，覆盖同版本读取、跨版本读取等多种场景，如验收标准中所述。
+  - 利用正确的 `storedVersion` 构建可观测性仪表盘，监控不同存储版本资源的分布和转换频率。
+- **常见反模式**：
+  - 在代码深处硬编码版本字符串作为默认值。
+  - 只在写入路径处理版本状态，忽略读取路径的元数据填充。
+  - 未能将 API 契约字段与底层的编解码逻辑正确关联，导致数据脱节。
+
+### 相关指标
+
+- **fallbackCounter**：修复前，该指标因标签值恒定而无意义。修复后，其按 `storedVersion` 分桶的计数可以清晰地反映不同版本资源的访问模式。
+- **自定义指标**：基于修复后的 `storedVersion` 字段，可以衍生出关键的运维指标，例如：
+  - `{group="dashboard.grafana.app", resource="dashboards", stored_version="v1"}` 的计数，用于跟踪旧版本资源存量。
+  - 在执行版本迁移后，监控该版本的计数是否下降，以验证迁移效果。
+
+[[api-versioning]] [[storage-version-migration]] [[kubernetes-api-conventions]]

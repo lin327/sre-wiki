@@ -1,0 +1,98 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Custom Alertmanager Templates"
+description: "介绍如何自定义Alertmanager的通知模板，以改善警报通知的可读性和可操作性，例如在Slack消息中添加运行手册链接。"
+category: Alerting
+order: 0
+lastUpdated: 2024-05-20
+confidence: high
+sources:
+  - url: https://prometheus.io/blog/2016/03/03/custom-alertmanager-templates/
+    title: "Prometheus Blog: Custom Alertmanager Templates"
+tags: [alertmanager, slack, templates, monitoring, runbook]
+---
+
+## 概述
+
+Alertmanager 是 Prometheus 生态中负责处理告警的组件，它接收来自 Prometheus Server 的告警，根据标签将其路由并分组，最终通过配置的接收者（如 PagerDuty, Slack, 邮件等）发送通知。默认的通知格式可能无法满足所有团队的需求。通过自定义模板，SRE 团队可以增强通知信息的丰富度与实用性，例如动态链接到内部的故障处理手册（Runbook），从而加速事件响应流程。在 [[alerting-overview]] 中，我们讨论了告警的整体架构，而模板定制正是实现高质量告警通知的关键环节。
+
+## 核心概念
+
+- **Alertmanager**: Prometheus 的告警管理服务器，负责告警的去重、分组、路由和静默。
+- **模板 (Template)**: 用于生成通知消息内容的 Go 语言 `text/template` 脚本。Alertmanager 允许使用内置默认模板或提供自定义模板。
+- **接收者 (Receiver)**: Alertmanager 配置中定义的通知目标，例如一个 Slack 频道或一个 webhook 地址。每个接收者可以使用不同的模板。
+- **Go 模板语言**: Alertmanager 模板基于 Go 标准库的 `text/template`，提供强大的逻辑和数据访问能力，允许开发者访问和操作模板上下文（Context）中的数据。
+- **模板上下文数据**: 在接收器配置中，模板可以访问一系列预定义的对象，例如 `{{ .GroupLabels }}` (分组标签), `{{ .CommonLabels }}` (所有告警共有的标签), `{{ .Alerts }}` (本次通知包含的所有告警列表) 等。
+
+## 实践
+
+### 场景：在 Slack 通知中嵌入运行手册链接
+
+假设团队维护了一个内部 Wiki，为每个应用的每个告警都准备了对应的故障处理手册，地址格式为 `https://internal.myorg.net/wiki/alerts/{app}/{alertname}`。目标是让每条 Slack 通知都自动包含指向对应手册的链接。
+
+#### 方法一：内联模板
+
+可以直接在 Alertmanager 配置文件的 `slack_configs` 部分，通过 `text` 字段定义一个简单的内联模板。
+
+```yaml
+global:
+  slack_api_url: '<slack_webhook_url>'
+
+route:
+  receiver: 'slack-notifications'
+  group_by: [alertname, datacenter, app]
+
+receivers:
+- name: 'slack-notifications'
+  slack_configs:
+  - channel: '#alerts'
+    # 使用 Go 模板语法构建手册链接
+    text: 'https://internal.myorg.net/wiki/alerts/{{ .GroupLabels.app }}/{{ .GroupLabels.alertname }}'
+```
+
+修改配置后，通过向 Alertmanager 进程发送 `SIGHUP` 信号或重启服务来重载配置。Slack 通知的底部将出现可点击的运行手册链接。
+
+#### 方法二：使用外部模板文件
+
+对于更复杂的模板，推荐将其定义在独立的 `.tmpl` 文件中，以提高可维护性。
+
+1.  创建模板文件 `/etc/alertmanager/templates/myorg.tmpl`，并定义一个命名模板：
+    ```go
+    {{ define "slack.myorg.text" }}https://internal.myorg.net/wiki/alerts/{{ .GroupLabels.app }}/{{ .GroupLabels.alertname }}{{ end }}
+    ```
+2.  更新 Alertmanager 配置，指定模板文件路径并在 `text` 字段中引用该命名模板。
+    ```yaml
+    global:
+      slack_api_url: '<slack_webhook_url>'
+
+    route:
+      receiver: 'slack-notifications'
+      group_by: [alertname, datacenter, app]
+
+    receivers:
+    - name: 'slack-notifications'
+      slack_configs:
+      - channel: '#alerts'
+        text: '{{ template "slack.myorg.text" . }}'
+
+    templates:
+    - '/etc/alertmanager/templates/myorg.tmpl'
+    ```
+
+#### 测试与迭代
+
+在正式部署前，可以使用在线工具（如 [promslack](https://juliusv.com/promslack/)）模拟模板渲染效果，进行快速测试和迭代，避免因模板语法错误导致通知发送失败。
+
+## SRE 覟点
+
+- **与可靠性的关联**: 高质量的告警通知是事件响应（Incident Response）的第一道桥梁。清晰的模板能提供关键上下文、故障等级和自助操作指南（如运行手册链接），直接缩短 **MTTR**（平均修复时间），是提升服务可靠性的实用手段。
+- **最佳实践**:
+    - **嵌入运行手册链接**: 这是提升告警可操作性的黄金实践。确保每个告警都有对应的、可访问的文档。
+    - **保持模板简洁**: 模板逻辑应尽量简单，避免在通知中塞入过多信息导致信息过载。重点突出故障影响、紧急程度和下一步行动。
+    - **利用模板文件管理复杂逻辑**: 当模板涉及多行逻辑或条件判断时，务必使用外部模板文件，便于版本控制和代码审查。
+    - **预览与测试**: 在生产环境应用模板变更前，通过测试工具或 staging 环境验证通知格式，防止格式错误导致信息丢失。
+- **常见反模式**:
+    - **通知内容模糊**: 仅发送 “Firing: 1 alert” 而不包含具体的、可操作的标签信息。
+    - **忽略上下文**: 模板中缺少对告警发生时间、来源集群等关键上下文的描述。
+    - **硬编码路径**: 模板中将服务手册的 URL 硬编码，当 Wiki 地址变更时需要修改所有模板，建议将其配置为 Alertmanager 的全局或模板变量。
+- **相关指标**: 虽然不直接定义 SLI/SLO，但通过分析告警通知渠道的 **通知送达率** 和团队基于通知启动的 **故障恢复时间**，可以间接评估告警模板的有效性。优化模板是达成 [[slo-management]] 中相关可靠性目标的重要支撑活动。

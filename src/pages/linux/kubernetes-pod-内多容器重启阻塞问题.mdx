@@ -1,0 +1,59 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Kubernetes Pod 内多容器重启阻塞问题"
+description: "描述在同一 Pod 中，当一个容器正在终止时，其他容器无法按预期重启的已知行为及其规避方法。"
+category: 故障模式
+order: 0
+lastUpdated: 2024-10-24
+confidence: medium
+sources:
+  - url: https://github.com/kubernetes/kubernetes/issues/121398
+    title: "[Bug]: A container cannot restart when there is any terminating container in the same pod"
+tags: [kubernetes, pod, container-restart, liveness-probe, bug, lifecycle]
+---
+
+## 概述
+
+在 Kubernetes 中，Pod 是调度和运行的最小单元，可以包含一个或多个容器。这些容器共享网络和存储，其生命周期由 kubelet 统一管理。本文档描述了一个已知的 Kubernetes 行为（在 issue #121398 中报告）：当一个 Pod 中的任意一个容器处于终止过程中（例如，因 `livenessProbe` 失败而被终止）时，同一 Pod 内其他因非零退出码退出、需要按照 `restartPolicy` 重启的容器，其重启会被暂时阻塞，直到前一个容器的终止过程完全结束。这个行为可能违反部分用户对于容器“自愈”能力的预期，并可能影响应用的整体可用性。
+
+## 核心概念
+
+要理解此问题，需要先明确几个 Kubernetes Pod 生命周期管理的关键概念：
+
+- **容器终止流程**：当容器需要终止时（如因探针失败），kubelet 会先发送 `SIGTERM` 信号。对于有 `preStop` 钩子的容器，会先执行钩子。然后等待一段宽限期（`terminationGracePeriodSeconds`，默认30秒），超时后发送 `SIGKILL` 强制终止。这个过程是 Pod 中单个容器的生命周期事件。
+- **Pod 内容器关系**：在同一个 Pod 中，容器是协同工作的整体，但它们的生命周期管理在重启层面是独立的。`restartPolicy`（应用于 Pod 级别，如 `Always`, `OnFailure`, `Never`）决定了 Pod 内所有容器在退出后的重启行为。
+- **重启触发与阻塞**：当一个容器（非 init 容器）以非零状态退出时，kubelet 会根据 `restartPolicy` 决定是否重启它。然而，如果 Pod 内存在另一个容器正在经历其终止流程（处于 `Terminating` 状态），根据报告的行为，新容器的重启过程会被延迟。
+
+## 实践
+
+### 问题复现
+
+该问题可以通过以下步骤复现（基于 issue 中的示例）：
+
+1.  创建一个包含三个容器的 Pod：
+    - **`terminating-container`**：配置一个必定失败的 `livenessProbe`（例如执行 `false` 命令），并设置一个较长的终止处理时间（通过 shell 捕获 `TERM` 信号并 sleep 15秒）。
+    - **`restarting-container`**：一个启动后立即退出的容器（如执行 `echo “start a container”` 后退出）。
+    - **`log`**：一个 sidecar 容器，用于观察前两个容器的日志输出。
+2.  观察 `log` 容器的输出。预期行为是 `restarting-container` 在退出后应立即重启。但实际观察到，在 `terminating-container` 处于 `terminating…` 到 `terminated` 的状态期间，`restarting-container` 并未重启。只有在 `terminating-container` 完全终止后，`restarting-container` 才会重启。
+
+### 临时规避方法
+
+对于依赖多容器快速重启来保证可用性的应用，可以考虑以下规避策略：
+
+1.  **调整容器依赖与顺序**：使用 `initContainers` 来处理启动前的依赖检查，确保主应用容器启动时依赖已就绪。对于需要频繁重启的 sidecar，确保其与主容器的生命周期管理相对独立。
+2.  **最小化终止时间**：缩短 `terminating-container` 的终止处理时间，减少其阻塞其他容器重启的窗口。可以通过优化 `preStop` 钩子或设置更短的 `terminationGracePeriodSeconds` 来实现。
+3.  **分离工作负载**：如果对容器重启的时效性要求极高，考虑将功能拆分到不同的、独立管理的 Deployment 中，避免它们在同一个 Pod 内产生生命周期耦合。
+
+## SRE 要点
+
+- **对可靠性的影响**：此行为违背了 SRE 中“快速失败”和“自愈”的原则。它可能导致服务降级时间（MTTR）延长，因为一个容器的异常终止过程会“传染”给同 Pod 的其他健康容器，延迟它们的恢复。这对于需要高可用性的多容器应用（如 sidecar 注入日志收集、代理）是一个潜在风险。
+- **可观测性与事件响应**：在排查 Pod 内容器重启异常缓慢的问题时，SRE 需要关注 Pod 的整体状态，而不仅仅是单个容器的状态。使用 `kubectl describe pod` 或查看 kubelet 日志，可以观察到 Pod 内是否存在多个容器同时处于 `Terminating` 和 `Waiting` (重启等待) 状态，这有助于识别此类瓶颈。
+- **最佳实践**：
+    - 在设计多容器 Pod 时，明确各容器的依赖关系和生命周期预期，避免将关键性、需要快速重启的容器与可能长时间终止的容器放在同一个 Pod 中。
+    - 充分测试应用在容器探针失败、快速退出等场景下的恢复行为，将观察到的重启延迟计入 Error Budget 考量。
+    - 监控和报警应覆盖 Pod 级别的健康状况，例如 `kube_pod_status_phase` 和容器重启计数指标（`kube_pod_container_status_restarts_total`）。
+- **反模式**：过度依赖单个 Pod 内多容器的紧密耦合来实现复杂功能，而忽略了它们在故障时的生命周期相互影响。这可能使故障域（Blast Radius）扩大。
+- **相关指标 (SLI/SLO)**：
+    - **SLI (Service Level Indicator)**：可以考虑“容器重启延迟”，即从容器退出到其替代容器成功启动并进入 `Running` 状态的时间。
+    - **SLO (Service Level Objective)**：对于关键服务，可以设定 SLO，如“99%的容器重启应在退出后10秒内完成”。此 bug 可能会直接影响该 SLO 的达成。
+- **关联页面**：了解此问题需要关联 [[pod-lifecycle]] 和 [[liveness-probe]] 的具体机制。对于探针失败的处理，参考 [[container-probes]] 的最佳实践。

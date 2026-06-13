@@ -1,0 +1,55 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Tempo：嵌套 Span Frames 架构不一致问题"
+description: "当 Tempo 搜索包含多个 SpanSet 的 trace 时，生成的嵌套 Span Frames 架构不一致，导致表格可视化等功能出错。"
+category: "分布式追踪与日志"
+order: 0
+lastUpdated: "2024-04-02"
+confidence: medium
+sources:
+  - url: "https://github.com/grafana/grafana/issues/121740"
+    title: "Grafana Issue #121740: Tempo: nested span frames under one nestedFrames cell can have inconsistent schemas"
+tags: ["tempo", "tracing", "dataframe", "schema", "bug"]
+---
+
+## 概述
+
+在可观测性平台 Grafana Tempo 中，`trace search` 查询功能在构建响应数据时存在一个数据一致性缺陷。当一个 trace 包含多个 `SpanSet`（span 集）时，为其生成的、存储在同一个 `nestedFrames` 单元格中的多个嵌套帧（span 子帧）可能会拥有不同的 Schema（字段结构）。这个问题会导致依赖这些嵌套帧的 UI 组件（如表格可视化）出现渲染错误或行为异常，影响 SRE 工程师对分布式追踪数据的分析和故障排查效率。理解此问题的成因与修复方案，对于确保追踪数据的准确性和可靠性至关重要。
+
+## 核心概念
+
+- **`nestedFrames`（嵌套帧）**: 在 Grafana 的数据模型中，一个数据帧的某个单元格可以包含另一个完整的数据帧，形成嵌套结构。在 Tempo 的搜索结果中，一个 trace 行（trace row）的某个字段下，会包含多个代表该 trace 内部不同 `SpanSet` 的嵌套数据帧。
+- **`SpanSet`**: 在 Tempo 的语义中，一个 trace 可以被逻辑地划分为多个 `SpanSet`。每个 `SpanSet` 通常关联到特定的标签或属性组合，用于更精细地分析 trace 中的特定部分。
+- **Schema（架构）**: 在此上下文中，指数据帧的结构定义，包括包含哪些字段（列）、字段的顺序以及字段的数据类型。一致的 Schema 是保证数据可以被正确合并、查询和展示的前提。
+
+## 实践
+
+### 问题现象与重现
+当对一个包含多个 `SpanSet` 的 trace 执行 `trace search` 查询时，Tempo 的后端处理代码（位于 `pkg/tsdb/tempo/search.go`）会为每个 `SpanSet` 独立地扫描其动态属性来生成对应的嵌套帧。由于不同的 `SpanSet` 可能具有不同的动态属性集合，最终生成的嵌套帧就会具有：
+1.  **不同的字段数量**：例如，一个 `SpanSet` 的帧包含了 `http.method` 和 `http.url` 两列，而另一个帧可能只有 `http.method` 一列。
+2.  **不同的列顺序**：即使字段名称相同，排列顺序也可能不一致。
+
+这种不一致会导致 Grafana 的表格可视化等组件在尝试合并或展示这些嵌套数据时失败或显示混乱。可以通过官方提供的 [测试数据帧](https://github.com/user-attachments/files/26435991/trace_search_nestedframes_mismatch.dataframe.json) 配合测试数据源来复现此问题。
+
+### 修复建议与逻辑
+根本的解决方案是确保同一 trace 下所有嵌套帧共享一个统一的、预定义的 Schema。修复思路如下：
+1.  **预计算联合 Schema**：在为某个 trace 生成嵌套帧之前，首先遍历该 trace 的 **所有** `SpanSet`。
+2.  **收集动态属性**：收集所有 `SpanSet` 中出现的动态属性键，并推断其数据类型，形成一个“属性联合集”。
+3.  **统一构建帧**：按照此联合集和一个稳定的排序顺序（例如，按属性名的字母顺序）定义统一的字段列表。
+4.  **填充数据**：然后，为每个 `SpanSet` 构建嵌套帧时，都严格遵循这个统一的字段列表。对于某个 `SpanSet` 不具备的属性，在其对应的列中填充 `nil` 或空值。
+
+通过这种方式，尽管底层数据不同，但输出的数据结构（Schema）保持一致，从而确保了上游消费者的稳定性。
+
+## SRE 要点
+
+### 可靠性、可观测性与事件响应关联
+此问题直接关系到**可观测性数据的准确性**。在事件响应期间，SRE 依赖准确、一致的追踪数据来定位微服务调用链中的瓶颈或错误点。Schema 不一致可能导致关键信息丢失或误读，延长 MTTR（平均修复时间）。确保从采集到展示的数据流水线各环节的输出格式符合约定，是维护数据可靠性的关键一环。
+
+### 最佳实践与常见反模式
+- **最佳实践**：在设计输出多种子数据结构的 API 或处理管道时，应**预先定义并强制执行一个统一的输出 Schema**。即使底层输入数据存在差异，输出也应通过填充默认值来保持结构一致。这是一种重要的数据契约（Data Contract）设计模式。
+- **常见反模式**：假设同层级的嵌套数据结构总是相同的。在动态 Schema 的场景（如处理自由标签的追踪数据）中，必须显式地处理字段的“并集”问题，而不是依赖隐含的假设。
+
+### 相关指标（SLI/SLO/SLA）
+虽然此 bug 本身不直接对应一个标准的 SLI，但它会影响以下方面：
+- **数据可用性**：对于依赖 `trace search` 结果的下游功能（如表格、列表），如果 Schema 不一致导致渲染失败，则可视为该功能的可用性受损。
+- **数据准确性**：可以考虑在数据生产方（Tempo 后端）或消费方（Grafana 前端）增加 Schema 一致性的自动化检查作为内部 SLI，用于监控类似问题的复发。确保追踪查询结果的数据结构正确，是满足内部数据质量 SLO 的一部分。

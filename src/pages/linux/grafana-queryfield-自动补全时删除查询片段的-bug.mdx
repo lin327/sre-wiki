@@ -1,0 +1,56 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana QueryField 自动补全时删除查询片段的 Bug"
+description: "在 Grafana 的 QueryField 编辑器中使用自动补全功能时，会导致查询语句的部分内容被意外删除，该问题与 SuggestionPlugin 的处理逻辑有关。"
+category: "可观测性工具"
+order: 0
+lastUpdated: 2023-12-26
+confidence: medium
+sources:
+  - url: "https://github.com/grafana/grafana/issues/79856"
+    title: "Grafana UI: QueryField removes part of the query when using the autocomplete function"
+tags: [grafana, bug, autocomplete, UI, query-builder, SuggestionPlugin]
+---
+
+## 概述
+
+Grafana QueryField 是用户构建查询（如 PromQL, LogQL, Splunk 查询等）的核心交互式编辑器。其自动补全功能旨在提升查询编写效率，通过上下文提示变量、函数等。然而，一个已报告的 Bug 导致在使用自动补全（特别是变量补全）时，会意外地删除查询中的部分文本片段。对于依赖 Grafana 进行日常监控和故障排查的 SRE 团队而言，这类 UI 层的交互缺陷会直接干扰工作效率，甚至可能因误操作导致不正确的查询或仪表盘配置。
+
+## 核心概念
+
+- **QueryField**: Grafana 中用于编写和编辑数据源查询的富文本编辑器组件。它基于 Slate.js 框架构建，集成了语法高亮、自动补全等智能功能。
+- **自动补全（Autocomplete）**: 在 QueryField 中输入时触发的提示列表，帮助用户快速补全查询语言的关键字、函数、变量（如 `$variable`）等。
+- **SuggestionPlugin**: Grafana QueryField 中的一个插件，负责管理自动补全建议的触发、获取和显示逻辑。根据 Issue 中的信息，本问题的根源被指向该插件的处理逻辑。
+- **变量（Variable）**: Grafana 中用于实现仪表盘动态化的功能，允许用户定义可在查询中引用的模板变量。在 QueryField 中输入 `$` 通常会触发变量列表的自动补全。
+
+## 实践
+
+### 问题重现
+
+1.  在 Grafana 中创建一个包含模板变量的仪表盘。
+2.  在 QueryField 编辑器中开始编写一个查询，例如使用 Splunk 数据源编写 `index=my_index host=$host`。
+3.  在输入 `$` 符号后，等待或手动触发自动补全列表。
+4.  从列表中选择一个变量（如 `$host`）进行补全。
+5.  **预期行为**：查询变为 `index=my_index host=$host`。
+6.  **实际行为（Bug）**：查询可能错误地变为 `index=my_index host=`，丢失了之前已输入的部分查询内容。
+
+### 影响与临时解决方案
+
+- **影响**：主要影响依赖变量进行动态查询的用户，尤其是那些使用 Splunk 等数据源的复杂查询场景。Bug 会导致用户需要反复检查和修正查询，严重降低工作效率。
+- **临时解决方案**：
+    - **手动输入**：在已知变量值的情况下，暂时避免使用自动补全，改为手动完整输入查询字符串。
+    - **使用模板**：对于重复性高的查询，可以先在文本编辑器中写好，再复制粘贴到 QueryField 中。
+    - **关注官方修复**：密切关注该 GitHub Issue (#79856) 的进展，升级到包含修复的 Grafana 版本。
+
+## SRE 要点
+
+- **对可靠性的影响**：该 Bug 虽不直接导致数据丢失或服务中断，但破坏了核心工具（Grafana）的交互可靠性。SRE 团队依赖准确、高效的 UI 来快速构建仪表盘和告警规则，此类缺陷会引入摩擦，延长故障排查的 MTTR（平均修复时间）。
+- **与可观测性的关联**：Grafana 是构建可观测性平台的关键界面。QueryField 的问题直接阻碍了用户对监控数据（Metrics, Logs）的有效查询和可视化，削弱了整体的可观测性能力。
+- **最佳实践**：
+    - **保持工具更新**：及时跟踪并应用 Grafana 的稳定版本更新，以获取重要的 Bug 修复。
+    - **建立内部反馈渠道**：当 SRE 团队遇到影响工作效率的工具缺陷时，应在团队内部或通过官方渠道（如 GitHub Issue）及时报告，推动问题解决。
+    - **关键操作验证**：在依赖自动补全等智能功能构建关键查询或告警时，应仔细检查最终生成的查询字符串，确保其正确无误。
+- **常见反模式**：
+    - **过度依赖单一工具的交互功能**：将复杂查询完全寄托于 UI 的自动补全，而不了解底层查询语法本身，一旦 UI 出错便无法有效工作。
+    - **忽视已知缺陷**：在明确知道存在影响工作效率的 Bug 后，仍不寻求变通方法或推动修复，持续忍受低效的工作流程。
+- **相关指标**：此问题主要影响用户满意度（USAT）和开发/运维效率，间接影响服务稳定性的相关指标（如 MTTD, MTTR），但无法直接用 SLO/SLI 衡量。

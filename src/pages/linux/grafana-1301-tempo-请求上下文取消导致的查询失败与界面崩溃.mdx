@@ -1,0 +1,87 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 13.0.1 Tempo 请求“上下文取消”导致的查询失败与界面崩溃"
+description: "描述了在 Grafana 13.0.1 中，Explore Traces 功能查询 Tempo 数据源时，因前端生命周期管理问题导致有效的后端请求被前端取消，引发查询失败和界面异常的故障。"
+category: 可观测性与故障排除
+order: 0
+lastUpdated: 2025-07-08
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/123136
+    title: "Grafana 13.0.1: Tempo requests canceled (context canceled) → /api/ds/query 400 + UI crash in Explore Traces"
+tags: [Grafana, Tempo, Context-Canceled, Bug, Troubleshooting, Frontend-State]
+---
+
+## 概述
+
+在 Grafana 13.0.1 版本中，通过 Explore Traces（Drilldown / Breakdown / Service Structure）应用查询 Tempo 数据源时，出现了一个严重的回归缺陷。此缺陷导致 Grafana 前端在接收到后端（Tempo）成功返回的 HTTP 200 响应的同时，却向上层报告请求因“上下文取消”而失败，进而使得 `/api/ds/query` 接口返回 400 错误。这最终导致用户界面出现间歇性的数据加载失败、JavaScript 运行时错误以及依赖 UI 状态的功能异常。对于依赖 Grafana 和 Tempo 进行分布式链路追踪分析的 SRE 团队而言，此问题会严重干扰故障调查的工作流。
+
+## 核心概念
+
+要理解此问题，需要明确以下几个核心概念：
+
+*   **上下文取消 (context canceled)**：在 Go 语言及 Grafana 的插件体系中，每个请求都关联一个 `context` 对象。当 `context` 被取消时（例如，用户在界面发起新请求、组件卸载、或超时），所有基于此上下文发起的下游网络请求理论上都应被中止，以避免资源浪费。然而，本案例显示了前端与后端对同一请求生命周期管理的**不匹配**。
+*   **生命周期不匹配 (Lifecycle Mismatch)**：这是本问题的根本特征。具体表现为：
+    *   **后端（Tempo）**：成功处理了查询并返回了有效的 `HTTP 200` 响应。
+    *   **前端（Grafana）**：在该请求的上下文中，Grafana 的插件或框架代码却将其标记为“已取消”，并因此向上游的 Explore Traces UI 返回一个 `400` 状态码，尽管实际的后端通信是成功的。
+*   **状态依赖行为 (State-Dependent Behavior)**：该缺陷的表现与 UI 的内部状态（如当前选中的视图、已加载的数据缓存）密切相关。相同的查询可能在初次执行时成功，但在后续刷新时失败；或者通过切换到其他视图再切换回来的方式可以临时恢复。这强烈指向一个前端状态管理或请求队列管理中的缺陷。
+
+## 实践
+
+### 症状识别与验证
+
+当怀疑遇到此问题时，可通过以下组合症状进行确认：
+
+1.  **用户界面 (UI) 症状**：
+    *   Explore Traces 页面（尤其是 Breakdown 或 Service Structure 视图）显示 `An unexpected error happened`。
+    *   浏览器开发者控制台出现 `TypeError: Cannot read properties of undefined (reading '0')` 错误。
+    *   功能表现不稳定：数据有时能加载，有时失败；刷新页面或切换视图后可能暂时恢复正常。
+
+2.  **后端日志症状**：
+    *   **Grafana 日志**：在 Grafana 服务端日志中，会明确出现与 Tempo 查询相关的错误信息，关键特征为 `error="... context canceled"`，并且对应的 HTTP 状态码为 `400`。
+        *   示例日志模式：`logger=tsdb.tempo ... error="Get '...': context canceled" ... status=400`
+    *   **Tempo/代理后端日志**：在 Tempo 或其前置代理的访问日志中，**同一时间或稍早**，对应的查询 API（如 `/api/metrics/query_range`）却返回了 `status=200`。这证明后端已成功处理请求。
+
+### 复现与确认
+
+根据问题报告，可靠复现步骤如下：
+1.  打开 Grafana 的 **Explore Traces (Drilldown)** 功能。
+2.  选择一个 Trace 并打开其中一个视图：**Service Structure** 或 **Breakdown**。
+3.  **在不进行页面导航的情况下**，多次手动重新执行或刷新该查询。
+4.  观察现象：查询起初可以正常返回数据，但在多次刷新后，界面进入错误状态，如上文所述。
+5.  此时，切换到另一个视图（如 “Trace” 标签页），再切回原来的 Breakdown 视图，数据往往会重新正常加载。
+
+### 临时缓解措施
+
+由于此问题与 UI 状态管理紧密相关，一个可立即操作的临时缓解方法是：
+*   当 Explore Traces 界面出现错误时，**点击切换到另一个不同的视图或标签页，然后再切换回来**。这相当于重置了该组件的状态，往往能使数据恢复正常展示。
+
+### 根本原因分析
+
+*   **直接原因**：Grafana 前端代码（可能位于 `grafana-exploretraces-app` 插件或核心查询框架中）错误地取消了一个仍在进行或已成功返回的有效后端请求的上下文，或者没有正确处理“上下文取消”错误与实际成功响应之间的差异。
+*   **影响范围**：该问题被确认为 Grafana 版本 **13.0.1** 的特定回归缺陷。报告者确认在之前版本（如 v13.2.0）中工作正常。它与一个相似的历史问题（#121890）模式相同，表明相关的修复可能未完全覆盖所有场景或出现了回归。
+*   **非后端问题**：明确排除了 Tempo 后端或兼容 API 的问题，因为后端持续返回有效的 `200 OK` 响应。
+
+## SRE 要点
+
+### 与可靠性和可观测性的关联
+
+*   **可靠性**：此缺陷直接损害了 Grafana 作为核心可观测性平台的可靠性。在关键故障排查时刻，工具本身的失效会严重阻碍 SRE 定位根因的能力。
+*   **可观测性**：该问题影响了对分布式系统追踪（Traces）数据的查询和可视化，是可观测性栈（尤其是 APM 领域）的功能性中断。
+
+### 最佳实践与常见反模式
+
+*   **最佳实践**：
+    *   **版本管理与升级测试**：在对核心监控工具进行主要版本升级前，应在预发环境中充分测试关键工作流（如 Trace 查询、故障排查路径）。
+    *   **监控工具健康**：应监控 Grafana 本身及其核心 API（如 `/api/ds/query`）的错误率，而不仅仅是它所监控的业务系统。
+    *   **清晰的日志关联**：当出现前端错误时，应同时检查前端网络请求、Grafana 后端日志以及目标数据源的访问日志，以建立完整的故障链。
+*   **常见反模式**：
+    *   **忽略前端状态管理问题**：当后端日志显示正常而前端报错时，容易误判为网络或配置问题，从而忽略了复杂的前端状态管理缺陷。
+    *   **仓促升级**：未充分测试新版本中关键功能的稳定性就部署到生产环境。
+
+### 相关指标
+
+虽然此问题不直接关联传统的 SLO/SLI（如错误率、延迟），但它凸显了对**上下文取消**事件进行监控的重要性。在 Grafana 的运维中，可以关注：
+*   Grafana API 层中 `status=400` 的错误计数，特别是与 `/api/ds/query` 路径相关的。
+*   Grafana 日志中包含 `context canceled` 关键字的错误日志数量。
+这些可以作为“可观测性工具自身可靠性”的一个指标。

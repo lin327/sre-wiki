@@ -1,0 +1,50 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 中 Jaeger Exemplar 追踪链接失效问题分析"
+description: "从 Grafana 指标跳转到 Jaeger 追踪时，TraceID 标签页未自动选中导致功能失效的排查与应对。"
+category: 可观测性
+order: 0
+lastUpdated: 2025-09-22
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/111448
+    title: "“Jaeger datasource: link to trace broken”"
+tags: [Grafana, Jaeger, Exemplars, 追踪, 指标, 可观测性]
+---
+
+## 概述
+
+在现代可观测性实践中，将指标（Metrics）与追踪（Traces）进行关联是快速定位性能瓶颈和故障根因的关键能力。Grafana 通过 Exemplars 功能实现了这一关联，允许用户在查看指标时，一键跳转到对应的追踪链。然而，在特定的配置和版本下（如报告中涉及 Grafana 12.1.1），从指标面板点击 Exemplar 链接跳转至 Jaeger 时，目标页面的 **TraceID** 标签页未能正确激活或选中，导致追踪数据无法直接展示。这破坏了诊断工作流的连续性，增加了排查成本，是 SRE 在维护监控系统可靠性时需要关注的集成问题。
+
+## 核心概念
+
+理解此问题需要明确以下概念：
+
+- **Exemplars**：Exemplar 是一个带有时间戳和追踪 ID（TraceID）的高基数示例数据点。它附加在某个指标（如请求延迟）的某个具体值上，代表了导致该指标值产生的一个具体实例。点击 Exemplar，可以从宏观的指标视图“钻取”到微观的分布式追踪视图。
+- **指标到追踪的关联 (Metrics to Trace)**：这是可观测性平台提供的核心能力之一。在 Grafana 中，通过配置 Jaeger 等追踪数据源作为 Exemplar 的目标，可以创建从 Prometheus/Grafana 指标到 Jaeger 追踪的超链接。
+- **TraceID 标签页**：在 Jaeger UI 中，用户可以通过 TraceID、 Service Name 和 Operation Name 等不同方式搜索追踪。当从 Exemplar 链接跳转时，预期 Jaeger UI 应自动切换到 “TraceID” 标签页，并自动填入并搜索该 TraceID，直接展示追踪结果。
+
+## 实践
+
+根据 issue 报告，该问题的复现和影响如下：
+
+1.  **问题表现**：用户在 Grafana 中配置了 Jaeger 作为 Exemplar 数据源，并在指标面板（如 Prometheus 查询）中启用了 Exemplar 显示。当鼠标悬停在指标图上的某个 Exemplar 点并点击 “See trace” 链接时，浏览器会打开一个新的 Jaeger UI 标签页。**问题在于，新打开的 Jaeger 页面并未自动激活 “TraceID” 搜索标签页**，而是停留在默认的搜索界面（如 “Search” 标签页），用户需要手动复制 TraceID 并粘贴到正确的输入框进行查询。
+2.  **临时解决方案**：在官方修复发布前，SRE 或开发人员可以采用以下临时方案维持工作流：
+    - **手动操作**：点击链接后，手动在 Jaeger UI 中切换到 TraceID 标签页，并从 Grafana 的 Exemplar 提示中复制 TraceID 进行搜索。
+    - **版本回退**：如果问题影响严重，可评估回退到确认正常的 Grafana 版本（issue 中提到“Did this work before? Yes”）。
+3.  **根本修复**：此问题被报告给 Grafana 团队后，预计将作为 bug 在后续版本中修复。修复方向可能涉及调整 Jaeger 数据源插件生成的链接 URL 参数，确保正确传递了激活 TraceID 标签页所需的指令（例如，URL 中可能缺少或错误设置了 `search` 查询参数，如 `?search=true` 或 `?traceId=xxx`）。
+
+## SRE 要点
+
+- **与可靠性的关联**：此问题直接影响 **Mean Time to Diagnose (MTTD)**。当生产环境出现警报时，SRE 依赖于从指标异常点快速切入追踪来定位服务瓶颈或错误根源。链接失效迫使工程师进行多步手动操作，延迟了故障恢复时间（MTTR），降低了监控系统的有效性。
+- **最佳实践与反模式**：
+    - **最佳实践**：在监控系统集成后，应定期进行端到端的健康检查，验证从警报、指标、日志到追踪的完整诊断路径是否畅通。将此类集成测试纳入监控系统的“自身可靠性”保障范畴。
+    - **常见反模式**：忽略监控工具之间的集成断点，认为每个子系统（Grafana, Jaeger）独立工作正常即可。实际上，工具链的连通性本身就是一个需要监控的 SLI。
+- **相关指标 (SLI/SLO)**：
+    - **SLI 示例**：可定义指标 “从指标警报到查看到完整追踪链的成功率”，监控 Exemplar 链接的跳转和加载成功率。
+    - **SLO 示例**：确保从 Grafana 跳转至追踪系统的关键诊断路径，在 99.9% 的时间内功能正常且能自动定位到正确的追踪视图。
+
+## 参考
+
+- 原始问题报告：[[grafana-issue-111448]]
+- 相关技术：[[exemplars]]， [[distributed-tracing]]， [[grafana-data-sources]]

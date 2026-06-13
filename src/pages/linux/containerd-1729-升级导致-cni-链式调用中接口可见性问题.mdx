@@ -1,0 +1,67 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Containerd 1.7.29+ 升级导致 CNI 链式调用中接口可见性问题"
+description: "在升级 Containerd 至 1.7.29+ 后，通过 Multus 以链式方式调用的 CNI 插件（如 Bond CNI）可能无法看到前序插件（如 SR-IOV CNI）在 Pod 网络命名空间中创建的接口，导致网络配置失败。"
+category: 容器网络与运行时
+order: 0
+lastUpdated: 2025-10-27
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/issues/13545
+    title: "Bond CNI fails with 'Link not found' in chained CNI config after upgrading to 1.7.29+"
+tags: [containerd, cni, sriov, bond, multus, 网络命名空间, regression]
+---
+
+## 概述
+
+在 Kubernetes 集群中，通过 Multus 等元插件编排多个 CNI 插件（称为“链式调用”）是实现复杂网络拓扑（如绑定接口、SR-IOV 高性能网络）的常见实践。本知识条目记录了一个源于容器运行时层（Containerd）的关键回归问题：在升级 Containerd 至版本 1.7.29 后，链式 CNI 调用中的后续插件可能无法观察到前序插件在 Pod 网络命名空间内创建的网络接口（如虚拟功能，VF），导致整个网络配置链中断。对于依赖此类高级网络功能的 SRE 和平台团队而言，这是一个必须警惕的兼容性陷阱。
+
+## 核心概念
+
+- **SR-IOV CNI**: 一种 CNI 插件，用于将 PCI 直通设备（如 SR-IOV 虚拟功能）直接附加到 Pod 的网络命名空间，以提供高性能、低延迟的网络接入。
+- **Bond CNI**: 一种 CNI 插件，用于将多个网络接口（如两个 SR-IOV VF）绑定（bond）成一个逻辑接口，以实现链路聚合、高可用性或更高带宽。
+- **Multus CNI**: 一个元插件，允许在 Kubernetes Pod 上附加多个网络接口。它通过调用其他 CNI 插件（如 SR-IOV、Bond）的顺序调用链来实现此功能。
+- **容器网络命名空间 (netns)**: Linux 内核功能，为每个 Pod 创建一个隔离的网络栈。所有 CNI 插件的目标是在这个命名空间中配置网络接口和路由。
+- **链式 CNI 调用**: 指按特定顺序依次调用多个 CNI 插件。前一个插件的输出（特别是配置的网络接口）是后续插件工作的基础。接口的可见性在链中必须保持一致。
+- **chrootExec 模式**: Multus thick 插件的一种执行模式，它通过 chroot 到容器的文件系统视图中来执行 CNI 插件，这可能与容器运行时的某些实现细节产生交互。
+
+## 实践
+
+### 问题发现与确认
+
+问题通常在以下场景中暴露：
+1.  集群使用 Multus thick 插件的 `chrootExec` 模式。
+2.  `NetworkAttachmentDefinition` 定义了一个 CNI 调用链，通常为：`SR-IOV CNI` -&gt; `Bond CNI`。
+3.  升级 Containerd 至 1.7.29 或更高版本（如 1.7.31）后，新创建的或重建的 Pod 在申请网络时，Bond CNI 会报告类似 `"Link not found"` 的错误。
+
+日志中会明确显示 Bond CNI 无法在 Pod 的网络命名空间中找到由 SR-IOV CNI 刚刚创建的 VF 接口。关键的区分点是：**仅更改 CNI 插件版本无法解决问题，问题根源在于 Containerd 的版本**。该问题被确认为一个回归 bug，影响的版本窗口从 `containerd 1.7.29` 开始，直到修复前的版本。
+
+### 分析与根因
+
+根据 Issue 中的信息，该问题的根源被定位在 Containerd 1.7.29 引入的某些变更影响了容器运行时（containerd-shim）与 CNI 插件（特别是通过 Multus thick 插件调用时）之间的交互，具体是破坏了对**网络命名空间内设备可见性**的保证。在链式 CNI 调用中，前序插件（SR-IOV）和后续插件（Bond）虽然逻辑上串行执行，但它们可能通过不同的进程上下文访问同一个网络命名空间。Containerd 1.7.29 的变更似乎改变了这一上下文，导致后续插件“看不到”前序插件创建的设备。
+
+### 解决方案与规避
+
+1.  **首选解决方案 - 版本选择**:
+    *   **降级**: 将集群节点上的 Containerd 降级到已知可用的最后一个版本（如 `1.7.27` 或 `1.7.28`）。
+    *   **升级**: 升级到已包含修复的版本。根据 Issue 追踪，此问题在 `containerd 1.7.32` 中得到修复。**强烈建议**在升级前查阅官方发行说明以确认修复状态。
+
+2.  **临时规避方法**:
+    *   **使用 CNI 镜像模式**: 如果可行，将 Multus thick 插件的执行模式从 `chrootExec` 更改为 `cniImage` 模式。此模式使用容器化的 CNI 插件，其执行上下文可能不受该回归影响，从而规避问题。但这可能引入其他运维复杂性。
+
+## SRE 要点
+
+- **与可靠性的关联**: 此问题是典型的**平台组件升级导致的功能性降级**。它直接破坏了网络配置的可靠性，导致 Pod 无法获得预期的网络功能，进而影响承载于其上的应用的服务可用性。这凸显了对容器运行时、CNI 插件及其编排层进行**全面集成测试**的重要性。
+
+- **可观测性与事件响应**:
+    *   **告警**: 应监控 Pod 的 `NetworkNotReady` 状态以及 kubelet/CNI 相关日志中的特定错误模式（如 `"Link not found"`）。
+    *   **诊断**: 当事件发生时，SRE 需快速检查受影响节点的 Containerd、Multus 和相关 CNI 插件版本，并与已知的回归列表进行比对。快速确定是 Containerd 还是 CNI 插件本身的问题是关键。
+    *   **事件复盘**: 将此事件作为案例，完善集群升级前的兼容性矩阵清单，明确 Containerd、CNI 插件、Multus 版本间的已知依赖关系。
+
+- **最佳实践与反模式**:
+    *   **最佳实践**: 在生产环境升级 Containerd 等核心组件前，**必须**在与生产环境一致的预发布集群中验证关键的网络功能链（如 SR-IOV + Bond）。建立并维护一个**组件版本兼容性矩阵**。
+    *   **反模式**: 仅测试简单的、单一 CNI 插件的网络配置；忽视容器运行时变更对 CNI 执行上下文的潜在影响；在未充分测试的情况下进行大规模节点升级。
+
+- **相关指标 (SLI/SLO)**:
+    *   **SLI**: 可定义为“成功完成链式 CNI 配置的 Pod 百分比”。
+    *   **SLO**: 此类核心网络功能的可用性应设置极高的目标（如 99.99%），因为任何失败都会直接导致 Pod 无法启动或功能异常。该 bug 是对达成此 SLO 的直接威胁。

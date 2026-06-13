@@ -1,0 +1,81 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana PanelEditNext 崩溃：Prometheus “Both” 查询类型问题"
+description: "Grafana面板编辑器v2路径中使用Prometheus “Both” 查询类型时发生的崩溃问题及其解决方案。"
+category: 故障与调试
+order: 0
+lastUpdated: 2024-05-20
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/125011
+    title: "“PanelEditNext crashes with Prometheus ‘Both’ query type” - GitHub Issue"
+tags: [grafana, prometheus, panel-editor, bug, debugging]
+---
+
+## 概述
+在 Grafana 的可观测性平台中，面板编辑器是构建和调试仪表板的核心组件。当用户尝试编辑一个配置了 Prometheus 数据源且查询类型设置为 **“Both”**（即同时执行范围查询和即时查询）的面板时，在特定的用户界面（UI）路径下会引发前端应用程序崩溃。这个问题影响了仪表板编辑器的稳定性和用户体验，是 SRE 和前端开发者在维护 Grafana 平台可靠性时需要关注和解决的具体故障案例。理解此问题有助于避免类似因组件状态不一致导致的运行时错误。
+
+## 核心概念
+
+### Prometheus 查询类型
+在 Grafana 的 Prometheus 数据源中，一个查询可以指定不同的类型：
+- **Range**: 执行基于时间范围的查询，返回时间序列数据。
+- **Instant**: 在特定时间点执行查询，返回一个单一值。
+- **Both**: 同时启用 `range` 和 `instant` 查询。当查询中的 `range: true` 和 `instant: true` 同时存在时，`getQueryTypeValue(query)` 函数会返回字符串 `"both"`。
+
+### 面板编辑器路径：v1 与 v2
+Grafana 目前存在两套面板编辑器的实现路径：
+- **v1 (`PanelEdit`)**: 传统的编辑器路径，通过 `QueryEditorRow` 组件渲染查询编辑器。
+- **v2 (`PanelEditNext`)**: 新一代编辑器路径，是默认体验（除非通过 `localStorage` 键 `grafana.dashboard.query-editor-next.v2-preference` 覆盖）。它通过 `QueryEditorRenderer` 组件进行渲染。
+
+崩溃问题仅发生在 **v2** 路径上，而 v1 路径能正确处理相同的查询。
+
+### 应用上下文 (`app` 属性)
+渲染查询编辑器的组件需要一个 `app` 属性来标识当前的应用上下文，例如是仪表板、探索页面还是面板编辑器。不同的上下文决定了可用的 UI 选项。核心的 `CoreApp` 枚举值包括：
+- `CoreApp.Dashboard`
+- `CoreApp.PanelEditor`
+- `CoreApp.Explore`
+- `CoreApp.Correlations`
+
+问题的根源在于 `getQueryTypeOptions(includeBoth)` 函数，它仅当 `includeBoth` 参数为 `true` 时，才会在返回的选项列表中包含 `"both"` 这个选项。这个参数为 `true` 的条件是 `app` 值为 `CoreApp.Explore`、`CoreApp.Correlations` 或 **`CoreApp.PanelEditor`**。
+
+## 实践
+
+### 问题诊断与复现
+1.  **触发条件**：使用一个配置了 Prometheus 数据源，并且查询类型明确设置为“Both”的面板。
+2.  **进入 v2 编辑器**：打开该面板的编辑界面。确保当前使用的是 v2 路径（`PanelEditNext`）。可以通过检查浏览器 `localStorage` 中是否存在键 `grafana.dashboard.query-editor-next.v2-preference` 并设置为 `"true"` 来确认。
+3.  **观察错误**：编辑器界面将崩溃，浏览器控制台会抛出 `TypeError`，指向 `PromQueryBuilderOptions` 组件中的代码行。
+
+### 解决方案与修复
+此问题的根本原因是在错误的组件中使用了错误的应用上下文。v2 路径的 `QueryEditorRenderer` 组件错误地将其渲染的查询编辑器的 `app` 属性硬编码为 `CoreApp.Dashboard`，而该上下文不包含对 “Both” 查询类型的支持。
+
+**修复步骤**：
+
+1.  定位问题源文件：`public/app/features/dashboard-scene/panel-edit/PanelEditNext/QueryEditor/QueryEditorRenderer.tsx`。
+2.  修改第 78 行附近的代码，将 `app` 属性的值从错误的 `CoreApp.Dashboard` 更正为 **`CoreApp.PanelEditor`**。
+
+```tsx
+// 修复前 (错误)
+app={CoreApp.Dashboard}
+
+// 修复后 (正确)
+app={CoreApp.PanelEditor}
+```
+
+**为什么这是正确的修复？**
+`QueryEditorRenderer` 组件专门用于在面板编辑器（Panel Editor）中渲染查询编辑器。因此，它应该声明自己处于 `CoreApp.PanelEditor` 的上下文中，而非 `CoreApp.Dashboard`。这个错误的上下文值一直存在，但只有在查询类型为 “Both” 时才会因为选项列表缺失而导致 `.find()` 方法返回 `undefined` 并引发崩溃。将上下文更正后，`getQueryTypeOptions(true)` 将被调用，“Both” 选项得以正确显示，`.find()` 能够成功找到匹配项。
+
+## SRE 要点
+
+### 与可靠性及事件响应的关联
+此类前端崩溃是影响用户体验和平台可用性的直接故障。SRE 需要确保监控系统能捕获前端的 JavaScript 运行时错误，并触发告警。在事件响应中，需要快速区分这是用户特定的操作问题，还是可重现的代码缺陷，以便决定是否需要发布热修复或通知工程团队。
+
+### 最佳实践与常见反模式
+- **上下文一致性**：此案例是一个典型的“属性上下文不一致”反模式。组件应准确声明其运行环境（如 `app` 属性），下游逻辑依赖此属性来提供正确的功能选项。硬编码或传递错误的上下文值会导致隐藏的缺陷，直到触发特定边界条件（如选择“Both”查询类型）才会暴露。
+- **防御性编程**：在 `PromQueryBuilderOptions` 中，`.find(...).label` 的调用缺乏空值检查。更健壮的写法应先判断 `find` 的结果是否存在，例如：`const option = queryTypeOptions.find(...); const queryTypeLabel = option ? option.label : 'Unknown';`。虽然根本原因在上游（错误的上下文），但下游组件也应增强健壮性。
+- **功能标志与渐进发布**：v1 与 v2 路径并存体现了渐进式发布的策略。SRE 和开发者应注意，新路径引入时可能需要全面回归测试现有功能（如所有查询类型的支持），避免回归缺陷。
+
+### 相关指标 (SLI/SLO)
+对于影响编辑器核心功能的崩溃，可以定义如下 SLI：
+- **SLI**：面板编辑器的 JavaScript 错误率（例如：每分钟唯一会话中的崩溃次数）。
+- **SLO**：可以设定为“面板编辑器在用户执行关键操作（如打开编辑器、保存更改）时的无崩溃成功率 ≥ 99.9%”。此问题的出现会直接侵蚀该 SLO 的 Error Budget。

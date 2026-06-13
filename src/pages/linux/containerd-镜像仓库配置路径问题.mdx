@@ -1,0 +1,116 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "containerd 镜像仓库配置路径问题"
+description: "默认配置中使用冒号分隔的多路径 CRI 镜像仓库配置路径在路径不存在时会被静默忽略，导致镜像拉取失败。"
+category: container-runtime
+order: 0
+lastUpdated: 2026-01-21
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/issues/12808
+    title: "containerd/containerd Issue #12808"
+tags: [containerd, crictl, registry, configuration, debugging]
+---
+
+## 概述
+
+在基于 Kubernetes 的环境中，容器运行时（如 containerd）的镜像仓库配置是确保节点能够正确、高效地拉取镜像的关键。本文档详细说明了一个由默认配置引起的常见陷阱：containerd 配置中用于 CRI 的镜像仓库主机配置路径 (`config_path`) 使用了冒号分隔的多路径语法，当其中某个路径不存在时，containerd 不会报错或警告，而是会静默地完全忽略该配置，导致节点回退到访问公共互联网上的源仓库。这对于部署在隔离网络或需要强制使用私有镜像仓库的集群来说，是一个严重的可靠性和安全性问题。
+
+## 核心概念
+
+### containerd 配置结构
+
+containerd 的核心配置文件通常位于 `/etc/containerd/config.toml`。其中，CRI 插件的配置部分 (`[plugins."io.containerd.grpc.v1.cri"]`) 包含了与容器镜像仓库交互的所有设置。
+
+### CRI 与 registry hosts 机制
+
+containerd 通过 CRI (Container Runtime Interface) 与 Kubernetes 交互。为了灵活控制不同镜像仓库的拉取行为，containerd 支持在 `config_path` 指定的目录下，为每个域名（如 `registry.k8s.io`）创建一个 `hosts.toml` 文件。这个机制允许镜像覆盖、镜像重写和自定义证书配置。
+
+### 问题的核心：静默失败
+
+`config_path` 字段支持使用冒号 (`:`) 来分隔多个搜索路径（类似于 Linux 系统的 `PATH` 环境变量）。然而，**如果列表中任何一个目录路径在运行时不存在，containerd 的 CRI 插件会将整个 `config_path` 视为无效并完全忽略它**，而不会在日志中产生任何警告或错误信息。这种“静默失败”行为是导致此问题的根本原因。
+
+## 实践
+
+### 复现与诊断步骤
+
+1.  **确认问题配置**：
+    检查 containerd 主配置文件：
+    ```toml
+    # /etc/containerd/config.toml 中的 CRI 插件部分
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+          endpoint = ["https://registry-1.docker.io"]
+    [plugins."io.containerd.grpc.v1.cri".registry.configs]
+    ```
+    重点关注 `config_path` 项，默认可能为：
+    ```toml
+    config_path = "/etc/containerd/certs.d:/etc/docker/certs.d"
+    ```
+
+2.  **检查目录是否存在**：
+    验证 `config_path` 中列出的每个目录是否存在：
+    ```bash
+    ls -d /etc/containerd/certs.d /etc/docker/certs.d
+    ```
+    如果 `/etc/docker/certs.d` 不存在，则问题很可能由此导致。
+
+3.  **测试镜像拉取**：
+    尝试使用 `crictl` 拉取镜像，并观察行为：
+    ```bash
+    sudo crictl pull registry.k8s.io/pause:3.10
+    ```
+    如果镜像拉取请求意外地发送到了公网仓库而非你预期的本地镜像，则说明自定义的 `hosts.toml` 配置未生效。
+
+4.  **检查容器日志**：
+    查看 containerd 日志，寻找任何关于配置路径或仓库的警告信息。根据报告，**此处通常不会有任何错误日志**，这增加了排查的难度。
+
+### 修复方案
+
+最直接的修复方法是确保 `config_path` 中只包含实际存在且需要的目录。
+
+1.  **修改配置文件**：
+    编辑 `/etc/containerd/config.toml`，将 `config_path` 修改为单一的有效路径。例如，如果仅使用 containerd 自身的配置目录：
+    ```toml
+    config_path = "/etc/containerd/certs.d"
+    ```
+
+2.  **创建必要的目录结构**：
+    确保你指定的 `config_path` 目录存在，并按照镜像仓库域名创建了对应的子目录和 `hosts.toml` 文件。
+    ```bash
+    sudo mkdir -p /etc/containerd/certs.d/registry.k8s.io
+    # 然后创建并编辑 /etc/containerd/certs.d/registry.k8s.io/hosts.toml
+    ```
+
+3.  **重启 containerd 服务**：
+    使配置变更生效。
+    ```bash
+    sudo systemctl restart containerd
+    ```
+
+4.  **验证修复结果**：
+    再次尝试拉取镜像，并使用网络工具（如 `tcpdump`、`netstat`）或查看本地镜像仓库日志，确认请求是否被正确路由到你的镜像仓库。
+
+## SRE 要点
+
+### 与可靠性的关联
+
+*   **部署可靠性**：配置错误会导致 Kubernetes 节点无法从指定的私有镜像仓库拉取镜像，使得 Pod 创建失败（`ImagePullBackOff`），直接影响应用的部署和更新。
+*   **隐蔽性**：由于缺乏明确的错误日志，此问题会消耗 SRE 团队大量的排查时间，尤其是在新节点初始化或集群升级后。
+
+### 最佳实践与常见反模式
+
+*   **反模式**：在生成默认配置后不做检查和调整就直接使用，特别是在非标准环境中（如未安装 Docker、目录结构不同）。
+*   **最佳实践**：
+    1.  **生成后检查**：每次使用 `containerd config default` 生成配置后，务必审查关键字段，特别是 `config_path`。
+    2.  **保持路径简洁**：在专用节点上，最好将 `config_path` 明确指向唯一需要的目录，避免使用多路径语法，除非你确定所有路径都存在。
+    3.  **验证配置**：在修改配置并重启服务后，应立即进行功能验证（如 `crictl pull`），不要仅依赖服务“启动成功”。
+    4.  **版本控制**：将有效的 `config.toml` 和 `certs.d` 目录结构纳入版本控制（如 Ansible playbook, Puppet manifest），确保节点配置的一致性。
+
+### 相关指标 (SLI/SLO)
+
+*   **SLI**：可以监控 `crictl pull` 命令的失败率，或 Kubernetes 事件中 `ImagePullBackOff` 的发生频率。
+*   **SLO**：设定目标，例如“所有生产节点在启动后 5 分钟内必须能成功拉取其命名空间所需的基准镜像”。
+
+此问题凸显了在基础设施自动化和配置管理中进行端到端验证的重要性。对于 SRE，理解容器运行时这类“静默失败”的行为模式，是构建健壮系统的关键。你可以参考 [[container-runtime-debugging]] 页面了解更多关于容器运行时问题的通用诊断方法。

@@ -1,0 +1,74 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana v12 仪表盘编辑内存泄漏问题"
+description: "分析 Grafana v12 中因启用新布局和 Kubernetes 仪表盘特性标志而导致仪表盘编辑时出现严重内存泄漏及浏览器崩溃的问题。"
+category: 可观测性与监控工具
+order: 0
+lastUpdated: 2025-05-23
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/105808
+    title: "“Dashboards: Memory leak and crashes editing in grafana v12”"
+tags: [grafana, memory-leak, dashboard, frontend, kubernetes]
+---
+
+## 概述
+
+本文档描述了一个在 Grafana v12.0 中出现的特定问题，该问题影响了仪表盘的编辑稳定性。对于 SRE 团队而言，仪表盘是日常监控、故障排查和性能分析的核心工具。一个在编辑阶段就出现严重内存泄漏的仪表盘工具，会直接阻碍运维团队高效地构建和调整监控视图，影响可观测性实践的实施和事件响应速度。了解此问题的表现、触发条件及潜在规避方法，对于正在或计划升级至 Grafana v12 的团队至关重要。
+
+## 核心概念
+
+**Grafana v12 新仪表盘架构**: Grafana v12 引入了新的仪表盘布局引擎，通常需要通过特性标志 `dashboardNewLayouts: true` 来启用。与此同时，与 Kubernetes 深度集成的 `kubernetesDashboards: true` 标志也被启用。该问题与这两个处于预览阶段的新特性紧密相关。
+
+**浏览器端内存泄漏**: 在 Web 应用程序中，当 JavaScript 代码持续分配内存而未能正确释放时，会导致内存占用不断增长。在 Grafana v12 的案例中，这表现为在编辑或保存仪表盘操作过程中，浏览器内存（如 Chrome 任务管理器所示）快速上升，最终导致浏览器标签页崩溃或触发 Grafana 前端的 `RangeError: Map maximum size exceeded` 错误。
+
+**问题触发环境**: 该问题在启用新特性的 Grafana v12.0 实例上可复现，使用 Chrome 浏览器（版本 136.0.7103.114 和 137.0.7151.41 均可触发）。仪表盘包含画布（canvas）、表格和文本等面板，并非特别复杂。用户报告在 Grafana 11.1 中无此问题。
+
+## 实践
+
+### 问题复现步骤
+
+根据问题报告，可按以下步骤尝试复现此内存泄漏问题：
+
+1.  **部署 Grafana v12**: 在 Kubernetes（如 AKS）环境中通过 Helm Chart 部署 Grafana v12.0。
+2.  **启用特性标志**: 在 Grafana 启动配置中添加以下特性标志：
+    ```ini
+    [feature_toggles]
+    enable = dashboardNewLayouts kubernetesDashboards
+    ```
+3.  **执行编辑操作**: 使用 Chrome 浏览器访问 Grafana，创建一个新的仪表盘。添加一些面板，例如 Prometheus 查询的画布（canvas）面板、表格面板和文本面板。
+4.  **触发泄漏**: 尝试对这些面板进行多次编辑（例如修改查询、调整设置），并在每次或数次编辑后点击保存。观察浏览器内存使用情况，通常会导致浏览器标签页无响应或崩溃，或在保存时出现上述 `Map maximum size exceeded` 错误。
+
+### 环境详情
+
+-   **Grafana 版本**: 12.0
+-   **部署平台**: Kubernetes (AKS)
+-   **浏览器环境**: Windows 操作系统，Chrome 浏览器。
+-   **关键配置**: 必须启用 `dashboardNewLayouts` 和 `kubernetesDashboards` 特性标志。
+-   **问题定位**: 根据报告者的分析，问题似乎不特定于某个面板类型，而是与浏览器在保存或更新新的仪表盘 JSON 模型时的整体内存管理有关。
+
+## SRE 要点
+
+### 与可靠性的关联
+
+此问题直接削弱了 Grafana 作为可靠性工程支柱工具的自身可靠性。仪表盘是 SLO/SLI 的可视化载体，也是事件响应时的信息中枢。编辑功能的不稳定会：
+1.  **阻碍可观测性建设**：使团队难以快速创建和调整监控视图，无法及时跟进系统变化。
+2.  **影响事件响应**：在紧急情况下，如果需要临时修改仪表盘以聚焦于某个故障点，此问题可能导致关键操作延迟。
+3.  **降低开发者体验**：给负责维护监控系统的 SRE 或平台工程师带来挫折感，可能促使他们避免升级到具有新特性的版本。
+
+### 最佳实践与临时规避方案
+
+在 Grafana 官方修复此 Bug 前，可考虑以下 SRE 实践：
+
+1.  **监控实例健康状态**：对 Grafana 实例本身进行更细致的监控。除了常规的可用性指标，应关注前端进程的内存增长趋势（如果可收集），以及用户端报告的编辑崩溃频率。
+2.  **考虑特性标志组合的稳定性**：评估在生产环境中启用实验性特性标志的风险。可以考虑仅在测试或开发环境中启用 `dashboardNewLayouts`，或在生产环境中保持禁用，直到问题解决。
+3.  **回滚或降级计划**：如果升级到 v12 后严重影响了工作流，应准备回滚到稳定的 v11 版本。明确回滚步骤和数据兼容性（仪表盘 JSON 模型）。
+4.  **向社区反馈**：在官方 Issue 中补充更多环境细节（如具体操作序列、面板复杂度），以帮助 Grafana 团队更快定位根本原因。
+
+### 相关指标
+
+-   **浏览器内存使用率**：作为此问题的直接可观测指标，可通过 Chrome DevTools 进行监控。
+-   **Grafana API 响应时间**：特别是与仪表盘保存 (`/api/dashboards/db`) 相关的接口，内存压力可能导致后端响应变慢。
+-   **用户端报告问题频率**：建立内部渠道收集因仪表盘编辑崩溃导致的工作中断报告。
+
+建议关注 Grafana 官方对此 Issue 的更新，以获取官方的修复版本或解决方案。

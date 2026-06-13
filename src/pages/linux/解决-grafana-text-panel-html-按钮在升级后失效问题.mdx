@@ -1,0 +1,66 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "解决 Grafana Text Panel HTML 按钮在升级后失效问题"
+description: "排查并解决因 Grafana 版本升级导致 Text Panel 中的自定义 HTML 交互功能（如按钮）失效的常见问题。"
+category: 仪表盘与可视化
+order: 0
+lastUpdated: 2024-07-24
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123803
+    title: "Grafana Text Panel HTML Code not working after upgrade to 13.0.1"
+tags: [grafana, dashboard, html, panel, troubleshooting]
+---
+
+## 概述
+
+在 Grafana 的运维和可视化实践中，Text Panel 是一个高度灵活的组件，允许用户直接注入 HTML、Markdown 或纯文本来创建定制化的仪表盘信息块。然而，在软件版本迭代过程中，其功能可能会发生变化或收紧。本文档旨在分析并解决一个典型问题：在将 Grafana 从 10.4.11 等较旧版本升级至 13.0.1 等新版本后，Text Panel 中注入的包含交互元素（如按钮）的 HTML 代码失效。此问题直接影响仪表盘的可用性和用户的监控工作流，因此需要 SRE 团队及时识别并处理。
+
+## 核心概念
+
+解决此问题需要理解以下核心概念：
+
+1.  **沙箱与安全策略**：现代 Web 应用倾向于在沙箱环境中执行用户提供的代码（如 HTML/JS），以防范 XSS（跨站脚本）攻击。Grafana 在新版本中很可能增强了此安全机制。Text Panel 中的 HTML 内容可能不再被允许执行 JavaScript 事件处理程序（如 `onclick`）。
+2.  **内容安全策略 (CSP)**：CSP 是一种浏览器安全层，用于检测并减轻某些类型的攻击，包括数据注入攻击。Grafana 可能更新了其 CSP 配置，禁止了内联脚本的执行，从而导致依赖于内联事件的按钮失效。
+3.  **面板功能演进**：随着版本升级，Grafana 可能对 Text Panel 的模式（Mode）进行了功能调整或限制。在旧版本中宽松支持的特性，在新版本中可能被默认禁用或需要额外配置。
+
+## 实践
+
+当遇到类似问题时，应遵循以下步骤进行排查和解决：
+
+### 1. 问题确认与隔离
+首先确认问题是否普遍存在于升级后的环境。按照报告者的步骤复现问题：
+*   确保 Grafana 版本为 13.0.1 或更高。
+*   在仪表盘中创建一个 Text Panel。
+*   在面板设置中将“Mode”设置为“HTML”。
+*   粘贴包含交互元素的 HTML 代码（例如 `<button onclick="someFunction()"&gt;点击</button>`）。
+*   观察按钮是否仍然无响应。
+
+### 2. 查阅官方文档与社区
+*   **查看版本发布说明**：仔细阅读从当前版本到目标升级版本之间的所有 Release Notes，重点关注 Breaking Changes（破坏性变更）、Text Panel 更新或安全策略相关的条目。
+*   **搜索 Grafana 社区**：在 [Grafana Community Forums](https://community.grafana.com/) 和 [GitHub Issues](https://github.com/grafana/grafana/issues) 中，使用关键词如 `Text Panel HTML`, `sandbox`, `CSP`, `onclick not working` 进行搜索，查看是否有官方回复或解决方案。
+
+### 3. 探索替代方案与配置
+基于对安全沙箱的理解，可能的解决路径包括：
+*   **切换渲染模式**：尝试将 Text Panel 的模式从“HTML”切换为“Markdown”，并在 Markdown 中嵌入允许的 HTML。注意，不同模式的沙箱策略可能不同。
+*   **使用数据链接或变量**：如果按钮的目标是跳转到另一个 URL 或执行简单的查询，可以考虑使用 Grafana 原生的 [数据链接](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/add-data-links/) 或变量重定向来实现，而非依赖自定义 HTML。
+*   **申请官方支持**：如果这是一个影响关键工作流的回归问题，可以收集详细的复现信息，向 Grafana 官方提交一份结构清晰的 Issue，并说明其对业务的影响。
+
+### 4. 升级策略与测试
+对于 SRE 而言，这提醒了在升级关键监控平台前进行充分测试的重要性：
+*   在生产环境升级前，必须在预发布或测试环境中全面验证所有关键仪表盘，特别是那些包含自定义 HTML 或复杂交互的面板。
+*   将面板功能回归测试纳入标准的变更管理流程。
+
+## SRE 要点
+
+*   **与可靠性的关联**：监控仪表盘是系统可观测性的门户。当核心面板（如用于快速创建告警规则或跳转到详情页的按钮）失效时，会直接阻碍事件响应和问题调查的效率，降低监控系统的可靠性。
+*   **变更管理与可观测性**：此案例凸显了平台组件自身升级作为变更的一部分，必须被纳入严格的变更管理流程。同时，可观测性不仅针对业务系统，也应覆盖监控工具链本身的健康状态和功能有效性。
+*   **最佳实践与反模式**：
+    *   **最佳实践**：优先使用 Grafana 原生支持的面板类型和交互功能（如链接、变量）。对必须使用的自定义 HTML，应保持其简洁，并避免依赖可能被沙箱禁用的 JavaScript 特性。
+    *   **常见反模式**：在监控面板中过度依赖脆弱的自定义 HTML/JS 来实现核心交互功能，将其作为“单点故障”。未能充分测试升级带来的变更。
+*   **相关指标 (SLI/SLO)**：
+    *   **SLI**：仪表盘关键交互元素的可用性（例如，“自定义按钮的成功点击率”）。
+    *   **SLO**：在升级后 72 小时内，所有关键监控仪表盘的交互功能应通过自动化测试或人工验证，可用性保持 100%。
+
+---
+相关页面：[[observability]]， [[change-management]]

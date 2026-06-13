@@ -1,0 +1,50 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "修复沙盒任务API在非Runc运行时下的端点问题"
+description: "分析并修正containerd中因错误放置API字段而导致的沙盒任务在非Runc运行时下失败的问题，阐述API设计中的关注点分离原则。"
+category: "容器运行时"
+order: 1
+lastUpdated: 2026-05-07
+confidence: medium
+sources:
+  - url: "https://github.com/containerd/containerd/pull/13360"
+    title: "Fix sandbox task API endpoints for non-runc runtimes"
+tags: [containerd, container-runtime, sandbox, api-design, sre-reliability]
+---
+
+## 概述
+
+在容器编排和管理平台中，容器运行时接口（如 CRI）与底层运行时（如 runc, kata-containers, gVisor）之间的清晰抽象至关重要。本次修复的 issue 源于 containerd 项目在重构沙盒（Sandbox）任务 API 时，将通用字段错误地耦合到了特定运行时（runc）的选项中，导致了在非 Runc 运行时下沙盒任务 API 端点失效。这一变更对于保障多运行时环境下的可靠性和 API 的向前兼容性具有重要意义，是 SRE 在维护复杂基础设施时需关注的设计模式问题。
+
+## 核心概念
+
+- **沙盒 API (Sandbox API)**：在 containerd 的架构中，沙盒提供了一个隔离的执行环境，用于运行一个或多个容器。沙盒 API 负责管理沙盒的生命周期，包括创建、启动、停止和删除。
+- **任务 API (Task API)**：任务是容器内进程在主机上的表示。任务 API 负责管理这些进程的生命周期，如创建、启动、等待和删除。
+- **Runc 选项 (Runc Options)**：这是为特定运行时（此处为 runc）提供的配置结构，包含了仅适用于该运行时的参数。
+- **`CreateTaskRequest`**：这是任务 API 中用于创建新任务的核心请求消息结构，包含了创建任务所需的所有通用参数。
+- **关注点分离 (Separation of Concerns)**：这是一个重要的软件设计原则，要求不同功能模块的代码职责清晰分离。在 API 设计中，这意味着与特定运行时相关的配置应封装在其自身的选项中，而通用的、跨运行时的参数应置于通用的请求结构中。
+
+## 实践
+
+该修复的核心实践在于纠正 API 字段的放置位置，以符合关注点分离原则。
+
+1.  **问题回顾**：在之前的实现（PR #9736）中，`Address` 和 `Version` 这两个字段被错误地添加到了 `RuncOptions` 结构中。这两个字段实际上是沙盒任务 API 用于定位和通信的基础信息，与具体使用 runc 还是其他运行时无关。
+2.  **错误后果**：由于这些字段被绑定在 `RuncOptions` 中，当使用非 Runc 运行时（如在 PR #12986 中讨论的场景），系统无法获取正确的沙盒任务 API 地址和版本信息，导致流程失败。
+3.  **修复方案**：
+    - **废弃错误字段**：在 `RuncOptions` 中废弃或移除 `Address` 和 `Version` 字段。
+    - **迁移至通用请求**：将这两个字段迁移到更通用的 `CreateTaskRequest` 消息结构中。这样，任何运行时在创建任务时，都能通过这个通用请求获取到必要的 API 连接信息。
+    - **向后兼容**：修复时需要考虑对现有使用旧版 API 的客户端的影响，可能通过版本协商或提供兼容性层来平滑过渡。
+
+此修复虽然改动不大，但清晰地展示了 API 设计中正确划分“平台通用逻辑”与“运行时特定逻辑”边界的重要性。
+
+## SRE 要点
+
+- **可靠性影响**：此问题直接影响了使用非 Runc 运行时的 Kubernetes 集群或其他 containerd 用户的可靠性。沙盒任务无法正确创建会导致 Pod 无法启动，影响工作负载的正常运行。
+- **可观测性关联**：在排查此类问题时，SRE 需要能够清晰地追踪 API 调用链，从调度层到底层运行时。错误的字段放置会模糊这一链路，使得错误日志（如“无法连接到沙盒任务服务端”）难以指向真正的设计缺陷。
+- **最佳实践与反模式**：
+    - **反模式**：将通用、基础的设施通信参数（如服务地址、版本）放置在特定运行时的配置选项中。这是一种过度耦合，违背了开闭原则（对扩展开放，对修改封闭）。
+    - **最佳实践**：始终保持 API 结构的清晰和通用性。通用参数应放在通用请求/响应中，特定实现的配置应封装在其专属的选项结构内。这有助于支持多种后端实现，并简化客户端开发。
+- **相关指标与 SLO**：对于运行 containerd 的平台，可以关注以下 SLI 以确保此类问题的稳定性：
+    - `containerd_sandbox_create_request_total{result="success|error"}`：沙盒创建请求的成功率。
+    - `containerd_task_create_request_total{runtime="runc|kata|..."} `：按运行时细分的任务创建成功率。如果发现非 Runc 运行时的任务创建成功率显著低于 Runc，可能预示着类似的设计耦合问题。
+- **相关页面**：[[containerd-architecture]]， [[container-runtime-interface]]

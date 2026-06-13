@@ -1,0 +1,52 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "[flaky tests] TestReshardPartialBatch - Prometheus 远程写分片重平衡死锁分析"
+description: "分析 Prometheus 远程写组件中 `TestReshardPartialBatch` 测试失败的根因，揭示了在动态调整分片数量时可能发生的 goroutine 死锁问题及其对 SRE 的启示。"
+category: 存储与数据管道
+order: 0
+lastUpdated: 2026-02-13
+confidence: medium
+sources:
+  - url: https://github.com/prometheus/prometheus/issues/18078
+    title: "[flaky tests] TestReshardPartialBatch"
+tags: [prometheus, remote-write, testing, concurrency, deadlock, goroutine, sharding]
+---
+
+## 概述
+
+在 Prometheus 的持续集成中，`TestReshardPartialBatch` 是一个用于验证远程写（Remote Write）路径在分片数量动态调整（Resharding）时行为正确性的集成测试。该测试的失败（flaky test）暴露了 `QueueManager` 在高并发和快速停止场景下的一个潜在缺陷：**goroutine 死锁**。对于 SRE 而言，理解此类测试失败的根源至关重要，因为它并非单纯的测试问题，而是揭示了生产环境中远程写组件在特定负载模式下可能出现的服务降级或数据延迟风险。此类问题直接影响数据新鲜度 SLA，是需要深入分析的可靠性隐患。
+
+## 核心概念
+
+1.  **Prometheus 远程写 (Remote Write)**：Prometheus 将采集的时间序列数据通过 HTTP 协议推送至远程存储（如 Thanos, Cortex, 或其他兼容 API 的系统）的机制。其核心是 `QueueManager`，它管理着多个用于异步发送数据的分片（Shards）。
+2.  **Resharding (分片重平衡)**：当远程写目标的吞吐量需求变化时，`QueueManager` 会动态调整用于并行发送数据的分片数量（`updateShardsLoop`）。这涉及停止旧的分片协程和启动新的分片协程，是一个复杂的并发操作。
+3.  **死锁 (Deadlock)**：在本案例中，测试日志明确指出 `Deadlock between sending and stopping detected`。这意味着负责发送数据的协程（`runShard`）和负责响应停止信号或进行重平衡的协程（`reshardLoop`, `updateShardsLoop`）互相等待对方完成，导致整个远程写路径停滞。
+4.  **Go Goroutine Profile**：用于分析 Go 程序中所有活动协程状态的强大工具。在该 issue 的 profile 中，72 个协程阻塞在 `(*shards).runShard` 的队列操作上，这直接指向了发送路径的阻塞是问题的关键。同时，`reshardLoop` 和 `updateShardsLoop` 的协程也处于阻塞状态，形成了死锁的证据链。
+5.  **`synctest` 包**：测试中使用了 Go 的 `testing/synctest` 包（以及项目封装的 `testutil/synctest`）。这个包通过“虚拟时间”来控制并发测试中的时间流逝，虽然解决了测试时序问题，但也可能在某些复杂的并发场景下掩盖真实的竞争条件，使得问题更难复现和调试。
+
+## 实践
+
+分析此类并发死锁问题，SRE 和开发者应遵循以下调试实践：
+
+1.  **定位阻塞点**：从 goroutine profile 开始。识别出阻塞协程数量最多的栈帧。在本例中，`(*shards).runShard+0x935` 是关键。这提示问题发生在分片内部的数据打包或发送队列的某个具体操作（如 `(*queue).newBatch`）上。
+2.  **理解并发流程**：追踪相关的代码路径。
+    *   **正常发送路径**：`runShard` 协程从内部队列取数据，打包成 `WriteRequest`，然后通过 HTTP 发送。发送完成后或在出错重试时，会重新进入循环。
+    *   **停止/重平衡路径**：`reshardLoop` 监听重平衡信号，调用 `(*shards).stop` 来优雅地终止所有旧分片协程。它依赖于分片协程能够及时响应停止信号。
+3.  **构建死锁假设**：一个典型的死锁场景可能是：
+    *   分片协程（`runShard`）因网络抖动或下游服务变慢而卡在发送或等待队列的锁上。
+    *   与此同时，`reshardLoop` 触发重平衡，并尝试 `stop` 这些分片协程。
+    *   `stop` 方法可能需要获取同一把锁或等待分片协程完成一个无法完成的操作（例如，等待一个永远不会被消费的队列），导致 `reshardLoop` 也阻塞。
+    *   最终，发送数据和停止/重平衡操作互相等待，形成死锁。
+4.  **复现与简化**：使用 `-race` 标志（`go test -race`）运行测试可以检测数据竞争。同时，分析 `synctest` 的使用，确认它是否“冻结”了某些可能暴露问题的真实系统调用或网络 I/O，使得在测试中只有手动推进时间才能发现竞态。
+
+## SRE 要点
+
+*   **与可靠性的关联**：远程写是 Prometheus 可观测性管道中的关键一环。其死锁会导致数据无法送达长期存储，直接影响基于该数据的告警和仪表板。对于 SRE，这意味着 **SLO 损失**，例如“远程写端到端延迟 < 5s”的目标无法达成。监控 `prometheus_queue_shards_total` 和 `prometheus_queue_sent_samples_total` 等指标的突变对于早期发现此类问题至关重要。
+*   **最佳实践与反模式**：
+    *   **最佳实践**：对核心组件（如 `QueueManager`）的并发逻辑进行充分的压力测试和混沌测试。在生产环境中，应监控 `reshard` 事件的频率，过于频繁的重平衡本身可能就是不稳定信号。
+    *   **常见反模式**：假设所有并发原语（如 mutex, channel）都是完美的。在复杂的异步数据流中，尤其是在涉及停止和优雅关闭的路径上，需要特别小心锁的获取顺序和 channel 的关闭语义，避免形成环路等待。
+*   **相关指标（SLI/SLO）**：
+    *   **SLI**：远程写队列深度（`prometheus_queue_length`）、远程写分片数量（`prometheus_queue_shards_total`）、远程写错误率（`prometheus_remote_storage_samples_total{result="dropped"}`）。
+    *   **SLO**：示例——“在 99.9% 的时间内，从 Prometheus 采集数据到数据可用于远程查询的延迟不超过 10 秒。” 死锁会直接导致该 SLO 的违反。
+
+[[prometheus-remote-write]] [[queue-manager]] [[synctest]]

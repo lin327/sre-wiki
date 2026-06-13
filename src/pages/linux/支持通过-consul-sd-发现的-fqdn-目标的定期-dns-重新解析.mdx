@@ -1,0 +1,64 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "支持通过 Consul SD 发现的 FQDN 目标的定期 DNS 重新解析"
+description: "当使用 FQDN 作为服务发现目标时，Prometheus 缺乏周期性 DNS 重新解析机制，导致 IP 变更后目标永久失效的可靠性问题。"
+category: "服务发现与动态配置"
+order: 0
+lastUpdated: 2026-03-27
+confidence: medium
+sources:
+  - url: "https://github.com/prometheus/prometheus/issues/18387"
+    title: "Support periodic DNS re-resolution for FQDN targets discovered via Consul SD"
+tags: [prometheus, consul, service-discovery, dns, fqdn, reliability]
+---
+
+## 概述
+
+在动态和云原生环境中，服务实例的 IP 地址经常因调度、迁移或扩缩容而发生变化。当使用完全限定域名（FQDN）作为服务发现中的唯一稳定标识符时（例如在多租户系统中，后端服务通过域名访问），监控系统需要能够感知这些 DNS 记录的变化。本文讨论了 Prometheus 在通过 Consul 服务发现获取 FQDN 目标时，由于缺乏周期性 DNS 重新解析机制所引发的一个关键可靠性问题，以及其对 SRE 运营的影响。
+
+## 核心概念
+
+- **FQDN（Fully Qualified Domain Name）**：完全限定域名，在分布式系统中常被用作服务的逻辑、稳定标识，其解析后的 IP 地址可以动态变化。
+- **Consul 服务发现（Consul SD）**：Prometheus 的一种服务发现机制，通过 Consul 的健康检查 API 获取动态变化的服务实例列表。发现的目标可以是 IP 地址，也可以是域名。
+- **DNS 重新解析（DNS Re-resolution）**：指监控系统周期性地对已发现目标的域名执行 DNS 查询，以获取其当前对应的 IP 地址，而不是仅在初始发现时解析一次。
+
+## 实践
+
+### 问题表现
+当 Prometheus 通过 Consul SD 发现一个目标 FQDN 时，它会在发现时执行一次 DNS 解析，并将得到的 IP 地址用于后续的抓取（scrape）。**问题在于，如果后续该 FQDN 对应的 IP 地址发生变化（例如由于 Pod 重调度），Prometheus 不会主动重新解析该 FQDN**。这导致 Prometheus 尝试抓取一个已经不存在的旧 IP 地址，目标状态将永久变为 `DOWN`，即使该服务的新 IP 地址是健康且可达的。
+
+### 根本原因
+Prometheus 的当前行为将 DNS 解析绑定到了**发现事件**和**进程生命周期**上，而不是**持续的抓取活动**。具体表现为：
+1. DNS 解析仅在目标首次被发现时发生。
+2. DNS 解析仅在目标因 Consul 健康检查失败而被移除后，再次被发现时才会重新发生（通常有约 6 分钟的延迟）。
+3. DNS 解析仅在 Prometheus 进程重启时发生。
+在 IP 地址具有临时性且 FQDN 是唯一稳定标识符的环境中，这一限制使得 Prometheus 难以可靠运行。
+
+### 当前规避方法
+目前，为了恢复对已变更 IP 目标的监控，用户被迫采用以下临时方案，但这些方案均不具备可持续性：
+- **手动干预**：在目标 `DOWN` 后，强制 Prometheus 重新发现目标（例如，短暂注销再注册 Consul 服务）。
+- **重启服务**：重启 Prometheus 进程，强制其重新解析所有 DNS 名称。这会引入监控数据中断。
+- **使用外部脚本**：定期监控目标 IP 变化，并通过管理 API 强制 Prometheus 重新加载配置或刷新目标列表。
+
+## SRE 要点
+
+### 对可靠性的影响
+- **监控可靠性下降**：核心监控数据出现盲点，无法反映服务的真实健康状态。
+- **警报不准确**：基于错误 IP 的抓取失败会触发虚假警报（`UP` -&gt; `DOWN`），消耗 SRE 的注意力和事件响应资源。
+- **事件响应负担增加**：需要人工介入解决由监控系统自身缺陷引发的“假故障”，延长了真实故障的发现和修复时间（MTTD/MTTR）。
+
+### 与可观测性的关联
+可观测性依赖于数据的完整性和准确性。DNS 解析失败会导致指标时间序列（Time Series）中断或永久终止（Stale Series），破坏数据的连续性，使得趋势分析、容量规划和故障排查变得不可靠。确保监控系统自身对动态环境具有适应性，是构建可靠可观测性的基础。
+
+### SLO/SLI 关联
+- **SLI**：可用于定义监控系统可靠性的 SLI，例如“Prometheus 成功抓取目标的比例”或“因 DNS 问题导致的虚假告警比例”。
+- **SLO**：可以为监控系统自身设定 SLO，例如“99.9% 的目标在整个服务生命周期内保持 `UP` 状态（排除计划内的维护窗口）”。上述问题会直接影响该 SLO 的达成。
+
+### 最佳实践与建议
+在上游 Prometheus 提供原生解决方案之前，建议采取以下策略：
+1.  **架构考量**：在设计监控架构时，评估是否可能使用稳定的 IP 地址（如 Kubernetes Service ClusterIP）代替 FQDN 作为抓取目标，尽管这可能在多租户场景下受限。
+2.  **增强可观测性**：对 Prometheus 自身进行监控，专门跟踪目标状态变化和 DNS 解析事件，以便快速发现此问题。
+3.  **实施缓解措施**：考虑部署一个轻量级的 sidecar 或控制器，负责监控 Consul 中 FQDN 目标的 IP 变化，并通过调用 Prometheus 的 `/-/reload` API 或更新文件服务发现目标来强制刷新。
+4.  **参与社区**：关注并参与相关社区讨论（如上述 GitHub Issue），推动该功能的原生实现。
+
+此问题凸显了在动态基础设施中，监控系统本身也必须具备与被监控系统相匹配的动态性和弹性，这是 SRE 工程实践中的一个关键考量点。相关页面：[[prometheus]]、[[consul]]、[[service-discovery]]。

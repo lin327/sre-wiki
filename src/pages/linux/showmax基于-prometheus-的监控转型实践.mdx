@@ -1,0 +1,53 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "ShowMax：基于 Prometheus 的监控转型实践"
+description: "展示ShowMax从传统监控迁移到Prometheus的经验、实践与收益，涵盖架构、工具链选择及文化影响。"
+category: 监控与可观测性
+order: 0
+lastUpdated: 2025-03-14
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2016/05/01/interview-with-showmax/
+    title: "Interview with ShowMax - Prometheus Blog"
+tags: [case-study, migration, prometheus, grafana, monitoring, devops]
+---
+
+## 概述
+
+ShowMax 是一家于 2015 年在南非成立的订阅视频点播服务，旨在解决在撒哈拉以南非洲等网络连接不稳定地区进行视频流媒体播放的挑战。作为一家技术驱动的公司，ShowMax 运行着约 50 个微服务，面临着确保其复杂技术栈（包括视频编码、多平台 API）可靠运行的重任。其监控系统的演进是 SRE 实践中一个典型的案例，展示了如何从传统的、难以扩展的监控解决方案迁移到现代的、基于 Prometheus 的可观测性平台，并在此过程中提升了系统稳定性与开发效率。
+
+## 核心概念
+
+在引入 Prometheus 之前，ShowMax 的监控需求主要分为四大类：
+1.  **主动监控与探测**：通过 Icinga 实现。
+2.  **指标采集与告警**：这是迁移至 Prometheus 的核心用例。
+3.  **后端服务日志采集**。
+4.  **应用程序事件与日志采集**。
+
+对于后两项，ShowMax 构建了一套基于 RabbitMQ 和 ElasticSearch 的日志基础设施，日志先在本地容器的 Unix Socket 上收集，再推送给消费者处理。
+
+此前，ShowMax 并行运行着两套基于 Collectd 的指标采集流水线（分别使用 Graphite 和 OpenTSDB），但均遇到了严重的稳定性与可维护性问题，例如 Graphite 的高 I/O 消耗，以及 OpenTSDB 的复杂性。这促使他们寻求一个更统一、更可靠的指标平台。
+
+## 实践
+
+**迁移与部署**
+ShowMax 最初在 LXC 容器中进行概念验证，随后迅速将 Prometheus 迁移至位于 Hetzner 的一台专用物理服务器（Intel Xeon E3-1270 v3, 32GB RAM, SSD）。他们利用 SSD 将数据保留期设置为 120 天。
+
+**指标推送架构：prometheus-pusher**
+由于现有的日志基础设施采用“推送”模型，ShowMax 最初希望保持一致性，也采用推送模式将指标发送给 Prometheus。为此，他们开发了一个名为 `prometheus-pusher` 的 Go 守护进程。该守护进程负责从本地的各类 Exporter 抓取指标，并通过 [[prometheus-pushgateway]] 将其推送至 Prometheus 服务器。这种模式在服务发现方面简化了一些问题，但也带来了挑战，例如难以区分“网络分区”和“服务崩溃”。此工具已开源。
+
+**可编程的 Grafana 仪表盘**
+虽然认可 Grafana 与 Prometheus 的集成，但 ShowMax 对其原生的仪表盘配置管理方式（持久化在容器内、缺乏变更追踪）不满意。因此，他们开发了另一个开源工具：一个仪表盘生成器。该工具接收用 YAML 格式维护的配置文件（存储在 Git 仓库中），生成 Grafana 所需的 JSON 文件，并能自动部署到全新的 Grafana 容器中。这实现了仪表盘配置的自动化、可重复性和可审计性，完美契合了基础设施即代码的理念。
+
+**技术栈与工具**
+ShowMax 的后端服务主要使用 Ruby、Go 和 Python 编写。数据存储依赖 PostgreSQL 和 ElasticSearch。他们使用 etcd 和自定义工具来配置 Varnish 进行请求路由。监控方面，他们以 Prometheus 作为核心指标平台，配合 Grafana 进行可视化。
+
+## SRE 要点
+
+- **可靠性与稳定性提升**：从 Graphite/OpenTSDB 迁移到 Prometheus 最直接的收益是监控系统本身的稳定性和可访问性得到了极大改善。稳定的监控是 SRE 实践的基石，它为 [[error-budget]] 和 [[slo]] 的跟踪提供了可靠的数据基础。
+- **赋能开发者与 DevOps 文化**：Prometheus 的快速查询和稳定性使得开发者能够轻松、即时地获取应用运行指标（如 JVM 堆内存使用情况），极大地便利了问题排查。这种便捷性降低了监控数据的获取门槛，促进了开发与运维的协作，是 DevOps 文化落地的有力工具。
+- **推模式与拉模式的权衡**：ShowMax 最初选择推送模式是为了与现有基础设施保持一致。然而，他们认识到这与 Prometheus 的拉取范式存在冲突，且会引入额外的复杂性。根据 [[prometheus-best-practices]]，他们计划未来转向拉取模型，以更好地利用 Prometheus 的设计优势，提高系统整体的稳健性和可诊断性。
+- **可观测性工程实践**：ShowMax 的案例体现了可观测性不仅仅是部署一个工具，更是围绕它构建一整套工作流。他们通过自研工具（prometheus-pusher，仪表盘生成器）解决了自身环境下的特定问题，并将配置代码化，这是高级可观测性工程实践的典型特征。
+- **最佳实践与反模式**：
+    - **实践**：对监控基础设施进行持续投资，开发定制工具以解决“最后一公里”问题；将仪表盘配置纳入版本控制；从单一、可靠的指标源（Prometheus）开始，逐步替代复杂的旧系统。
+    - **反模式**：并行维护多个复杂且不稳定的监控流水线（如同时使用 Graphite 和 OpenTSDB）；在容器化环境中将关键配置和状态持久化在容器内部。

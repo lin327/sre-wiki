@@ -1,0 +1,70 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Provisioning 允许UI更新失效问题"
+description: "自 Grafana 12.2.0 版本起，通过 provisioning 配置 `allowUiUpdates: true` 的仪表盘在 UI 上编辑和保存功能失效，导致配置漂移。"
+category: 配置管理
+order: 0
+lastUpdated: 2025-09-24
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/111525
+    title: "Provisioning: Dashboard not editable despite setting allowUiUpdates since 12.2.0 (still in 12.3.1)"
+tags: [grafana, bug, provisioning, configuration-management]
+---
+
+## 概述
+
+本文档描述了一个影响 Grafana 可观测性平台的已知缺陷。该缺陷源于 Grafana 版本 12.2.0 及之后版本，导致通过 `provisioning` 机制配置且明确允许在 UI 上进行更新的仪表盘（`allowUiUpdates: true`）无法被编辑和保存。此问题破坏了通过代码定义基础架构（Dashboards as Code）的标准工作流，可能导致配置漂移，并影响团队对仪表盘进行紧急调整或本地优化的能力。对于依赖声明式配置来管理大量仪表盘的 SRE 和平台团队而言，这是一个需要关注的关键可用性问题。
+
+## 核心概念
+
+要理解此问题，需先明确 Grafana 中相关的几个核心概念：
+
+1.  **Provisioning（配置供应）**：Grafana 支持通过 YAML 文件在启动时或启动后自动配置数据源、仪表盘、文件夹等资源。这是实现自动化和可重复部署的关键特性，是 GitOps 实践的重要组成部分。
+2.  **Dashboard（仪表盘）**：用于可视化监控数据（如 Prometheus, Elasticsearch 等）的核心对象，由面板（Panels）、查询和变量组成。
+3.  **`allowUiUpdates` 标志**：在 provisioning 的 YAML 定义中，此标志用于控制一个由 provisioning 管理的仪表盘是否允许用户在 Grafana 的 Web 界面上进行手动编辑和保存。当设置为 `true` 时，期望的行为是用户可以修改仪表盘，但这些更改会与 provisioning 定义的源产生冲突，需要手动或通过工具进行同步管理。
+4.  **配置漂移（Configuration Drift）**：指系统实际运行的配置状态与声明式的定义文件（如 provisioning YAML）之间出现不一致的现象。`allowUiUpdates` 功能在设计上正是为了在允许临时修改的同时，通过声明文件来追踪和最终纠正这种漂移。
+
+## 实践
+
+根据提供的 issue 报告，此问题的具体表现和复现步骤如下：
+
+### 问题表现
+在 Grafana 12.2.0 及更高版本（如 12.3.1）中，即使在 provisioning 配置文件中为仪表盘设置了 `allowUiUpdates: true`，用户也无法在浏览器界面中完成对仪表盘的编辑和保存操作。尝试保存时，系统会阻止更改，违背了该配置项的预期功能。
+
+### 复现步骤
+1.  使用包含 `allowUiUpdates: true` 参数的 YAML 文件 provisioning 一个仪表盘到 Grafana 实例。
+2.  登录 Grafana UI，导航至该仪表盘。
+3.  尝试对仪表盘进行任何修改（例如，调整面板大小、更改查询）。
+4.  点击“保存仪表盘”按钮。此时，保存操作应被阻止，更改不会生效。
+
+### 环境信息
+- **Grafana 版本**：12.2.0，12.3.1
+- **操作系统**：Windows 11
+- **浏览器**：Microsoft Edge 140
+- **部署方式**：Docker
+
+**结论**：该问题被确认为 Grafana 产品在特定版本范围内的回归缺陷（Regression Bug），并非由特定操作系统或浏览器引起，其根源在于 Grafana 内部对 provisioning 管理仪表盘的权限逻辑处理发生了变化。
+
+## SRE 要点
+
+### 与可靠性的关联
+*   **变更管理风险**：此缺陷直接影响基于 Git 的仪表盘变更工作流。SRE 团队可能无法按计划部署仪表盘更新，或无法在故障排查期间快速调整仪表盘以聚焦关键指标，从而延长 MTTR（平均恢复时间）。
+*   **配置漂移不受控**：虽然 `allowUiUpdates` 允许临时修改，但预期是这些修改可以被识别并最终通过代码同步。该 bug 导致修改被完全禁止，迫使管理员选择：要么放弃 UI 修改能力（设置 `allowUiUpdates: false`），要么放弃 provisioning 的管理权，两者都增加了运维复杂性和出错风险。
+
+### 最佳实践与反模式
+*   **最佳实践 - 版本升级测试**：在升级 Grafana 等关键基础设施组件到主要版本前，必须在中立的测试环境中进行充分回归测试，特别是核心功能（如 provisioning）。
+*   **最佳实践 - 保留降级方案**：对于生产环境，应确保已知稳定版本的容器镜像或安装包可用，以便在出现类似严重回归时能快速回滚。
+*   **反模式 - 盲目升级**：直接在生产环境升级 Grafana 到未经验证的新版本，可能导致自动化配置流水线中断。
+
+### 相关指标 (SLI/SLO)
+虽然此问题不直接影响系统的技术性能 SLI，但会影响**配置管理流程的效率**这一重要运维 SLI。
+*   **SLI**：仪表盘配置从代码提交到成功生效的平均时间；因配置问题导致的人工干预次数。
+*   **SLO**：可设定为“99%的仪表盘配置变更在5分钟内自动生效且无需人工干预”。此 bug 会导致相关变更失败，从而使 SLO 目标无法达成。
+
+### 缓解措施与建议
+1.  **锁定 Grafana 版本**：在问题修复前，避免将 Grafana 升级到 12.2.0 或更高版本。
+2.  **监控官方修复进度**：密切关注 Grafana 的 [GitHub Issue #111525](https://github.com/grafana/grafana/issues/111525)，等待官方发布修复补丁。
+3.  **调整工作流**：作为临时方案，可以考虑：
+    *   通过 provisioning `allowUiUpdates: false` 来保护仪表盘不被意外修改，并严格遵循 GitOps 流程进行变更。
+    *   在必要时，临时注释掉相关 provisioning 配置以允许 UI 修改，但必须手动将更改同步回 Git 仓库，防止配置漂移。

@@ -1,0 +1,82 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "何时使用 Varbit 编码？"
+description: "分析 Prometheus TSDB 中 varbit 编码与 double-delta 编码的权衡，帮助在存储效率与查询性能间做出选择。"
+category: Prometheus 存储
+order: 0
+lastUpdated: 2023-10-27
+confidence: medium
+sources:
+  - url: https://prometheus.io/blog/2016/05/08/when-to-use-varbit-chunks/
+    title: "When (not) to use varbit chunks - Prometheus Blog"
+tags: [prometheus, tsdb, storage, encoding, performance]
+---
+
+## 概述
+
+在 Prometheus 的时序数据库 (TSDB) 中，原始采样数据以固定大小的块 (chunk) 进行存储。为优化存储效率，Prometheus 引入了多种编码方案。其中，自 0.18.0 版本起引入的 **varbit 编码**（编码版本 2）与之前默认的 **double-delta 编码**（编码版本 1）相比，在压缩率上取得了显著突破，但同时也带来了数据访问模式的变化。选择何种编码方案直接关系到磁盘与内存的占用、写入吞吐量以及特定类型查询的响应速度，因此是 SRE 在规划 Prometheus 存储和性能调优时需要做出的关键决策之一。
+
+## 核心概念
+
+Prometheus TSDB 的每个 chunk 都包含元数据，允许独立选择编码版本。目前主要存在三种版本：
+
+- **版本 0**：原始的 delta 编码，现已基本弃用。
+- **版本 1 (Double-Delta)**：改进的双重差分编码，长期作为默认选项。它允许通过索引对 chunk 内的采样数据进行**随机访问**。
+- **版本 2 (Varbit)**：一种新型的双重差分编码变体，因采用**可变比特位宽**来存储采样值而得名。其设计灵感部分来源于 Facebook 的 Gorilla 内存时序数据库。
+
+两者核心区别在于：
+
+- **压缩效率**：Varbit 编码的压缩率远高于 double-delta 编码。典型生产数据显示，double-delta 编码约需 3.3 字节/采样，而 varbit 编码可降至约 1.28 字节/采样，实现了约 **3 倍**的压缩提升。
+- **访问模式**：Double-delta 编码的 chunk 支持按索引**随机读取**。Varbit 编码的 chunk 则只能进行**顺序访问**。
+- **计算开销**：Varbit 编码在编解码时的计算成本略高于 double-delta 编码，但这种增加通常是总操作成本的一小部分。
+
+## 实践
+
+### 启用 Varbit 编码
+
+启用新的 varbit 编码非常简单。启动 Prometheus 服务器时，通过命令行标志指定编码版本：
+
+```bash
+prometheus -storage.local.chunk-encoding-version=2
+```
+
+**重要提示**：
+- 此设置仅对新创建的 chunk 生效。已存在的 chunk 会保持其创建时的编码版本，直到根据数据保留策略被逐步淘汰和替换。
+- 你可以随时在不同编码版本间切换，没有副作用。这便于进行 A/B 测试或根据负载变化调整策略。
+
+### 验证与监控
+
+切换编码后，需要监控关键指标以评估效果：
+1.  **存储占用**：观察数据目录的磁盘使用量和内存中块缓存的大小，varbit 编码应能显著降低两者。
+2.  **写入性能**：监控 `prometheus_tsdb_head_samples_appended_total` 等指标，varbit 编码因减少磁盘 I/O 可能提升写入吞吐量。
+3.  **查询性能**：重点监控受影响的查询（特别是那些需要从历史数据中随机抽样的查询）的 `query_duration_seconds`，确保其延迟在可接受范围内。
+
+## SRE 要点
+
+### 与可靠性和性能的关联
+
+- **存储效率**：Varbit 编码是应对磁盘空间压力和延长数据保留期（Retention Time）的有力工具。更高的压缩率直接意味着更低的硬件成本和更小的故障影响面（更少的数据量）。
+- **写入吞吐量**：磁盘 I/O 是影响 Prometheus 写入速度的主要瓶颈之一。Varbit 编码通过约 3 倍的数据压缩，显著减少了磁盘操作次数，从而可以大幅提升数据摄入速率。这对于高基数、高采样频率的场景至关重要。
+- **查询性能权衡**：这是采用 varbit 编码最主要的考量。对于大多数查询（如获取时间区间内所有数据、获取最新值），性能影响甚微。但对于需要从超长时间序列的历史数据中**随机抽取少量非相邻采样点**的查询（例如，在仪表盘上展示过去一个月每月一个数据点），性能会显著下降。这是因为 varbit 编码要求顺序扫描 chunk，而 double-delta 可以直接定位。
+
+### 最佳实践与常见反模式
+
+**最佳实践：**
+1.  **基于瓶颈决策**：如果主要瓶颈是**磁盘 I/O 或存储空间**，强烈建议尝试 varbit 编码。如果主要瓶颈是**特定类型查询的延迟**，则应谨慎评估或保持默认的 double-delta 编码。
+2.  **使用 Recording Rules 优化慢查询**：无论使用哪种编码，对于复杂的聚合查询或频繁在仪表盘上使用的查询，都应使用 [[prometheus-recording-rules]] 预先计算结果。这不仅能极大缓解 varbit 编码下随机查询的性能问题，对整体查询性能也是根本性的优化。
+3.  **渐进式验证**：不要在生产环境一次性切换所有数据。可以先对新环境启用，运行足够长时间以产生大量新 chunk 后，再对关键查询进行性能对比测试。
+
+**常见反模式：**
+- **忽视查询模式直接启用**：在不了解自身查询模式（尤其是历史数据随机查询的频率和规模）的情况下，盲目启用 varbit 编码，可能导致关键仪表盘或告警规则的延迟不可接受。
+- **依赖旧的复杂查询而不使用 Recording Rules**：期望 varbit 编码在存储和写入上带来收益的同时，不改变任何查询习惯。
+
+### 相关指标
+
+- **SLI/SLO 关联**：
+  - **可用性 (Availability)**：编码选择不直接影响服务可用性，但通过优化资源使用可以间接增强稳定性。
+  - **延迟 (Latency)**：需要为不同编码方案制定不同的查询延迟 SLO。对于依赖历史随机查询的用户，varbit 编码下的延迟 SLO 可能会放宽。
+  - **错误预算 (Error Budget)**：如果因启用 varbit 编码导致某些查询 SLI 超标，需要将其消耗计入错误预算，并通过优化查询（如引入 Recording Rules）来补偿。
+- **关键指标**：
+  - `prometheus_tsdb_storage_blocks_bytes`：监控磁盘存储占用变化。
+  - `prometheus_engine_query_duration_seconds`：监控查询延迟变化，分查询类型分析。
+  - `prometheus_tsdb_head_chunks`：监控内存中 chunk 数量，结合编码可估算内存占用。

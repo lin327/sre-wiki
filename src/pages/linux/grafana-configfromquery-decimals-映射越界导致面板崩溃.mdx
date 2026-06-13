@@ -1,0 +1,60 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana ConfigFromQuery 'Decimals' 映射越界导致面板崩溃"
+description: "未经边界检查的查询结果值被写入 field.config.decimals，在渲染时导致 Number.toFixed 抛出 RangeError 异常，使面板显示空白。"
+category: Grafana面板与可视化
+order: 0
+lastUpdated: 2024-06-11
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/125688
+    title: "ConfigFromQuery: 'Use as: Decimals' crashes panel on out-of-range values"
+tags: [grafana, transformer, fieldConfig, decimals, RangeError, toFixed, input-validation, error-budget]
+---
+
+## 概述
+
+在 Grafana 中，“从查询结果配置 (Config from query results)” 是一项强大的转换功能，允许使用一个查询的结果动态设置另一个查询结果的字段配置（如单位、颜色、小数位数等）。然而，当此转换中用于设置“小数位数 (Decimals)”的值超出合理范围（例如负数或远大于100的数）时，会因下游组件未充分防御性编程而导致面板渲染崩溃，显示空白。这是一个典型的因 **未对用户输入/数据输入进行有效验证** 而引发的可靠性问题，凸显了在数据处理管道的各个层级实施输入校验和范围钳制（Clamping）的重要性。
+
+## 核心概念
+
+- **Config from query results 转换器**：一种 Grafana 数据转换器，允许将一个数据帧的字段值映射到另一个数据帧的字段配置（FieldConfig）上。例如，将字段A的值设置为目标字段的颜色、最小值或小数位数。
+- **FieldConfig**：描述 Grafana 中数据字段如何显示的元数据对象，包含 `unit`、`color`、`decimals`、`min`、`max` 等属性。
+- **Decimals 映射**：在“Config from query results”转换器中，选择将查询值用作目标字段的 `field.config.decimals` 属性，以控制数值显示的精度（小数位数）。
+- **Display Processor**：Grafana 面板渲染管道的一部分，负责调用格式化函数来将原始数值转换为最终显示字符串。它会读取 `field.config.decimals` 并传递给格式化函数。
+- **toFixed()**：JavaScript 原生的 `Number.prototype.toFixed()` 方法，用于将数字转换为指定小数位数的字符串。其 `digits` 参数（即 `decimals`）必须介于 0 到 100 之间，否则会抛出 `RangeError` 异常。
+
+## 实践
+
+### 问题重现与排查
+1. **构建触发场景**：创建一个 Grafana 仪表板，其中包含一个用于提供配置的查询结果（配置帧）。确保该帧包含一个数值字段，其值小于 0 或大于 100（例如 `-3`）。
+2. **应用转换**：对需要配置的目标查询结果应用“Config from query results”转换。将步骤1中的配置帧字段的“用作 (Use as)”选项设置为“小数位数 (Decimals)”。
+3. **触发崩溃**：在受此转换影响的面板（如时间序列、统计、表格等）的数据中，确保至少有一个被渲染的值恰好为 `0`。此时，面板将渲染空白，并在浏览器控制台抛出 `RangeError: toFixed() digits argument must be between 0 and 100` 错误。
+4. **关键排查点**：此崩溃是 **数据依赖性** 的。它仅在渲染值为 `0` 时因 `toFixed` 的快速路径（short-circuit）而触发。对于非零值，即使 `decimals` 为 `-3`，虽然会因 `Math.max(0, decimals)` 而静默产生错误精度输出，但通常不会抛出异常导致面板完全空白。
+
+### 修复与防御
+根据问题的根本原因，修复策略是在数据处理管道的入口点进行验证，而非在出口点（格式化函数）进行补救。
+1. **源头验证（必需修复）**：在 `fieldToConfigMapping.ts` 的 `decimals` 处理器中，替换 `toNumericOrUndefined`。新的逻辑应验证值是否为 0 到 20 之间的整数（与 Grafana 编辑器 UI 对标准“小数位数”字段的限制一致）。对于任何不满足条件的值（负数、非整数、&gt;20），处理器应返回 `undefined`，从而不修改目标字段的 `field.config.decimals`，使其保持原值或默认值。**优选跳过映射而非静默钳制**，以避免给用户带来困惑。
+2. **深度防御（可选加固）**：作为额外的防御层，可以在 `baseFormatters.ts` 的 `toFixed` 调用前增加参数钳制，例如 `Math.max(0, Math.min(100, decimals))`。这可以保护所有调用该格式化函数的代码路径，即使传入了无效值。
+3. **审计扩展**：建议在此次修复过程中，快速审计同一文件中的其他数值型处理器（如 `min`, `max`）。虽然它们在传入 `-3` 时不会崩溃，但会接受在语义上不合理的值（例如 `max = -3` 会压缩 Y 轴）。
+
+### 测试策略
+- **单元测试**：为 `decimals` 处理器编写单元测试，确保传入负数、非整数、大于 20 的值时，`field.config.decimals` 未被设置（或被正确钳制）。
+- **回归测试**：编写端到端或集成测试，模拟 `config.decimals = -3` 的配置帧与包含值为 `0` 的数据帧结合渲染的场景，确保面板不抛出 `RangeError` 异常。
+
+## SRE 要点
+
+### 与可靠性的关联
+此 bug 是 **未验证输入（Unvalidated Input）** 反模式的直接体现，它破坏了系统的 **故障隔离** 能力。一个来自数据转换层（可能是用户自行配置）的无效值，能够毫无阻碍地穿透到显示渲染层，导致前端 JavaScript 运行时错误和整个面板功能的丧失。这直接影响了 Grafana 作为监控和可视化平台的核心 **可用性（Availability）**。在 SRE 实践中，我们强调“一切皆可配置，但一切需被验证”，以防止配置错误演变为生产事故。
+
+### 最佳实践与常见反模式
+- **最佳实践：分层验证与深度防御**。在数据流入的边界（如 API 入口、转换处理器）进行严格的类型和范围验证。同时，在关键下游组件（如渲染引擎、格式化器）内部进行必要的防御性检查，实现纵深防御。
+- **最佳实践：清晰的错误反馈**。当检测到无效输入时，应提供明确、可操作的错误信息（例如，在转换器配置界面提示“小数位数必须在 0 到 20 之间”），而不是让系统静默失败或产生难以追踪的下游错误。
+- **常见反模式：信任上游数据**。直接使用外部或用户提供的数据，而不假定其可能为非法值。此案例中，`decimals` 处理器信任了查询结果，而格式化器又信任了处理器。
+- **常见反模式：在错误层级处理错误**。虽然在 `toFixed` 中添加钳制是一种补救，但最佳修复点应在问题源头。将验证逻辑推迟到最终渲染阶段会增加调试复杂度，并可能掩盖其他更早的潜在问题。
+
+### 相关指标（SLI/SLO/SLA）
+虽然此 bug 本身不直接对应一个 SLI，但解决此类问题对于维护以下 SLO 至关重要：
+- **面板渲染成功率**：一个有效的 SLI 可以是“成功渲染且未抛出未处理异常的面板请求百分比”。此类崩溃会降低该指标。
+- **仪表板错误率**：作为更宏观的 SLO，“用户成功查看其配置的仪表板且无功能性错误的比例”会因此类问题受损。
+修复此类缺陷有助于维持 **错误预算（Error Budget）**，确保为真正的基础设施或网络问题留出足够的预算空间。

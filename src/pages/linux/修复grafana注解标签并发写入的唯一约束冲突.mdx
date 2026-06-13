@@ -1,0 +1,80 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "修复Grafana注解标签并发写入的唯一约束冲突"
+description: "解决因非原子读写模式导致的并发注解标签写入失败问题，提升系统可靠性。"
+category: 数据库与存储
+order: 0
+lastUpdated: 2026-06-11
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/pull/126303
+    title: "'fix(annotations): ignore duplicate annotation_tag rows on concurrent writes'"
+tags: [annotations, concurrency, database, grafana, bug-fix]
+---
+
+## 概述
+
+在 Grafana 等复杂系统中，**注解（Annotations）** 是一项关键功能，允许用户为监控数据添加上下文信息。注解标签（Tags）则进一步提供了对注解的分类与检索能力。当多个用户或自动化流程并发地创建带有相同标签的注解时，可能会引发底层数据库操作的冲突。本页面详细记录了一个典型的并发写入缺陷及其修复方案，该修复对于保障监控系统的**可靠性**与**数据一致性**至关重要。
+
+## 核心概念
+
+### 非原子读写模式 (Non-Atomic Read-Then-Insert Pattern)
+这是本次问题的根本原因。在修复前的代码逻辑（`ensureTags` 函数）中，系统在插入新标签前会先查询该标签是否已存在。这个“先读取，后插入”的操作序列在并发环境下不是原子的。如果两个进程同时读取同一个标签，发现其不存在，然后都尝试插入，就会导致其中一个插入操作失败。
+
+### 唯一约束冲突 (Unique Constraint Violation)
+为了在数据库层面保证标签的唯一性，`annotation_tag` 表通常会为 `annotation_id` 和 `tag_id` 这对组合设置唯一索引。当上述非原子操作试图插入一条已存在的记录时，数据库会违反此唯一约束并抛出错误，导致整个注解写入操作失败。
+
+### 原子性插入 (Atomic Insertion)
+这是推荐的解决方案。通过使用支持在冲突时忽略或更新的数据库插入语句（如 `INSERT ... ON CONFLICT DO NOTHING`），可以将“查询是否存在”和“执行插入”这两个步骤合并为一个原子操作。数据库保证了即使在高并发下，该操作也能安全执行，要么成功插入新记录，要么静默跳过已存在的记录。
+
+## 实践
+
+### 问题现象
+在 Grafana v13.0.3 及更早版本中，当快速连续创建或通过脚本批量创建带有相同标签的注解时，系统日志中可能出现类似以下的错误：
+```
+pq: duplicate key value violates unique constraint "annotation_tag_annotation_id_tag_id_key"
+```
+该错误会导致部分注解创建失败，影响用户体验和数据完整性。
+
+### 修复方案
+Grafana 通过提交 [PR #126303](https://github.com/grafana/grafana/pull/126303) 修复了此问题。核心变更如下：
+
+1.  **修改 SQL 语句**：将原先的 `InsertMulti` 调用（可能内部执行了多条独立的 `INSERT` 语句）替换为使用 `INSERT ... ON CONFLICT DO NOTHING` 语法的语句。
+2.  **忽略冲突记录**：新逻辑明确指定，当插入的 `annotation_id`/`tag_id` 组合与现有记录冲突时，数据库应忽略此次插入请求，而非抛出错误。
+3.  **Backport**：该修复被反向移植（Backport）到了 13.0.3 的稳定版本分支，以确保老用户也能受益。
+
+**示例逻辑对比：**
+```sql
+-- 修复前的伪逻辑（非原子）
+BEGIN;
+SELECT id FROM tag WHERE name = 'new-tag';
+-- 如果不存在，则插入
+INSERT INTO tag (name) VALUES ('new-tag');
+COMMIT;
+
+-- 修复后的原子逻辑
+INSERT INTO tag (name) VALUES ('new-tag') ON CONFLICT (name) DO NOTHING;
+```
+*注意：以上为示意，实际修复在 `annotation_tag` 关联表层面操作。*
+
+## SRE 要点
+
+### 与可靠性的关联
+-   **提升系统鲁棒性**：该修复消除了一个由并发引起的确定性故障点，使 Grafana 的注解功能在高负载、多用户场景下更加稳定。
+-   **保障数据一致性**：通过避免因唯一约束冲突导致的失败，确保了所有合法的注解请求都能被系统接受并记录，维护了监控上下文数据的完整性。
+-   **影响 SLO**：对于依赖 Grafana 注解进行事后分析或事件标记的团队，此类故障可能导致关键操作流程中断，直接影响内部 SLO（例如“注解创建成功率 &gt; 99.9%”）。修复后有助于达成或维持该 SLO。
+
+### 最佳实践与常见反模式
+-   **反模式：乐观并发下的“读-改-写”**：在分布式或并发环境中，简单的“先查询是否存在，再决定插入或更新”是危险的。应优先考虑使用数据库提供的原子操作（`UPSERT`, `ON CONFLICT`, `MERGE`）。
+-   **最佳实践：设计为冲突安全（Conflict-Safe）**：在编写处理共享资源的业务逻辑时，应预设并发冲突可能发生，并采用无锁或基于数据库保证的原子操作来处理。
+-   **最佳实践：细化错误处理**：对于因业务规则导致的“冲突”（如此处的“标签已存在”），应将其视为正常流程的一部分进行处理，而不是作为系统异常向上传播。
+
+### 相关指标（SLI/SLO）
+-   **SLI**：`annotation_create_success_rate`（注解创建成功率），可监控因唯一约束错误导致的失败请求比例。
+-   **SLO**：可设定目标，如“每月因并发冲突导致的注解创建失败率低于 0.01%”。
+-   **可观测性**：修复后，通过 Grafana 的日志或指标面板，应能观察到此类唯一约束错误的日志量显著下降至零。
+
+### 相关页面
+-   [[concurrency-control-in-sre]]（并发控制在SRE中的实践）
+-   [[database-atomic-operations]]（数据库原子操作指南）
+-   [[grafana-availability]]（Grafana服务可用性保障）

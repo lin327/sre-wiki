@@ -1,0 +1,66 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "etcd grpcproxy Watcher 丢失事件的可靠性缺陷"
+description: "etcd grpcproxy中已断开的watchBroadcast可能错误接受新watcher，导致事件丢失，影响系统可靠性。"
+category: SRE/数据库与存储
+order: 0
+lastUpdated: 2024-07-27
+confidence: medium
+sources:
+  - url: https://github.com/etcd-io/etcd/issues/21813
+    title: "etcd grpcproxy: new watchers may be added to a disconnected watchBroadcast and miss all subsequent events"
+tags: [etcd, grpcproxy, reliability, watch, distributed-systems]
+---
+
+## 概述
+
+在基于 etcd 构建的分布式系统中，`grpcproxy` 是一个关键的组件，用于扩展和代理客户端到 etcd 集群的连接。然而，其内部的 `watchBroadcast` 机制存在一个严重的可靠性缺陷：当底层的 etcd watch 连接断开后，广播器（broadcast）的状态未能正确更新，导致后续的新 watcher 可能被分配到一个已“死亡”的广播器上。这会导致这些 watcher 永远无法接收到后续的数据变更事件，从而破坏了系统的数据一致性和实时性保证。理解此问题对于保障基于 etcd 的关键服务的可靠性至关重要。
+
+## 核心概念
+
+- **watchBroadcast**：在 `grpcproxy` 中，为优化性能，多个针对相同或重叠 key 范围的 watcher 会被合并（coalesce）到一个共享的底层 etcd watch 连接上。这个管理共享连接和分发事件的抽象单元即为 `watchBroadcast`。
+- **Coalesce（合并）**：一种优化策略，用于将多个逻辑上的 watcher 合并到一个物理的 watch 连接上，以减少对 etcd 集群的连接压力。合并后的 watcher 共享一个 `watchBroadcast`。
+- **Orphaned Watcher（孤立的 Watcher）**：指其所在的 `watchBroadcast` 已经断开连接，但 watcher 本身并未被清理或重新分配到健康广播器的 watcher。这些 watcher 会静默地丢失所有事件。
+
+## 实践
+
+### 问题机制与影响
+该问题源于 `watchBroadcast` 缺乏对其自身连接状态的清晰表示。当底层的 goroutine 因为连接断开而退出后，对应的 `watchBroadcast` 对象仍然存在于管理的集合中，且没有被标记为“已停止”。这引发了两个核心的故障路径：
+
+1.  **错误的添加（`add()`）**：当新的 watcher 通过代理请求加入时，代理的调度逻辑（`add()`）会检查是否有合适的 `watchBroadcast` 可以容纳它。由于死亡广播器未被标记，调度器可能错误地将新 watcher 分配进去。这些新 watcher 自创建之初就注定会丢失事件，形成“静默失败”。
+2.  **错误的迁移（`coalesce()`）**：合并逻辑（`coalesce()`）在尝试优化 watcher 分布时，同样不会检查目标广播器是否存活。它可能将现有 watcher 从一个健康的广播器迁移到另一个已死亡的广播器上，导致原本正常工作的 watcher 突然开始丢失事件。
+
+此外，系统缺乏一种机制来检测广播器死亡并将其上残留的 watcher（孤儿 watcher）重新分配到健康的广播器或新建一个。
+
+### 如何复现
+复现该问题需要构造一个特定的故障场景：
+1.  设置一个 `etcd grpcproxy`，并让多个客户端在相同的 key 范围上创建 watcher，确保它们被合并到同一个 `watchBroadcast` 中。
+2.  人为地使代理与后端 etcd 之间的 watch 连接中断（例如，通过网络分区模拟、重启 etcd 节点、或使用 iptables 规则）。
+3.  在连接中断后，通过代理再次请求创建一个针对相同 key 范围的新 watcher。
+4.  观察这个新 watcher 以及原先就在该死亡广播器上的所有 watcher，它们将不再收到任何后续的 key 变更事件。
+
+## SRE 要点
+
+### 与可靠性的关联
+这是一个典型的**数据通路可靠性**问题。对于依赖 watch 机制来实现配置同步、缓存失效、事件驱动架构的服务，该缺陷会直接导致：
+-   **数据不一致**：客户端视图与 etcd 集群真实状态永久性脱节。
+-   **级联故障**：一个因丢失事件而持有过期数据的节点，可能做出错误决策，影响整个系统。
+-   **隐蔽性**：由于没有明确的错误或超时，故障极其隐蔽，难以通过常规监控发现，直到业务逻辑出现异常。
+
+### 最佳实践与常见反模式
+-   **最佳实践**：
+    -   **监控代理状态**：不仅监控 `grpcproxy` 进程，还应深入监控其内部的 watch 连接健康状况和 watcher 状态。
+    -   **考虑客户端重连与重试**：客户端 watch 逻辑应包含健壮的重连和错误处理机制，尽管这不能完全解决代理内部的问题，但能增加一层韧性。
+    -   **评估替代方案**：对于要求极高可靠性的场景，需权衡使用 `grpcproxy` 带来的收益与引入此风险。可能需要考虑直接连接集群或使用其他更健壮的代理模式。
+-   **常见反模式**：
+    -   **假设中间件完全透明**：错误地将 `grpcproxy` 视为完全透明、无状态的管道，忽略了其内部状态管理可能引入的故障点。
+    -   **缺乏端到端监控**：只关注代理进程是否存活，而不验证数据通路是否端到端通畅。
+
+### 相关指标与改进方向
+虽然报告中未直接提及，但从 SRE 角度，为应对或缓解此问题，应关注和建立以下监控：
+-   **SLI (Service Level Indicator)**：
+    -   Watcher 事件端到端延迟。
+    -   Watcher 会话的生命周期与预期的偏差。
+    -   因连接失败导致的 watcher 丢失率。
+-   **SLO (Service Level Objective)**：为上述 SLI 设定目标，例如“99.9% 的 watcher 在创建后5秒内能收到首次心跳或事件”。
+-   **检测与响应**：在代理层增加对 `watchBroadcast` 健康状态的自检和日志记录，并在连接断开后主动触发 watcher 的重新分配流程，是解决此问题的根本方法。这通常需要在 etcd 代码层面进行修复。

@@ -1,0 +1,76 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "告警：Recording Rules 忽略查询评估偏移"
+description: "分析 Grafana 托管的 Recording Rules 在评估时未正确应用查询偏移（query evaluation offset）导致时间戳不准确的问题。"
+category: alerting
+order: 0
+lastUpdated: 2025-08-24
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/110037
+    title: "Grafana Issue #110037: Alerting: Recording rules ignore query evaluation offset"
+tags: [alerting, recording-rules, prometheus, observability]
+---
+
+## 概述
+在 Prometheus 生态系统中，Recording Rules 用于预先计算并存储常用的或计算量大的查询结果，以提升 Dashboard 加载速度和告警评估效率。查询偏移（Query Evaluation Offset）是一个关键配置，它允许规则相对于“当前时间”进行回溯查询，这常用于对齐不同数据源或避免时间序列的短暂波动。本页面分析了 Grafana 托管的 Recording Rules 在处理此偏移量时存在的一个缺陷，该缺陷会导致写入的时间戳与查询使用的时间戳不一致，从而可能影响监控数据的准确性和可靠性。理解此问题对于维护使用 Grafana Alerting 的 SRE 团队的 [[monitoring-architecture]] 至关重要。
+
+## 核心概念
+要理解此问题，需要明确以下几个核心概念：
+
+**查询评估偏移 (Query Evaluation Offset)**
+这是 Recording Rules 或告警规则中的一个配置项（如 `offset 1m`）。其作用是将规则评估时所基于的查询时间窗口整体向前（过去）平移。例如，设置 `offset 1m` 的规则在 `10:05` 执行时，其查询的将是 `10:04` 这个时间点的数据，而不是 `10:05` 的实时数据。这常用于等待数据完全入库，或与具有固定延迟的数据源对齐。
+
+**时间戳写入**
+这是指 Recording Rule 将计算结果作为一个新的时间序列样本写入长期存储（如 Thanos, Cortex, 或 Prometheus 本地 TSDB）时，该样本所携带的时间戳。该时间戳决定了该数据点在时间轴上的位置。
+
+**Prometheus 的正确行为**
+根据 Prometheus 文档和源码，当配置了 `offset` 时，规则评估器会在每个调度时间点 `T` 执行一个瞬时查询（Instant Query），其查询时间点为 `T - offset`。至关重要的是，**计算结果将被写入时间戳 `T - offset`**。这确保了查询的数据时间点与写入的数据时间点完全一致。
+
+**Grafana 的问题行为**
+根据 Grafana 问题单描述，Grafana 托管的 Recording Rules 在调度时间 `T` 评估规则时，虽然正确地在查询中应用了偏移量（即查询 `T - offset` 时刻的数据），但在将结果写入存储时，**却使用了调度时间 `T` 作为样本时间戳**。这导致了“查询来自过去，写入却指向现在”的不一致。
+
+**`@` 修饰符与查询灵活性**
+Prometheus 查询语言允许使用 `@` 修饰符显式指定任意时间点进行查询，例如 `metric_name offset 1m @ 10:00`。这使得查询评估时间可以在查询语句内部被改变。此外，支持范围查询（Range Query）的数据源也允许通过 `step` 参数影响聚合结果的时间粒度。一个健壮的 Recording Rule 实现需要考虑这些灵活性对最终写入时间戳的影响。
+
+## 实践
+让我们通过一个具体示例来对比这两种行为的差异。
+
+**场景配置：**
+- Recording Rule 调度周期：每 1 分钟 (`0 */1 * * * *`)
+- 查询偏移量：`1m`
+- 当前调度评估时间 (`T`)：`2025-08-24T10:05:00Z`
+
+**Prometheus (正确) 流程：**
+1.  在 `10:05:00`，评估器触发。
+2.  执行瞬时查询，时间点为 `T - offset = 10:04:00`。查询语句：`some_metric offset 1m`。
+3.  获取到 `10:04:00` 时刻的 `some_metric` 值，假设为 `42`。
+4.  将样本 `{__name__="some_metric:rate_1m", value="42", timestamp="2025-08-24T10:04:00Z"}` 写入长期存储。
+5.  **结论：** 写入的数据点准确地反映了 `10:04:00` 时刻的预计算结果。
+
+**Grafana (问题) 流程：**
+1.  在 `10:05:00`，评估器触发。
+2.  执行范围查询（或等效的即时查询），时间范围的终点是 `T = 10:05:00`，起点根据规则配置回退，并应用了 `1m` 的偏移。查询本质上获取的是 `10:04:00` 时刻的数据。
+3.  计算得到值 `42`。
+4.  **但将样本 `{__name__="some_metric:rate_1m", value="42", timestamp="2025-08-24T10:05:00Z"}` 写入长期存储。**
+5.  **结论：** 存储中的数据点标签为 `10:05:00`，但其值却是基于 `10:04:00` 的数据计算得出。这造成了时间与值的错配。
+
+**影响与解决方案**
+此错配会导致依赖于该 Recording Rule 的仪表板显示不正确的时序数据（数据点会“提前”出现），也可能影响其他基于该规则进行后续计算或告警的规则。对于 SRE，最佳实践是：在 Grafana 的此问题得到官方修复前，应审慎评估在关键告警路径中使用 Grafana 托管的 Recording Rules 配合 `query_offset` 的场景。可以考虑将此类规则迁移至原生 Prometheus 或兼容的长期存储（如 Thanos Ruler）中执行，以确保行为符合预期。
+
+## SRE 要点
+此问题深刻影响了监控系统的可靠性，是 SRE 在设计和维护可观测性体系时需要关注的重要细节。
+
+- **与可靠性和可观测性的关联**：不准确的时间戳破坏了监控数据的一致性这一核心可靠性支柱。当仪表板数据、告警规则和长期趋势分析基于不同时间点的数据时，系统的可观测性会大打折扣，可能导致 SRE 误判系统状态或延误响应。
+- **最佳实践与常见反模式**：
+    - **反模式**：在 Grafana Alerting 中，无条件地为所有 Recording Rules 配置 `query_offset`，尤其是用于关键 SLI/SLO 计算的规则。
+    - **最佳实践**：
+        1.  验证依赖链：确保从数据采集、Recording Rule 到 Alerting Rule 整个链路中，时间戳的语义是清晰和一致的。
+        2.  明确规则执行位置：理解 Grafana 托管规则与原生 Prometheus/Thanos Ruler 规则在执行语义上的细微差别。
+        3.  优先使用原生工具链：对于时间敏感或用于 SLO 计算的 Recording Rules，优先考虑使用 Prometheus、Thanos 或 Mimir 等原生或兼容工具进行管理。
+- **相关指标 (SLI/SLO/SLA)**：
+    - **SLI**：`Recording Rule Timestamp Accuracy`（Recording Rule 时间戳准确率），可监控由 Grafana 托管的、配置了 `offset` 的规则所生成样本的写入时间戳与查询时间戳的偏差。
+    - **SLO**：确保 `Recording Rule Timestamp Accuracy` 达到 100%，即所有样本的时间戳都准确反映了其查询评估的时间点。
+    - **对业务 SLA 的影响**：如果基于错误时间戳的告警被触发（或未触发），可能导致对服务级别协议（SLA）的错误评估。
+
+此问题提醒我们，在复杂的监控栈中，工具的默认行为未必总是符合高可靠性场景的预期，SRE 必须深入理解其底层机制。有关监控架构的更多考量，请参阅 [[monitoring-architecture]] 和 [[alerting-best-practices]]。

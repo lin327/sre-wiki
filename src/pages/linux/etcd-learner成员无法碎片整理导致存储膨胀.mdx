@@ -1,0 +1,71 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "ETCD Learner成员无法碎片整理导致存储膨胀"
+description: "etcd learner成员不支持defrag RPC操作，导致其数据库大小持续增长，影响集群维护与升级。"
+category: "分布式系统故障"
+order: 0
+lastUpdated: "2026-05-11"
+confidence: medium
+sources:
+  - url: "https://github.com/etcd-io/etcd/issues/21740"
+    title: "ETCD Learner members cannot be defragmented, causing persistent storage bloat."
+tags: [etcd, defragmentation, learner, storage, reliability]
+---
+
+## 概述
+
+在 etcd 集群中，learner 成员用于非投票的复制，常用于增加读取容量或在进行集群变更（如提升成员）前同步数据。碎片整理（Defragmentation）是维护 etcd 数据库存储效率的关键操作，通常在压缩（compaction）后执行，以回收旧版本数据占用的空间。本页面描述了一个已知的运维问题：etcd learner 成员不支持碎片整理 RPC，导致其数据库大小无法缩减，在长期运行的生产环境中可能无限制增长，造成存储膨胀和潜在风险。
+
+## 核心概念
+
+### ETCD Learner 成员
+Learner 是 etcd 集群中的一种特殊成员类型，它不参与 Raft 共识投票，但会接收集群所有数据的完整复制副本。其主要作用包括：
+*   **降低集群变更风险**：在向现有集群添加新节点时，先以 learner 加入同步数据，再将其提升为投票成员，可减少对集群可用性的影响。
+*   **扩展只读容量**：为客户端提供额外的读取端点，分散读取负载。
+
+### 碎片整理 (Defragmentation)
+随着 etcd 键值数据的更新和删除，其底层 BoltDB 数据库文件内部会产生大量未使用的“碎片”空间。`etcdctl defrag` 命令会触发一个 RPC 调用，要求目标成员将其数据库文件碎片整理，释放这些空间给操作系统。此操作是必要的，因为 etcd 数据库文件（默认配额为 2GB）在碎片化严重时可能很快达到空间上限，导致集群拒绝写入。
+
+## 实践
+
+### 问题表现
+在包含 learner 成员的 etcd 集群（如 3 个投票成员 + 1 个 learner）中，执行标准维护流程时会观察到以下现象：
+
+1.  **CLI 行为不一致**：运行 `etcdctl defrag`（不指定端点）会成功对所有**投票成员**进行碎片整理，使其数据库大小从例如 8.5MB 降至 7MB，但会**静默跳过** learner 成员。
+2.  **直接操作失败**：尝试直接针对 learner 端点执行碎片整理会失败，并返回明确的错误：
+    ```
+    rpc error: code = Unavailable desc = etcdserver: rpc not supported for learner
+    ```
+3.  **存储持续增长**：由于无法执行碎片整理，learner 成员的数据库文件大小在首次同步后即保持不变（如 30MB），即使集群数据经过多次压缩和碎片整理。随着时间推移，新数据写入可能使其最终达到配额上限。
+
+### 根本原因分析
+这是 etcd 服务端的一个设计限制。为确保 learner 不影响核心共识流程的稳定性，许多管理性 RPC（包括 `Defragment`）被有意设置为不对 learner 成员提供服务。客户端 CLI（如 etcdctl）的某些版本虽然提供了 `--include-learner` 标志，但这并未解决底层 RPC 不可用的根本问题。
+
+### 影响评估
+*   **运维障碍**：无法对 learner 成员执行存储维护，使得集群管理变得困难。
+*   **升级风险**：当计划将 learner 成员提升为投票成员（例如进行滚动升级或扩缩容）时，一个存储接近配额上限的 learner 可能无法完成提升，或者提升后立即因写入新日志而触发配额告警，影响集群稳定性。
+*   **资源浪费**：膨胀的数据库文件占用不必要的磁盘空间。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+*   **可靠性威胁**：此问题直接威胁集群的长期可靠性。一个存储无限制增长的 learner 节点，在未来任何需要其提升为投票成员的操作中，都可能成为一个单点故障隐患或导致操作失败，破坏 SLO（如集群可用性、变更成功率）。
+*   **可观测性**：必须将 learner 成员的数据库大小（`DB SIZE`）作为关键 SLI 进行监控。应设置告警阈值（如配额的 70%），以便在 learner 存储膨胀到危险水平前介入。仅监控投票成员是不够的。
+*   **事件响应**：当收到 learner 成员存储空间告警时，运维人员需立即评估。在官方修复发布前，可能需要采取变通方案（如下述），并可能涉及协调停机窗口以重新同步数据。
+
+### 最佳实践与常见反模式
+*   **反模式**：在长期运行的集群中，长期保留一个不做存储维护的 learner 成员。这会被误认为是“低风险”操作，但实际埋下了可靠性炸弹。
+*   **最佳实践**：
+    1.  **规划生命周期**：将 learner 视为临时成员。明确其加入集群后的提升或移除时间表。
+    2.  **监控并告警**：为所有 etcd 成员（包括 learner）的数据库大小、磁盘使用量设置监控和告警。
+    3.  **变通方案**：在 learner 必须长期存在且存储告警的情况下，官方支持的“重建”方法是唯一可靠途径：
+        *   移除该 learner 成员。
+        *   从一个新的、干净的 etcd 节点重新开始，作为一个全新的 learner 加入集群以同步数据。
+    4.  **关注上游修复**：持续关注 etcd 项目对此 issue 的修复进展，未来版本可能会引入如 `--include-learners` 等正式支持的功能。
+
+### 相关指标（SLI/SLO/SLA）
+*   **SLI (Service Level Indicator)**：`etcd_member_db_size_bytes`（标签区分 `is_learner`）。
+*   **SLO (Service Level Objective)**：所有 etcd 成员（包括 learner）的数据库大小在两次碎片整理周期后，应能稳定在配额的 50% 以下。或设定为：在计划的 learner 提升操作前，其数据库大小必须低于配额的 70%。
+*   **SLA (Service Level Agreement)**：可映射到“集群数据节点管理能力”的内部承诺，即确保所有数据副本的可维护性。
+
+如需进一步了解 etcd 集群管理的基础，请参考 [[etcd-cluster-management]]。

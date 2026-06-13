@@ -1,0 +1,80 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "NRI 插件在 RunPodSandbox 钩子失败时导致的资源泄漏"
+description: "当NRI插件在RunPodSandbox钩子执行失败时，由于缺少必要的清理逻辑，containerd会泄漏Shim进程和文件系统挂载等资源。"
+category: 容器运行时
+order: 0
+lastUpdated: 2024-07-11
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/issues/13355
+    title: "[Bug] When NRI plugin fails on RunPodSandbox, containerd leaks resources"
+tags: [containerd, NRI, resource-leak, sandbox, shim]
+---
+
+## 概述
+
+在 Kubernetes 生态系统中，containerd 作为核心的容器运行时，其稳定性和资源管理能力至关重要。Node Resource Interface (NRI) 是 containerd 的一个扩展机制，允许插件在容器生命周期的关键节点（如创建、启动）注入自定义逻辑。然而，本案例揭示了在特定错误处理路径上的一个缺陷：当 NRI 插件在 `RunPodSandbox` 钩子阶段执行失败时，containerd 未能正确清理已启动的沙箱（Sandbox）和容器运行时（Shim）进程，从而导致资源泄漏。这个问题对于维护集群的长期稳定性和可靠性具有重要警示意义。
+
+## 核心概念
+
+- **NRI (Node Resource Interface)**：一个可扩展的插件框架，用于在容器生命周期的各个阶段（如 `RunPodSandbox`, `CreateContainer`）运行自定义钩子，以实现资源预留、亲和性调整等高级功能。
+- **RunPodSandbox**：CRI（容器运行时接口）中的一个关键操作，负责创建和启动一个 Pod 的沙箱环境（通常是一个轻量级容器），为 Pod 内的业务容器提供网络和存储命名空间。
+- **Shim (containerd-shim)**：containerd 为每个容器（或沙箱）启动的一个独立进程，负责管理容器的实际生命周期（运行、停止、删除）。停止一个容器或沙箱，本质上是停止并清理其对应的 Shim 进程。
+- **资源泄漏**：指在操作完成后，本应被释放的系统资源（如进程、文件描述符、挂载点）没有被正确释放，持续占用系统资源，最终可能导致节点资源耗尽，影响稳定性。
+
+## 实践
+
+### 问题场景与复现路径
+该问题在 Kubernetes 的端到端测试（E2E test）中被发现。测试流程如下：
+1.  通过 CRI 调用 `RunPodSandbox` 启动一个 Pod 沙箱。
+2.  在 containerd 内部，`StartSandbox` 函数成功执行，意味着底层的 Shim 进程已经启动并运行。
+3.  随后，NRI 的 `RunPodSandbox` 钩子被调用。**此钩子在测试配置中被设计为返回错误**，模拟插件故障。
+4.  此时，错误处理流程启动，但缺少对已启动资源的清理。
+
+### 根因分析
+通过分析 `pkg/cri/server/sandbox_run.go` 中的代码逻辑，可以清晰地定位问题：
+- 在第 299 行，`StartSandbox` 成功后，Shim 进程和相关的 rootfs、`/dev/shm` 挂载点已存在。
+- 错误发生后，现有的清理逻辑（defer 语句）只能处理部分事务：
+    - ✅ **元数据清理**：第 164 行的 defer 会从存储中删除该沙箱的元数据。
+    - ✅ **NRI 通知**：第 351 行的 defer 会发送 `RemovePodSandbox` 通知给 NRI 框架。
+    - ❌ **进程停止**：**没有**调用 `sandboxService.StopSandbox()` 或 `controller.Stop()` 来停止 Shim 进程。
+    - ❌ **挂载点卸载**：**没有**逻辑来卸载已挂载的 rootfs 和 shm。
+这导致 Shim 进程成为“孤儿进程”，文件系统挂载点持续被占用，造成资源泄漏。
+
+### 修复方案与最佳实践
+**修复方案**非常明确：在 `StartSandbox` 成功之后、NRI 钩子调用之前（即第 313 行到 344 行之间），插入一个 defer 语句。该语句应检查函数的返回错误（`retErr`），当发生错误时，调用 `c.sandboxService.StopSandbox(ctx, sandbox)` 以确保底层资源被正确回收。
+
+```go
+// 示例修复代码片段（位于 pkg/cri/server/sandbox_run.go）
+defer func() {
+    if retErr != nil {
+        // StopSandbox 内部会处理 Shim 进程停止和挂载点清理
+        if err := c.sandboxService.StopSandbox(ctx, sandbox); err != nil {
+            log.G(ctx).WithError(err).Warn("Failed to stop sandbox on RunPodSandbox hook failure")
+        }
+    }
+}()
+// ... 后续调用 NRI 钩子
+```
+
+**防御性编程**是 SRE 的核心原则之一。此案例表明，在引入外部扩展点（如 NRI 钩子）后，必须确保主流程的错误处理路径覆盖所有可能的失败点，并拥有完整的资源回滚能力。同时，现有的回滚测试（`sandbox_run_rollback_test.go`）需要增加对 NRI 钩子失败场景的覆盖，以防止类似问题复现。
+
+## SRE 要点
+
+- **与可靠性的关联**：资源泄漏是影响节点稳定性的典型问题。泄漏的进程和挂载点会缓慢消耗 CPU、内存、文件描述符等资源，可能导致节点 `NotReady` 或触发 kubelet 的驱逐策略。此 bug 的修复直接提升了节点的长期运行可靠性。
+- **与可观测性的关联**：此类泄漏可能难以通过常规监控发现，因为其速率很慢。SRE 需要关注以下异常信号：
+    - 节点上 `containerd-shim-*` 进程数随时间缓慢增长，与实际运行的 Pod 数不匹配。
+    - `/proc/mounts` 中出现孤立的、属于已终止 Pod 的挂载点。
+- **事件响应与故障排查**：当怀疑存在容器运行时资源泄漏时，应执行：
+    1.  对比节点上的 Pod 数与 Shim 进程数：`ps aux | grep containerd-shim | grep -v grep | wc -l`。
+    2.  检查 containerd 的日志，搜索与沙箱停止失败相关的错误。
+    3.  分析 `/proc/mounts`，查找可能残留的 overlay 或 shm 挂载。
+- **最佳实践与反模式**：
+    - **反模式**：在集成外部扩展或钩子后，假设其永远不会失败，或在错误路径中遗漏清理步骤。
+    - **最佳实践**：遵循“**成功路径启动，失败路径清理**”的原则。为每一个可能引入副作用的操作（如启动进程、创建挂载）定义清晰的失败回滚路径，并将其纳入自动化测试。
+- **相关指标 (SLI/SLO)**：可以考虑定义以下 SLI 来监控此类问题的复发：
+    - `containerd_leaked_shim_process_count`：检测到的“孤儿” Shim 进程数量（可通过进程名和父进程判断）。
+    - `containerd_sandbox_run_failure_cleanup_success_rate`：当 `RunPodSandbox` 因钩子失败时，后续清理操作（`StopSandbox`）的成功率。该指标的 SLO 应设为 100%。
+
+[[sandbox-management]] [[nri-extension-framework]] [[cri-error-handling]]

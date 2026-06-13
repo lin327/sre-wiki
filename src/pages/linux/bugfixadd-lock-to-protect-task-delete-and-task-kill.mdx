@@ -1,0 +1,74 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "bugfix:add lock to protect task delete and task kill"
+description: "通过为containerd的任务删除（Delete）和任务终止（Kill）操作添加锁，解决并发竞态条件导致的`ttrpc closed`错误。"
+category: "可靠性与容错"
+order: 0
+lastUpdated: 2025-10-16
+confidence: medium
+sources:
+  - url: "https://github.com/containerd/containerd/pull/12378"
+    title: "containerd/containerd Pull Request #12378"
+tags: [并发, 竞态条件, 锁, 任务生命周期, 容器运行时]
+---
+
+## 概述
+
+在容器运行时（如 containerd）中，对任务（Task）生命周期的管理需要处理多个并发操作。本次修复的 PR 旨在解决一个具体的竞态条件：当一个 `Delete`（删除）操作正在执行时，另一个并发的 `Kill`（终止）操作会因为底层的 tRPC 服务已关闭而失败。这种问题会直接影响系统的可靠性和错误处理的健壮性，是 SRE 在维护大规模容器编排平台时需要关注和防范的典型场景。通过引入细粒度的锁机制，该修复确保了任务状态操作的原子性，防止了因并发导致的意外故障。
+
+## 核心概念
+
+- **竞态条件 (Race Condition)**：指多个并发操作（如 goroutine）访问共享资源（如任务状态），且其最终结果取决于执行的相对时序。在本案中，`Delete` 和 `Kill` 同时操作同一个任务，就可能引发竞态。
+- **锁 (Lock)**：用于协调多个执行线程对共享资源访问的同步机制。通过获取锁，一个操作可以确保在它执行期间，其他试图操作同一资源的操作必须等待。
+- **任务生命周期 (Task Lifecycle)**：在 containerd 中，任务代表一个正在运行的容器化进程。其状态机通常包括创建、运行、停止、删除等阶段。`Delete` 和 `Kill` 是两个关键的生命周期转换操作。
+- **tRPC**：containerd 中用于组件间通信的远程过程调用协议。`Delete` 操作会停止与任务关联的 shim 进程的 tRPC 服务，这会导致后续任何依赖该服务的调用（如 `Kill`）失败。
+
+## 实践
+
+该修复通过在关键路径上添加锁，保护了共享状态的访问。具体而言：
+
+1.  **问题场景**：当 `local.Delete` 被调用时，它会调用 `TaskManager.Delete`，进而执行 `shimTask.delete`。这个删除过程会关闭 shim 的 tRPC 服务。如果在这一过程中或之后，另一个请求试图通过 `local.Kill` 来终止同一个任务，`Kill` 需要先通过 `getTaskFromContainer` 获取任务对象，而获取过程依赖的 tRPC 服务可能已经关闭，导致错误。
+
+2.  **解决方案**：在 `getTaskFromContainer` 函数和 `local` 层的 `Delete` 操作中引入同一把锁（`l.locker`）。
+    - 在 `getTaskFromContainer` 中，使用 `l.locker.Lock(context.Background(), container.ID)` 获取锁。这确保了在获取任务对象期间，该任务 ID 不会被其他操作（如删除）移除。
+    - 在 `local` 的 `Delete` 操作中（代码未完全展示，但根据 PR 描述），也应该获取同一把锁。这确保了删除操作和获取任务对象的操作不会重叠执行。
+
+    这样，`Kill` 请求通过 `getTaskFromContainer` 获取任务时，如果该任务正被删除，`Kill` 会等待锁释放。如果锁释放后任务已被删除，则 `getTaskFromContainer` 会返回明确的 `NotFound` 错误，而不是因 tRPC 服务关闭而产生模糊错误。
+
+    ```go
+    // 伪代码示意修复后的逻辑
+    func (l *local) Kill(...) {
+        // ... 前置检查 ...
+        // 调用被锁保护的 getTaskFromContainer
+        t, err := l.getTaskFromContainer(ctx, container)
+        if err != nil {
+            return err // 可能是 "task not found"
+        }
+        // ... 后续终止逻辑 ...
+    }
+
+    func (l *local) getTaskFromContainer(...) {
+        l.locker.Lock(context.Background(), container.ID) // 获取锁
+        defer l.locker.Unlock(container.ID)
+        // ... 获取任务 ...
+    }
+
+    func (l *local) Delete(...) {
+        l.locker.Lock(context.Background(), containerID) // 获取同一把锁
+        defer l.locker.Unlock(containerID)
+        // ... 执行删除，包括停止 tRPC 服务 ...
+    }
+    ```
+
+## SRE 覧点
+
+### 与可靠性的关联
+- **提升系统鲁棒性**：此修复消除了一个可能导致操作失败的竞态条件，使得任务管理逻辑在高并发场景下更加可靠。SRE 应将此类并发缺陷视为潜在的故障模式。
+- **错误处理明确化**：修复后，当尝试操作一个已被删除的任务时，系统会返回一个明确的“未找到”错误，而非难以诊断的连接错误。这极大地改善了问题的可诊断性和事件响应效率。
+
+### 最佳实践与常见反模式
+- **最佳实践**：对共享状态的访问，尤其是涉及生命周期转换（创建/删除）的操作，应仔细评估并发需求，必要时使用锁或其他同步原语。锁的粒度应尽量细（如本案中按容器 ID 加锁），以减少对性能的影响。
+- **常见反模式**：假设操作是串行的，忽略并发访问的可能性。在分布式或事件驱动的系统中，这往往是生产环境故障的根源。
+
+### 相关指标
+- 虽然此修复本身不直接定义 SLI/SLO，但它影响错误率的衡量。一个由竞态条件引起的 `ttrpc closed` 错误，本不应计入用户侧的有效错误预算。修复此类问题有助于使 **错误预算 (Error Budget)** 的消耗更准确地反映真实的用户体验问题，而非系统内部实现缺陷。

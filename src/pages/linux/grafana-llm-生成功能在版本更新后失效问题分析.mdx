@@ -1,0 +1,73 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana LLM 生成功能在版本更新后失效问题分析"
+description: "分析 Grafana 12.4 版本中 AI 驱动的仪表盘标题/描述生成功能失效的原因、诊断步骤及缓解方案。"
+category: 故障排除
+order: 0
+lastUpdated: 2025-04-10
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/119781
+    title: "LLM: Dashboard/Panel Title/Description generation is not working after update to 12.4"
+tags: [grafana, llm, dashboard, troubleshooting, websocket, regression]
+---
+
+## 概述
+
+Grafana 自 10.2 版本起引入了利用大语言模型（LLM）自动生成仪表盘标题、描述以及变更摘要的功能，这是提升用户体验和运维效率的重要特性。该功能依赖 Grafana LLM 插件与 Grafana Live（基于 WebSocket）的后端通信。本页面基于一个 GitHub Issue，分析了该功能在 Grafana 12.4 版本中出现的回归性故障，为 SRE 工程师提供了诊断和解决此类集成问题的思路。
+
+## 核心概念
+
+要理解此故障，需掌握以下几个关键概念：
+
+- **Grafana LLM 插件**：一个官方插件，允许 Grafana 与指定的大语言模型服务（如 OpenAI）进行交互，为 AI 辅助功能提供动力。
+- **Grafana Live**：Grafana 的实时数据推送服务，常通过 WebSocket 连接实现前后端的实时通信。AI 生成功能的请求和响应很可能通过此通道进行传输。
+- **功能回归 (Regression)**：指在新版本软件中，原本正常工作的旧功能出现异常或失效。这是软件开发中需要通过严格的回归测试来避免的问题。
+
+## 实践
+
+### 故障诊断步骤
+
+1.  **环境确认**：
+    - 确认 Grafana 版本为 12.4 或受影响的版本。
+    - 确认 `grafana-grafana-ai-applications` 插件已安装、启用且配置了有效的 LLM 服务令牌（Token）。
+
+2.  **复现与观察**：
+    - 创建或打开一个仪表盘。
+    - 尝试使用标题或描述输入框旁边的“✨ Auto generate”选项。
+    - **关键观察点**：使用浏览器开发者工具（Chrome DevTools）的“网络(Network)”选项卡，筛选“WS”（WebSocket）连接。观察点击“生成”按钮后，是否有新的 WebSocket 消息发送到 `grafana-live` 端点。根据报告，在 12.4 版本中，此通信链路被中断。
+
+3.  **日志分析**：
+    - 检查 Grafana 服务端日志，特别关注与 `llm`、`openai` 或 `live` 相关的错误信息。
+    - 检查浏览器控制台日志，查看是否有前端 JavaScript 错误或网络请求失败信息。
+
+### 可能的缓解措施
+
+在官方发布修复版本之前，可考虑以下临时方案：
+
+- **版本回退**：将 Grafana 部署回退到已知正常的版本（如 12.3）。这是最直接但需要权衡的缓解措施。
+- **插件版本检查**：尽管报告提及使用最新插件问题依旧，但仍需确保 LLM 插件已更新至最新兼容版本，排除插件自身兼容性问题。
+- **监控官方更新**：密切关注该 GitHub Issue (`#119781`) 的进展和 Grafana 的版本发布说明，等待官方修复推送。
+
+## SRE 要点
+
+### 可靠性影响
+此故障直接影响使用 Grafana 的团队的运维效率。自动化生成功能的失效，意味着工程师需要手动编写和更新仪表盘元数据，增加了负担并可能引入人为错误。对于依赖此功能进行标准化管理的团队，其**仪表盘管理的 SLO**（如“仪表盘描述完整度”）可能会受到影响。
+
+### 可观测性与事件响应
+- **可观测性**：此案例凸显了对 AI 集成功能本身进行监控的重要性。SRE 团队需要能够监控 LLM 插件的健康状态、WebSocket 连接的稳定性以及生成功能的成功率/延迟。这可以通过自定义仪表盘，利用 Grafana 的 `grafana_*` 指标（如果存在）或应用日志来实现。
+- **事件响应**：当报告此类问题时，SRE 应引导用户进行标准的“环境-复现-日志”诊断流程。快速判断是普遍性问题还是特定环境问题，并将问题链接到具体的版本变更（从 12.3 到 12.4）。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    1.  **部署前测试**：在升级 Grafana 等核心平台前，应在预发布环境中充分测试关键用户流程，包括 AI 辅助功能。
+    2.  **关注更新日志与已知问题**：定期查阅 [Grafana What's New](https://grafana.com/docs/grafana/latest/whatsnew/) 和 GitHub Issues，了解新版本的特性和已知的回归问题。
+    3.  **组件依赖监控**：对 Grafana Live、LLM 插件等关键组件的健康状态建立独立的告警。
+- **常见反模式**：
+    1.  **忽略“小”功能**：认为标题生成是“锦上添花”的功能，其失效不会导致服务不可用，从而在升级检查时被忽略。实际上，这会逐渐侵蚀运维效率和团队信心。
+    2.  **孤立排查**：只检查 LLM 插件配置，而忽略了前端通信链路（WebSocket）可能发生变化。
+
+### 相关指标 (SLI/SLO/SLA)
+- **SLI (服务级别指标)**：可监控 `llm_generation_request_success_rate`（LLM 生成请求成功率）和 `llm_generation_request_latency`（请求延迟）。
+- **SLO (服务级别目标)**：例如，“在 Grafana 环境中，仪表盘 AI 生成功能的可用性达到 99.5%”。
+- **注意事项**：此 SLI/SLO 主要针对内部工具的使用体验，通常不直接纳入面向客户的 SLA，但对于提升内部工程师生产力至关重要。

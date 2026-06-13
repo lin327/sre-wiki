@@ -1,0 +1,100 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Terraform 1.15 新特性：动态模块源、弃用管理与可靠性增强"
+description: "介绍了 Terraform 1.15 中引入的动态模块源、变量/输出弃用管理、内联类型转换等关键新特性，及其对 SRE 实践的可靠性与可维护性影响。"
+category: IaC
+order: 0
+lastUpdated: 2026-05-13
+confidence: medium
+sources:
+  - url: https://www.hashicorp.com/blog/new-in-terraform-115-dynamic-sources-variable-deprecation-and-more
+    title: "New in Terraform 1.15: Dynamic sources, variable deprecation, and more"
+tags: [terraform, iac, reliability, module-management, best-practices]
+---
+
+## 概述
+
+Terraform 作为主流的基础设施即代码（IaC）工具，其每次版本更新都对 SRE 的工作流程和可靠性实践产生直接影响。Terraform 1.15 版本引入了一系列增强功能，旨在提升配置的灵活性、模块的可维护性以及整体开发体验。这些新特性，特别是动态模块源、变量/输出弃用机制以及内联类型转换，为构建更健壮、更易于演进的基础设施代码提供了重要支持，直接关联到 SRE 关注的部署可靠性、变更安全性和长期运维效率。
+
+## 核心概念
+
+Terraform 1.15 的核心新特性主要围绕以下几个概念展开：
+
+1.  **动态模块源与 `const` 属性**：此特性允许在 `terraform init` 阶段使用变量来动态确定模块源（source）和版本（version）。通过在变量上声明 `const = true`，Terraform 确保该变量在初始化时的值是确定的（例如来自 `-var` 参数或环境变量），从而允许其在模块声明中使用。这极大地增强了模块的灵活性和可重用性，尤其是在需要根据环境或配置切换不同模块版本时。
+2.  **变量与输出弃用（`deprecated` 属性）**：模块作者现在可以使用 `deprecated` 属性来标记不再推荐使用的变量或输出。当调用方使用了已弃用的变量或引用了已弃用的输出时，Terraform 会在规划（plan）阶段发出警告。这为模块的安全、渐进式演进提供了标准化机制，是模块生命周期管理的重要组成部分。
+3.  **内联类型转换（`convert` 函数）**：新的内置函数 `convert` 允许在 HCL 配置中进行显式的、精确的类型转换。它解决了 Terraform 类型推断在某些边界情况下（如条件表达式类型不一致、创建复杂类型的空容器）可能导致的歧义或错误，使配置逻辑更清晰、更健壮。
+
+## 实践
+
+**1. 使用动态模块源**
+
+在变量中声明 `const` 属性，并在模块源中引用：
+
+```hcl
+variable "deployment_target" {
+  type    = string
+  const   = true # 标记此变量可在 init 阶段使用
+  default = "staging"
+}
+
+module "app_service" {
+  # 根据变量值动态选择模块源和版本
+  source  = "app.terraform.io/my-org/app-module/${var.deployment_target}"
+  version = "~> 2.0"
+}
+```
+
+**注意**：`const` 变量不能与 `sensitive` 或 `ephemeral` 属性同时使用。如果在嵌套模块中使用，其输入变量也必须显式声明 `const = true`。
+
+**2. 标记弃用的变量和输出**
+
+在模块内部为变量和输出添加 `deprecated` 消息：
+
+```hcl
+# 在模块中
+variable "instance_type" {
+  # ...
+  deprecated = "请使用 'machine_type' 替代，此变量将在未来版本移除。"
+}
+
+output "old_endpoint" {
+  value     = some_resource.example.endpoint
+  deprecated = "请使用 'new_endpoint' 替代，此输出将被移除。"
+}
+```
+
+当根模块调用该模块并传递 `instance_type`，或引用 `old_endpoint` 时，Terraform 会在执行计划中显示相应的弃用警告，帮助团队逐步迁移。
+
+**3. 使用 `convert` 函数进行类型转换**
+
+```hcl
+# 显式创建一个空的字符串列表，而非空元组
+variable "allowed_ports" {
+  # 错误：type = list(number)，默认值 {} 会被解释为空对象
+  # 正确：使用 convert 函数
+  type    = list(number)
+  default = convert([], list(number))
+}
+
+# 在条件表达式中确保类型一致
+resource "null_resource" "example" {
+  count = convert(var.create ? 1 : 0, number)
+}
+```
+
+## SRE 要点
+
+- **与可靠性、可观测性、事件响应的关联**：
+    - **部署可靠性**：动态模块源允许在部署流水线中更灵活地切换不同环境的配置，同时通过 `const` 保证初始化阶段的确定性，减少了因变量解析时机不当导致的意外失败。
+    - **变更安全性与可观测性**：弃用管理机制为基础设施代码的演进提供了清晰的信号。在 CI/CD 流水线中，可以利用这些弃用警告作为代码质量检查（Quality Gate）的一部分，确保遗留用法在计划阶段就被识别，避免了线上事故。
+    - **配置可维护性**：`convert` 函数和输出类型约束提高了配置的类型安全性，减少了因隐式类型转换或输入错误导致的运行时问题，降低了调试复杂性。
+
+- **最佳实践与常见反模式**：
+    - **最佳实践**：在开发新模块版本时，应积极使用 `deprecated` 属性引导用户迁移。在 CI 流程中，应配置将弃用警告视为构建失败（或至少标记），确保技术债务被及时处理。
+    - **反模式**：避免在根模块输出上使用 `deprecated` 属性（这会直接报错）。不要过度依赖隐式类型转换，应优先使用 `convert` 明确意图。在使用 `const` 变量时，避免在其来源（如环境变量）中留下未清理的旧值。
+
+- **相关指标（SLI/SLO/SLA）**：
+    - 虽然这些特性不直接产生新的 SLI，但它们能间接影响以下指标：
+        - **部署成功率**：更灵活的模块管理和更明确的错误提示有助于提升首次部署成功率。
+        - **变更回滚率**：清晰的弃用警告有助于在变更引入前识别兼容性问题，降低需要回滚的概率。
+        - **平均修复时间（MTTR）**：更准确的类型错误和配置警告能帮助工程师更快地定位和修复基础设施代码中的问题。

@@ -1,0 +1,95 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "etcd Leader切换期间 lease keepalive 返回 'not a primary lessor' 错误"
+description: "解析 etcd 在 leader 切换时 lease keepalive 返回不恰当的 gRPC Unknown 错误码的原因、影响及应对策略。"
+category: 分布式系统故障
+order: 0
+lastUpdated: 2026-04-27
+confidence: high
+sources:
+  - url: https://github.com/etcd-io/etcd/issues/21671
+    title: "Unexpected Unknown grpc code for ErrNotPrimary"
+tags: [etcd, gRPC, 错误处理, leader-election, lease, 可靠性]
+---
+
+## 概述
+
+在 etcd 集群的运维中，因性能抖动（如磁盘 I/O 延迟）触发 leader 选举是一个常见场景。此时，依赖 etcd 的 lease 服务（如用于心跳或服务发现）的客户端可能会遇到特定的错误。本知识页面深入分析了一个实际案例：当 leader 切换时，`/v3/lease/keepalive` 请求返回了一个语义不准确的 gRPC `Unknown` 错误码（`code: 2, message: "not a primary lessor"`）。了解此问题的根因、影响及最佳实践，对于维护基于 etcd 的分布式系统的稳定性和可恢复性至关重要。
+
+## 核心概念
+
+### Lease Keepalive 机制
+etcd 的 `Lease` 是一种生存时间（TTL）机制。客户端通过定期发送 `KeepAlive` 请求来续租，以维持与 etcd 关联的键值对的生存。`KeepAlive` 是一个流式 RPC，客户端通常期望其持续运行，或在遇到临时性错误时进行重试。
+
+### Leader 与 Primary Lessor 的关系
+在 etcd v3 集群中，所有与 lease 相关的操作（包括 `KeepAlive`）都需要由集群的 **leader** 节点（在此上下文中称为 **primary lessor**）处理。当 leader 发生切换时，旧 leader 会立即丧失其作为 primary lessor 的身份。任何尚未处理完毕或新到达的 `KeepAlive` 请求，如果被发送到这个“过期”的节点上，都会失败。
+
+### gRPC 错误码语义
+gRPC 定义了标准的错误码来表达失败原因。选择正确的错误码对于客户端的自动恢复行为（如重试）有决定性影响。
+*   **`Unknown (2)`**: 表示未知错误。这是一个“兜底”错误码，客户端通常**不应该**对它进行重试，因为它可能意味着不可恢复的问题。
+*   **`Unavailable (14)`**: 表示服务当前不可用。客户端应将其视为临时性故障，并按照重试策略（如指数退避）进行重试。
+
+在本案例中，etcd 因 leader 切换而拒绝 `KeepAlive` 请求，但返回了 `Unknown` 错误码。这向客户端传递了一个具有误导性的信号：即该错误可能是永久的，无需重试。然而，这是一个典型的**临时性状态错误**，客户端应当重试。
+
+## 实践
+
+### 问题重现与根因分析
+根据 issue 描述，该错误可以通过在 `EtcdServer.LeaseRenew()` 方法中模拟 `s.ensureLeadership()` 检查失败来重现。结合提供的日志，我们可以清晰地看到事件序列：
+1.  **性能瓶颈**：日志显示 leader 心跳发送超时（“took too long, leader is overloaded likely from slow disk”）。
+2.  **领导权变更**：集群发起选举，节点 `95012eee2c61378b` 成为新 term 的 leader。
+3.  **错误返回**：旧 leader 节点上的 `KeepAlive` 处理逻辑检测到自己不再是 leader，返回错误 `{"code": 2, "message": "not a primary lessor"}`。
+
+### 应对策略与解决方案
+SRE 和开发者应从服务端和客户端两个层面来应对此类问题。
+
+**1. 服务端（etcd）层面**：
+*   **正确的错误码返回**：对于因临时失去领导权而导致的操作失败，etcd 应返回 `Unavailable` 而非 `Unknown` 错误码。这是该 issue 的核心诉求，也是对 etcd 代码库的改进建议。`Unavailable` 能更准确地描述“服务暂时无法处理此请求”的状态。
+*   **监控与预警**：强化对 `leader changed` 事件和磁盘 I/O 延迟的监控。频繁的 leader 切换是集群不健康的重要信号，需要优先调查底层基础设施（如磁盘性能）问题。
+
+**2. 客户端层面**：
+*   **健壮的重试逻辑**：客户端库（如 `etcd-client`）在处理 gRPC 流错误时，不应仅依赖错误码。对于像 `KeepAlive` 这类维持连接的操作，一种推荐的模式是：即使遇到 `Unknown` 错误，也根据上下文（如错误信息包含“not a primary”）进行有策略的重试。
+*   **配置合理的超时与重试策略**：为 etcd 客户端配置连接超时、请求超时以及指数退避重试策略，可以使其更优雅地度过短暂的集群不稳定期。
+
+**示例（伪代码，客户端侧）**：
+```python
+# 伪代码，展示客户端重试逻辑的思路
+while lease.is_active():
+    try:
+        lease.keep_alive().next()
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.UNKNOWN and "not a primary lessor" in e.details():
+            # 尽管是 Unknown，但根据消息内容判断为临时错误，执行重试
+            time.sleep(retry_backoff_seconds())
+            continue
+        elif e.code() == grpc.StatusCode.UNAVAILABLE:
+            # 期望中的临时错误，执行重试
+            time.sleep(retry_backoff_seconds())
+            continue
+        else:
+            # 其他错误，按需处理或终止
+            raise
+```
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+*   **可靠性**：此问题直接影响使用 etcd lease 的上层应用的可用性。错误的错误码可能导致客户端非预期地放弃重试，造成服务发现失败或心跳丢失，进而引发更大范围的级联故障。正确的错误码是保障系统**可恢复性**的关键细节。
+*   **可观测性**：日志中丰富的上下文（如 `leader failed to send out heartbeat on time`、`leader changed`）是诊断问题的关键。SRE 应确保此类关键状态变更日志能被有效地采集和告警。
+*   **事件响应**：在应对由此错误触发的告警时，事件响应人员应能迅速关联到“leader 切换”这一根本原因，而非仅仅关注客户端的错误。响应步骤应包括：检查集群健康状况、确认 leader 切换频率、排查底层资源（磁盘、网络）性能。
+
+### 最佳实践与常见反模式
+*   **最佳实践**：
+    *   **防御性客户端编程**：在依赖 etcd 等外部一致性服务时，客户端代码必须对临时性错误具备重试能力，而不是将所有非成功响应都视为致命错误。
+    *   **服务端语义正确**：中间件或存储系统应返回符合 gRPC/HTTP 语义的错误码，以便生态系统中的客户端和代理能够做出正确行为。
+    *   **关注集群稳定性信号**：将 `etcd_server_leader_changes_seen_total` 等指标作为核心监控项，其突增是需要立即调查的强信号。
+*   **常见反模式**：
+    *   **忽略客户端重试逻辑**：假设客户端会自动处理所有错误，而忽略了错误码语义不准确导致客户端行为偏离预期。
+    *   **仅告警错误本身**：告警规则仅关注 `KeepAlive` 失败率，而不关联 `leader_changes` 指标，导致告警风暴且无法直指根因。
+
+### 相关指标（SLI/SLO/SLA）
+*   **SLI（服务等级指标）**：
+    *   etcd `KeepAlive` 请求的成功率（区分临时性错误与永久性错误）。
+    *   etcd 集群的 leader 选举频率（`changes_seen_total`）。
+    *   Leader 心跳延迟和 ReadIndex 响应时间。
+*   **SLO（服务等级目标）**：确保使用 etcd lease 的关键业务（如微服务注册中心）维持高可用性。可以设定 SLO，例如：“在任意 5 分钟窗口内，因 etcd 领导权变更导致的 lease 续期失败次数不超过 1 次”。
+*   **SLA（服务等级协议）**：基于 SLO 对外承诺。此问题的正确处理有助于维持对客户承诺的高可用性 SLA。

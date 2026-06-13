@@ -1,0 +1,58 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Prometheus Metric Builder UTF8 支持：含 UTF-8 字符的标签名在 Group By 查询中未被引号转义"
+description: "Grafana 的 Prometheus Metric Builder 在处理包含 UTF-8 字符（如点号）的标签名时，未能正确生成带引号的查询，导致聚合查询语法错误。"
+category: PromQL
+order: 0
+lastUpdated: 2025-04-04
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/issues/103425
+    title: "Grafana Issue #103425"
+tags: [Prometheus, Grafana, PromQL, Metric-Builder, UTF-8, Reliability]
+---
+
+## 概述
+
+在现代可观测性实践中，Prometheus 已广泛支持 UTF-8 字符集，允许指标名称和标签名包含更丰富的字符（如点号、中文等）。Grafana 作为主流的可视化工具，其 Metric Builder（指标构建器）旨在简化 PromQL 查询的生成。然而，近期发现的一个缺陷表明，当聚合查询（如 `sum by`）需要按包含 UTF-8 字符的标签进行分组时，构建器未能正确地对标签名进行引号转义，从而生成了语法错误的查询。这直接影响了使用新型 OpenTelemetry 指标或自定义指标的团队构建监控面板的可靠性，是 SRE 在维护监控系统有效性时需要关注的一个工具链缺陷。
+
+## 核心概念
+
+要理解此问题，需明确以下几个关键点：
+
+1.  **Prometheus UTF-8 支持**：从 Prometheus 2.21 版本开始，指标名称和标签名被支持包含任意 UTF-8 字符。但为了与旧版本的查询语言兼容，在 PromQL 中，如果标签名包含非 `[a-zA-Z0-9_]` 的字符（例如 `label.1`），则必须使用双引号将其括起来，形成 `"label.1"` 才能被正确解析。
+2.  **PromQL 中的 Group By 语法**：在 `sum by(label_name)` 这样的聚合操作中，`label_name` 部分需要遵循上述引号规则。正确的语法是 `sum by("label.1")`。
+3.  **Grafana Metric Builder**：这是一个图形化界面，旨在帮助用户通过点选和配置来生成 PromQL 查询字符串。它的核心逻辑之一就是将用户的配置（如选择的聚合函数、分组标签）转换成符合语法的文本查询。
+
+## 实践
+
+根据提供的 issue 描述，问题可以通过以下步骤复现和验证：
+
+1.  **问题表现**：当用户在 Grafana 的 Metric Builder 中选择一个聚合函数（如 `sum`），并试图按一个包含点号（`.`）的标签名（例如 `label.1`）进行分组（`Group By`）时，构建器生成的查询片段为：
+    `sum by(label.1) (rate({...}[2m]))`
+    这是一个语法无效的 PromQL 语句，执行会报错。
+
+2.  **正确行为**：预期构建器应该生成的正确查询片段为：
+    `sum by("label.1") (rate({...}[2m]))`
+    即为 UTF-8 字符的标签名自动添加双引号。
+
+3.  **复现环境与步骤**：
+    *   **环境**：Grafana 11.6（任何支持 UTF-8 的版本）。
+    *   **前置条件**：存在一个 Prometheus 数据源，其中包含一个具有 UTF-8 标签名（如 `label.1`）的指标。
+    *   **操作**：
+        a. 在 Grafana 中创建一个使用该 Prometheus 数据源的 Panel。
+        b. 使用 **Query Type** 为 **Builder** 的编辑模式。
+        c. 选择目标指标（如 `otlpapp.floatcounter.total`）。
+        d. 在 **Aggregations** 中添加一个聚合函数（如 `Sum`）。
+        e. 在 **Group by** 选项中，选择那个包含 UTF-8 字符的标签（`label.1`）。
+    *   **结果**：观察生成的查询（切换到 Code 模式或预览），会发现缺少了必要的引号。
+
+## SRE 要点
+
+*   **对可靠性的影响**：此 bug 直接影响了**监控面板的构建可靠性**。依赖 Metric Builder 的工程师或用户会生成无效查询，导致监控面板报错、数据丢失，进而可能掩盖真实的系统故障或性能问题，延迟事件响应。SRE 需确保监控工具链本身是稳健的。
+*   **可观测性关联**：正确的标签分组是实现精细化可观测性的基础。无法正确按业务标签或技术维度进行聚合分析，将严重限制从指标数据中提取洞察的能力，违背了可观测性工程的初衷。
+*   **最佳实践与反模式**：
+    *   **实践**：当在 Grafana 中遇到基于 UTF-8 标签的查询问题时，SRE 应知晓此缺陷，并采用 **Code** 模式手动编写正确的 PromQL（`"label.1"`）作为临时解决方案。
+    *   **反模式**：不应假设图形化构建器在所有边界情况下都是正确的，尤其是在处理新特性（如 UTF-8）时。关键监控查询应进行语法审查和测试。
+*   **相关指标 (SLI/SLO)**：此问题本身不直接影响应用 SLI，但会影响 **监控系统的可用性** 这一内部 SLO。如果监控面板因查询错误而不可用，则监控系统未达到其自身的可靠性目标。
+*   **关联知识**：此问题与 [[prometheus-query-language]] 语法、[[grafana-data-source-configuration]] 以及 [[monitoring-toolchain-reliability]] 密切相关。升级 Grafana 或等待官方修复（预计在后续版本中）是根本解决途径。

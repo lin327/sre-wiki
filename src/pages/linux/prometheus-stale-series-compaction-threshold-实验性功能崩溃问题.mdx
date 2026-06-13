@@ -1,0 +1,63 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Prometheus stale_series_compaction_threshold 实验性功能崩溃问题"
+description: "启用实验性配置项 stale_series_compaction_threshold 可能导致 Prometheus 内存异常并进入持续崩溃重启循环。"
+category: Prometheus
+order: 0
+lastUpdated: 2026-03-26
+confidence: medium
+sources:
+  - url: https://github.com/prometheus/prometheus/issues/18379
+    title: "Prometheus GitHub Issue #18379: stale_series_compaction_threshold experimental feature breaks Prometheus"
+tags: [prometheus, stale-series-compaction, crash-loop, experimental-feature, configuration-bug]
+---
+
+## 概述
+
+本文档详细说明了在 Prometheus 中启用实验性功能 `stale_series_compaction_threshold` 时可能遇到的严重问题。该功能旨在清理“过期”的时间序列（即不再更新数据的序列）以优化存储，但特定版本（如 v3.10.0）中存在一个未知缺陷，可能在长期运行后触发。该问题会导致 Prometheus 进程内存行为异常，并进入无法恢复的 WAL（Write-Ahead Log）重放与持续重启循环，严重影响监控数据的连续性与可靠性。对于 SRE 而言，理解此问题对于管理实验性配置、故障排查和维护监控系统稳定性至关重要。
+
+## 核心概念
+
+**Stale Series Compaction (过期序列压缩)**: 这是一个 Prometheus 的**实验性**特性。在 Kubernetes 等环境中，Pod 频繁重建会产生大量短期内有数据、随后停止上报的“过期”时间序列。该功能的目标是识别并最终从内存和磁盘中删除这些不再活跃的序列，以释放内存和存储空间。配置项 `stale_series_compaction_threshold` 用于设置触发删除的阈值。
+
+**问题现象 - 内存曲线平坦**: 根据 Issue 中的图表，当 bug 被触发后，Prometheus 的内存使用会呈现一条**平坦的线**（Memory stays flat）。这通常不是正常的运行模式，异常表明进程在不断尝试重放 WAL 日志以恢复数据，但无法成功完成，因此内存无法被有效释放或使用，陷入死循环。
+
+**崩溃重启循环 (Crash Loop)**: Prometheus 因上述内存异常和 WAL 重放失败而崩溃，随后被进程管理器（如 Kubernetes kubelet）自动重启。但重启后，同样的问题会重现，导致服务持续无法就绪（Not Ready），监控数据出现缺口。
+
+## 实践
+
+当怀疑 Prometheus 出现与 stale series compaction 相关的崩溃时，可按以下步骤进行排查和缓解：
+
+1.  **检查配置**：首先确认 Prometheus 的配置文件中是否显式启用了 `stale_series_compaction_threshold`。该选项通常位于全局配置部分。
+    ```yaml
+    global:
+      # ... 其他配置
+      stale_series_compaction_threshold: <value> # 如果存在此行，则功能已启用
+    ```
+
+2.  **监控内存与重启指标**：
+    *   观察目标 Prometheus 实例的内存使用曲线，是否出现非预期的、长时间的平坦线。
+    *   在 Kubernetes 中，检查 Pod 的重启次数：`kubectl get pod <prometheus-pod> -o jsonpath='{.status.containerStatuses[0].restartCount}'`。异常的重启计数激增是直接信号。
+    *   检查系统日志或 `kubectl logs`，寻找 Prometheus 进程崩溃前的错误日志，可能包含 WAL 相关的错误信息。
+
+3.  **规避措施**：
+    *   **立即行动**：如果生产环境 Prometheus 因此不稳定，**最直接的规避方法是禁用此实验性功能**。移除配置文件中的 `stale_series_compaction_threshold` 项并重启 Prometheus。注意，重启本身可能会短暂影响数据采集。
+    *   **升级或等待修复**：密切关注 Prometheus 官方 GitHub Issue #18379 的进展，等待包含修复补丁的新版本发布，并计划升级。
+
+4.  **日志与数据收集**：如果问题可以稳定复现，按照 Issue 中的指引收集详细的 Prometheus 日志、配置文件（脱敏后）和内存/重启的时序数据，这对于向 Prometheus 社区报告和协助诊断根本原因至关重要。
+
+## SRE 要点
+
+### 与可靠性的关联
+*   **可用性冲击**：此问题直接破坏了 Prometheus 服务的**可用性**。一旦触发，监控系统自身将失去数据采集和查询能力，导致对被监控系统状态的“失明”。
+*   **事件响应**：此类问题属于基础设施组件自身的软件缺陷引发的故障。SRE 在事件响应中需要快速识别其特征（内存平坦线、崩溃循环），并与监控系统的日常容量问题或性能问题区分开。首要任务是恢复服务（禁用功能或回滚版本），其次是跟进上游修复。
+
+### 最佳实践与常见反模式
+*   **实验性功能谨慎原则**：**绝对避免在关键生产环境的核心监控系统中，直接启用未经充分验证的实验性或预览功能。** 应在开发或测试环境进行充分评估。
+*   **变更管理**：任何对 Prometheus 核心配置的修改，即使是一个参数，也应纳入变更管理流程，并评估其潜在风险。
+*   **常见反模式**：看到监控系统异常（如重启）时，仅将其视为“资源不足”并盲目扩容，而忽略了可能由配置或软件缺陷导致的根因，这会延长故障时间并浪费资源。
+
+### 相关指标与故障模式
+虽然此问题本身不直接对应某个 SLI/SLO，但它严重威胁了监控系统本身的可靠性，进而影响所有依赖其数据的服务等级目标。
+*   **故障模式**：`Prometheus-ExperimentConfig-CrashLoop`。可作为内部故障分类标签。
+*   **监控 Prometheus 自身**：SRE 必须建立对 Prometheus 核心组件（如 Pod 重启次数、内存使用模式、进程存活时间）的严格监控与告警，以便第一时间发现此类自身故障。这本身就是监控系统可靠性的关键实践。

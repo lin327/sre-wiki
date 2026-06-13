@@ -1,0 +1,81 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "大型活动基础设施的快速监控实践：DreamHack案例"
+description: "展示了如何在为期五天的极短部署周期内，为包含数万台设备的临时网络构建一套基于Prometheus的、可扩展且易用的生产级监控系统。"
+category: 可观测性实践
+order: 0
+lastUpdated: 2025-10-27
+confidence: high
+sources:
+  - url: "https://prometheus.io/blog/2015/06/24/monitoring-dreamhack/"
+    title: "Monitoring DreamHack - the World's Largest Digital Festival"
+tags: [Prometheus, SNMP, 监控, 告警, 网络监控, 大规模活动]
+---
+
+## 概述
+
+DreamHack是全球最大的数字节日，汇集了数万名自带电脑的玩家进行电子竞技、编程竞赛和娱乐活动。其核心挑战之一在于必须在**五天内**从零开始构建并运维一个足以支撑超过10,000台接入设备的高性网络。在这一极限场景下，快速、可靠且易于维护的监控系统是确保活动顺利进行的关键。本文记录了DreamHack技术团队（dhtech）如何采用Prometheus替代原有监控方案，构建名为“dhmon”的监控系统，以应对这一挑战。
+
+## 核心概念
+
+在快速变化的临时基础设施中，监控系统本身也必须具备**敏捷性**和**可扩展性**。dhmon的设计哲学就是围绕这一需求展开的。
+
+*   **dhmon架构**：整个监控系统分为三层——**采集层**、**存储与查询层**和**呈现层**。采集层使用自定义的exporter（如`snmpcollector`用于SNMP，`ipplan-pinger`用于ICMP）收集原始指标；存储与查询层以**Prometheus**为核心，辅以Redis/Memcached用于缓存最新快照；呈现层通过Web应用（如dhmap）和仪表板展示状态。
+*   **SNMP监控**：对于网络设备（如Cisco 2950接入交换机），主要通过SNMP协议采集指标。关键挑战在于将SNMP的OID（如接口速率`ifHighSpeed`）与可读的接口名（如`GigabitEthernet0/2`）进行关联，这在采集器配置时通过添加标签（label）实现。
+*   **Prometheus组件**：该方案集成了`Prometheus`（核心时序数据库）、`PromDash`（仪表板）和`Alertmanager`（告警管理）。三者通常部署在同一主机，并通过Apache反向代理统一暴露访问端点。
+*   **告警规则**：告警定义基于PromQL表达式，语法直观。例如，`ALERT BadUplinkOnAccessSwitch` 可以检测接入交换机上行端口协商速率是否低于预期。告警规则直接定义在Prometheus中，由Alertmanager处理路由和通知。
+
+## 实践
+
+### 1. 部署与配置架构
+
+在资源有限的现场，简单的部署至关重要。Prometheus及其组件在同一台服务器上运行，并由Apache提供统一的反向代理入口，示例配置如下：
+```apache
+ProxyPass /prometheus http://localhost:9090/prometheus
+ProxyPass /alertmanager http://localhost:9093/alertmanager
+ProxyPass /dash http://localhost:3000/dash
+```
+这种架构降低了复杂度，便于在活动准备期快速搭建和调整。
+
+### 2. 性能优化：预计算规则
+
+面对海量数据（如约18,000条链路）的即时查询（如计算Top 5利用率），直接查询可能缓慢甚至超时。解决方案是利用Prometheus的[记录规则（Recording Rules）](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)将复杂的聚合查询结果预先计算并存储为新指标。
+
+例如，计算非接入层链路利用率的预计算规则：
+```promql
+precomputed_link_utilization_percent = rate(ifHCOutOctets{layer!='access'}[10m])*8/1000/1000
+                                       / on (device,interface,alias)
+                                     ifHighSpeed{layer!='access'}
+```
+之后，查询`topk(5, precomputed_link_utilization_percent)`即可获得极快的响应速度。
+
+### 3. 主动告警配置示例
+
+告警规则的定义清晰易读，以下为两个实际用例：
+
+**a. 检测接入交换机上行端口链路速率异常**
+```promql
+ALERT BadUplinkOnAccessSwitch
+  IF ifHighSpeed{layer='access', interface='GigabitEthernet0/2'} < 1000 FOR 2m
+  SUMMARY "接口链路速率为 {{$value}} Mbps"
+  DESCRIPTION "设备 {{$labels.device}} 的接口 {{$labels.interface}} 链路速率为 {{$value}} Mbps"
+```
+该规则能快速发现因线缆氧化等物理原因导致的降速问题，使团队能在用户察觉前主动修复。
+
+**b. 检测DHCP地址池即将耗尽**
+```promql
+ALERT DhcpScopeAlmostFull
+  IF ceil((dhcp_leases_current_count / dhcp_leases_max_count)*100) > 90 FOR 2m
+  SUMMARY "DHCP地址池 {{$labels.network}} 即将耗尽"
+  DESCRIPTION "DHCP地址池 {{$labels.network}} 使用率达到 {{$value}}%"
+```
+这有助于提前扩容，避免因IP地址不足导致大面积连接失败。
+
+## SRE 要点
+
+*   **快速交付与可观测性**：DreamHack的案例是“在压力下交付可靠性”的典范。在5天的部署窗口中，监控系统必须与基础设施同步甚至更快地就绪。使用Prometheus等声明式、易于扩展的工具，使得在每次网络结构变更后，能快速更新监控目标，确保了整个构建周期的**可观测性**。
+*   **混合架构与权衡**：团队最初为追求极低延迟（~10秒）的数据显示而使用Memcached，后来验证Prometheus同样胜任。这体现了SRE中**权衡（Trade-off）** 的思想：在满足**SLA**（用户体验修复时效）的前提下，评估并可能统一技术栈以降低复杂性。
+*   **主动告警与Error Budget**：告警规则的设定直接服务于**可靠性目标**。例如，对链路速率的监控是为了维持网络性能的SLI；对DHCP池的监控则是为了避免服务中断，本质上是**保护Error Budget**。通过告警，团队从被动响应用户投诉转变为主动发现和解决问题。
+*   **持续改进与文化**：文章末尾详尽的未来计划（如集成Syslog、IDS、跨团队数据）展示了**持续改进**的SRE文化。监控不仅是工具，更是促进协作（如跨团队数据集成）、驱动自动化和深化对系统理解的实践。开源dhmon项目也促进了知识共享和社区贡献。
+
+本案例生动展示了如何将一套现代监控系统融入到一个对敏捷性和可靠性要求都极高的实践中，为类似临时性、大规模基础设施项目提供了宝贵的参考。

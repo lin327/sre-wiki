@@ -1,0 +1,60 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Jira v2 集成 'Cannot coerce empty String' 问题与修复"
+description: "在 Grafana 12.x 版本中，Jira v2 联系点集成因序列化问题导致警报去重工作流完全失效，需升级至 13.1.x 版本解决。"
+category: Alerting module
+order: 0
+lastUpdated: 2026-05-10
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/124518
+    title: "grafana/grafana Issue #124518 - Alerting module: Backport Jira v2 fix to Grafana 12.4.x"
+tags: [alerting, jira, contact-point, bugfix, reliability, backport]
+---
+
+## 概述
+本文档描述了 Grafana 12.x 系列版本中存在的一个严重缺陷，该缺陷导致 Jira v2 联系点集成完全失效。具体而言，当 Grafana 的警报模块通过 Jira REST API 执行问题搜索（例如用于警报去重）时，会因序列化一个不合规的空字符串字段而被 API 拒绝，返回 **"Cannot coerce empty String"** 错误。此问题直接影响所有依赖 Grafana 12.x 版本管理警报并寻求与 Jira 事件单系统深度集成的 SRE 或运维团队，破坏了核心的自动化事件响应和去重工作流。
+
+## 核心概念
+要理解此问题及其影响，需要了解以下几个关键组件：
+- **Grafana Alerting Module**：Grafana 的统一警报系统核心模块，负责评估规则、生成警报实例并路由至配置的联系点。
+- **Jira v2 Contact Point**：Grafana 中用于与 Jira Cloud/Server 集成的联系点类型，支持创建新问题、更新现有问题以及搜索问题。
+- **Issue Search & Deduplication**：警报去重是一种关键可靠性模式，旨在将同一根本原因产生的多个警报通知关联到单个 Jira 工单，避免“警报风暴”淹没响应人员。实现去重通常需要通过 Jira API 搜索具有相同标识（如警报指纹）的现有问题。
+- **JSON Serialization & API Compliance**：Grafana 将内部数据结构序列化为 JSON 请求体发送给 Jira API。Jira API 对其接受的字段格式有严格规定，例如不允许 `"expand": ""` 这样的空字符串值存在。
+
+## 实践
+### 问题影响范围
+- **受影响版本**：所有 Grafana **12.x** 版本（截至 12.4.4）。此缺陷在从 Grafana 11.x 升级到 12.x 后出现。
+- **受影响功能**：任何在 Grafana 12.x 中配置了使用“搜索现有问题”功能的 Jira v2 联系点的工作流。典型的触发场景是警报的去重或分组处理。
+
+### 问题根本原因
+警报模块在构建用于搜索 Jira 问题的 API 请求时，错误地将一个可选的 `expand` 字段序列化为一个空字符串 (`"expand": ""`) 而非将其完全从 JSON 对象中省略。Jira REST API 不接受此格式，因此返回错误并拒绝处理请求，导致整个集成链路中断。
+
+### 解决方案与临时规避
+1.  **官方修复**：修复已合并至 Grafana 主线（`main` 分支），对应的里程碑版本为 **13.1.x**。
+    - 修复 PR：[grafana/alerting#454](https://github.com/grafana/alerting/pull/454)
+    - 模块更新 PR：[grafana/grafana#121578](https://github.com/grafana/grafana/pull/121578)
+2.  **版本升级路径**：
+    - **推荐方案**：升级 Grafana 至 **13.1.x 或更高版本**。这是根本性的解决方案。
+    - **如果无法立即升级**：
+        - **降级**：将 Grafana 降级回 **11.x** 版本，该版本运行正常。
+        - **规避**：在 Jira 联系点配置中，**禁用或避免使用任何依赖“问题搜索”的功能**（如“将警报附加到现有问题”）。仅使用创建新问题的功能。请注意，这将完全放弃去重能力，可能导致通知泛滥。
+
+## SRE 要点
+### 与可靠性、可观测性、事件响应的关联
+此 Bug 直接破坏了 SRE 实践中的一个关键自动化环节——**事件关联与去重**。有效的去重是维持通知信噪比、确保响应人员聚焦于核心问题的关键。此问题会导致每个告警实例都尝试创建独立工单，引发通知风暴，消耗团队认知负荷，并可能掩盖根本原因。它是可观测性工具链断裂的一个典型案例：虽然警报可能被正确触发，但其向后续系统（事件管理）的传递却失败了。
+
+### 最佳实践与常见反模式
+- **集成测试**：在升级监控栈（如 Grafana）时，必须对关键联络点集成进行端到端的冒烟测试，尤其是那些涉及搜索、更新等复杂操作的流程。
+- **版本管理与回滚计划**：SRE 团队应维护清晰的组件版本清单，并为关键组件（如 Grafana）制定快速回滚计划。在本例中，拥有 11.x 的备份安装包或配置可以快速恢复服务。
+- **通知策略审查**：当关键去重功能失效时，应有预案临时调整通知策略（如增加静默规则或路由到更高层级的汇总渠道），以缓解影响。
+
+### 相关指标（SLI/SLO/SLA）
+- **相关 SLI**：`警报处理成功率`（ALERTMANAGER_SENT_ALERTS_TOTAL 减去因集成错误失败的告警）。
+- **故障影响**：对于将 Jira 工单数量作为内部运维效率 SLO 的团队，此 Bug 会导致指标严重失真，工单创建数异常飙升，同时真实的事件关联信息丢失。
+- **事件响应**：此问题本身可能被识别为 **P1/P2 级别的生产事件**（对于强依赖 Grafana-Jira 集成的团队），因为它直接影响故障响应的可见性和效率。
+
+### 相关页面
+- [[alerting-contact-points]]：了解 Grafana 中所有可用联系点类型及其配置。
+- [[incident-response]]：SRE 如何利用自动化工具进行事件响应。
+- [[release-management]]：管理 Grafana 等组件的版本发布与回滚策略。

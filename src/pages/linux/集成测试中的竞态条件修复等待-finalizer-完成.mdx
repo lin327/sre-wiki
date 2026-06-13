@@ -1,0 +1,54 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "集成测试中的竞态条件修复：等待 Finalizer 完成"
+description: "修复 Grafana 集成测试中因 Finalizer 补丁与对象删除操作竞态导致的间歇性失败问题，提高 CI 可靠性。"
+category: 测试与CI
+order: 10
+lastUpdated: 2026-06-05
+confidence: high
+sources:
+  - url: https://github.com/grafana/grafana/pull/125935
+    title: "Grafana PR #125935: Alerting: Fix flaky RuleSequence delete race in integration test"
+tags: [finalizer, kubernetes, testing, race-condition, ci-cd, grafana]
+---
+
+## 概述
+
+在分布式系统和基于 Kubernetes 模式的应用开发中，确保集成测试的稳定性和可靠性是 SRE 实践的关键一环。本文档基于 Grafana 项目中的一个具体修复案例，阐述了在对象生命周期管理中，由于异步操作（如 Finalizer 补丁）与同步操作（如删除）并发执行所引发的竞态条件。这种竞态会导致测试结果不稳定（Flaky Test），进而影响 CI/CD 流水线的整体可靠性和团队交付信心。该修复通过引入必要的同步等待机制，确保了测试操作的时序正确性。
+
+## 核心概念
+
+要理解这个问题，需要掌握以下核心概念：
+
+1.  **Finalizer**：这是 Kubernetes 生态中的一种机制，用于确保在资源被删除前执行必要的清理逻辑。一个对象被标记为删除（设置 `deletionTimestamp`）后，控制器必须执行 Finalizer 中的逻辑并移除 Finalizer，之后该对象才会被 API Server 真正从存储中删除。在 Grafana 的 `app-sdk` 中，`OpinionatedWatcher` 会通过后台补丁操作为新创建的资源自动添加 Finalizer。
+
+2.  **ResourceVersion (RV)**：这是 Kubernetes 用于实现乐观并发控制的关键字段。每次对资源进行修改（包括添加 Finalizer），其 `ResourceVersion` 都会递增。在执行写入或删除操作时，API Server 会检查客户端提供的 `ResourceVersion` 是否与存储中当前的版本匹配。如果不匹配，则会返回冲突错误（如 “requested RV does not match current RV”），以防止更新丢失。
+
+3.  **竞态条件**：在本案例中，竞态发生于异步的“添加 Finalizer”补丁操作与测试代码同步的“删除对象”操作之间。测试代码在创建对象后立即尝试删除它，但此时后台的 Finalizer 补丁可能尚未完成。当删除操作通过 `Get` 读取到 `ResourceVersion`（例如版本 1）并准备执行删除时，后台补丁成功执行，将 `ResourceVersion` 更新为 2。此时，删除操作的写入层（`WriteEvent`）发现存储中的版本（2）与它持有的版本（1）不一致，导致删除操作失败，测试报错。
+
+## 实践
+
+修复的核心思想是**在删除操作前，确保所有可能影响 `ResourceVersion` 的异步初始化操作已经完成**。具体的实践步骤如下：
+
+1.  **识别竞态来源**：明确问题是由 `OpinionatedWatcher` 的 Finalizer 自动补丁功能引起的。该功能是异步、后台执行的，与测试主线程的同步操作存在时序不确定性。
+
+2.  **引入等待机制**：在集成测试中，于创建 `RuleSequence` 对象和删除该对象之间，插入一个等待逻辑。这个等待应该检测到 Finalizer 已成功添加到对象上（即对象的 `metadata.finalizers` 列表中包含了预期的 Finalizer，如 `app-sdk/OpinionatedWatcher`）。
+
+3.  **实现等待方法**：可以使用轮询（Polling）或基于事件的等待机制来实现。例如，周期性地重新获取该对象，直到其 Finalizer 字段存在，或者使用 Kubernetes 提供的 `Watch` 功能监听该对象的更新事件。
+
+4.  **调整测试流程**：原始的简单“创建 -&gt; 立即删除”流程被调整为“创建 -&gt; **等待 Finalizer 添加完成** -&gt; 删除”。这保证了删除操作所读取到的 `ResourceVersion` 不会因为后续的 Finalizer 补丁而立即失效。
+
+## SRE 要点
+
+*   **与可靠性、可观测性的关联**：
+    *   **提高 CI 可靠性**：修复测试中的竞态条件是提高持续集成系统稳定性的直接手段。稳定的 CI 是构建可靠发布流程的基石，减少了 SRE 团队排查“随机失败”的负担。
+    *   **增强可观测性**：一个稳定的测试套件能更准确地反映系统本身的状态，而不是被测试基础设施的噪声所掩盖。这使得基于测试结果的监控和报警更加可信。
+    *   **预防事件**：在 CI 阶段捕获因并发问题导致的逻辑错误，可以避免这些缺陷流入生产环境，从而预防潜在的生产事件。
+
+*   **最佳实践与常见反模式**：
+    *   **最佳实践**：在测试涉及异步系统或后台任务的对象生命周期时，始终假设这些后台操作会在主线程中创建的“瞬间”内完成是危险的。应在执行依赖于对象最终状态的操作（如删除、更新）前，添加显式的同步点或等待条件。
+    *   **反模式**：在集成测试中，直接“创建即删除”而忽略系统的异步初始化过程。这是一种常见的反模式，它假设系统的每个组件都是同步响应的，这在现代分布式系统中几乎不成立。
+    *   **反模式**：使用固定的、较长的 `Sleep` 来替代精确的条件等待。`Sleep` 是脆弱且低效的，它可能导致测试在条件满足后仍白等，或者在条件未满足时提前退出。应使用轮询或事件驱动的方式进行等待。
+
+*   **相关指标（SLI/SLO/SLA）**：
+    *   虽然此修复不直接影响面向用户的 SLI，但它直接关联到一个关键的内部指标：**CI 测试成功率**。一个频繁 Flaky 的测试套件会降低团队对部署流程的信心，变相延长了部署周期，影响了**交付可靠性**。修复此类问题是维护高质量 CI 管道、达成内部服务等级目标（如 “CI 流水线成功率 &gt; 99.5%”）的必要工作。

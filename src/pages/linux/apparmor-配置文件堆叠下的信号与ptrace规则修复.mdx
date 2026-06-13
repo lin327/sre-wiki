@@ -1,0 +1,66 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "AppArmor 配置文件堆叠下的信号与Ptrace规则修复"
+description: "修复在容器环境中使用AppArmor配置文件堆叠时，因Peer名称匹配失败导致信号与Ptrace操作被拒绝的容器运行时问题。"
+category: 容器运行时安全
+order: 0
+lastUpdated: 2026-02-11
+confidence: medium
+sources:
+  - url: https://github.com/containerd/containerd/pull/12887
+    title: "containerd/containerd: apparmor: add signal and ptrace rules for stacked profiles"
+tags: [apparmor, containerd, security, profiling, csi, exec, kubernetes]
+---
+
+## 概述
+
+AppArmor 是一个重要的 Linux 内核安全模块，用于限制程序的资源访问。在容器化环境中，容器运行时（如 containerd）通常为容器进程加载特定的 AppArmor 配置文件以增强安全性。然而，在特定的内核配置（如启用配置文件堆叠）和操作（如通过 `kubectl exec` 进入容器）下，原有的安全规则可能无法正确匹配进程的身份（peer），导致合法操作被内核拒绝，产生安全审计事件，甚至影响进程的正常运行。本文档阐述了这一问题的成因、影响以及对应的修复方案，对维护容器环境的安全性与可靠性至关重要。
+
+## 核心概念
+
+*   **AppArmor 配置文件堆叠 (Profile Stacking)**：这是 AppArmor 的一项高级特性（由 `/sys/kernel/security/apparmor/features/domain/stack` 控制）。它允许为一个进程同时应用多个安全配置文件，主配置文件（如 `cri-containerd.apparmor.d`）与一个通过特殊语法（如 `//&unconfined`）声明的附加配置文件进行堆叠。这提供了更灵活和细粒度的安全策略。
+*   **CRI ExecSync**：容器运行时接口（CRI）中的一种操作，对应 `kubectl exec` 或基于 exec 的存活探针/就绪探针。它在运行中的容器内创建一个新进程。
+*   **Peer 名称匹配**：在 AppArmor 的 `signal` 和 `ptrace` 规则中，可以使用 `peer=` 关键字指定允许交互的目标进程的配置文件名称。规则是否生效，取决于发起进程的配置文件与 `peer=` 指定的值是否匹配。
+*   **问题根源**：当通过 `exec` 创建的进程（如 Go 运行时发送 `SIGURG` 用于 goroutine 抢占）运行在堆叠配置文件 (`cri-containerd.apparmor.d//&unconfined`) 下时，原有的 `peer={{.Name}}`（展开为 `cri-containerd.apparmor.d`）规则无法匹配到 `cri-containerd.apparmor.d//&unconfined` 这个 peer，导致内核拒绝操作。
+
+## 实践
+
+本次修复通过在容器的 AppArmor 配置文件模板中增加通配符规则来解决匹配问题。
+
+**修复方案：**
+在容器的 AppArmor 配置文件模板（由 containerd 生成）的 `signal` 和 `ptrace` 规则中，将原有的 `peer={{.Name}}` 规则修改为包含通配符的版本，使其能同时匹配基础配置文件名和堆叠后的配置文件名。
+
+修改后的规则示例：
+```
+signal (send) peer={{.Name}},
+signal (send) peer={{.Name}}//&*,
+
+ptrace (trace, read, traceby, readby) peer={{.Name}},
+ptrace (trace, read, traceby, readby) peer={{.Name}}//&*,
+```
+
+其中 `//&*` 是一个通配符模式，能够匹配任何堆叠配置文件的后缀（例如 `//&unconfined`）。
+
+**应用步骤：**
+1.  **更新 containerd**：部署包含了此修复的 containerd 版本（PR #12887 之后）。
+2.  **加载配置文件**：使用 `apparmor_parser --replace <profile_file>` 命令将更新后的配置文件加载到内核中。此步骤确保新规则生效。
+3.  **验证修复**：在启用了 AppArmor 配置文件堆叠的内核（如测试中使用的 6.17）上，执行类似 `kubectl exec <pod> -- cat /proc/self/attr/apparmor/current` 的命令，确认新进程运行在堆叠配置文件下。然后监控系统审计日志（如 `audit.log`），确认在一段时间内（例如执行多次 exec 操作后）不再出现之前那样的 `apparmor="DENIED" operation="signal"` 事件。
+
+**测试环境参考：**
+*   操作系统：Ubuntu 25.10 (questing) aarch64
+*   内核版本：6.17.0-1007-raspi
+*   AppArmor 解析器：5.0.0~alpha1
+*   containerd 版本：v2.1.5-k3s1
+
+## SRE 要点
+
+*   **与可靠性的关联**：此修复直接消除了因安全规则误报导致的进程信号被拒绝的风险。信号（如 `SIGURG`）是进程间协作（如 Go 的 goroutine 调度）的关键机制。被拒绝可能导致进程挂起、性能下降甚至故障，修复后显著提升了容器内应用的运行可靠性。
+*   **与可观测性的关联**：修复前，系统审计日志中会出现大量由 AppArmor 生成的 `DENIED` 事件。这些“噪音”会干扰 SRE 对真实安全威胁或系统异常的监控和告警。修复后，审计日志变得更加干净，有助于提高可观测性数据的质量。
+*   **最佳实践与反模式**：
+    *   **最佳实践**：在设计和测试 AppArmor 策略时，必须考虑包括配置文件堆叠在内的各种进程身份模式。使用通配符（如 `//&*`）来增强规则的健壮性，是应对动态进程环境的有效手段。
+    *   **常见反模式**：在安全策略中硬编码或假设固定的进程身份（如只使用 `peer={{.Name}}`），在复杂的容器和编排环境中容易失效。这属于一种脆弱的静态配置反模式。
+*   **相关指标**：
+    *   **SLI**：可以将“由于 AppArmor 拒绝导致的进程信号发送失败次数”作为一个可靠性 SLI。本修复旨在将该指标降至零。
+    *   **SLO**：可以设定一个 SLO，例如“在 99% 的 `exec` 操作中，不应因 AppArmor 策略问题导致基础进程通信失败”。
+
+**相关页面**：[[apparmor]]， [[kubernetes-exec]]

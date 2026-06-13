@@ -1,0 +1,80 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Alertmanager 选择器在 Grafana 升级后失效问题分析"
+description: "分析 Grafana 从 12.3.1 升级至 12.4.0 及以上版本后，Active notifications 页面“Choose Alertmanager”下拉菜单消失及页面报错的故障现象、影响与应对措施。"
+category: issue
+order: 0
+lastUpdated: 2024-05-26
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123002
+    title: "Alerting: 'Choose Alertmanager' dropdown missing and page 404 on Active notifications page when using external Prometheus Alertmanager datasource"
+tags: [grafana, alerting, alertmanager, datasource, upgrade-issue]
+---
+
+## 概述
+
+在 Grafana 告警管理中，`Alertmanager` 是接收、处理和路由告警的核心组件。Grafana 允许用户配置内置或外部的 `Alertmanager` 数据源（如 Prometheus Alertmanager、VictoriaMetrics Alertmanager），并通过统一的界面进行管理。本文描述的故障涉及一个关键的用户界面功能——“Choose Alertmanager”下拉菜单——在 Grafana 版本升级后失效，严重影响了多 `Alertmanager` 环境下的告警切换与操作，对监控系统的可用性与用户体验构成了直接挑战。在 SRE 实践中，监控工具本身的稳定性与功能完整性至关重要，此类问题需要及时识别和规避。
+
+## 核心概念
+
+- **Alertmanager 数据源**：在 Grafana 中，除了处理原生 Grafana 告警的内置 `Alertmanager`，还可以配置外部的 `Alertmanager` 实例作为数据源，实现统一查看和管理来自不同系统的告警。
+- **版本升级回归 (Regression)**：指软件在发布新版本时，意外地导致了之前版本中正常工作的功能失效或行为异常。这是软件质量管控中的关键风险点。
+- **用户界面 (UI) 一致性**：对于运维和 SRE 团队，监控工具的界面元素（如下拉菜单、按钮）的稳定性和可预测性对于日常操作效率和降低误操作风险至关重要。
+
+## 实践
+
+### 问题现象与复现
+1.  **初始状态**：在 Grafana 12.3.1 版本中，配置了外部 `vmalertmanager` 数据源（`implementation: prometheus`），访问“Active notifications”页面（`/alerting/groups`）时，右上角正确显示“Choose Alertmanager”下拉菜单，允许用户在内置和外部 `Alertmanager` 之间切换。
+2.  **升级后故障**：将 Grafana 升级至 12.4.0 或更高版本（测试至 13.0.1），使用完全相同的配置后：
+    - “Choose Alertmanager”下拉菜单消失。
+    - 外部 `Alertmanager` 的告警仍可在页面上看到，但无法切换上下文。
+    - 在“Alerting → Settings”中，外部数据源可能显示“Not receiving Grafana-managed alerts”，即使禁用并重新启用内置 `Alertmanager` 也无效。
+    - 在 13.0.1 版本中，尝试访问该页面还可能导致 404 错误。
+
+### 配置示例（用于复现）
+此 YAML 片段展示了用于复现问题的外部 `Alertmanager` 数据源配置：
+```yaml
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - access: proxy
+        isDefault: false
+        name: alertmanager
+        type: alertmanager
+        url: http://vmalertmanager.monitoring:9093
+        jsonData:
+          handleGrafanaManagedAlerts: true
+          implementation: prometheus
+```
+
+### 临时应对措施
+根据问题报告，一个尝试性的“巫术”操作是：
+1.  进入 `Alerting → Settings`。
+2.  点击禁用 Grafana 内置的 `Alertmanager`。
+3.  再次重新启用它。
+此操作可能使外部数据源的状态变为“Receiving Grafana-managed alerts”，并可能在 13.0.1 版本中恢复部分告警的可见性，但**并不能恢复缺失的下拉菜单**，且可能引发其他不可预期的行为。这不是一个可靠的解决方案。
+
+## SRE 要点
+
+### 对可靠性与可观测性的影响
+- **可观测性断层**：下拉菜单的缺失意味着 SRE 工程师无法方便地在不同的告警源上下文间切换，可能导致遗漏关键告警或无法快速定位问题源头，破坏了告警系统的**全链路可观测性**。
+- **工作流中断**：依赖此功能进行日常告警巡检、故障排查和通知规则管理的运维流程被打断，增加了操作复杂性和时间成本，降低了**事件响应效率**。
+- **升级风险凸显**：此问题揭示了在关键基础设施软件（如监控平台）升级过程中进行详尽功能回归测试的必要性，尤其是与核心工作流相关的功能。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    - **分阶段升级与测试**：在生产环境升级 Grafana 前，必须在预发布环境使用生产配置副本进行全面的功能验证。
+    - **监控系统本身的状态**：将 Grafana 的关键界面元素（如下拉菜单、设置页面）的可用性纳入其自身的健康监控。
+    - **保留降级路径**：确保监控系统的升级可以快速回滚。
+- **常见反模式**：
+    - **盲目升级**：直接在生产环境升级核心工具，未进行充分测试。
+    - **忽视 UI 变更**：认为 UI 变更是“小事”，不将其视为影响可靠性的潜在因素。
+
+### 相关指标 (SLI/SLO/SLA)
+- **SLI (Service Level Indicator)**：监控界面核心功能（如 `Alertmanager` 切换）的可用性、页面错误率（404）。
+- **SLO (Service Level Objective)**：在监控工具的版本升级后，其核心 UI 功能应100%保持可用且行为符合预期。
+- **SLA (Service Level Agreement)**：对于内部使用的监控工具，应确保其升级操作有明确的计划和回滚方案，以避免影响其他服务的运维效率。
+
+此问题（[Grafana Issue #123002](https://github.com/grafana/grafana/issues/123002)）是一个典型的软件版本升级回归 Bug，需要上游项目进行修复。在修复发布前，建议 SRE 团队在升级 Grafana 版本时需格外谨慎，并关注相关的变更日志和社区动态。

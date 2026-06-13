@@ -1,0 +1,70 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana升级过程中的SQLite数据库锁定故障"
+description: "分析Grafana在Kubernetes环境使用EFS存储时，因数据库锁定导致升级失败的原因与解决方案。"
+category: "故障排查与解决"
+order: 0
+lastUpdated: 2026-01-06
+confidence: medium
+sources:
+  - url: "https://github.com/grafana/grafana/issues/115875"
+    title: "Grafana Issue #115875: Failed to upgrade 12.3.0 to 12.3.1 due to database locked"
+tags: [Grafana, SQLite, Database Lock, Kubernetes, EFS, Migration, Upgrade]
+---
+
+## 概述
+
+在SRE运维实践中，监控系统的平滑升级是保障可观测性服务连续性的关键环节。本案例详细记录了Grafana从12.3.0版本升级至12.3.1时，因底层SQLite数据库被锁导致迁移失败并最终服务崩溃的过程。该问题在基于Kubernetes（EKS）并使用Amazon EFS作为持久化存储的环境中尤为典型，它揭示了在容器化部署中选择数据库存储后端时必须审慎考虑其并发访问与文件锁定特性。此类故障直接影响[[observability]]平台的稳定性，可能中断仪表盘查看与告警通知，进而影响整个系统的[[reliability]]。
+
+## 核心概念
+
+要理解此故障，需掌握以下关键概念：
+
+1.  **SQLite锁机制**：SQLite是一种嵌入式数据库，通过文件锁来管理并发访问。在单写多读或发生长事务时，它会锁定数据库文件，阻止其他进程或连接进行写入操作。Grafana在启动和运行时会多次执行数据库迁移或写入操作，这些操作都需要获取锁。
+2.  **Grafana迁移流程**：Grafana在启动时会依次执行多个迁移器（如`migrator`, `secret-migrator`, `resource-migrator`）。每个迁移器在开始前都会尝试锁定数据库，执行其任务，然后释放锁。这是一个串行过程。
+3.  **网络文件系统与锁**：问题中使用的Amazon EFS是一种网络文件系统（NFS）。NFS对文件锁（特别是`fcntl`锁）的支持与本地文件系统存在差异，可能引发锁状态不一致或锁被长时间持有，导致期望释放锁的进程无法获取锁。
+
+日志中清晰地展示了锁冲突链：`star`迁移器报告“`database is locked`”，随后`sqlstore.transactions`开始持续重试获取锁，最终导致依赖数据库的`provisioning`模块失败，整个Grafana服务启动状态变为`Failed`。
+
+## 实践
+
+根据提供的故障日志，可以梳理出以下排查与解决步骤：
+
+### 1. 故障现象与日志分析
+
+*   **关键错误日志**：在启动日志末尾，找到明确的错误信息：
+    ```
+    logger=stars t=2026-01-06T11:32:02.543141354Z level=error msg="Failed to run star migrations" err="failed to set dashboard_uid, org_id, and updated for star: database is locked"
+    ```
+    这表明在尝试迁移“stars”（收藏）数据时，数据库已被锁定。
+*   **锁重试循环**：随后出现大量`sqlstore.transactions`的重试日志，说明数据库锁持续存在，后续操作无法获取锁。
+*   **最终崩溃**：由于`provisioning`（数据源预配置）模块依赖数据库，其失败导致整个服务状态不健康并退出。
+
+### 2. 环境因素分析：EFS存储的影响
+
+此问题发生在使用EFS作为`/var/lib/grafana`（数据目录，包含SQLite数据库文件）存储的EKS集群上。EFS作为共享的网络存储，其锁语义与本地磁盘不同。在多Pod共享同一EFS卷，或单个Pod内部存在多线程/多连接竞相访问数据库时，锁的获取和释放可能在NFS层面产生延迟或冲突，从而放大SQLite锁问题的可能性。
+
+### 3. 解决方案与规避措施
+
+*   **首选方案 - 回滚版本**：如issue报告者所述，立即回滚到之前正常工作的版本（12.3.0）是最直接的恢复手段，可快速恢复[[observability]]服务。
+*   **根因规避 - 更换存储后端**：
+    *   **使用持久化数据库**：在生产环境中，强烈建议将Grafana的后端数据库从SQLite切换到如[[mysql]]、[[postgresql]]等支持更高并发和更稳定锁机制的独立数据库服务。这是官方推荐的最佳实践。
+    *   **使用高性能块存储**：如果必须使用文件型数据库，应为数据库文件选用支持强一致性文件锁的块存储（如Amazon EBS），而非网络文件存储（NFS/EFS）。
+*   **临时缓解（需谨慎）**：在极个别情况下，可以尝试手动清理可能残留的SQLite锁文件（如`-journal`文件或`-wal`文件），但这有数据损坏风险，通常不建议在生产环境操作。确保在操作前完全停止所有Grafana实例。
+
+## SRE要点
+
+从Site Reliability Engineering的角度审视此事件，可以总结出以下要点：
+
+*   **与可靠性的关联**：此故障直接导致监控平台的**可用性**受损。Grafana作为核心可视化工具，其宕机影响故障排查和性能分析的效率。此事件体现了底层依赖（存储）选择对上层服务[[availability]]的深刻影响。
+*   **最佳实践与反模式**：
+    *   **反模式**：在生产级、尤其是容器化环境中，使用SQLite（尤其是通过NFS共享存储）作为关键应用的主数据库。SQLite适用于嵌入式、单实例、开发或小型应用。
+    *   **最佳实践**：
+        1.  **为关键应用配置独立的、经过验证的数据库后端**。
+        2.  **在升级前，在类生产环境中充分测试**，特别是涉及数据库迁移的版本。
+        3.  **实施严格的[[rollback]]计划**，确保能在服务中断时快速恢复。
+        4.  **监控数据库锁等待时间与事务失败率**（如果使用独立数据库），作为[[SLI]]的一部分。
+*   **相关指标（SLI/SLO）**：
+    *   **SLI (Service Level Indicator)**：可以定义“Grafana服务启动成功率”或“仪表盘/告警API请求的成功率”。
+    *   **SLO (Service Level Objective)**：为上述SLI设定目标，例如“在99%的月份中，Grafana月启动成功率应达到100%”，或“仪表盘查询API的可用性应超过99.9%”。
+    *   此次故障会导致上述SLI数据显著下降，触发对SLO的风险评估，并可能需要启动事件响应流程。

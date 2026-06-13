@@ -1,0 +1,55 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Traces Drilldown 'Root Cause Latency' 查询无数据问题"
+description: "描述了在 Grafana 12.4.0 版本后，Traces Drilldown 功能中 “Root cause latency” 标签页显示 “No data for selected query” 的问题，其根本原因可能与 TraceQL 查询参数处理方式变更有关。"
+category: 可观测性工具
+order: 0
+lastUpdated: 2026-03-14
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/120285
+    title: "Grafana GitHub Issue #120285 - Drilldown / Traces: Root cause latency shows 'No data for selected query'"
+tags: [grafana, tempo, traces, drilldown, traceql, root-cause-analysis, latency, bug]
+---
+
+## 概述
+
+在分布式系统的故障排查与性能优化中，链路追踪（Traces）是 SRE 定位延迟根因的核心手段。Grafana 的 Trace 探索应用（Explore Traces App）提供的 “Drilldown” 功能，能够自动分析追踪数据，生成有助于理解服务依赖关系和延迟分布的视图，其中 “Root cause latency” 标签页尤为关键。然而，自 Grafana 升级至 12.4.0 版本后，该功能可能出现查询无数据（“No data for selected query”）的异常，尽管底层数据源（如 Tempo）中存在足量数据。此问题会直接阻塞 SRE 进行高效的根因分析，是影响可观测性工具链可靠性的典型事件。
+
+## 核心概念
+
+- **Traces Drilldown**: Grafana 提供的一种自动化追踪数据探索界面。它超越了原始的 TraceQL 查询，通过结构化的交互视图（如服务拓扑图、延迟分布图）帮助用户快速定位性能瓶颈。
+- **Root cause latency**: Drilldown 功能中的一个特定分析视图。其目的是从海量 Span 中，根据依赖关系和时序，自动推断出最可能导致服务整体延迟的“根因”Span 或服务。
+- **TraceQL**: Tempo 等追踪后端使用的查询语言，用于过滤和检索特定的 Span 及 Trace。Drilldown 功能最终会将其用户选择的条件（如时间范围、持续时间阈值、主信号 `nestedSetParent&lt;0`）翻译成具体的 TraceQL 查询语句。
+
+## 实践
+
+根据问题报告中提供的日志，我们可以分析故障现象并定位潜在原因。
+
+1.  **问题现象复现**：
+    用户在 Grafana 的 Explore Traces App 中，进入 Drilldown 视图并选择 “Root cause latency” 标签页时，界面显示 “No data for selected query”。同时，Grafana 后台日志记录了来自 `tsdb.tempo` 插件的错误信息。
+
+2.  **日志分析**：
+    关键错误日志如下：
+    ```
+    level=error msg="Failed to send request to Tempo" error="Get '...': context canceled"
+    level=error msg="Error processing TraceQL query" error="Get '...': context canceled"
+    ```
+    这表明 Grafana 后端在向 Tempo 数据源发送查询请求时，该请求被取消了（`context canceled`），导致查询提前终止。随后，Grafana 返回了一个 `status: 400` (Bad Request) 的错误响应给前端。
+
+3.  **根因推断**：
+    - **查询参数异常**：被取消的请求 URL 中包含一个复杂的 TraceQL 查询字符串：`q={nestedSetParent&lt;0 && true && duration &gt;= 268ms}`。问题很可能出在 Grafana 12.4.0 版本中，**TraceQL 查询的生成或编码逻辑发生了变更**，导致构造出了 Tempo 无法正确解析或认为无效的查询语句。
+    - **版本关联性**：问题明确在升级至 12.4.0 后出现，且在旧版本中工作正常，强烈指向这是一个由版本更新引入的回归缺陷（Regression）。日志中明确出现了 `pluginId=tempo`，表明问题出在 Grafana 与 Tempo 数据源插件的交互层。
+    - **前端表现**：由于后端查询失败并返回错误，Drilldown 前端未能接收到任何追踪数据，因此显示 “No data for selected query”。
+
+## SRE 要点
+
+- **对可靠性的直接影响**：此类问题直接损害了 SRE 核心工具链的可靠性。当关键的根因分析功能失效时，会显著延长故障定位的平均时间（MTTR），影响事件响应的效率和质量。SRE 团队需要将监控工具自身（如 Grafana）的可用性和功能完备性纳入 SLI/SLO 考量。
+- **可观测性工具的监控**：SRE 应建立对可观测性平台本身的监控。例如，可以合成模拟关键用户操作（如打开 Drilldown 并查询特定视图），并监控其成功率与延迟，确保核心分析功能可用。
+- **最佳实践与反模式**：
+    - **最佳实践**：在升级核心监控工具（如 Grafana）前，应在预发布环境充分测试关键工作流（特别是 Trace、Log 关联查询）。保持版本更新日志的审阅习惯，及时关注已知的 Bug。
+    - **常见反模式**：忽视工具版本的平滑升级测试，直接在生产环境升级；对工具返回的“无数据”现象不加区分地归咎于数据源或自身数据缺失，而忽略了工具本身可能存在缺陷。
+- **相关指标（SLI/SLO）**：
+    - 虽然这不是一个直接的业务 SLI，但可以定义与 **可观测性工具功能可用性** 相关的内部指标。例如：
+        - **SLI**: “Trace Drilldown 根因分析功能查询成功率” = (成功返回数据的查询请求数) / (总查询请求数)。
+        - **SLO**: 该 SLI 在工作时间内应达到 99.5% 或更高。触发此问题的 Bug 会导致该 SLI 跌破 SLO，从而生成一个需要修复的告警事件。

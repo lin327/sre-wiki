@@ -1,0 +1,70 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 数据源插件版本不兼容问题排查"
+description: "诊断与解决 Grafana 数据源插件因版本校验失败而无法启用的问题。"
+category: Grafana
+order: 0
+lastUpdated: 2026-03-27
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/121265
+    title: "Data source Plugins not enableable: 'This plugin doesn't support your version of Grafana.'"
+tags: [Grafana, 插件, 兼容性, Kubernetes, 数据源]
+---
+
+## 概述
+
+Grafana 作为广泛使用的监控数据可视化与分析平台，其核心价值在于通过丰富的插件（特别是数据源插件）整合各类监控系统。数据源插件无法启用会直接破坏监控数据的采集与展示链条，导致关键 [[observability]] 指标丢失，严重影响系统的 [[sre-practices|SRE 可靠性]] 实践。本页面基于一个具体案例，分析因版本不兼容导致内置数据源插件启用失败的根因、排查步骤与解决方案。
+
+## 核心概念
+
+**Grafana 插件架构**：Grafana 采用插件化设计，数据源插件负责与后端监控系统（如 Prometheus、Google Cloud Monitoring 等）通信。插件由 Grafana Labs 或社区开发与维护。
+
+**版本兼容性校验**：每个 Grafana 插件都声明了其支持的 Grafana 核心版本范围。在插件启用或加载时，Grafana 会检查当前运行版本是否在此范围内。校验失败是常见的安全与稳定性保障机制。
+
+**内置插件（Bundled Plugins）**：部分核心数据源插件（如 Google Cloud Monitoring）会随 Grafana 主程序一同发布。然而，其版本校验逻辑可能与主程序的发布流程或分支管理产生差异，导致在特定构建版本中出现校验错误。
+
+**根本矛盾**：开发者查阅代码仓库（如 GitHub）可能显示插件支持更高版本，但实际发布的二进制包或容器镜像中包含的插件版本可能与代码不匹配，或版本校验逻辑存在缺陷。
+
+## 实践
+
+以下步骤用于诊断和解决类似 “This plugin doesn't support your version of Grafana” 的错误：
+
+1.  **确认版本兼容性声明**：
+    *   登录 Grafana 服务器，导航至 **配置 -&gt; 插件**。
+    *   在插件列表中找到问题插件（例如 Google Cloud Monitoring），查看其“版本”信息及“兼容性”说明。
+    *   在 Grafana 的官方插件仓库或代码仓库中（如 `grafana/grafana`），查阅该插件的 `plugin.json` 文件，核对其中声明的 `dependencies.grafanaVersion` 字段。
+
+2.  **检查 Grafana 服务端日志**：
+    *   查看 Grafana 应用日志（通常位于容器标准输出或 `/var/log/grafana/grafana.log`），搜索插件名称和相关错误关键词。
+    *   日志通常会提供更详细的错误上下文，例如插件加载失败的堆栈信息或具体的版本检查结果。
+    *   在 Kubernetes 环境中，使用 `kubectl logs <grafana-pod-name>` 获取日志。
+
+3.  **核查插件注册信息**：
+    *   访问 Grafana 的 API 端点（如 `http://<grafana-url>/api/plugins`）以获取所有已安装插件的元数据。
+    *   检查目标插件的 `info.version` 和 `dependencies.grafanaVersion` 字段，确认其要求。
+
+4.  **处理缓存与构建问题**：
+    *   **清除浏览器缓存**：有时前端缓存了旧的插件状态，尝试强制刷新（Ctrl+F5）或使用无痕模式。
+    *   **重启 Grafana 服务**：确保所有配置变更生效。在 Kubernetes 中可执行 `kubectl rollout restart deployment/<grafana-deployment-name>`。
+    *   **检查容器镜像**：确认所使用的 Grafana 容器镜像标签（如 `12.4.1`）是官方构建的完整版本，而非某个中间或开发版本。核对镜像的 manifest 信息。
+
+5.  **应用解决方案**：
+    *   **升级/降级 Grafana**：如果确认是 Grafana 版本与插件不匹配，最直接的方法是升级到插件明确支持的版本，或暂时降级到兼容版本。
+    *   **手动安装插件**：如果问题是内置插件版本滞后，可以尝试从插件市场手动安装最新版本（如果存在且兼容）：`grafana-cli plugins install grafana-googlecloud-datasource`。
+    *   **等待官方修复**：如果确认是代码仓库与发布版本不一致的 bug，应关注相关 GitHub issue 的进展，等待官方在下一个版本中修复。
+
+## SRE 要点
+
+- **与可靠性的关联**：监控系统的可用性是整个服务可靠性体系的基石。数据源插件作为数据流入的入口，其故障会直接导致 `[[slo|SLO]]` 监控失效，使 `[[error-budget|Error Budget]]` 无法正确计算，属于严重的监控系统自身故障。
+- **最佳实践**：
+    - **版本化管理**：在基础设施即代码中，明确锁定 Grafana 及其关键插件的版本，避免自动升级引入兼容性问题。
+    - **分层监控**：对 Grafana 平台自身也应建立监控，包括插件启用状态 API 检查、核心功能可用性探测等。
+    - **变更管理**：Grafana 升级应纳入标准的变更流程，在预发布环境充分验证所有必需的数据源插件功能。
+- **常见反模式**：
+    - 忽视 Grafana 自身的 `[[change-management|变更管理]]`，认为其作为工具无需严格管控。
+    - 在问题出现后，仅尝试重启服务而不进行根本原因排查，导致问题反复。
+- **相关指标（SLI/SLO）**：
+    - **数据源可用性 SLI**：可以定义为“成功查询目标数据源的数据点数占总查询请求数的比例”。
+    - **Grafana 平台可用性 SLO**：例如“Grafana Web UI 和 API 在每个 90 天周期内的可用时间不低于 99.9%”。插件故障会直接威胁此 SLO。
+    - **告警关联**：应配置告警，当数据源插件返回错误或查询延迟显著增加时触发，关联到 `[[on-call|On-Call]]` 流程。

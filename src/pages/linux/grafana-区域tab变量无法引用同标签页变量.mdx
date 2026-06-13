@@ -1,0 +1,72 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 区域（Tab）变量无法引用同标签页变量"
+description: "记录Grafana 13中区域级变量功能的一个已知限制，即同一标签页内的变量无法相互引用，导致变量链式依赖失效。"
+category: Grafana
+order: 0
+lastUpdated: 2026-04-14
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/122553
+    title: "Section (tab) variables cannot reference other section variables in the same tab"
+tags: [grafana, variables, dashboard, tabs, bug]
+---
+
+## 概述
+
+在构建复杂的可观测性仪表板时，变量（Variables）的动态链接与依赖关系是实现交互式、可过滤视图的核心。Grafana 13引入了“区域（Section）级变量”功能（通过 `dashboardSectionVariables` 特性开关启用），旨在将变量的作用域限制在特定的标签页（Tab）内，以实现更模块化的仪表板设计。然而，该功能目前存在一个重要的限制：**同一标签页内定义的变量，无法引用该标签页内的另一个变量**。这直接影响了SRE团队构建具有链式依赖关系（如“命名空间 -&gt; 服务名称”）的模块化仪表板的能力。
+
+## 核心概念
+
+- **区域（Section/Tab）变量**：一种变量作用域机制，允许变量仅在其所属的标签页内可见和生效。它旨在减少变量冲突，提高大型仪表板的组织性和性能。
+- **仪表板模板变量**：Grafana的传统变量类型，作用域为整个仪表板。它们广泛用于实现跨面板的统一筛选。
+- **变量依赖链（Variable Chaining）**：一种常见的仪表板设计模式，其中一个变量（下游变量）的查询或选项依赖于另一个变量（上游变量）的当前值。例如，服务列表（`serviceName`）取决于选定的命名空间（`namespace`）。
+- **变量解析（Resolution）**：指在变量查询或面板查询中使用`${variableName}`语法时，Grafana引擎将其替换为当前所选变量值的过程。
+
+## 实践
+
+### 问题描述
+在启用 `dashboardSectionVariables` 特性的 Grafana 13.0.0 中，当两个变量（如 `namespace` 和 `serviceName`）被定义在同一个标签页内，且 `serviceName` 的查询中包含对 `${namespace}` 的引用时，该引用无法被正确解析。这导致 `serviceName` 变量不会根据 `namespace` 的变化而刷新其选项。然而，在同一标签内的面板查询中直接使用 `${namespace}` 却能正常工作。
+
+### 复现步骤
+1. 在 Grafana 配置中启用特性开关：`dashboardSectionVariables`。
+2. 创建一个包含至少一个标签页的仪表板。
+3. 在该标签页内，创建变量 **A** (`namespace`)：
+   ```sql
+   SELECT DISTINCT namespace FROM your_table
+   ```
+4. 在**同一标签页内**，创建变量 **B** (`serviceName`)，其查询依赖变量 A：
+   ```sql
+   SELECT DISTINCT serviceName
+   FROM your_table
+   WHERE namespace = '${namespace}'
+   ```
+5. 在**同一标签页内**创建一个面板，其查询也使用变量 A：
+   ```sql
+   SELECT *
+   FROM your_table
+   WHERE namespace = '${namespace}'
+   ```
+6. 在仪表板顶部的变量选择器中更改 `namespace` 的值。
+
+### 观察结果
+- 面板数据会正确更新，反映了新的 `namespace` 选择。
+- 变量 `serviceName` 的选项列表**不会更新**，其查询中的 `${namespace}` 未被替换为实际值，导致变量依赖关系断裂。
+
+### 已知的解决方法或临时方案
+截至该 issue 提交时，此问题尚未修复。SRE 工程师可以考虑以下临时方案：
+1. **使用仪表板级变量**：放弃区域变量的作用域隔离，将需要依赖的变量（如 `namespace` 和 `serviceName`）重新定义为常规的仪表板模板变量。这是最直接但会丧失模块化设计优点的方法。
+2. **将依赖变量移至不同标签页**：虽然不符合直觉，但尝试将上游变量和下游变量放在不同的标签页中，以绕过此限制。然而，这通常不符合逻辑和UI设计原则。
+3. **关注官方更新**：持续跟踪 Grafana 的此 issue (`#122553`) 及相关的 PR（如 `#119572`），等待官方修复并升级到包含修复的版本。
+
+## SRE 要点
+
+### 与可靠性和可观测性的关联
+此限制直接影响了**仪表板的可维护性和可靠性**。模块化的仪表板（通过区域变量实现）是管理大型、多团队共享的可观测性系统的关键实践。变量依赖链的断裂会迫使 SRE 采用更冗余、更难维护的配置方式（如将所有变量设为全局），这增加了配置错误的风险，降低了仪表板在事件响应时的操作速度。
+
+### 最佳实践与常见反模式
+- **最佳实践**：在采用新的 Grafana 区域变量功能时，**提前进行充分的集成测试**，特别是对变量依赖关系的测试。在构建新的模块化仪表板模板时，验证 `${variable}` 引用在所有预期上下文（变量查询、面板查询）中均能正常工作。
+- **常见反模式**：假设新发布的功能特性（尤其是通过 Feature Flag 启用的）完全符合预期且无任何限制。在启用并大规模推广前，必须在非生产环境中验证其核心用例。
+
+### 相关指标（SLI/SLO/SLA）
+虽然此问题本身不直接影响后端服务的 SLI，但它影响了用于监控和分析这些服务的**仪表板的可用性和有效性**。一个配置错误、无法正常工作的仪表板，其“可用性”可以视为一个内部 SLO 的一部分。例如，SRE 团队可以定义：“关键监控仪表板的核心变量交互功能在 99% 的工作时间内可用”。此 bug 会导致该内部 SLO 的失败。

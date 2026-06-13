@@ -1,0 +1,79 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "etcd Panic: 'page xxx already freed' 数据不一致问题"
+description: "一个导致etcd集群数据不一致和节点panic的底层存储（bbolt）故障问题分析。"
+category: 故障分析
+order: 0
+lastUpdated: 2023-12-08
+confidence: medium
+sources:
+  - url: https://github.com/etcd-io/etcd/issues/17084
+    title: "etcd Issue #17084: panic: page xxx already freed"
+tags: [etcd, bbolt, 数据一致性, panic, 故障恢复, SRE]
+---
+
+## 概述
+
+本文档分析了一个在 etcd v3.4.18 集群中观察到的严重故障。该故障表现为底层存储引擎 bbolt 抛出 `panic: page xxx already freed` 异常，并导致集群出现数据不一致。具体现象为，从“坏”节点查询到已删除的数据，而正常节点则未查询到。这是一个直接影响数据可靠性的核心问题，对于依赖 etcd 作为关键状态存储的 SRE 团队而言，理解和应对此类故障至关重要。
+
+## 核心概念
+
+要理解此问题，需要掌握以下关键组件：
+
+1.  **etcd**: 一个强一致性的分布式键值存储，广泛用于服务发现和配置管理。它依赖 Raft 共识协议来确保所有节点的数据一致。
+2.  **bbolt**: etcd 默认使用的嵌入式事务性数据库，负责数据的持久化。`page xxx already freed` panic 表明 bbolt 在管理磁盘内存映射页面时遇到了逻辑错误，可能由内存损坏、硬件故障或软件缺陷引起。
+3.  **Raft 一致性与 Applied Index**: etcd 节点通过 Raft 日志复制达到一致。每个日志条目都有一个 Raft 索引，应用到状态机后，`Applied Index` 会前移。案例中，所有节点的 `RaftIndex` 和 `AppliedIndex` 保持一致，这表明 Raft 协议本身工作正常，问题发生在日志条目**被应用到本地 bbolt 存储**这一环节。
+4.  **初始腐败检查 (`experimental-initial-corrupt-check`)**: etcd 提供的一个启动时健康检查功能，用于在选举 leader 前检测数据不一致。在该案例中，此功能被**禁用**，导致异常节点在重启后未被隔离，继续提供服务并返回错误数据。
+
+## 实践
+
+### 故障现象与诊断
+
+该案例中，故障节点的关键特征包括：
+- **数据不一致**：`etcdctl get` 返回已删除的记录（5条 vs 正常节点的2条）。
+- **存储层 Panic**：日志中明确出现 `panic: page xxx already freed`，表明 bbolt 内部状态损坏。
+- **索引一致但数据不同**：通过 `etcdctl endpoint status` 确认所有节点的 Raft 和 Applied Index 相同，但 bbolt 中的实际键值对数据不同（可通过 `etcd-dump-db` 工具验证）。
+- **检查工具**：运行 `bbolt check` 命令报告正常，这表明问题可能不是简单的文件系统损坏，而是更复杂的逻辑状态错误。
+
+### 应对与恢复建议
+
+1.  **立即隔离**：一旦确认节点数据不一致，应立即将其从集群中移除（`etcdctl member remove`），避免其提供错误数据。
+2.  **数据恢复**：
+    - **优先考虑从正常节点恢复**：将一个健康的节点停止服务，备份其数据目录（`member/snap/db`），然后用此备份恢复坏节点或部署新节点。
+    - **谨慎使用 `etcd-defrag`**：如果问题仅限于碎片或部分页面损坏，可以尝试对坏节点进行压缩和碎片整理（`etcdctl defrag`），但**在数据已不一致的情况下，此操作风险极高，通常不推荐**。
+    - **终极方案**：重建整个集群。这是最安全的方法，但会暂时中断服务。
+3.  **长期预防**：
+    - **启用初始腐败检查**：在 etcd 启动参数中设置 `--experimental-initial-corrupt-check=true`，确保在集群重新选主前能发现数据不一致。
+    - **强化监控**：监控 etcd 节点的 panic 日志、磁盘 I/O 延迟与错误，以及 `etcd_disk_wal_fsync_duration_seconds` 等关键指标。
+    - **定期备份**：对 etcd 数据目录进行定期、离线的备份（`etcdctl snapshot save`），并测试恢复流程。
+
+## SRE 要点
+
+### 与可靠性的关联
+
+此问题直接攻击了 etcd 提供的 **正确性 (Correctness)** 这一核心可靠性属性。即使所有服务都在运行（可用性），但提供错误的数据（一致性丧失），其影响比完全宕机更为隐蔽和严重，可能导致下游系统基于错误配置做出灾难性决策。这凸显了将数据一致性视为最高优先级的重要性。
+
+### 最佳实践与常见反模式
+
+- **最佳实践**：
+    - 始终在生产环境中启用 `experimental-initial-corrupt-check`。
+    - 定期进行 `etcdctl endpoint health` 和 `etcdctl endpoint status` 检查，并对比各节点的 `Revision` 和 `Leader` 字段。
+    - 将 etcd 的 `panic` 日志作为最高优先级的告警，并配置即时通知。
+- **常见反模式**：
+    - **忽视非致命性告警**：忽略 `bbolt check` 工具的早期警告。
+    - **依赖单一恢复手段**：仅依赖 `etcdctl defrag` 解决所有存储问题，而不进行数据验证。
+    - **关闭安全检查**：为了性能或其他原因禁用 `experimental-initial-corrupt-check`，将自己置于数据不一致风险中。
+
+### 相关指标与 SLO
+
+- **SLI (Service Level Indicator)**:
+    - etcd 正确写入并返回键值对的请求比例。
+    - etcd 集群内数据一致性达成时间（可从 Raft 日志延迟监控推断）。
+- **SLO (Service Level Objective)**:
+    - 应设定极高的 SLO，例如：“对于读取请求，99.9% 的情况下返回的数据在最新 10 毫秒的写操作窗口内”。
+- **关联告警**:
+    - `etcd_server_has_leader` 指标是否为 1。
+    - 节点日志中出现 `panic` 或 `corrupt` 关键字。
+    - 多个节点之间 `Revision` 差距持续增大。
+
+相关页面：[[etcd-monitoring]]、[[etcd-incident-response]]

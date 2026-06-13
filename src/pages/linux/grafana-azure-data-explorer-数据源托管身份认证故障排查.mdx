@@ -1,0 +1,98 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Azure Data Explorer 数据源：托管身份认证故障排查"
+description: "排查并解决 Grafana 12.4.1 版本中，使用 Azure 托管身份连接 Azure Data Explorer 数据源时出现的认证超时问题。"
+category: "数据源与集成"
+order: 0
+lastUpdated: "2026-03-16"
+confidence: medium
+sources:
+  - url: "https://github.com/grafana/grafana/issues/120377"
+    title: "grafana/grafana#120377: Datasource: Azure Data Explorer source auth via Managed Identity stopped working 12.4.1"
+tags: ["Grafana", "Azure", "Managed Identity", "ADX", "Authentication", "Troubleshooting"]
+---
+
+## 概述
+
+在云原生环境中，使用平台托管的身份（如 Azure Managed Identity）进行服务间认证是一种安全且推荐的实践，它避免了在配置中硬编码密钥或凭证。本文档记录了一个具体案例：将 Grafana 从 12.3.2 升级到 12.4.1 后，其 Azure Data Explorer 数据源插件通过用户分配的托管身份进行认证的功能突然失效。此问题直接影响 Grafana 仪表盘的数据可用性，是典型的升级引入回归缺陷（Regression Bug），对依赖于实时监控数据的 SRE 运维工作流构成可靠性风险。本文将基于问题报告，剖析故障现象、可能原因，并提供排查与解决思路。
+
+## 核心概念
+
+理解此问题需要了解几个关键组件在认证流程中的角色：
+
+- **Azure Managed Identity (MI)**：Azure 提供的一种安全身份标识，可分配给 Azure 服务（如容器应用）。该身份无需管理员管理凭证，应用程序可通过 Azure 实例元数据服务获取访问令牌（Access Token），用于访问其他受 Azure AD 保护的资源（如 Azure Data Explorer）。
+- **Azure Data Explorer (ADX) 认证**：ADX 集群通过 Azure AD 进行授权。当 Grafana 尝试查询数据时，它需要向 Azure AD 的 OAuth 2.0 端点请求一个针对 ADX 资源的访问令牌。使用托管身份时，这个请求由 Grafana 运行环境中的 Azure 身份客户端库自动处理。
+- **Grafana Azure 数据源插件**：该插件负责配置连接参数并执行查询。在 `jsonData.authType: msi` 配置下，插件会调用底层的 Azure 身份库（如 `azidentity`）来获取令牌。
+- **OAuth 2.0 Access Token 获取流程**：Grafana 插件通过 Azure 身份库，向 Azure AD 的令牌终结点发送请求。身份库需要验证本地环境（容器）有权使用指定的托管身份。故障错误 `context deadline exceeded` 表明此令牌请求过程在超时时间内未能完成，可能原因包括网络不通、权限配置错误或库的兼容性问题。
+
+## 实践
+
+### 环境与问题复现
+
+1.  **基础架构**：
+    *   **ADX 集群**：部署在 Azure 上。
+    *   **托管身份**：在 Azure 上创建一个 **用户分配的托管身份**，并为其授予对 ADX 集群的至少“读取”权限。
+    *   **Grafana**：作为容器应用部署在 Azure 容器应用环境中，并将上述用户分配的托管身份分配给该容器应用。
+2.  **Grafana 数据源配置 (YAML)**：
+    ```yaml
+    datasources:
+      - name: ADX
+        type: grafana-azure-data-explorer-datasource
+        access: proxy
+        isDefault: true
+        uid: adx_datasource
+        jsonData:
+          defaultEditorMode: raw
+          clusterUrl: $DATASOURCE_ADX_CLUSTER_URL # 需替换为实际集群 URL
+          azureCredentials:
+            authType: msi
+          dataConsistency: strongconsistency
+        version: 1
+    ```
+3.  **故障表现**：在 Grafana 12.4.1 版本中查询 ADX 数据源时，返回如下错误：
+    &gt; “Azure query unsuccessful: Post "https://...kusto.windows.net/v1/rest/mgmt": failed to retrieve Azure access token: ManagedIdentityCredential: context deadline exceeded (Client.Timeout exceeded while awaiting headers)”
+
+### 排查与解决方法
+
+1.  **验证托管身份配置**：
+    *   在 Azure 门户中，确认容器应用已正确关联到指定的用户分配托管身份。
+    *   确认该托管身份在 Azure AD 中对目标 ADX 集群具有 `AllDatabasesViewer` 或更高权限。
+2.  **检查网络连通性与策略**：
+    *   确保 Grafana 容器能够访问 Azure AD 令牌终结点 (`https://login.microsoftonline.com/`)。检查容器应用的网络出站规则和 Azure 网络安全组是否允许此流量。
+    *   虽然 `context deadline exceeded` 更多指向超时，但网络不通是常见原因。
+3.  **审查容器应用与 Grafana 环境**：
+    *   检查容器应用的运行日志，寻找关于身份验证库的更详细错误信息。
+    *   确认 Grafana 容器内使用的 Azure 身份验证库版本是否与 Azure 环境兼容。版本升级（如 Grafana 从 12.3.2 到 12.4.1）可能捆绑了新版库，引入了行为变更或缺陷。
+4.  **关键排查步骤：版本回退**：
+    *   根据报告，将 Grafana 镜像回退到 `12.3.2` 版本后，功能立即恢复正常。这强烈表明问题与 **Grafana 12.4.1 版本** 或 **其引入的依赖更新** 直接相关。
+    *   这是定位问题范围的关键一步，确认了非基础设施（Azure）侧配置变更所致。
+5.  **解决方案**：
+    *   **临时方案**：回退 Grafana 版本至已知可用的 `12.3.2`。
+    *   **根本解决**：关注 Grafana 官方对此 Issue ([#120377](https://github.com/grafana/grafana/issues/120377)) 的修复进展。等待并升级到包含修复补丁的 Grafana 版本（例如 `12.4.2` 或更高版本）。在官方修复前，**避免**在生产环境升级到 `12.4.1`。
+    *   **变通方案**：如果必须使用 `12.4.1`，可尝试将认证方式从 `msi` 临时更改为服务主体（需创建 App Registration），但这会增加凭证管理的复杂性，不推荐作为长期方案。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+- **可靠性**：此问题是典型的 **升级引入缺陷**，直接影响了监控系统的数据源连通性，破坏了可观测性管线，可能导致告警静默或仪表盘数据缺失，是严重的可靠性事件。它凸显了在升级关键组件前进行充分非生产环境测试的重要性。
+- **可观测性**：问题本身发生在可观测性工具（Grafana）的层面。一个健全的可观测性系统不仅应监控业务应用，其自身组件（如数据采集器、查询引擎）的健康状态（如认证成功率、数据源连接状态）也应被监控。
+- **事件响应**：SRE 在接到“仪表盘无数据”的警报后，应能通过结构化排查流程快速定位。本案中，检查 Grafana 版本历史、查看错误日志中的超时信息、对比版本间差异是关键的响应步骤。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    1.  **依赖项管理与测试**：在升级任何依赖（包括 Grafana 主程序及其插件）之前，应在 staging 环境中全面测试关键功能，尤其是认证和核心数据流。
+    2.  **凭证管理**：继续优先使用云平台托管的身份（Managed Identity），避免硬编码凭证。当托管身份出问题时，应优先排查平台配置和网络，再怀疑凭证本身。
+    3.  **版本锁定与回滚**：在 `docker-compose.yml` 或部署脚本中明确指定镜像标签（如 `grafana/grafana:12.3.2`），避免使用 `latest`，以便在出现问题时能够快速回滚。
+- **常见反模式**：
+    1.  **未经验证的升级**：直接在生产环境执行重大版本升级，没有经过测试周期。
+    2.  **忽略错误细节**：看到“认证失败”就认为是权限问题，而忽略了错误信息中关键的 “context deadline exceeded”（超时）线索，可能浪费时间排查权限而未关注网络或库的兼容性。
+
+### 相关指标（SLI/SLO/SLA）
+虽然本案本身是一个缺陷，但它提醒我们应监控与数据源连接相关的可靠性指标：
+- **SLI (服务水平指标)**：
+    - `grafana_datasource_connectivity_success_rate`：数据源连接成功率（例如，ADX 查询成功次数 / 总查询次数）。
+    - `grafana_datasource_query_latency_seconds`：数据源查询延迟（p50, p95）。认证超时会导致此指标飙升或出现异常尖峰。
+- **SLO (服务水平目标)**：为关键仪表盘的数据刷新设置 SLO，例如“每月 99.9% 的时间数据应保持 5 分钟内更新”。
+- **SLA (服务水平协议)**：确保监控平台提供方（无论是内部团队还是 SaaS）有协议保障其认证和查询服务的可用性。
+
+**相关页面**： [[managed-identity]]、[[azure-data-explorer]]、[[grafana]]

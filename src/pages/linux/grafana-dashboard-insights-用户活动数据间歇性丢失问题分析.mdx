@@ -1,0 +1,64 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana Dashboard Insights 用户活动数据间歇性丢失问题分析"
+description: "分析Grafana Dashboard Insights功能中用户访问活动数据（Last viewed）间歇性丢失的问题，探讨可观测性数据一致性保障。"
+category: SRE 技术实践
+order: 0
+lastUpdated: 2026-05-07
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/124421
+    title: "Dashboard Insights > No Longer Able to View “Last viewed” user activity"
+tags: [Grafana, Observability, Dashboard, Data Consistency, Incident Analysis]
+---
+
+## 概述
+
+Dashboard Insights 是 Grafana 提供的一项关键功能，用于追踪 [[dashboards]] 的使用情况，包括创建、最后编辑和**最后查看**等用户活动。对于 SRE 团队而言，该数据是衡量监控面板实际使用率、优化仪表板布局和评估运维团队协作效率的重要 SLI。在本次报告的问题中，**“Last viewed”活动数据间歇性丢失**，这直接影响了团队对关键监控资产“是否被关注”的可见性，是一种可观测性系统自身数据不一致的典型表现，需要被严肃对待。
+
+## 核心概念
+
+理解此问题需要区分两类不同的活动数据及其背后的采集逻辑：
+
+1.  **事件驱动数据 (Created, Last edited)**：这些活动通常与用户的具体操作（创建或保存仪表板）强绑定。事件发生时，Grafana 会**同步或近实时**地更新相应的数据库记录。这类数据的准确性通常较高，因为其生命周期与用户的一次性操作紧密相关。
+2.  **会话/访问数据 (Last viewed)**：此数据记录的是用户**打开或访问**仪表板的行为。它通常依赖于异步的、基于会话的事件追踪。问题的根源可能在于此追踪机制的可靠性，例如：
+    - 前端上报事件的丢失或延迟。
+    - 后端聚合服务未能及时处理或持久化这些访问事件。
+    - 数据展示层存在缓存或最终一致性的延迟窗口。
+
+此 bug 的“间歇性”特征强烈暗示了一个**时序或竞争条件**问题。可能是数据采集管道存在短暂的不可靠性，或者数据查询界面在数据尚未完全聚合时就进行了展示，导致了部分用户看到数据、部分用户看不到的现象。
+
+## 实践
+
+基于问题描述，可以通过以下步骤进行诊断和验证，这是 SRE 应对前端功能数据不一致问题的标准实践：
+
+### 1. 重现与确认
+严格按照报告步骤尝试重现问题，重点关注“间歇性”特征。可以编写简单的自动化脚本或手动多次重复以下操作：
+1.  登录 Grafana。
+2.  创建一个新仪表板，添加任意一个面板。
+3.  点击 “Dashboard Insights” 图标，等待侧边面板完全加载。
+4.  切换到 “Users and activity” 选项卡。
+5.  **仔细观察并记录**：“Last viewed” 行以及其下的用户列表是否出现。
+
+### 2. 关键观察点与数据收集
+- **前端控制台 (Browser DevTools)**：检查 **网络请求**。找到获取 insights 数据的 API 调用（通常类似 `/api/dashboards/uid/:uid/insights`），查看其响应体。**直接分析原始 JSON 响应**，确认其中是否包含 `lastViewed` 或类似字段及其内容。这是区分问题出在前端渲染还是后端数据提供的最直接方法。
+- **后端日志与数据库**：如果可能，关联同一时间段的 Grafana 后端日志，查看是否有与 insights 数据获取或用户活动记录相关的错误或警告。直接查询 Grafana 数据库（通常是 PostgreSQL 或 MySQL）中存储仪表板统计信息的表，验证数据是否实际被写入。
+
+### 3. 假设验证
+根据收集到的信息，提出并验证假设：
+- **假设A：前端展示Bug**。如果 API 响应正确包含了 `lastViewed` 数据，但 UI 未显示，则问题在于前端代码（可能是条件渲染逻辑或状态管理错误）。
+- **假设B：后端数据采集/查询Bug**。如果 API 响应中缺失或不包含 `lastViewed` 数据，则问题出在后端，需要检查数据上报链路、聚合任务或 API 查询逻辑。
+
+此分析过程本身就是一个微型的 **Incident Response** 流程，体现了从现象观察、数据收集到假设验证的系统性排查方法。
+
+## SRE 要点
+
+- **与可靠性的关联**：该问题凸显了**可观测性系统的自身可靠性**的重要性。一个无法可靠报告自身使用情况的监控系统，其提供的整体可观测性可信度会打折扣。这应被视作一个影响内部用户信任度和运维效率的 **P2 或 P3 级事件**。
+- **最佳实践与反模式**：
+    - **最佳实践**：为 Dashboard Insights 这类关键管理功能的 API 端点建立基础的 **合成监控**（Synthetic Monitoring）。定期模拟“获取 insights”请求并验证关键字段（如 `lastViewed`）是否存在且有效。将此类检查纳入 Grafana 自身的健康探测。
+    - **常见反模式**：**过度依赖单一可视化面板作为判断依据**。当面板显示异常时，应首先回溯到底层数据源（API/数据库）进行验证，避免将界面显示问题直接等同于数据丢失问题。
+- **相关指标 (SLI/SLO)**：
+    - **SLI**：`Grafana_Dashboard_Insights_API_Success_Rate`（成功率）、`Grafana_Dashboard_Insights_Data_Consistency_Rate`（核心字段如 `lastViewed` 在查询中成功返回的比例）。
+    - **SLO**：可设定为“Dashboard Insights API 的 `lastViewed` 字段数据一致性在99.9%的查询中有效”。当实际一致性低于此目标时，即触发告警，需要工程师介入调查。
+
+&gt; **延伸思考**：此案例也提醒我们，在设计和维护 SRE 工具链时，必须考虑**自我观测性**（Self-Observability）。平台自身的健康状态、使用数据和异常情况，应该以与业务应用同等的严格标准被监控和告警。

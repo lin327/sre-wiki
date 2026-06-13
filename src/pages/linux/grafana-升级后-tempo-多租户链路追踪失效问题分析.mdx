@@ -1,0 +1,66 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana 升级后 Tempo 多租户链路追踪失效问题分析"
+description: "分析升级 Grafana 至 v13.0.1 后，配置了多租户的 Tempo 数据源无法正确传递组织 ID，导致 Traces 功能不可用的问题与解决方案。"
+category: 可观察性
+order: 10
+lastUpdated: 2026-04-28
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/123772
+    title: "Grafana 升级后 Tempo 多租户链路追踪失效问题分析"
+tags: [grafana, tempo, multitenancy, tracing, upgrade, grpc]
+---
+
+## 概述
+
+在 SRE 实践中，确保可观测性管道的稳定性和兼容性至关重要。本文档分析了一个在 Grafana 进行大版本升级（从 v12.4.2 到 v13.0.1）后，与 Tempo 链路追踪集成失效的典型案例。该问题导致“探索”和“下钻”中的 Traces 功能无法使用，核心错误为 `rpc error: code = Unknown desc = no org id`。这对于依赖分布式追踪进行故障排查和性能监控的团队来说是一个严重的可用性中断，直接破坏了链路追踪服务的 **SLI**（服务级别指标）。该案例突显了在可观察性栈中，版本升级和配置兼容性管理的重要性。
+
+## 核心概念
+
+1.  **多租户架构 (Multi-Tenancy)**：在 Grafana 和 Tempo 的上下文中，指的是通过 **组织 ID (Org ID)** 或租户标识符来隔离不同团队或项目的数据。在 Tempo 中，通常通过 HTTP 头部 `X-Scope-OrgId` 来传递此标识符，确保查询请求只访问授权范围内的数据。
+2.  **gRPC 头部传递**：Grafana 与 Tempo 之间的许多查询（如搜索、指标查询）通过 gRPC 协议进行。`X-Scope-OrgId` 作为一个 gRPC 元数据头部，需要在 Grafana 向 Tempo 发送的每个请求中正确附加。任何此头部的缺失或错误都会导致 Tempo 拒绝请求。
+3.  **前端插件/ChunkLoadError**：问题描述中提到的 `ChunkLoadError` 通常与 Grafana 前端资源（如 JavaScript 模块）加载失败有关，这可能是升级过程中缓存未清除或资源路径变更引起的副作用，但并非 `no org id` 根本原因的直接证据。
+
+## 实践
+
+根据问题报告和日志分析，问题现象和排查过程如下：
+
+1.  **问题复现条件**：
+    - Grafana 版本从 v12.x 升级至 v13.0.1。
+    - Tempo 数据源配置了多租户（即配置了 `X-Scope-OrgId` 头部）。
+    - 使用“探索 -&gt; Traces”或“下钻 -&gt; Traces”功能。
+
+2.  **核心症状**：
+    - Grafana 前端界面请求链路追踪数据失败，显示错误 `rpc error: code = Unknown desc = no org id`。
+    - Tempo 的 `query-frontend` 组件日志中出现大量 `level=warn` 和 `msg=gRPC err="no org id"` 条目，表明接收到的 gRPC 请求缺少必要的租户标识。
+    - 回滚 Grafana 版本至 v12.4.2 可立即恢复功能，表明问题是该次版本引入的回归性缺陷。
+
+3.  **可能根本原因分析**：
+    - **Grafana 数据源查询代理机制变更**：Grafana v13.0.1 可能修改了其内部构建 Tempo 查询请求的逻辑，导致在构造 gRPC 请求时，未能从数据源配置中正确读取和注入 `X-Scope-OrgId` 头部。
+    - **前端路由或请求处理变更**：“下钻”等新插件或前端路由可能使用了不同的请求发起路径，该路径尚未适配多租户头部的传递。
+    - **兼容性问题**：新版本 Grafana 的 gRPC 客户端库或传输层处理方式变化，影响了元数据的携带。
+
+4.  **临时解决方案**：
+    - **版本回滚**：这是当前最直接有效的解决方法。使用 Helm chart 将 Grafana 回退至已知可用的版本（如 v12.4.2），可以立即恢复 Traces 功能的可用性。
+
+## SRE 要点
+
+### 与可靠性的关联
+此问题直接破坏了**链路追踪系统的可用性**，这是一个关键的 SLO（服务级别目标）。对于依赖追踪数据进行故障诊断和优化的服务，其排查效率和准确性会显著下降。在事件响应中，如果追踪系统恰好在此时失效，会极大增加问题定位的难度和平均恢复时间（MTTR）。
+
+### 最佳实践与常见反模式
+- **最佳实践**：
+    - **升级前充分测试**：在预发布或金丝雀环境中，使用生产环境流量镜像或关键查询，测试可观察性组件的升级兼容性，特别是多租户等高级特性。
+    - **监控关键路径**：在升级后，立即监控 Grafana 与 Tempo 之间的核心查询成功率（SLI）和错误率（如 gRPC `no org id` 错误计数）。
+    - **实施渐进式发布**：对于核心基础设施组件，采用分阶段、小范围发布的策略，降低全局故障风险。
+- **常见反模式**：
+    - **直接在生产环境升级核心组件**：跳过非生产环境的验证，将整个系统的可用性置于风险之中。
+    - **忽略可观测性管道的升级测试**：仅关注被监控应用的升级，而忽视监控栈本身（如 Grafana, Prometheus, Tempo）自身的兼容性测试。
+
+### 相关指标 (SLI/SLO)
+- **SLI**：Tempo 数据源查询请求成功率（成功请求数 / 总请求数）。此问题会直接导致该 SLI 下降。
+- **SLO**：链路追踪查询服务的可用性应维持在 99.9% 或更高。此类版本缺陷直接威胁该 SLO。
+- **告警**：应对 `gRPC err="no org id"` 这类错误日志设置告警规则，以便在类似问题发生时快速响应。
+
+**相关主题**：[[grafana]], [[tempo]], [[multitenancy]], [[grpc-header-passthrough]], [[slo-management]]

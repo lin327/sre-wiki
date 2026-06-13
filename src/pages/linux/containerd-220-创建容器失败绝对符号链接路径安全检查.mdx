@@ -1,0 +1,77 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Containerd 2.2.0 创建容器失败：绝对符号链接路径安全检查"
+description: "Containerd 2.2.0 因 Go 1.24 引入的路径安全检查，无法从包含绝对符号链接的镜像（如 /etc/passwd）创建容器，导致 “path escapes from parent” 错误。"
+category: 容器运行时
+order: 0
+lastUpdated: 2025-12-13
+confidence: high
+sources:
+  - url: https://github.com/containerd/containerd/issues/12683
+    title: "[Go 1.24] v2.2.0 fails to create containers from images having /etc/{passwd,group} symlinked to an absolute path"
+tags: [containerd, go, symlinks, container-creation, security, regression]
+---
+
+## 概述
+
+本文档描述了 containerd v2.2.0 版本中引入的一个回归问题，该问题导致从某些镜像创建容器时失败。核心原因是 containerd 2.2.0 使用 Go 1.24 编译，后者在文件系统操作中引入了更严格的路径安全检查。当容器镜像内的 `/etc/passwd` 或 `/etc/group` 文件被设置为指向绝对路径的符号链接时，containerd 在尝试解析用户和组信息时会触发此检查，报出 `path escapes from parent` 错误，从而阻止容器创建。此问题影响依赖于这些文件进行用户权限管理的容器化工作负载，是一个需要关注的版本兼容性问题。
+
+## 核心概念
+
+**绝对符号链接路径**：符号链接（symlink）可以指向绝对路径（如 `/nix/store/...`）或相对路径（如 `../store/...`）。在容器镜像中，使用绝对路径的符号链接可能无意中指向宿主机文件系统上的路径，带来潜在的安全风险。
+
+**容器运行时文件系统安全**：容器运行时（如 containerd）在挂载和准备容器根文件系统时，必须确保其操作不会意外逃逸到宿主机的文件系统。这包括验证文件路径是否在预期的容器根目录内。
+
+**Go 1.24 路径安全检查**：Go 1.24 版本对 `os.Open` 等涉及文件路径的函数进行了安全强化。它会检查文件路径（包括解析后的符号链接目标）是否“逃逸”出调用者指定的父目录。如果检查失败，则会返回错误。containerd v2.2.0 是使用 Go 1.24 编译的，因此继承了这一行为。
+
+## 实践
+
+### 问题定位与重现
+
+该问题主要影响那些在构建时将 `/etc/passwd` 或 `/etc/group` 设置为绝对符号链接的镜像。一个典型的例子是 `docker.io/nixos/nix:2.32.2` 镜像，其 `/etc/passwd` 是一个指向 `/nix/store/` 内文件的绝对链接。
+
+重现步骤：
+1.  使用 containerd v2.2.0 环境。
+2.  拉取问题镜像：`ctr image pull docker.io/nixos/nix:2.32.2`。
+3.  尝试创建容器：`ctr containers create docker.io/nixos/nix:2.32.2 nixos-2-32-2`。
+4.  观察错误输出：`ctr: mount callback failed on /tmp/containerd-mount...: openat etc/passwd: path escapes from parent`。
+
+### 解决方案
+
+有几种方法可以解决或规避此问题：
+
+**1. 升级到修复版本（推荐）**
+关注 containerd 官方发布的补丁版本，该问题已在后续版本中得到修复。在升级前，务必在测试环境验证。
+
+**2. 修改或重新构建镜像**
+修改镜像构建过程，将 `/etc/passwd` 和 `/etc/group` 的绝对符号链接替换为相对链接。这可以从根源上消除触发安全检查的条件。
+```dockerfile
+# Dockerfile 示例
+FROM nixos/nix:2.32.2
+# 将绝对符号链接替换为相对链接
+RUN ln --symbolic --force "$(realpath --relative-to=/etc /etc/passwd)" /etc/passwd
+RUN ln --symbolic --force "$(realpath --relative-to=/etc /etc/group)" /etc/group
+```
+
+**3. 临时回退 containerd 版本**
+如果无法立即升级或修改镜像，可以考虑将 containerd 暂时回退到已知正常的版本（如 v2.1.5 或 v1.7.28）。这是一种临时缓解措施，但会引入其他潜在风险，应谨慎评估。
+
+## SRE 覜点
+
+- **与可靠性的关联**：此问题是典型的**版本升级回归**案例。容器运行时作为基础设施的核心组件，其行为变更（即使是出于安全目的）也可能破坏现有工作负载的兼容性，导致部署失败，直接影响服务的交付能力。建立完善的**升级前测试流程**（包括使用生产镜像库中的典型镜像进行测试）至关重要。
+
+- **最佳实践与常见反模式**：
+    - **最佳实践**：在构建容器镜像时，对于需要链接的文件，优先使用**相对路径符号链接**。这样不仅能避免此类问题，也更符合容器镜像的便携性原则。
+    - **反模式**：在镜像中硬编码绝对路径的符号链接，尤其是在指向容器根目录之外的路径时，会引入安全风险和兼容性隐患。
+    - **可观测性**：监控容器创建失败率是发现此类问题的有效手段。结合 `containerd` 的日志分析，可以快速定位根因。
+
+- **相关指标（SLI/SLO/SLA）**：
+    - **SLI (Service Level Indicator)**：可以定义“容器首次创建成功率”，即从接收到创建请求到容器成功进入运行状态的比例。
+    - **影响**：此问题会直接导致该 SLI 数值下降，尤其是在使用特定版本镜像的部署场景中。
+    - **事件响应**：当监控到容器创建失败率突增时，应检查是否进行了 containerd 或 Go 工具链的版本升级，并快速核对已知的兼容性问题列表。
+
+### 相关页面
+
+- [[container-runtime]]
+- [[image-building]]
+- [[upgrade-management]]

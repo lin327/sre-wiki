@@ -1,0 +1,88 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Grafana仪表板预配置文件夹层级结构失效"
+description: "Grafana 11.6.0版本中，通过YAML文件预配置仪表板文件夹的嵌套结构功能失效，所有文件夹被创建在根目录。"
+category: 配置管理
+order: 0
+lastUpdated: 2025-03-28
+confidence: medium
+sources:
+  - url: https://github.com/grafana/grafana/issues/103050
+    title: "Grafana GitHub Issue #103050"
+tags: [grafana, provisioning, configuration-management, dashboards]
+---
+
+## 概述
+
+仪表板预配置（Dashboard Provisioning）是 Grafana 中一项关键功能，允许运维团队通过声明式的 YAML 文件来管理仪表板和文件夹的创建与同步。这对于实现基础设施即代码（IaC）、自动化部署以及维护大规模、标准化的仪表板环境至关重要。在 SRE 实践中，它有助于确保监控视图的一致性与可重现性。
+
+然而，Grafana 在 v11.6.0 版本中引入了一个行为变更，导致原本正常的文件夹嵌套（子文件夹）预配置功能失效。所有配置的文件夹均被创建在 Grafana 的根目录下，破坏了预设的层级结构，这可能对现有的监控组织逻辑和运维流程造成冲击。
+
+## 核心概念
+
+### 仪表板预配置
+指通过在 Grafana 服务器启动时读取指定的 YAML/JSON 配置文件，自动创建、更新或删除仪表板和文件夹的过程。配置文件通常位于 `etc/grafana/provisioning/dashboards/` 目录。
+
+### 文件夹层级结构
+Grafana 中的仪表板通过文件夹进行组织。在 v11.5.x 及更早版本中，预配置支持创建嵌套文件夹（子文件夹）。这通过在文件夹定义中使用 `folder` 属性来指定父文件夹名称实现。
+
+### 配置模型变更
+从 v11.5.3 升级到 v11.6.0 后，预配置引擎对文件夹的处理逻辑发生了变更。核心问题在于：即使子文件夹已在系统中存在并被手动移动到正确位置，预配置过程仍会错误地尝试在根目录重建该文件夹，表明其同步逻辑（Reconciliation Loop）未能正确识别和维持现有的层级关系。
+
+## 实践
+
+根据 issue 中描述的场景，以下是问题配置的示例与表现：
+
+**在 Grafana v11.5.3 中有效的配置结构（简化示例）：**
+```yaml
+# provisioning/dashboards/structure.yaml
+apiVersion: 1
+providers:
+  - name: 'default'
+    folder: 'SERVICES AND SYSTEMS'
+    folderUid: 'services'
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+
+# provisioning/dashboards/folders.yaml
+apiVersion: 1
+folders:
+  - orgId: 1
+    title: "SERVICES AND SYSTEMS"
+    uid: services
+  - orgId: 1
+    title: "BEMTEVI"
+    uid: bemtevi
+    # 此处通过 folder 属性指定父文件夹
+    folder: SERVICES AND SYSTEMS
+```
+
+在此配置下，Grafana 会创建两个文件夹：`SERVICES AND SYSTEMS` 作为顶层文件夹，`BEMTEVI` 作为其子文件夹。
+
+**在 Grafana v11.6.0 中的异常行为：**
+- 用户通过 `folder: SERVICES AND SYSTEMS` 配置将 `BEMTEVI` 文件夹作为子文件夹。
+- 升级后，预配置脚本运行时，无论 `BEMTEVI` 文件夹是否已存在于 `SERVICES AND SYSTEMS` 内，它都会在 **Grafana 根目录** 重新创建一个名为 `BEMTEVI` 的 **空文件夹**（不含任何仪表板）。
+- 手动将此新创建的根文件夹移动回 `SERVICES AND SYSTEMS` 下并不能解决问题，下次预配置执行时又会创建一个新的根目录文件夹。
+
+**当前临时解决方案：**
+在官方修复前，可采取的变通措施可能包括：
+1.  **降级或保持稳定版本**：暂不升级到受影响的 Grafana 版本。
+2.  **调整预配置策略**：暂时放弃嵌套结构，将所有文件夹平铺在根目录，等待官方补丁。
+3.  **结合 API 或脚本进行后处理**：在 Grafana 启动后，通过脚本调用 Grafana API，修正文件夹的层级结构，但这增加了复杂性和维护成本。
+
+## SRE 要点
+
+- **与可靠性的关联**：预配置失效直接影响监控系统的 **可管理性** 和 **可重现性**。在灾难恢复或环境重建时，可能无法自动化还原预期的仪表板组织结构，导致运维效率降低。这是一个典型的 **配置漂移（Configuration Drift）** 问题。
+
+- **最佳实践与预防措施**：
+    1.  **升级前充分测试**：任何基础组件的升级都应在预发布环境中，基于完整的配置集进行全面回归测试，尤其要验证自动化配置管理流程。
+    2.  **版本化配置管理**：将仪表板预配置文件与应用代码一同纳入 Git 版本控制，并记录与之配套的 Grafana 版本约束。
+    3.  **实施配置一致性检查**：可以编写脚本或利用 CI/CD 管道，在部署后验证 Grafana 中的文件夹/仪表板结构是否与预期配置一致。
+    4.  **监控与告警**：对预配置过程本身的成功/失败进行监控。对于关键的组织结构变更，设置告警。
+
+- **相关指标 (SLI/SLO)**：
+    - **SLI**：可监控“预配置后关键文件夹层级结构的正确率”，或“通过自动化流程成功部署的仪表板占比”。
+    - **SLO**：可以设定“每次 Grafana 版本升级后，所有核心文件夹在预配置后结构正确率达到 100%”。
+
+- **关联问题**：此问题反映了软件升级中 **向后兼容性** 和 **配置接口稳定性** 的重要性。在实施变更管理流程时，需要关注此类行为变更的风险。相关主题可参阅 [[change-management]] 和 [[configuration-management]]。

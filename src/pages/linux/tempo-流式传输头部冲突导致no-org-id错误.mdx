@@ -1,0 +1,66 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "Tempo: 流式传输头部冲突导致'no org id'错误"
+description: "当启用流式传输团队头部时，Grafana内部org ID与数据源配置的org ID头部冲突，导致Tempo因随机的header顺序而报错。"
+category: "SRE 工程与实践"
+order: 0
+lastUpdated: "2024-07-16"
+confidence: high
+sources:
+  - url: "https://github.com/grafana/grafana/issues/123923"
+    title: "grafana/grafana#123923: Tempo: Streaming headers bug"
+tags: [tempo, gRPC, multi-tenancy, header, bug, observability, reliability]
+---
+
+## 概述
+
+Tempo 是 Grafana 生态系统中的一个高性能、分布式追踪后端，负责存储和查询来自 OpenTelemetry、Jaeger 等来源的 trace 数据。在多租户环境中，通过 `X-Scope-Orgid` HTTP 头部来隔离不同租户（组织）的数据至关重要。本文档描述了一个在启用流式传输特性 `streamingForwardTeamHeadersTempo` 时，由于传入的 gRPC 元数据与数据源配置的头部冲突，导致 Tempo 无法正确解析租户 ID，最终引发 “no org id” 错误的技术问题及其根因分析。该问题直接影响 Tempo 在多租户环境下的可靠性和数据隔离性，是 SRE 在监控分布式追踪系统时需要关注的典型边界条件问题。
+
+## 核心概念
+
+要理解这个 bug，需要澄清几个关键概念：
+
+- **gRPC 元数据（Metadata）**：在 gRPC 调用中，客户端可以发送键值对形式的元数据（类似于 HTTP 头部），服务器端可以通过 API 获取这些元数据。元数据键名是**大小写敏感**的。
+- **大小写不敏感的 HTTP 头部（Case-Insensitive Headers）**：根据 HTTP/2 和 gRPC 规范，头部键名在传输到网络层时会被标准化为全小写。例如，`X-Scope-Orgid` 和 `x-scope-orgid` 在网络线路上被视为同一个头部。
+- **数据源配置头部（Datasource-Configured Headers）**：在 Grafana 中配置 Tempo 数据源时，可以预定义一些固定的 HTTP 头部，例如用于租户隔离的 `X-Scope-Orgid`。这些头部应在请求中具有最高优先权。
+- **团队头部（Team Headers）**：这是 Grafana 内部用于在插件或组件间传递上下文（如组织 ID）的一种机制，通过 `getTeamHeaders` 函数转发。
+
+问题的根源在于 `getTeamHeaders` 函数盲目转发了所有传入的 gRPC 元数据，未考虑与更高优先级的数据源配置头部发生键名冲突（大小写不敏感）的可能性。
+
+## 实践
+
+### 问题复现条件
+
+1. 在 Grafana 数据源配置中，为 Tempo 配置了 `X-Scope-Orgid` 头部（例如，值为 `"my-org"`）。
+2. 启用特性开关 `streamingForwardTeamHeadersTempo=true`。
+3. 当一个请求的 gRPC 元数据中**同时包含**一个名为 `x-scope-orgid`（小写）的键，且其值为一个内部数值型组织 ID（例如 `"123"`）时，问题触发。
+
+### 根因分析
+
+`getTeamHeaders` 将传入的所有 gRPC 元数据转换并添加到一个 Go `map[string]string` 中。与此同时，`getClientOptionsHeaders` 函数会将数据源配置的头部（如 `X-Scope-Orgid`）也添加到同一个 map 中。这导致了同一个 map 中存在两个键：
+- `"X-Scope-Orgid"` （来自数据源配置，值为 `"my-org"`）
+- `"x-scope-orgid"` （来自传入的 gRPC 元数据，值为 `"123"`）
+
+当这个 map 被序列化到 gRPC 线路进行传输时，两个键都会被标准化为 `x-scope-orgid`。由于 Go 语言中 map 的迭代顺序是**不确定且随机的**，最终发送到 Tempo 服务端的头部值可能是 `"my-org"` 也可能是 `"123"`，顺序无法保证。如果错误的值 `"123"` 作为第一个或唯一的 `x-scope-orgid` 头部被 Tempo 解析，而 Tempo 无法根据它找到对应的租户，就会抛出 “no org id” 错误。
+
+### 修复方案
+
+官方修复方案是在 `GetHeadersFromIncomingContext` 函数（位于 `pkg/tsdb/tempo/utils/stream_utils.go`）中增加冲突检测逻辑。
+
+**修复核心逻辑**：
+在转发团队头部之前，检查即将转发的每个头部键名是否与数据源配置的头部键名（忽略大小写）冲突。如果冲突，则**跳过转发**团队头部中的该条目，从而保证数据源配置的头部具有绝对优先权。
+
+**修复后的预期行为**：
+即使传入的 gRPC 元数据中包含 `x-scope-orgid` 或 `X-Scope-ORGID` 等不同大小写形式的键，只要数据源配置了 `X-Scope-Orgid`，最终发送给 Tempo 的 `x-scope-orgid` 头部值将始终是数据源配置的值（例如 `"my-org"`），消除了因 map 迭代顺序随机性导致的数据不一致问题。
+
+## SRE 要点
+
+- **与可靠性、可观测性的关联**：此 bug 是典型的多租户数据隔离失效问题，直接破坏了追踪数据的**可靠性**（数据发往了错误的租户或无法访问）。对于依赖 Tempo 进行问题诊断的 SRE 而言，错误的追踪查询结果会严重误导故障排查方向，损害系统的**可观测性**。
+- **最佳实践与常见反模式**：
+    - **最佳实践**：在设计跨组件传递上下文的机制（如通过头部）时，必须明确优先级规则。通常，基础设施层（如数据源配置）的策略应高于应用层（如请求携带的动态元数据）。实现时应进行显式的冲突检测和解决。
+    - **常见反模式**：盲目转发或合并来自不同来源的、具有相同语义的配置项（如头部），而不考虑命名冲突（尤其是大小写不敏感冲突）和优先级，是导致此类难以调试的间歇性故障（因为 map 迭代顺序随机）的常见原因。
+- **相关指标（SLI/SLO/SLA）**：
+    - 此问题直接影响 **追踪数据查询成功率** 这一 SLI。当错误发生时，用户查询 Tempo 将会失败。
+    - 团队应确保此类多租户数据隔离的可靠性，其 SLO 可以设定为“成功返回指定租户数据的查询比例 ≥ 99.9%”。该 bug 的出现可能导致 SLO 被侵蚀，并消耗 Error Budget。修复后，应通过集成测试强化对此类边界条件的覆盖，防止回归。
+
+*关联页面：[[tempo]], [[gRPC]], [[multi-tenancy]], [[header]], [[data-source-configuration]], [[error-budget]]*

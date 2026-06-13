@@ -1,0 +1,85 @@
+---
+layout: ../../layouts/BaseLayout.astro
+title: "诊断与解决 containerd erofs 快照器 'no such device' 错误"
+description: "容器使用 erofs 快照器时因内核支持不足导致 overlay 挂载失败，引发容器启动错误。"
+category: "存储与文件系统"
+order: 0
+lastUpdated: 2026-01-20
+confidence: high
+sources:
+  - url: "https://github.com/containerd/containerd/issues/12796"
+    title: "Failed to run container: erofs snapshotter no such device error"
+tags: ["containerd", "erofs", "overlay", "snapshotter", "kernel", "storage"]
+---
+
+## 概述
+
+在容器运行时环境中，文件系统的快照器负责管理容器镜像层和容器可写层的存储。erofs（Enhanced Read-Only File System）作为 containerd 的一种快照器实现，旨在提供更好的存储效率和性能。然而，在启用该特性时，SRE 团队可能会遇到因底层操作系统或内核配置不匹配而导致的容器启动失败。本文档详细分析了一类典型的 `no such device` 错误，探讨其根本原因，并提供诊断和解决的最佳实践，这对于维护基于容器的微服务可靠性至关重要。
+
+## 核心概念
+
+- **containerd 快照器 (Snapshotter)**：containerd 的一个插件，负责管理容器镜像和容器实例的文件系统层。`erofs` 快照器是其中一种实现，它利用 Linux 内核的 erofs 文件系统来存储和合并镜像层。
+- **Overlay 挂载 (Overlay Mount)**：一种联合文件系统挂载方式。containerd 使用 overlay 将只读的基础镜像层（lowerdir）和可写的工作层（upperdir/workdir）合并，为容器提供一个统一的视图。
+- **错误分析**：核心错误 `mount source: "overlay", ..., err: no such device` 表明，当 containerd 尝试执行 `mount -t overlay ...` 系统调用时，内核返回了“设备不存在”的错误。这通常意味着：
+    1. 内核未编译支持 `overlay` 文件系统模块。
+    2. 更具体到 erofs 快照器，内核可能缺少对 erofs 文件系统的必要支持，或 erofs 与 overlay 的集成存在问题。
+- **根本原因**：从 issue 描述看，此错误在启用 erofs 快照器后出现，但默认的 `overlayfs` 快照器正常工作。这强烈指向问题与 erofs 快照器所依赖的特定内核功能或配置有关，而非通用的内核 overlay 支持。
+
+## 实践
+
+当在 Kubernetes 节点上遇到类似错误时，SRE 应按照以下步骤进行系统排查。
+
+### 1. 确认错误范围与复现
+
+首先，隔离问题。使用 `ctr`（containerd 的命令行客户端）直接操作 containerd，以排除 Kubernetes 复杂性的干扰，确认问题是否独立存在：
+```bash
+# 直接通过 containerd 拉取并运行镜像，指定 erofs 快照器
+ctr pull <image>
+ctr run --snapshotter erofs <image> test
+```
+如果复现，则证明问题根植于 containerd 或其运行环境（如内核），而非 Kubernetes 配置。
+
+### 2. 诊断内核配置
+
+检查节点内核是否满足 erofs 快照器的要求。关键检查点包括：
+- **内核版本**：erofs 快照器可能需要特定版本以上的内核才能稳定工作。
+- **内核模块与配置**：需要确认内核编译时启用了以下相关配置（通常需要 `=y` 或 `=m`）：
+    - `CONFIG_OVERLAY_FS=y` (或模块)
+    - `CONFIG_EROFS_FS=y` (或模块)
+    - `CONFIG_EROFS_FS_XATTR=y` (如使用扩展属性)
+    - `CONFIG_EROFS_FS_ZIP=y` (如使用压缩)
+
+可以通过以下命令查看当前加载的模块和配置：
+```bash
+lsmod | grep -E 'overlay|erofs'
+# 查看内核配置 (如果存在)
+grep -E 'CONFIG_(OVERLAY_FS|EROFS_FS)' /boot/config-$(uname -r)
+```
+
+### 3. 调整 containerd 配置
+
+如果内核支持完备，检查 containerd 配置文件 (`/etc/containerd/config.toml`) 中的 erofs 快照器插件配置。一个重要的参数是 `max_unmerged_layers`，它控制用于合并的最大层数。尝试将其设置为 `1`（即禁用合并，使用纯 erofs 存储），看是否能规避问题。参考 issue 中提供的配置片段：
+```toml
+[plugins."io.containerd.snapshotter.v1.erofs"]
+  enable_fsverity = false
+  max_unmerged_layers = 1
+```
+
+### 4. 检查系统调用与权限
+
+确保 containerd 运行环境允许执行必要的系统调用，并且相关设备节点（如用于 overlay 的特殊设备）存在。在容器化或高度受限的环境中，seccomp 或 AppArmor 策略可能阻止了 `mount` 系统调用。可以通过查看 audit 日志或使用 `strace` 追踪 containerd-shim 进程的调用来验证。
+
+## SRE 要点
+
+- **与可靠性的关联**：此类存储层错误会直接导致 Pod 无法启动（`FailedCreatePodSandBox`），影响服务的部署和弹性伸缩能力，是严重的可靠性事件。快速准确地诊断此类问题是 SRE 保障服务 SLA 的核心技能。
+- **可观测性实践**：
+    1. **日志**：确保 containerd 和 kubelet 的日志收集到集中式日志系统。错误堆栈是诊断的首要信息。
+    2. **指标**：监控节点上容器启动成功率、镜像拉取失败率等指标。可以为存储相关的错误（如 `containerd_snapshotter_*` 相关指标，如果可用）设置告警。
+    3. **事件**：关注 Kubernetes 中 `Warning` 类型的事件，特别是 `FailedCreatePodSandBox`。
+- **最佳实践与反模式**：
+    - **最佳实践**：在大规模部署新的存储技术（如 erofs 快照器）前，应在与生产环境一致的测试环境中进行充分验证。建立包含内核配置检查的标准化节点部署和验证流程。
+    - **反模式**：忽略节点启动初期（如 DaemonSet pod）的错误，认为它们会自动恢复。这些错误可能暴露了根本性的环境配置问题，需要立即关注。
+- **相关指标**：虽然此错误不直接对应某个 SLI，但可关联到以下方面：
+    - **SLI**：服务启动成功率（`sum(rate(kube_pod_status_ready{condition="true"}[5m]))`）。
+    - **SLO**：维持核心服务的 Pod 启动成功率在 99.9% 以上。
+    - **事件响应**：此错误应触发关于节点存储或内核配置的故障响应流程。

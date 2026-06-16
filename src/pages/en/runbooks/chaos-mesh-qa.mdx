@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Chaos Mesh Q&A"
+category: "SREPractice"
+confidence: medium
+---
+
+# Chaos Mesh Q&A
+
+## Overview
+
+Chaos Mesh is a cloud-native chaos engineering platform based on Kubernetes that allows SREs and developers to systematically inject faults into distributed systems to verify the system's resiliency and fault tolerance. This article is based on community frequently asked questions officially answered by the project team. It aims to provide practitioners with specific guidance on deployment, integration, security and workflow, etc., and to help the SRE team better use Chaos Mesh for reliability testing.
+
+## Core concepts
+
+**How Chaos Mesh works**: Chaos Mesh uses Kubernetes’ Custom Resource Definitions (CRDs) to declaratively manage chaos experiments. Its core architecture consists of Chaos Dashboard (control plane) and Chaos Daemon (agent on each node). When creating a chaos experiment CR (such as NetworkChaos), the control plane will schedule tasks, and the Chaos Daemon on the corresponding node will perform specific fault injection at the target Pod or node kernel level. For example, network failure can be achieved by calling Linux's traffic control (tc) tool.
+
+**Chaos Actions**: Chaos Actions is the collective name for various fault injection types in Chaos Mesh, such as PodChaos, NetworkChaos, IOChaos, etc. Each action corresponds to different fault simulation logic. The common implementation path is to intercept the execution link of the target application or system component and inject interference into it to simulate a real production environment failure.
+
+**Steady-state Probing (Probing)**: Steady-state probing refers to continuously monitoring key business indicators during and after the chaos experiment to determine whether the system still meets its service level objectives (SLO). This is an important link in the closed loop of chaos experimental science. According to the official description, Chaos Mesh itself does not have built-in monitoring functions, but provides interfaces that allow integration into external monitoring systems (such as Prometheus) or direct connection to the application's status interface to implement steady-state detection.
+
+## Practice
+
+### Installation and deployment
+
+Chaos Mesh can be deployed on any Kubernetes cluster, whether it is a local (On-Premises) environment or a cloud hosting environment such as AWS and GCP. During deployment, relevant parameters need to be configured according to the specific Kubernetes environment. The official documentation provides detailed installation guides, covering various installation methods from `kubectl` to Helm.
+
+### Fault injection principle
+
+Taking network failure as an example, Chaos Mesh will locate the node where the target Pod is located, and the Chaos Daemon of the node will operate Linux's traffic control (tc) rules to delay, packet loss, or bandwidth limit the traffic in the corresponding network namespace. For file system failures (IOChaos), this is usually achieved by hijacking the system calls of the application process.
+
+### Permissions and Security
+
+By default, the Chaos Daemon component of Chaos Mesh runs in `privileged` (privileged mode) in order to be able to perform some kernel operations that require high privileges (such as network tc operations). For Kubernetes v1.11+ clusters, security can be enhanced by configuring Chaos Daemon with more fine-grained `capabilities` (such as `NET_ADMIN`, `SYS_ADMIN`) instead of the full privileged mode.
+
+### Integrate with CI/CD pipeline
+
+Chaos Mesh can be easily integrated into build and deployment pipelines. Since experiments are defined in the form of Kubernetes CRD objects, just create the corresponding Chaos CR at some stage of the pipeline (e.g. Jenkins, Argo CD, GitHub Actions). You can query the `.status` and Kubernetes events of the experiment CR to obtain the running status and results of the experiment to decide whether to continue the pipeline.
+
+### Integrate with service mesh
+
+Chaos Mesh can be used in service mesh (such as Istio, Linkerd) environments. Chaos experiments can be targeted down to specific services or Pods in the grid. This enables SRE teams to verify the resiliency of the system in complex microservices architectures that more closely resemble production topologies, such as simulating network failures between specific services.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: Chaos Mesh is a powerful tool for practicing failure culture and proactively discovering system weaknesses. It directly serves the core goal of SRE - improving system reliability. Through regular, controllable fault injection, SRE teams can proactively identify dependency single points of failure, configuration errors, or monitoring blind spots to implement hardening before failures actually occur. This helps manage the Error Budget and uses experimental results to guide engineering teams in balancing new feature development and reliability investments.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practices**:
+        1. **Conduct in pre-production environment first**: All chaos experiments should first verify their scope of impact in pre-production environment.
+        2. **Set clear assumptions**: Each experiment should have clear assumptions (such as "When the latency of service A increases, service B should be able to degrade, rather than collapse overall").
+        3. **Monitoring and Alerts**: Monitoring must be enhanced during the experiment and preparations must be made to resume operations. Should be integrated with existing observability platforms (e.g. Prometheus, Grafana).
+        4. **Progressive injection**: Start with faults that have a small impact (such as CPU pressure on a single Pod) and gradually expand to more complex fault scenarios.
+    - **Common anti-patterns**:
+        1. **Blind injection without monitoring**: Chaos experiments are conducted without complete monitoring, and its true impact cannot be evaluated, which may cause unnecessary production interruptions.
+        2. **Pursuit of "explosive" effects**: Equating chaos experiments with "destruction", lacking scientific assumptions and measurements, and unable to generate valuable engineering insights.
+        3. **Ignore recovery**: Only focus on how to inject faults, while ignoring how to verify the system's self-healing capabilities and the team's fault response process.
+
+- **Related indicators (SLI/SLO/SLA)**: When using Chaos Mesh, the experimental results themselves are not SLI, but the system behavior tested by the experiment is the key to verify whether SLI can continue to meet SLO under failures. For example:
+    - **Experiment Success Rate**: SRE can consider "chaos experiments triggered as expected and captured by the monitoring system" as an engineering efficiency SLI.
+    - **System Availability**: Whether the availability of core services (such as request success rate, latency) is still within the SLO commitment after a fault is injected.
+    - **Time to Failure Recovery (MTTR)**: The time from the triggering of the chaos experiment to the system's automatic recovery or return to steady state after manual intervention is an important indicator of system resilience and team emergency response capabilities.

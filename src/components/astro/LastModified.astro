@@ -5,14 +5,17 @@ interface Props {
 
 const { date } = Astro.props;
 
-const formatted = new Date(date).toLocaleDateString("zh-CN", {
+const isEnglish = Astro.url.pathname.startsWith("/en/");
+const locale = isEnglish ? "en-US" : "zh-CN";
+const label = isEnglish ? "Last updated:" : "最后更新:";
+
+const formatted = new Date(date).toLocaleDateString(locale, {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
 });
 ---
-
-<p class="last-modified">最后更新: <time datetime={date}>{formatted}</time></p>
+<p class="last-modified">{label} <time datetime={date}>{formatted}</time></p>
 
 <style>
   .last-modified {

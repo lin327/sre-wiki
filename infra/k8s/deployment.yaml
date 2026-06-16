@@ -9,6 +9,11 @@ metadata:
     app.kubernetes.io/part-of: sre-atlas
 spec:
   replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 0
   selector:
     matchLabels:
       app: sre-atlas
@@ -16,12 +21,18 @@ spec:
     metadata:
       labels:
         app: sre-atlas
+      annotations:
+        kubernetes.io/change-cause: "sre-atlas deployment"
     spec:
       imagePullSecrets:
         - name: ghcr-secret
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: sre-atlas
           image: ghcr.io/lin327/sre-wiki:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
               protocol: TCP
@@ -30,29 +41,52 @@ spec:
               cpu: 50m
               memory: 64Mi
             limits:
-              cpu: 100m
+              cpu: 200m
               memory: 128Mi
-          livenessProbe:
+          startupProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            periodSeconds: 2
+            failureThreshold: 15
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 80
-            initialDelaySeconds: 3
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
           securityContext:
             runAsNonRoot: true
-            runAsUser: 101  # nginx user
-            readOnlyRootFilesystem: false
+            runAsUser: 101
+            readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run/nginx
+            - name: nginx-tmp
+              mountPath: /tmp/nginx
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

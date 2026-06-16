@@ -1,0 +1,49 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus Monitoring Spreads through the Internet"
+category: "Monitoring & Observability"
+confidence: medium
+---
+
+# Prometheus Monitoring Spreads through the Internet
+
+## Overview
+
+As an open source monitoring and alerting toolkit, Prometheus quickly attracted widespread attention among developers and the SRE community after its 0.10.0 version was publicly released in 2015. This article is based on an early article on the Prometheus official blog. It aims to review how Prometheus monitoring concepts and practices spread rapidly on the Internet, and how its ecosystem began to be established in various technology stacks and industries. This is an important reference value for understanding how Prometheus becomes the cornerstone of cloud native monitoring, and how SRE leverages community power to build observability systems.
+
+## Core concepts
+
+The core design concept of Prometheus is **Pull-based monitoring (Pull-based monitoring)**. It works by actively scraping time series data exposed on an HTTP endpoint (usually `/metrics`), in contrast to the traditional push model. This design simplifies the complexity of monitored services and relies on service discovery to find targets. Its built-in time series database (TSDB) and powerful query language PromQL provide a solid foundation for analysis and alarming. Understanding this core model is a prerequisite for evaluating and applying various tools and cases in the Prometheus ecosystem. For more discussion on monitoring model selection, see [[push-vs-pull-monitoring]].
+
+## Practice
+
+The prosperity of Prometheus's early ecosystem is reflected in its wide application in monitoring various systems and components. The following is a summary and expansion of the cases mentioned in the blog:
+
+**1. Container and orchestration system monitoring**
+- **Docker container monitoring**: By using `cAdvisor` or a custom Exporter, Prometheus can seamlessly collect the CPU, memory, network and other indicators of the container, which is crucial as microservices and containerized deployment become mainstream.
+- **Mesos task monitoring**: There is a dedicated Exporter that exposes Mesos cluster resource allocation, task status and other indicators to Prometheus, demonstrating its adaptability in complex scheduling systems.
+
+**2. Network and load balancing monitoring**
+- **HAProxy Monitoring**: By configuring Prometheus HAProxy Exporter, you can obtain key performance indicators such as the number of front-end/back-end connections, error rate, and request delay of HAProxy to provide data support for traffic management.
+
+**3. Language runtime and application monitoring**
+- **Java Application Monitoring**: Two paths are provided: one is to use the client library for native tracking, and the other is to indirectly collect MBean indicators in Java Management Extensions (JMX) through `JMX Exporter`. The latter is particularly suitable for monitoring complex Java applications such as Cassandra.
+- **Python Application Monitoring**: The example shows how to monitor a Python batch job, using the client library and `Textfile Collector` to expose custom metrics to Prometheus, which demonstrates its flexibility and support for non-long-running processes.
+
+**4. Infrastructure and Machine Monitoring**
+- **Node Exporter**: As one of the pillars of the Prometheus ecosystem, it is used to collect Unix-like system kernel and hardware indicators, such as disk space, CPU usage, system load, etc., which is the key to building base layer observability.
+
+A typical Prometheus monitoring architecture diagram is as follows: **Prometheus Server** periodically pulls `/metrics` data from registered **Targets** (such as application instances, Exporter, pushgateway, etc.) according to the configured service discovery rules. Data is stored in local TSDB. **Prometheus Server** also supports PromQL query, and can send events that meet the Alerting Rules to **Alertmanager** for routing, deduplication and notification. Visualization tools like **Grafana** build dashboards by querying Prometheus. The architecture emphasizes component decoupling and dynamic discovery based on metrics.
+
+## SRE Key Points
+
+The rapid spread of Prometheus in the early days deeply reflects the core demand of modern SRE practice for **observability**.
+
+- **Association with reliability goals**: Monitoring cases (such as HAProxy, Cassandra) directly serve to ensure the availability and performance of services. By defining a well-defined SLI (e.g. request latency P99, error rate) and translating it into an SLO (e.g. 99.9% of requests completed within 500ms), teams can quantify system reliability. Prometheus is the key tool to collect these SLI data and drive Error Budget decisions. For example, monitoring the success rate and time consumption of Python batch processing jobs directly corresponds to the reliability SLO of the data pipeline.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practices**: As can be seen from the official blog, the community has early advocated writing or integrating special **Exporters** for different components (language, middleware, infrastructure). This establishes a composable monitoring model, which is the key to the success of the Prometheus ecosystem. Another practice is to use **Labels** to add multi-dimensional metadata to indicators, which greatly enhances the flexibility of analysis.
+    - **Common anti-patterns**: An easy pitfall in the early stages is having too many monitoring indicators and a lack of focus, or not aligning monitoring indicators with user experience and business goals. The correct approach is to start from **SLO** and reversely deduce the SLI that needs to be monitored.
+- **Related indicators (SLI/SLO/SLA)**: The practices in the Prometheus ecosystem (such as Node Exporter, Java Client) are ultimately designed to collect the raw data required to build **SLI**. For example, `haproxy_http_requests_total` (with error code tag) collected from HAProxy can directly calculate the SLI of service availability. The operation and maintenance team needs to develop reasonable **SLO** based on these SLIs and reach an **SLA** agreement with the business party.
+
+Early examples of Prometheus demonstrate how working with the community through open source tools can lay the foundation for building the next generation of scalable and maintainable monitoring systems. Its pull model, service discovery and powerful query capabilities make it particularly suitable for dynamic and containerized environments, which also indicates its dominant position in the cloud native ecosystem in the future.

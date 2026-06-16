@@ -1,0 +1,52 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "containerd/containerd Issue"
+category: "SRETechnology知识库"
+confidence: medium
+---
+
+# containerd/containerd Issue
+
+## Overview
+
+In Kubernetes and container environments based on [[containerd]], image management is the basic link to maintain service reliability. System administrators and SRE engineers often need to use command line tools to manually import images on nodes, such as when building offline environments or troubleshooting. If this process is incompatible with the CRI (Container Runtime Interface) plug-in of the container runtime, Kubernetes will not be able to perceive and use these images, which will affect the scheduling and operation of Pods and may cause unexpected service degradation. This article will analyze the problem that the `crictl` tool cannot see the image after using the `ctr` command to import the image in containerd 1.7 version, and provide solutions.
+
+## Core concepts
+
+1. **containerd and CRI plug-in**: containerd is an industry-standard container runtime. To integrate with Kubernetes, it implements the Kubernetes-defined container runtime interface through CRI plugins such as `cri-containerd`. `crictl` is a diagnostic and debugging command line tool provided by the Kubernetes project that interacts with CRI.
+2. **Image namespaces**: containerd organizes and manages resources, such as images, containers and tasks, through different namespaces. This is similar to user space isolation in Linux systems, helping to distinguish resources from different consumers (such as CRI plug-ins, users using `ctr` directly) and avoid conflicts.
+3. **Import mechanism of `ctr` tool**: `ctr` is a direct client tool of containerd. When using `ctr images import` to import an image, it will import the image into the `default` namespace by default. CRI plugins are (usually) configured to only read images from a specific namespace (usually `k8s.io`).
+4. **The role of the `--local` parameter**: When the `-n k8s.io` parameter is specified in the `ctr` command, the target is to operate to the `k8s.io` namespace. However, the image's import behavior itself may not be fully optimized for that namespace. The `--local=true` parameter forces `ctr` to use a "local" import method that is fully compatible with the target namespace, ensuring that the image's metadata (e.g. references, tags) are stored in the format and location expected by the CRI plugin, thus making it visible.
+
+## Practice
+
+### Problem recurrence and standard behavior
+In the containerd 1.7.27 environment, execute the following command to import the image:
+```bash
+ctr -n k8s.io i import python.tar
+```
+At this time, if you use `crictl images` to view, you will not be able to see the image in `python.tar`. This is because the standard import process may not fully register the image's reference into the index monitored by the CRI plugin.
+
+### Solution: Use `--local` parameter
+To ensure that the imported image can be discovered by the CRI plug-in (i.e. `crictl`), the `--local=true` parameter must be added:
+```bash
+ctr -n k8s.io i import --local=true python.tar
+```
+After executing this command, and then running `crictl images`, you can correctly see the imported image and its label information.
+
+### Validation and automated recommendations
+1. **Verification step**: After importing, always use `crictl images | grep <image name>` for cross-validation instead of relying solely on the output of `ctr`.
+2. **Automated scripts**: In automated operation and maintenance scripts (such as configuration management, image warm-up), if it involves importing images to Kubernetes nodes through `ctr`, the `--local=true` parameter must be included.
+3. **Documentation and Knowledge Base**: This specific behavior and the correct command format should be clearly recorded in the team's internal operation and maintenance documentation or knowledge base to avoid repeated pitfalls by other members.
+
+## SRE Key Points
+
+* **Relationship with Reliability**: Failure to correctly import and identify images will directly lead to Kubernetes scheduling failure (`ImagePullBackOff` state), affecting the deployment and scalability of services, and is a potential single point of failure in the reliability assurance process. Understanding the integration details between tool chains is critical to preventing such failures.
+* **Best Practices and Anti-Patterns**:
+    * **Best Practice**: In the scenario of interacting with Kubernetes, it is preferred to use `crictl` for image management. If you must use `ctr`, you should always use the command combination with the correct namespace and `--local` parameters.
+    * **Common anti-pattern**: Assume all views can be shared seamlessly between different container management tools (`ctr`, `crictl`, `docker`); ignore specific namespace requirements for container runtime plugin configuration.
+* **Related indicators (SLI/SLO/SLA)**: Although this issue itself does not directly generate monitoring indicators, it is a prerequisite for ensuring the implicit SLI (service level indicator) of "mirror availability". An inconsistent import process can cause fluctuations in the critical SLO (service level objective) of "percentage of successfully deployed pods."
+* **Observability and event response**: When an `ImagePullBackOff` event occurs, the SRE should not only check the reachability of the image warehouse, but also consider the visibility of the node's local image cache. Examining differences in the output of `crictl images` and `ctr -n k8s.io images list` can be an effective step in root cause analysis of an incident.
+
+Related pages: [[containerd]], [[cri]], [[kubernetes-node-management]]

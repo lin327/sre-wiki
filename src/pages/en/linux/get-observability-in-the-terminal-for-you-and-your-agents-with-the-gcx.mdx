@@ -1,0 +1,55 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Get observability in the terminal, for you and your agents, with the gcx"
+category: "可观察性Tools"
+confidence: medium
+---
+
+# Get observability in the terminal, for you and your agents, with the gcx
+
+## Overview
+
+Modern software engineering practices are being profoundly changed by AI agents (such as Cursor, Claude Code), which greatly improve the efficiency of code generation. However, this new efficient workflow also brings two key challenges: First, developers need to switch between different tools (endpoints and observability platforms), resulting in context loss; second, although the AI ​​agents have access to the code, they are "blind" to the actual conditions of the production environment (such as latency spikes, SLO compliance), which makes their decisions based on assumptions rather than reality. Grafana Cloud's `gcx` CLI tool is designed to solve these problems. It integrates Grafana Cloud's powerful observability capabilities directly into the command line interface, providing developers and AI agents with a unified and efficient access to the operation and maintenance context, so that it can quickly locate and solve production environment problems and shorten incident response time from hours to minutes.
+
+## Core concepts
+
+To understand the value of `gcx`, you need to grasp the following core concepts:
+
+1. **Agent Visibility Gap**: This is the core bottleneck of current AI-assisted development. The agent can read and analyze the source code, but it cannot directly perceive the actual situation of the code running in the production environment. For example, it has no way of knowing if an endpoint has increased latency after deployment, or if users are experiencing errors. `gcx` bridges this gap by providing access to production status (metrics, logs, traces) and management of observability configuration via command line agents.
+
+2. **Observability as Code**: `gcx` treats observability configurations such as dashboards, alert rules, SLO definitions, and synthetic checks as versionable files. This allows AI agents and human developers to use familiar code workflows (local editing, version control, push) to manage the entire observability lifecycle, ensuring consistency and repeatability of the environment.
+
+3. **Agent-friendly CLI design**: `gcx` is not just designed for people, its design fully takes into account the characteristics of the AI ​​agent as the main caller. Key features include: support for `--output` output in stable JSON/YAML format for all commands; providing clear and consistent exit codes and error messages; including machine-readable command directories for dynamic discovery; automatically detecting agent environments and optimizing output (removing human-friendly animations and truncation). This enables the agent to use `gcx` as reliably and efficiently as calling `git` or `kubectl`.
+
+## Practice
+
+`gcx` covers the complete workflow from establishing observability from scratch to daily troubleshooting.
+
+**1. Start from scratch and quickly establish observability**
+For a new service without any monitoring, the traditional setup process requires multiple steps and tickets. Using `gcx`, you can guide the AI agent to complete in one stop:
+* **Detection**: Use the `gcx` command to integrate the OpenTelemetry SDK into the codebase and verify that metrics, logs, and traces flow correctly to the Grafana Cloud backend.
+* **Alarm and SLO**: Automatically generate alarm rules based on the actual signals sent by the service (such as error rate, delay). Define an SLO for a specific SLI and deploy it online. At the same time, set up synthetic detectors to actively monitor service availability.
+* **Special Monitoring**: Quick access to front-end monitoring (Faro), application performance monitoring and Kubernetes cluster monitoring.
+All configurations exist in the form of files, and agents can pull, edit and push back changes, truly realizing "one-click" online standard observability stack.
+
+**2. Work with agents to troubleshoot**
+When an agent accesses `gcx`, the way you interact with it changes dramatically. You can ask questions based on production reality rather than abstract code questions:
+* "Why is this endpoint slow this week?" -&gt; The agent will pull relevant traces and latency histograms for analysis, not just code differences.
+* "Have we reached the SLO for the checkout process?" -&gt; The agent will read the SLO definition and current burn rate (Error Burn Rate) and give a clear answer.
+* "This alert is too noisy, fix it." -&gt; The agent examines alert rules, trigger history, and relevant dashboards, and makes a tuned threshold recommendation.
+
+**3. Daily workflow integration**
+`gcx` integrates seamlessly into existing terminal workflows. It supports named contexts like `kubectl`, allowing agents to manage multiple environments in a single session without affecting global state. All destructive operations require explicit confirmation to reduce the risk of agent operations. When needed, human developers can generate a deep link (Deep Link) to the Grafana Cloud dashboard from the terminal with one click, achieving a smooth switch from CLI to graphical interface.
+
+## SRE Key Points
+
+* **Relationship with Reliability**: `gcx` directly empowers SRE core practices. By "coding" and integrating [[slo]] and [[error-budget]] management into the development workflow, it changes the reliability goal from a constraint on the operations side to an explicit contract on the development side. Agents can query the current Error Burn Rate while writing code, allowing for more cost-effective reliability tradeoffs.
+* **Best Practice**:
+    * **Reduce context switching**: Complete development, testing and observability operations in a single terminal environment, which is a powerful tool to improve engineer efficiency.
+    * **Giving agents a production perspective**: This is an important advancement in AIOps, making the recommendations of automation tools more accurate and trustworthy.
+    * **Maintain environment consistency**: Adopt the "observability as code" model and manage all monitoring configurations through Git to avoid configuration drift.
+* **Common anti-patterns**:
+    * **Ignore agent context**: When designing a new CLI tool or AI workflow, not considering the machine (agent) as the primary user will result in output that is difficult to parse and interactions that are unreliable.
+    * **Observability Silos**: Continue to treat observability as a separate, late-stage effort in the development process, rather than a built-in property throughout.
+* **Related Metrics**: The core value of this tool is to improve the efficiency of managing **[[slo]]**, monitoring **[[error-budget]]** and maintaining **SLI** coverage. It does not generate SLI per se, but greatly optimizes lifecycle management around these key reliability indicators.

@@ -1,0 +1,38 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana PR #125523: Datasources: return 400 when payload UID does not match"
+category: "APIDesign与错误处理"
+confidence: high
+---
+
+# 
+
+## Overview
+
+Correct handling of resource identifiers (UIDs) is crucial when building a reliable and easy-to-maintain RESTful API. This change (`grafana/grafana` PR #125523) fixes a common API design pitfall: when the client requests to update resources through `PUT`, if the UID in the request body (JSON payload) is inconsistent with the UID specified in the URL path, the system no longer silently ignores this contradiction. Instead, it immediately returns an explicit `400 Bad Request` error, preventing inconsistent data from flowing into the service layer and eventually raising an untraceable `500 Internal Server Error`. This practice embodies the "fail fast" principle and is an important part of improving API resilience and observability.
+
+## Core concepts
+
+**Resource Identifier (UID) vs. Path Identifier:** In RESTful APIs, resources are typically addressed by identifiers in URL paths such as `/api/datasources/uid/:uid`. Ideally, the identifier in the update payload (Body) provided by the client should be exactly the same as the identifier in the URL to clarify the operation object.
+
+**Silent Ignore vs. Explicit Validation:** The old behavior was "Silent Ignore", where the backend service might only trust the UID in the URL for database lookups, and ignore the UID in the payload. Although this approach seems "fault-tolerant", it actually covers up the logical errors in the client's request, which is a typical anti-pattern. When data is incorrectly updated due to this inconsistency, subsequent operations may trigger more serious failures at the service layer (such as foreign key constraint violations), resulting in `500` errors, making troubleshooting much more difficult.
+
+**Defensive programming and advance verification:** This change adds verification logic for the payload UID in the API entry layer (`pkg/api/datasources.go`). This is a defensive programming strategy that aims to detect and reject invalid input as early as possible to ensure that the data entering the core business logic is legal and consistent, thus improving the overall reliability of the system.
+
+## Practice
+
+This change is an enhancement to Grafana’s data source management API. The specific implementation is as follows:
+
+1. **Verification position prepended**: In the processor function of `PUT /api/datasources/uid/:uid`, first extract `:uid` from the URL parameter, and then parse the UID of the data source from the request body JSON.
+2. **Perform Consistency Check**: Compare the two UIDs. If they do not match, a `400 Bad Request` response is directly constructed and returned with a descriptive error message, and the process is terminated.
+3. **Continue after passing verification**: Only when the two UIDs are consistent, subsequent data source search, permission verification and database update operations will be performed.
+4. **Supporting Test**: The test file `pkg/api/datasources_test.go` has also been updated, and the `TestUpdateDataSourceByUID_UIDMismatch` test case has been added to specifically verify this verification logic and ensure that its behavior is as expected.
+
+## SRE Key Points
+
+* **Reliability Improvement**: This change directly reduces `500` errors caused by client errors (such as confusing old and new UIDs). By returning predictable, informative `400` errors, less of the `Error Budget` is consumed, helping to more accurately measure and achieve [[slo]] goals. The system is more tolerant of client errors and its self-protection capabilities are improved.
+* **Observability enhancement**: A clear `400` error code is easier to distinguish and alert in monitoring than `500`. The SRE team can configure alert rules. When the `4xx` error rate increases abnormally, it can quickly locate the client problem or potential interface documentation/improper usage problem, instead of first suspecting that the backend service crashes.
+* **Event Response and Debugging**: When a data source update exception occurs, operations or developers will now first receive a clear "UID mismatch" error message. This greatly reduces troubleshooting time (MTTR) and eliminates the need to dig deep into service layer logs to trace a complex exception caused by a simple client error.
+* **Best Practice**: This reflects the **API contract strictness** principle. The API should strictly verify input and not accept logically contradictory requests. This is the basis of robust system design.
+* **Related Metrics**: This practice directly affects [[sli]] related to API health, specifically the "Request Error Rate" metric. By classifying `4xx` and `5xx`, system reliability can be analyzed more granularly.

@@ -1,0 +1,62 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Sneak Peak of Prometheus 2.0"
+category: "Monitoring & Observability"
+confidence: high
+---
+
+# Sneak Peak of Prometheus 2.0
+
+## Overview
+
+Prometheus 2.0 is a major version upgrade of the Prometheus project. Its core change is the introduction of a new local storage engine. The fundamental driving force for this upgrade is that with the popularization of cloud-native technologies such as Kubernetes, the monitored environment has become more dynamic and complex, which poses unprecedented challenges to Prometheus's storage performance. It is critical for SRE teams to understand this change because it directly relates to the performance, reliability, and long-term operations strategy of the monitoring system. The new storage layer in version 2.0 is designed to resolve bottlenecks, improve overall performance, and lay the foundation for future advanced features such as hot backup.
+
+## Core concepts
+
+The core change of Prometheus 2.0 is its new local storage backend, often referred to as TSDB. This is not a simple optimization of the old storage layer, but a complete rewrite.
+
+* **New Storage Architecture (TSDB)**: The new storage engine adopts more efficient data structures and write paths. It optimizes data compression and retrieval, aiming to solve performance bottlenecks that occur in high-cardinality, highly dynamic environments (such as Kubernetes clusters that frequently expand and shrink). According to official in-depth analysis, this design can significantly improve writing and query efficiency.
+* **Hot backup support**: The design of the new architecture paves the way for the future implementation of "hot backup" functionality. This means that data backups can theoretically be created without interrupting the Prometheus service, which is very attractive for SRE scenarios that require high data durability.
+* **Breaking Change**: Prometheus 2.0 is a backwards-incompatible version. Its storage format is completely different from the 1.x series, which means that the data of the old version cannot be directly loaded, and a clear upgrade path and data migration strategy need to be planned.
+
+## Practice
+
+Deploying and testing early alpha versions of Prometheus 2.0 requires following specific steps and considerations to avoid known risks.
+
+1. **Environment preparation**:
+    * An **empty data directory** must be used. Prometheus 2.0 cannot read or convert 1.x version stored data.
+    * **Remove all obsolete storage configuration flags**. Except for `-storage.local.retention` (data retention time), all command line flags related to 1.x local storage (such as `-storage.local.memory-chunks`, `-storage.local.max-chunks-to-persist`, etc.) must be removed because the new storage layer has completely different internal parameters.
+
+    **Configuration example comparison:**
+    * **Legacy (1.x) configuration**:
+        ```bash
+        ./prometheus -storage.local.retention=200h -storage.local.memory-chunks=1000000 -storage.local.max-chunks-to-persist=500000 -storage.local.chunk-encoding=2 -config.file=/etc/prometheus.yaml
+        ```
+    * **New version (2.0 Alpha) configuration**:
+        ```bash
+        ./prometheus -storage.local.retention=200h -config.file=/etc/prometheus.yaml
+        ```
+
+2. **Cognition of functional limitations**:
+    * This version is in a very early Alpha stage and should be used **for testing and exploration only** and should never be used in production environments. Issues such as crashes, data corruption, etc. should be expected.
+    * The experimental remote storage API is disabled in this release.
+    * Fetching targets that expose timestamps (such as federated Prometheus servers) is not currently supported.
+    * The storage format may undergo breaking changes again in subsequent Alpha versions.
+
+## SRE Key Points
+
+* **Relationship with reliability**: One of the core goals of the new storage layer is to improve **performance and stability** in dynamic environments, which is directly related to the reliability of the monitoring system itself as a reliability infrastructure. A Prometheus that is slow or unavailable due to storage bottlenecks can severely impair a team's ability to respond to failures.
+* **Observability Basics**: The optimization of TSDB means that it can handle larger-scale and more dynamic indicator data, which provides a solid data foundation for establishing a more complete observability system.
+* **Incident Response Considerations**: When evaluating or testing version 2.0, SRE teams must develop a thorough **rollback plan and upgrade validation process**. Due to its destructive changes, an incorrect upgrade may result in loss of monitoring data or system paralysis.
+* **Best Practices and Anti-Patterns**:
+    * **Best Practice**: Fully verify the compatibility of the new version with existing service discovery integration in an independent test environment; pay close attention to the official document release on the data migration path.
+    * **Common anti-patterns**: Deploy the Alpha version directly to the production cluster; neglect to remove the old configuration flag, causing startup failure; assuming that 1.x data can be migrated seamlessly.
+* **Related indicators (SLO/SLI)**: For the SLO of Prometheus itself, you can pay attention to its newly introduced internal indicators such as index crawl delay, query response time, and storage engine write error rate. During the migration from 1.x to 2.0, ensure that these SLIs meet the established SLOs on the new version.
+
+## Related pages
+
+* [[prometheus]] - Prometheus overview and core concepts.
+* [[tsdb]] - Time Series Database (TSDB) technical details.
+* [[dynamic-environments]] - Addresses the monitoring challenges of dynamic environments such as Kubernetes.
+* [[service-discovery]] - Prometheus service discovery mechanism.

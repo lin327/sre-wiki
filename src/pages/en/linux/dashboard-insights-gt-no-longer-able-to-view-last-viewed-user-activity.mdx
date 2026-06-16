@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Dashboard Insights &gt; No Longer Able to View “Last viewed” user activity"
+category: "SRE TechnologyPractice"
+confidence: medium
+---
+
+# Dashboard Insights &gt; No Longer Able to View “Last viewed” user activity
+
+## Overview
+
+Dashboard Insights is a key feature provided by Grafana that tracks usage of [[dashboards]], including user activities such as create, last edited, and **last viewed**. For SRE teams, this data is an important SLI for measuring actual usage of monitoring panels, optimizing dashboard layouts, and assessing the effectiveness of operations team collaboration. Among the issues reported in this report, the "Last viewed" activity data is intermittently lost, which directly affects the team's visibility on whether key monitoring assets are being followed. It is a typical manifestation of data inconsistency in the observability system itself and needs to be taken seriously.
+
+## Core concepts
+
+Understanding this issue requires distinguishing between two different types of activity data and the collection logic behind them:
+
+1. **Event-driven data (Created, Last edited)**: These activities are usually strongly bound to the user's specific actions (create or save dashboards). When an event occurs, Grafana updates the corresponding database record synchronously or in near real-time. The accuracy of this type of data is usually higher because its lifecycle is closely tied to one-time user actions.
+2. **Session/Access Data (Last Viewed)**: This data records the user's behavior of opening or accessing the dashboard. It typically relies on asynchronous, session-based event tracing. The root of the problem may lie in the reliability of this tracking mechanism, for example:
+    - Loss or delay of events reported by the front end.
+    - The backend aggregation service failed to process or persist these access events in a timely manner.
+    - There is a latency window for caching or eventual consistency in the data presentation layer.
+
+The "intermittent" nature of this bug strongly suggests a timing or race condition issue. It may be that the data collection pipeline has short-term unreliability, or the data query interface is displayed before the data is fully aggregated, resulting in the phenomenon that some users can see the data and some cannot.
+
+## Practice
+
+Based on the problem description, diagnosis and verification can be carried out through the following steps, which is standard practice for SREs to deal with data inconsistencies in front-end functions:
+
+### 1. Reproduction and confirmation
+Follow the reporting steps exactly to try to reproduce the problem, focusing on "intermittent" characteristics. You can write a simple automation script or manually repeat the following operations multiple times:
+1. Log in to Grafana.
+2. Create a new dashboard and add any panel.
+3. Click the “Dashboard Insights” icon and wait for the side panel to fully load.
+4. Switch to the “Users and activity” tab.
+5. **Observe carefully and record**: whether the "Last viewed" line and the user list below it appear.
+
+### 2. Key observation points and data collection
+- **Front End Console (Browser DevTools)**: Check **Network Requests**. Find the API call that gets insights data (usually something like `/api/dashboards/uid/:uid/insights`) and look at its response body. **Parse the raw JSON response directly** to see if it contains a `lastViewed` or similar field and its contents. This is the most direct way to distinguish whether the problem is front-end rendering or back-end data provision.
+- **Backend logs and database**: If possible, correlate the Grafana backend logs from the same time period to see if there are any errors or warnings related to insights data acquisition or user activity recording. Directly query the table in the Grafana database (usually PostgreSQL or MySQL) that stores dashboard statistics to verify that the data was actually written.
+
+### 3. Hypothesis verification
+Based on the information collected, formulate and test hypotheses:
+- **Hypothesis A: Front-end display bug**. If the API response contains the `lastViewed` data correctly, but the UI is not displayed, the problem lies in the front-end code (possibly a conditional rendering logic or state management error).
+- **Assumption B: Backend data collection/query bug**. If the `lastViewed` data is missing or not included in the API response, the problem lies in the backend and you need to check the data reporting link, aggregation task, or API query logic.
+
+This analysis process itself is a miniature **Incident Response** process, which embodies the systematic investigation method from phenomenon observation, data collection to hypothesis verification.
+
+## SRE Key Points
+
+- **Link to Reliability**: This issue highlights the importance of **the own reliability of the observability system**. A monitoring system that cannot reliably report its own usage compromises the credibility of the overall observability it provides. This should be considered a **P2 or P3 level event** that affects internal user trust and operational efficiency.
+- **Best Practices and Anti-Patterns**:
+    - **Best Practice**: Establish a foundation for **Synthetic Monitoring** (Synthetic Monitoring) for API endpoints for key management functions such as Dashboard Insights. Periodically simulate a "get insights" request and verify that key fields (such as `lastViewed`) are present and valid. Incorporate such checks into Grafana's own health detection.
+    - **Common anti-pattern**: **Over-reliance on a single visualization panel as a basis for judgment**. When the panel displays abnormally, you should first go back to the underlying data source (API/database) for verification to avoid directly equating interface display problems with data loss problems.
+- **Relevant Indicators (SLI/SLO)**:
+    - **SLI**: `Grafana_Dashboard_Insights_API_Success_Rate` (success rate), `Grafana_Dashboard_Insights_Data_Consistency_Rate` (the proportion of core fields such as `lastViewed` that are successfully returned in queries).
+    - **SLO**: Can be set to "Dashboard Insights API's `lastViewed` field data consistency is valid in 99.9% of queries." When the actual consistency is lower than this target, an alarm is triggered, requiring engineers to intervene and investigate.
+
+&gt; **Extended Thoughts**: This case also reminds us that **Self-Observability** (Self-Observability) must be considered when designing and maintaining the SRE tool chain. The health status, usage data and abnormal conditions of the platform itself should be monitored and alerted to the same strict standards as business applications.

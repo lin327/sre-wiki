@@ -1,0 +1,222 @@
+---
+interface Props {
+  currentPage: number;
+  totalPages: number;
+  basePath: string;
+}
+
+const { currentPage, totalPages, basePath } = Astro.props;
+
+const isEnglish = Astro.url.pathname.startsWith("/en/");
+const prevLabel = isEnglish ? "Previous" : "上一页";
+const nextLabel = isEnglish ? "Next" : "下一页";
+
+// Generate page numbers to display
+function getPageNumbers(current: number, total: number): (number | "...")[] {
+  const pages: (number | "...")[] = [];
+
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+
+  pages.push(1);
+
+  if (current > 3) pages.push("...");
+
+  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+    pages.push(i);
+  }
+
+  if (current < total - 2) pages.push("...");
+
+  pages.push(total);
+
+  return pages;
+}
+
+const pageNumbers = getPageNumbers(currentPage, totalPages);
+---
+
+{totalPages > 1 && (
+  <nav class="pagination" aria-label={isEnglish ? "Pagination" : "分页导航"}>
+    {/* Previous button */}
+    {currentPage > 1 ? (
+      <a
+        href={currentPage === 2 ? basePath : `${basePath}/page/${currentPage - 1}`}
+        class="pagination__btn pagination__btn--prev"
+        aria-label={prevLabel}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+        </svg>
+        <span>{prevLabel}</span>
+      </a>
+    ) : (
+      <span class="pagination__btn pagination__btn--prev pagination__btn--disabled">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" />
+        </svg>
+        <span>{prevLabel}</span>
+      </span>
+    )}
+
+    {/* Page numbers */}
+    <div class="pagination__pages">
+      {pageNumbers.map((page) =>
+        page === "..." ? (
+          <span class="pagination__ellipsis">…</span>
+        ) : page === currentPage ? (
+          <span class="pagination__page pagination__page--current" aria-current="page">
+            {page}
+          </span>
+        ) : (
+          <a
+            href={page === 1 ? basePath : `${basePath}/page/${page}`}
+            class="pagination__page"
+            aria-label={`${isEnglish ? "Page" : "第"} ${page} ${isEnglish ? "" : "页"}`}
+          >
+            {page}
+          </a>
+        )
+      )}
+    </div>
+
+    {/* Next button */}
+    {currentPage < totalPages ? (
+      <a
+        href={`${basePath}/page/${currentPage + 1}`}
+        class="pagination__btn pagination__btn--next"
+        aria-label={nextLabel}
+      >
+        <span>{nextLabel}</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
+        </svg>
+      </a>
+    ) : (
+      <span class="pagination__btn pagination__btn--next pagination__btn--disabled">
+        <span>{nextLabel}</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
+        </svg>
+      </span>
+    )}
+  </nav>
+)}
+
+<style>
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: var(--space-8);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .pagination__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color var(--motion-fast) ease,
+                background var(--motion-fast) ease,
+                color var(--motion-fast) ease;
+    min-height: 40px;
+  }
+
+  .pagination__btn:hover {
+    border-color: var(--color-primary);
+    background: var(--color-surface-2);
+    text-decoration: none;
+  }
+
+  .pagination__btn--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .pagination__pages {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pagination__page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color var(--motion-fast) ease,
+                background var(--motion-fast) ease,
+                color var(--motion-fast) ease;
+  }
+
+  .pagination__page:hover {
+    border-color: var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .pagination__page--current {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .pagination__page--current:hover {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: #fff;
+  }
+
+  .pagination__ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    color: var(--color-dim);
+    font-size: 14px;
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 480px) {
+    .pagination {
+      gap: 4px;
+    }
+    .pagination__btn {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+    .pagination__btn span {
+      display: none;
+    }
+    .pagination__page {
+      min-width: 36px;
+      height: 36px;
+      font-size: 12px;
+    }
+  }
+</style>

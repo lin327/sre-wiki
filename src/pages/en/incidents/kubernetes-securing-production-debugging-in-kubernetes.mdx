@@ -1,0 +1,189 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes 官方博客 - Securing Production Debugging in Kubernetes"
+category: "Security & Compliance"
+confidence: high
+---
+
+# Kubernetes 官方博客 - Securing Production Debugging in Kubernetes
+
+## Overview
+
+When troubleshooting and debugging Kubernetes production environments, operations and SRE teams often face the dilemma of speed versus security. To resolve issues quickly, teams tend to use broad permissions (such as the `cluster-admin` ClusterRole), shared springboards, or long-lived SSH keys. Although this approach is convenient, it introduces serious security risks: it is difficult to trace the operator's behavior, and temporary authorization can easily evolve into permanent permission creep. This article will describe a production debugging methodology that takes into account both efficiency and security. The core is to use the native capabilities of Kubernetes (such as RBAC) to build a workflow that is secure, auditable, and with immediate permissions.
+
+## Core concepts
+
+### RBAC (role-based access control)
+
+RBAC is Kubernetes' built-in authorization mechanism, which is used to define "who (Subject) can perform what operations (Verb) on what resources (Resource)". It is the cornerstone of implementing the principle of least privilege. In debugging scenarios, fine-grained `Role` and `RoleBinding` should be defined for specific teams or roles (such as the oncall team), granting only the minimum set of permissions required to diagnose the problem, such as reading Pod logs, executing ad hoc commands, or doing port forwarding.
+
+### Short-term identity binding credentials
+
+To reduce the risk of credential leakage and misuse, avoid using long-lived tokens or certificates. Short-term identity-bound credentials refer to authentication materials that are valid for a short period of time (such as 30 minutes) and are clearly bound to the user's identity and specific authority scope. These credentials can be short-lived OIDC tokens, or client certificates issued through the `CertificateSigningRequest` API. They are usually generated from a private key (preferably protected by a hardware security module), ensuring that they cannot be forged.
+
+###Just-in-time Access Gateway
+
+This is an architectural pattern that is typically deployed in the form of Pods created on demand within a cluster as a "front door" for secure debugging. Engineers use short-lived credentials to connect to this gateway (for example, via SSH), which then makes authorized requests to the cluster API on behalf of the user based on predefined policies and Kubernetes RBAC rules. This mode enables automatic session expiration, fine-grained command control (such as limiting the commands that `exec` can execute), and a complete audit trail.
+
+## Practice
+
+### 1. Building an access proxy on top of Kubernetes RBAC
+
+Directly using RBAC for authorization is the basis, but adding an Access Broker in front can provide a richer control strategy. The agent can decide whether a request is automatically approved or requires manual approval, manage user group membership, and even enforce additional command whitelisting policies within an `exec` session.
+
+**Best practice is to only bind RBAC roles to groups or ServiceAccounts, not individual users**. It is the identity provider or access broker's responsibility to add users to the appropriate groups. Here is an example of a namespace-level debugging role defined to the oncall team:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: oncall-debug
+  namespace: <namespace>
+rules:
+  #Discover resources running in the cluster
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list", "watch"]
+  # Read log
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  #Interactive debugging operation
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create"]
+  # Understand deployment and controller state
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  # Optional: Allow temporary container debugging using kubectl debug
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name:oncall-debug
+  namespace: <namespace>
+subjects:
+  - kind: Group
+    name: oncall-<team-name> # User group associated with the identity provider
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: oncall-debug
+  apiGroup: rbac.authorization.k8s.io
+```
+
+### 2. Use short-term, identity-bound credentials
+
+The validity period of the certificate should be as short as possible, and the identity of the user and scope of permissions should be clearly identified.
+
+**Option A: Short-term OIDC Token**
+Make sure your kubeconfig uses a credential helper to automatically refresh tokens rather than manually pasting long-lived tokens.
+
+```yaml
+users:
+- name:oncall
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: cred-helper
+      args: ["--cluster=prod", "--ttl=30m"]
+```
+
+**Option B: Short-term client certificate (X.509)**
+Use Kubernetes' CertificateSigningRequest API to issue short-life certificates.
+
+```bash
+# Generate private key and certificate signing request locally
+openssl genpkey -algorithm Ed25519 -out oncall.key
+openssl req -new -key oncall.key -out oncall.csr -subj "/CN=user/O=oncall-payments"
+```
+
+Create a `CertificateSigningRequest` object that expires in 30 minutes:
+
+```yaml
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: oncall-<user>-20260218
+spec:
+  request: <base64-encoded oncall.csr>
+  signerName: kubernetes.io/kube-apiserver-client
+  expirationSeconds: 1800 # 30 minutes
+  usages:
+  -client auth
+```
+
+After this CSR is approved and signed, the issued certificate is extracted and used for authentication together with the previous private key.
+
+### 3. Use the instant access gateway to execute debugging commands
+
+Engineers holding short-term credentials can connect to the Instant Access Gateway. The gateway is responsible for establishing sessions, applying policies, and performing Kubernetes operations. Sessions should be strictly scoped, such as only to a specific namespace or even a specific Pod.
+
+Here is an example of creating a more fine-grained namespace scoped role for just-in-time debugging:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jit-debug
+  namespace: <namespace>
+  annotations:
+    kubernetes.io/description: >
+      Used to perform semi-privileged debugging that requires temporary permissions, with access granted on-demand.
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-debug
+  namespace: <namespace>
+subjects:
+  - kind: Group
+    name: jit:oncall:<namespace> # This group is mapped from short-term credentials (certificate/OIDC)
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: jit-debug
+  apiGroup: rbac.authorization.k8s.io
+```
+
+For scenarios where cluster-wide read permissions are really required (such as viewing node information), `ClusterRole` and `ClusterRoleBinding` can be created with caution, but the scope of use should be strictly limited. More fine-grained controls (such as "only to specific Pods") should be enforced by the gateway during the session.
+
+In environments with high security requirements, an additional session mediation layer can be added between engineers and the Kubernetes API to further separate session establishment from privileged operations and generate independent audit logs for each layer.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+Safe debugging practices are fundamental to achieving reliability. It ensures that during emergency incident response, engineers can quickly obtain the permissions they need without introducing new risks or violating compliance requirements through excessive permissions. Clear audit logs (from the gateway and Kubernetes Audit Logs) are a key data source for post-mortem review and root cause analysis, directly enhancing the observability of the system.
+
+### Best practices and common anti-patterns
+**Best Practices:**
+* **Least Privilege**: Follow the principle of least privilege and define dedicated, restricted `Role` for debugging tasks.
+* **Short-term Credentials**: Use credentials with a short life cycle (minutes to hours) and identity binding.
+* **Group Level Authorization**: Bind RBAC roles to groups to manage user membership through an identity provider.
+* **Centralized Auditing**: Ensures all debugging sessions are conducted through the gateway and complete operation logs are recorded.
+* **Policy as Code**: Put the access agent's policy (such as the list of allowed commands) into version control and make changes through the code review process.
+
+**Common anti-patterns:**
+* Use `cluster-admin` for daily debugging.
+* Share or long-term use of personal kubeconfig files and SSH keys.
+* Create RBAC `RoleBinding` directly for individual users.
+* Allow debugging sessions to remain active after a scheduled time.
+
+### Related Indicators (SLI/SLO/SLA)
+* **SLI**: Average request-to-access readiness time for secure debugging workflows (from application to obtaining credentials and connecting successfully); number of unauthorized access attempts.
+* **SLO**: 95% of legitimate debug permission requests should be automatically approved and issued within 5 minutes; production clusters will have 0 unauthorized access attempts per week.
+* **SLA**: Internal service level agreement ensuring oncall engineers receive debug access to a specific namespace within 15 minutes to support MTTR (Mean Time to Repair) goals.
+
+Related pages: [[rbac-authorization]], [[oidc-authentication]], [[kubernetes-security-best-practices]]

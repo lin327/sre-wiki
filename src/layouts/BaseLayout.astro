@@ -1,5 +1,6 @@
 ---
 import "../styles/design-system.css";
+import "../styles/components.css";
 import ThemeToggle from "../components/react/ThemeToggle.tsx";
 import PagefindSearch from "../components/react/PagefindSearch.tsx";
 import AuthButton from "../components/react/AuthButton.tsx";
@@ -29,6 +30,8 @@ const {
 
 const currentPath = Astro.url.pathname;
 const isHome = currentPath === "/";
+const isEnglish = currentPath.startsWith("/en/");
+const lang = isEnglish ? "en" : "zh";
 
 const topNavLinks = [
   { href: "/linux/process-model", label: "Linux",
@@ -46,18 +49,19 @@ const topNavLinks = [
     href: "/comparisons" },
 ];
 
-/* Sidebar page groups */
+/* Sidebar page groups — i18n aware */
+const viewAll = isEnglish ? "View all" : "查看全部";
 const sidebarGroups = [
   {
     label: "Linux",
     href: "/linux",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2Zm2 .5v11a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5ZM4 5h8v1H4V5Zm0 3h6v1H4V8Z"/></svg>`,
     pages: [
-      { href: "/linux/process-model", label: "进程模型" },
-      { href: "/linux/filesystem", label: "文件系统" },
-      { href: "/linux/network-stack", label: "网络栈" },
+      { href: "/linux/process-model", label: isEnglish ? "Process Model" : "进程模型" },
+      { href: "/linux/filesystem", label: isEnglish ? "Filesystem" : "文件系统" },
+      { href: "/linux/network-stack", label: isEnglish ? "Network Stack" : "网络栈" },
       { href: "/linux/systemd", label: "systemd" },
-      { href: "/linux", label: "查看全部 (355)" },
+      { href: "/linux", label: `${viewAll} (355)` },
     ],
   },
   {
@@ -65,11 +69,11 @@ const sidebarGroups = [
     href: "/docker",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.02 7.222c-.012-.06-.028-.118-.046-.176l.003.012c-.088-.44-.39-.81-.81-1.047a1.7 1.7 0 0 0-.846-.21H9.13c-.16-.6-.45-1.13-.84-1.55C7.46 3.43 6.34 3 5.14 3c-.8 0-1.58.2-2.12.55A2.16 2.16 0 0 0 2 5.5c0 .4.1.78.32 1.12.2.3.48.54.8.7-.04.06-.07.14-.1.2C2.35 7.87 2 8.48 2 9.22c0 1.26.75 2.28 2.12 2.85.97.4 2.17.58 3.38.58.4 0 .8-.02 1.18-.07.48-.06.93-.18 1.34-.36.65-.29 1.18-.74 1.55-1.3.17-.25.3-.52.38-.8.14-.02.28-.06.4-.1.35-.13.64-.32.86-.57.2-.22.35-.5.44-.8.06-.2.1-.4.1-.62 0-.28-.06-.54-.16-.78a1.7 1.7 0 0 0-.4-.58c.08-.16.14-.34.18-.52.06-.2.08-.58.04-.88ZM3 6.5c0-.46.2-.86.52-1.14.3-.26.68-.36 1.02-.36.46 0 .92.16 1.3.44.3.24.52.56.62.92H3Zm3.38 5.44c-.78 0-1.58-.1-2.3-.34-1.06-.34-1.5-.86-1.5-1.58 0-.44.16-.82.44-1.12.28-.3.64-.48 1.08-.56.2-.04.42-.06.64-.08h5.88c-.12.44-.34.84-.66 1.16-.4.4-.9.66-1.46.78-.34.08-.7.12-1.06.12l-1.6.02ZM14 5.5h-1.5V4h-1v1.5H10v1h1.5V8h1V6.5H14v-1Z"/></svg>`,
     pages: [
-      { href: "/docker/image-layers", label: "镜像分层" },
-      { href: "/docker/networking", label: "网络模式" },
-      { href: "/docker/storage", label: "存储驱动" },
+      { href: "/docker/image-layers", label: isEnglish ? "Image Layers" : "镜像分层" },
+      { href: "/docker/networking", label: isEnglish ? "Networking" : "网络模式" },
+      { href: "/docker/storage", label: isEnglish ? "Storage Drivers" : "存储驱动" },
       { href: "/docker/compose", label: "Compose" },
-      { href: "/docker", label: "查看全部 (20)" },
+      { href: "/docker", label: `${viewAll} (20)` },
     ],
   },
   {
@@ -77,10 +81,10 @@ const sidebarGroups = [
     href: "/kubernetes",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.67 11.36-4.67 2.7a.5.5 0 0 1-.5 0l-4.67-2.7a.5.5 0 0 1-.25-.43V5.07a.5.5 0 0 1 .25-.43l4.67-2.7a.5.5 0 0 1 .5 0l4.67 2.7a.5.5 0 0 1 .25.43v5.86a.5.5 0 0 1-.25.43ZM8 1.4 3.8 3.8v6.4L8 12.6l4.2-2.4V3.8L8 1.4Z"/><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/></svg>`,
     pages: [
-      { href: "/kubernetes/pod-lifecycle", label: "Pod 生命周期" },
-      { href: "/kubernetes/container-runtime", label: "容器运行时" },
+      { href: "/kubernetes/pod-lifecycle", label: isEnglish ? "Pod Lifecycle" : "Pod 生命周期" },
+      { href: "/kubernetes/container-runtime", label: isEnglish ? "Container Runtime" : "容器运行时" },
       { href: "/kubernetes/service-mesh", label: "Service Mesh" },
-      { href: "/kubernetes", label: "查看全部 (65)" },
+      { href: "/kubernetes", label: `${viewAll} (65)` },
     ],
   },
   {
@@ -91,7 +95,7 @@ const sidebarGroups = [
       { href: "/runbooks/crashloopbackoff", label: "CrashLoopBackOff" },
       { href: "/runbooks/oomkilled", label: "OOMKilled" },
       { href: "/runbooks/imagepullbackoff", label: "ImagePullBackOff" },
-      { href: "/runbooks", label: "查看全部 (50)" },
+      { href: "/runbooks", label: `${viewAll} (50)` },
     ],
   },
   {
@@ -99,9 +103,9 @@ const sidebarGroups = [
     href: "/architectures",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 1a1 1 0 0 0-1 1v2H3a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V8h2a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-2V2a1 1 0 0 0-1-1H6Zm0 1h4v2h2v2h-2v4H8V6H6V4h2V2Z"/></svg>`,
     pages: [
-      { href: "/architectures/ha-cluster", label: "高可用集群" },
+      { href: "/architectures/ha-cluster", label: isEnglish ? "HA Cluster" : "高可用集群" },
       { href: "/architectures/gitops-pipeline", label: "GitOps Pipeline" },
-      { href: "/architectures", label: "查看全部 (15)" },
+      { href: "/architectures", label: `${viewAll} (15)` },
     ],
   },
   {
@@ -109,9 +113,9 @@ const sidebarGroups = [
     href: "/incidents",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566ZM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5Zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>`,
     pages: [
-      { href: "/incidents/etcd-data-corruption", label: "etcd 数据损坏" },
-      { href: "/incidents/dns-resolution-failure", label: "DNS 解析故障" },
-      { href: "/incidents", label: "查看全部 (29)" },
+      { href: "/incidents/etcd-data-corruption", label: isEnglish ? "etcd Data Corruption" : "etcd 数据损坏" },
+      { href: "/incidents/dns-resolution-failure", label: isEnglish ? "DNS Resolution Failure" : "DNS 解析故障" },
+      { href: "/incidents", label: `${viewAll} (29)` },
     ],
   },
   {
@@ -121,7 +125,7 @@ const sidebarGroups = [
     pages: [
       { href: "/comparisons/helm-vs-kustomize", label: "Helm vs Kustomize" },
       { href: "/comparisons/istio-vs-linkerd", label: "Istio vs Linkerd" },
-      { href: "/comparisons", label: "查看全部 (2)" },
+      { href: "/comparisons", label: `${viewAll} (2)` },
     ],
   },
 ];
@@ -136,16 +140,22 @@ function isPageActive(href: string): boolean {
 ---
 
 <!doctype html>
-<html lang="zh" data-theme="light">
+<html lang={lang} data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="view-transition" content="same-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {/* Preload critical fonts */}
+    <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <title>{title} | SRE Atlas</title>
   </head>
   <body>
+    <!-- Skip to content link for keyboard/screen reader users -->
+    <a href="#atlas-main" class="skip-link">{isEnglish ? "Skip to content" : "跳转到内容"}</a>
+
     <!-- Scroll Progress Bar -->
     <div id="scroll-progress" class="scroll-progress" aria-hidden="true"></div>
 
@@ -153,7 +163,7 @@ function isPageActive(href: string): boolean {
     <nav class="topnav" id="topnav">
       <!-- Left: menu + logo -->
       <div class="topnav__left">
-        <button id="sidebar-toggle" class="topnav__menu" aria-label="Toggle menu" aria-expanded="true" type="button">
+        <button id="sidebar-toggle" class="topnav__menu" aria-label="Toggle menu" aria-expanded="false" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" x2="21" y1="6" y2="6"></line>
             <line x1="3" x2="21" y1="12" y2="12"></line>
@@ -173,7 +183,7 @@ function isPageActive(href: string): boolean {
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.3-4.3"></path>
           </svg>
-          <span class="topnav__search-text">搜索…</span>
+          <span class="topnav__search-text">{isEnglish ? "Search…" : "搜索…"}</span>
           <kbd class="topnav__kbd">Ctrl K</kbd>
         </button>
       </div>
@@ -192,13 +202,14 @@ function isPageActive(href: string): boolean {
           </svg>
         </a>
         <!-- Language switcher -->
-        <LanguageSwitcher client:load />
+        <LanguageSwitcher client:idle />
         <!-- Theme toggle -->
-        <ThemeToggle client:load />
+        <ThemeToggle client:idle />
         <!-- Auth -->
         <div class="topnav__auth" id="auth-buttons">
-          <a href="/auth/register" class="topnav__auth-btn topnav__auth-btn--outline">注册</a>
-          <a href="/auth/login" class="topnav__auth-btn topnav__auth-btn--primary">登录</a>
+          <a href="/auth/login" class="topnav__auth-btn topnav__auth-btn--combined">
+            {isEnglish ? "Sign up / Sign in" : "注册 / 登录"}
+          </a>
         </div>
         <div class="topnav__user" id="auth-user" style="display:none">
           <AuthButton client:load />
@@ -211,8 +222,8 @@ function isPageActive(href: string): boolean {
 
     <!-- Layout -->
     <div class="atlas-layout">
-      {/* Left Sidebar — always visible */}
-      <aside class="atlas-sidebar atlas-sidebar--open" id="atlas-sidebar" aria-label="Page navigation">
+      {/* Left Sidebar — visible on desktop, hidden on mobile until toggled */}
+      <aside class="atlas-sidebar" id="atlas-sidebar" aria-label="Page navigation">
         <nav class="sidebar__nav">
           {sidebarGroups.map((group) => (
             <div class="sidebar__group">
@@ -253,7 +264,7 @@ function isPageActive(href: string): boolean {
       {headings.length > 0 && (
         <aside class="atlas-toc" aria-label="Table of contents">
           <div class="atlas-toc__inner">
-            <p class="atlas-toc__title">On this page</p>
+            <p class="atlas-toc__title">{isEnglish ? "On this page" : "本页目录"}</p>
             <TOC headings={headings} />
           </div>
         </aside>
@@ -308,6 +319,25 @@ function isPageActive(href: string): boolean {
     </div>
 
     <style>
+      /* Skip link for keyboard/screen reader accessibility */
+      .skip-link {
+        position: absolute;
+        top: -100%;
+        left: 16px;
+        z-index: var(--z-toast);
+        padding: 8px 16px;
+        background: var(--color-primary);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 0 0 6px 6px;
+        text-decoration: none;
+        transition: top 150ms ease;
+      }
+      .skip-link:focus {
+        top: 0;
+      }
+
       @media (prefers-reduced-motion: no-preference) {
         ::view-transition-old(root) {
           animation: vt-fade-out 200ms ease-out both;
@@ -446,25 +476,156 @@ function isPageActive(href: string): boolean {
         align-items: center;
         gap: 6px;
         flex-shrink: 0;
+        min-height: 30px;
       }
 
+      /* ============================================
+         Mobile Responsive Styles
+         ============================================ */
+
+      /* Mobile (max 767px) */
       @media (max-width: 767px) {
+        /* Topnav: compact layout */
+        .topnav {
+          padding: 0 12px;
+          height: 48px;
+          gap: 0;
+        }
+        .topnav__left {
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .topnav__brand {
+          font-size: 13px;
+        }
+        .topnav__menu {
+          width: 44px;
+          height: 44px;
+          margin-right: 0;
+        }
+        /* Hide search bar on mobile (use Ctrl+K or menu) */
+        .topnav__center {
+          display: none;
+        }
+        /* Right section: icon-only */
         .topnav__right {
-          gap: 4px;
+          gap: 6px;
+          flex: 1;
+          justify-content: flex-end;
+          min-width: 0;
+        }
+        /* Hide non-essential icons on mobile */
+        .topnav__icon-btn[href="/mermaid"],
+        .topnav__icon-btn[href="/notifications"] {
+          display: none;
         }
         .topnav__auth {
           display: none;
         }
-        .topnav__search-text {
-          display: none;
+        /* Touch-friendly sizes */
+        .topnav__icon-btn,
+        .theme-toggle,
+        .lang-switcher__btn {
+          width: 40px;
+          height: 40px;
+          flex-shrink: 0;
         }
-        .topnav__kbd {
-          display: none;
+        /* Sidebar overlay */
+        .atlas-sidebar.atlas-sidebar--open {
+          width: 280px;
+          max-width: 85vw;
+          box-shadow: var(--shadow-lg);
+        }
+        .sidebar__link {
+          padding: 10px 8px 10px 32px;
+          min-height: 44px;
+          display: flex;
+          align-items: center;
+        }
+        .sidebar__group-header {
+          min-height: 44px;
+          padding: 10px 8px;
+        }
+        /* Content area */
+        .atlas-main {
+          padding: 16px 12px;
+        }
+        .prose {
+          max-width: 100%;
+        }
+        .prose h1 {
+          font-size: clamp(1.5rem, 1.2rem + 2vw, 2rem);
+        }
+        .prose h2 {
+          font-size: clamp(1.25rem, 1.1rem + 1vw, 1.5rem);
+        }
+        /* Table horizontal scroll */
+        .prose table {
+          display: block;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          width: 100%;
+        }
+        .prose table th,
+        .prose table td {
+          white-space: nowrap;
+          min-width: 80px;
+        }
+        /* Code blocks */
+        .prose pre {
+          font-size: 0.8rem;
+          padding: 12px;
+          margin-inline: -4px;
+          border-radius: var(--radius-md);
+        }
+        /* Footer */
+        .site-footer {
+          padding: 16px;
+        }
+        .site-footer__row {
+          flex-direction: column;
+          gap: 8px;
+          text-align: center;
+        }
+        /* Keyboard shortcuts overlay */
+        .shortcuts-dialog {
+          width: calc(100vw - 32px);
+          max-width: 380px;
+        }
+      }
+
+      /* Small phones (max 375px) */
+      @media (max-width: 375px) {
+        .topnav {
+          padding: 0 8px;
+        }
+        .topnav__brand {
+          font-size: 12px;
+        }
+        .topnav__right {
+          gap: 2px;
+        }
+        .topnav__icon-btn,
+        .theme-toggle,
+        .lang-switcher__btn {
+          width: 36px;
+          height: 36px;
+        }
+        .atlas-main {
+          padding: 12px 8px;
+        }
+      }
+
+      /* Tablet (768-1023px) */
+      @media (min-width: 768px) and (max-width: 1023px) {
+        .topnav {
+          padding: 0 20px;
         }
         .topnav__search {
-          padding: 0 8px;
-          min-width: 32px;
-          justify-content: center;
+          width: 300px;
+        }
+        .atlas-main {
+          padding: 24px 24px;
         }
       }
 
@@ -509,23 +670,15 @@ function isPageActive(href: string): boolean {
                     color var(--motion-fast) ease;
       }
 
-      .topnav__auth-btn--outline {
-        border: 1px solid var(--color-border);
-        background: transparent;
-        color: var(--color-ink);
-      }
-      .topnav__auth-btn--outline:hover {
-        border-color: var(--color-primary);
-        background: var(--color-surface-2);
-      }
-
-      .topnav__auth-btn--primary {
+      .topnav__auth-btn--combined {
         border: 1px solid var(--color-primary);
         background: var(--color-primary);
         color: #fff;
+        white-space: nowrap;
       }
-      .topnav__auth-btn--primary:hover {
+      .topnav__auth-btn--combined:hover {
         opacity: 0.9;
+        text-decoration: none;
       }
 
       .topnav__user {
@@ -574,7 +727,7 @@ function isPageActive(href: string): boolean {
         min-height: calc(100vh - 52px);
       }
 
-      /* Left Sidebar */
+      /* Left Sidebar — sticky on desktop */
       .atlas-sidebar {
         width: 260px;
         flex-shrink: 0;
@@ -583,6 +736,10 @@ function isPageActive(href: string): boolean {
         overflow-y: auto;
         padding: 16px 0;
         transition: margin-left var(--motion-normal) ease;
+        position: sticky;
+        top: 52px;
+        height: calc(100vh - 52px);
+        align-self: flex-start;
       }
 
       /* Closed state — slide out */
@@ -1059,8 +1216,9 @@ function isPageActive(href: string): boolean {
 
       // === Auth state check via Better Auth API ===
       (async function checkAuth() {
+        const AUTH_URL = import.meta.env.PUBLIC_AUTH_BASE_URL || "https://ep-steep-art-aol3cqdt.neonauth.c-2.ap-southeast-1.aws.neon.tech/neondb/auth";
         try {
-          const res = await fetch("https://ep-steep-art-aol3cqdt.neonauth.c-2.ap-southeast-1.aws.neon.tech/neondb/auth/get-session", {
+          const res = await fetch(`${AUTH_URL}/get-session`, {
             credentials: "include",
             headers: { "Accept": "application/json" }
           });

@@ -1,0 +1,77 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Monitoring DreamHack - the World's Largest Digital Festival"
+category: "ObservabilityPractice"
+confidence: high
+---
+
+# Monitoring DreamHack - the World
+
+## Overview
+
+DreamHack is the world's largest digital festival, bringing together tens of thousands of players who bring their own computers for e-sports, programming competitions and entertainment activities. One of its core challenges was to build and operate a high-performance network that could support more than 10,000 access devices from scratch within **five days**. In this extreme scenario, a fast, reliable and easy-to-maintain monitoring system is key to ensuring the event goes smoothly. This article records how the DreamHack technical team (dhtech) used Prometheus to replace the original monitoring solution and built a monitoring system called "dhmon" to meet this challenge.
+
+## Core concepts
+
+In a rapidly changing temporary infrastructure, the monitoring system itself must also be agile and scalable. dhmon's design philosophy is centered around this need.
+
+* **dhmon architecture**: The entire monitoring system is divided into three layers - **acquisition layer**, **storage and query layer** and **presentation layer**. The collection layer uses a custom exporter (such as `snmpcollector` for SNMP, `ipplan-pinger` for ICMP) to collect raw indicators; the storage and query layer uses **Prometheus** as the core, supplemented by Redis/Memcached to cache the latest snapshot; the presentation layer displays status through web applications (such as dhmap) and dashboards.
+* **SNMP Monitoring**: For network equipment (such as Cisco 2950 access switch), indicators are mainly collected through the SNMP protocol. The key challenge is to associate the SNMP OID (such as the interface rate `ifHighSpeed`) with the readable interface name (such as `GigabitEthernet0/2`), which is achieved by adding a label when configuring the collector.
+* **Prometheus component**: This solution integrates `Prometheus` (core time series database), `PromDash` (dashboard) and `Alertmanager` (alarm management). The three are usually deployed on the same host and uniformly expose access endpoints through the Apache reverse proxy.
+* **Alarm Rules**: Alarm definitions are based on PromQL expressions with intuitive syntax. For example, `ALERT BadUplinkOnAccessSwitch` can detect if the access switch uplink port negotiation rate is lower than expected. Alert rules are defined directly in Prometheus, and Alertmanager handles routing and notifications.
+
+## Practice
+
+### 1. Deployment and configuration architecture
+
+In the field with limited resources, simple deployment is crucial. Prometheus and its components run on the same server, and Apache provides a unified reverse proxy entrance. The sample configuration is as follows:
+```apache
+ProxyPass /prometheus http://localhost:9090/prometheus
+ProxyPass /alertmanager http://localhost:9093/alertmanager
+ProxyPass /dash http://localhost:3000/dash
+```
+This architecture reduces complexity and facilitates rapid setup and adjustment during event preparation.
+
+### 2. Performance optimization: precomputation rules
+
+Faced with instant queries (such as calculating Top 5 utilization) of massive data (such as about 18,000 links), direct queries may be slow or even time out. The solution is to use Prometheus's [Recording Rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) to pre-compute and store complex aggregate query results as new indicators.
+
+For example, a precomputed rule for calculating non-access layer link utilization:
+```promql
+precomputed_link_utilization_percent = rate(ifHCOutOctets{layer!='access'}[10m])*8/1000/1000
+                                       / on (device,interface,alias)
+                                     ifHighSpeed{layer!='access'}
+```
+After that, query `topk(5, precomputed_link_utilization_percent)` to get extremely fast response speed.
+
+### 3. Active alarm configuration example
+
+The definition of alarm rules is clear and easy to read. The following are two practical use cases:
+
+**a. Detect abnormal link rate of the uplink port of the access switch**
+```promql
+ALERT BadUplinkOnAccessSwitch
+  IF ifHighSpeed{layer='access', interface='GigabitEthernet0/2'} < 1000 FOR 2m
+  SUMMARY "The interface link rate is {{$value}} Mbps"
+  DESCRIPTION "Device {{$labels.device}} has interface {{$labels.interface}} link rate of {{$value}} Mbps"
+```
+This rule can quickly detect slowdown problems caused by physical reasons such as cable oxidation, allowing the team to proactively fix them before users notice.
+
+**b. Detecting that the DHCP address pool is about to be exhausted**
+```promql
+ALERT DhcpScopeAlmostFull
+  IF ceil((dhcp_leases_current_count / dhcp_leases_max_count)*100) > 90 FOR 2m
+  SUMMARY "DHCP address pool {{$labels.network}} is about to be exhausted"
+  DESCRIPTION "DHCP address pool {{$labels.network}} usage reaches {{$value}}%"
+```
+This helps to expand capacity in advance and avoid large-scale connection failures due to insufficient IP addresses.
+
+## SRE Key Points
+
+* **Fast Delivery and Observability**: DreamHack’s case is an example of “delivering reliability under pressure”. Within the 5-day deployment window, the monitoring system must be ready in sync with the infrastructure or even faster. Using declarative and easy-to-extend tools such as Prometheus allows the monitoring target to be quickly updated after each network structure change, ensuring **observability** of the entire build cycle.
+* **Hybrid architecture and trade-offs**: The team initially used Memcached to pursue extremely low latency (~10 seconds) data display, and later verified that Prometheus was also competent. This reflects the idea of ​​​​Trade-off** in SRE: on the premise of meeting **SLA** (user experience repair timeliness), evaluate and possibly unify the technology stack to reduce complexity.
+* **Active Alarm and Error Budget**: The setting of alarm rules directly serves the **reliability goal**. For example, the monitoring of link speed is to maintain SLI of network performance; the monitoring of DHCP pool is to avoid service interruption, which is essentially to protect the Error Budget. Through alerts, the team shifts from passively responding to user complaints to proactively discovering and solving problems.
+* **Continuous improvement and culture**: The detailed future plans at the end of the article (such as integrating Syslog, IDS, cross-team data) demonstrate the SRE culture of **continuous improvement**. Monitoring is not just a tool, it is a practice that facilitates collaboration (such as cross-team data integration), drives automation and deepens the understanding of the system. The open source dhmon project also promotes knowledge sharing and community contributions.
+
+This case vividly demonstrates how to integrate a modern monitoring system into a practice that requires extremely high agility and reliability, and provides a valuable reference for similar temporary, large-scale infrastructure projects.

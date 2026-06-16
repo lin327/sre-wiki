@@ -213,6 +213,41 @@ const recentPages: RecentPage[] = [
   @media (max-width: 639px) {
     .categories__grid {
       grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .category-card {
+      padding: 14px;
+      min-height: 44px;
+    }
+    .activity__link {
+      padding: 12px 14px;
+      min-height: 44px;
+    }
+    .welcome__title {
+      font-size: 20px;
+    }
+    .welcome__desc {
+      font-size: 13px;
+    }
+    .stats-row {
+      font-size: 11px;
+      gap: 6px;
+    }
+  }
+
+  /* Very small phones */
+  @media (max-width: 375px) {
+    .categories__grid {
+      gap: 8px;
+    }
+    .category-card {
+      padding: 12px;
+    }
+    .category-card__title {
+      font-size: 13px;
+    }
+    .category-card__latest {
+      font-size: 11px;
     }
   }
 

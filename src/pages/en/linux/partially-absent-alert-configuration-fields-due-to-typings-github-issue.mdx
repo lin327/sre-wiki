@@ -1,0 +1,109 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Partially absent alert configuration fields due to typings (GitHub Issue)"
+category: "Monitoring与告警"
+confidence: high
+---
+
+# Partially absent alert configuration fields due to typings (GitHub Issue)
+
+## 概述
+
+在 Site Reliability Engineering (SRE) 实践中，可靠的告警系统是保障服务可观测性和快速响应事件的核心。本页面深入分析一个影响 Grafana 告警引擎的严重回归缺陷，该缺陷在特定版本（12.3.0）中，由于前端表单数据的 Zod Schema 验证不完整，导致表达式查询的关键配置字段在创建或复制警报规则时被意外剥离。这直接破坏了告警规则的结构完整性，使得后端评估引擎无法正确解析表达式，最终导致告警失效。理解此类问题有助于 SRE 团队识别监控工具链中的潜在风险点，并建立更健壮的配置管理流程。
+
+## 核心概念
+
+### 表达式查询 (Expression Queries)
+在 Grafana 告警中，表达式查询是用于对基础数据查询（如 PromQL、SQL）的结果进行二次加工（例如聚合、阈值判断、数学运算）的特殊查询类型。其数据源为内置的 `__expr__`。每个表达式查询模型必须包含一个 `type` 字段（如 `reduce`, `threshold`, `math` 等）来指明其操作类型，后端验证器严格依赖此字段进行命令分发。
+
+### Zod Schema 验证
+Grafana 前端使用 TypeScript 生态中的 Zod 库来定义和验证数据结构。`alertingAlertRuleFormSchema` 是一个 Zod Schema，用于在表单提交前解析和验证警报规则数据。通过调用 `.parse()` 方法，Zod 会根据预定义的 Schema 规则（如字段类型、是否必填）对输入数据进行清洗和转换，不符合 Schema 的字段可能被剔除或报错。
+
+### 后端验证 (Backend Validation)
+Grafana 后端（Go语言实现）在接收到前端提交的警报规则数据后，会对其进行再次校验。对于表达式查询，`pkg/expr/nodes.go` 中的 `getExpressionCommandTypeString` 函数会明确检查 `type` 字段是否存在，若缺失则返回错误，阻止规则被保存和执行。
+
+## 实践
+
+### 问题复现与现象
+
+此回归问题在 Grafana 12.3.0 中引入，由 PR [#112794](https://github.com/grafana/grafana/pull/112794) 触发。核心现象是：**通过 UI 创建或复制一个包含表达式查询的 Grafana 托管警报规则时，在提交或保存后，表达式查询的多个核心字段会丢失，导致规则评估失败**。
+
+**复现步骤：**
+1.  创建一个包含数据查询（例如 refId 为 `A`）和表达式查询（例如 refId 为 `B`，类型为 `reduce`； refId 为 `C`，类型为 `threshold`）的警报规则。
+2.  成功保存该规则。
+3.  在警报规则列表中，对该规则进行“复制”操作，或对其进行编辑后重新保存。
+4.  观察浏览器控制台或保存时的错误提示，通常为 `Failed to build evaluator for queries and expressions: invalid command type in expression 'B': no expression command type in query`。
+
+### 根因分析与负载对比
+
+问题的根源在于 `formDefaults.ts` 文件中的 `formValuesFromPrefill()` 函数。当处理 Grafana 托管的警报规则（`cloudAlerting`）时，它会使用 `alertingAlertRuleFormSchema` 来解析规则数据。该 Schema 内部使用的 `alertingModelSchema` 过于宽松且不完整。
+
+**正常工作时的 API 负载示例：**
+```json
+{
+  "refId": "B",
+  "datasourceUid": "__expr__",
+  "model": {
+    "refId": "B",
+    "type": "reduce",          // 核心字段：表达式类型
+    "expression": "A",         // 核心字段：引用输入查询
+    "reducer": "last",         // 特定于 reduce 类型的字段
+    "settings": {"mode": ""}   // 特定设置
+  }
+}
+```
+
+**出现缺陷时的 API 负载示例：**
+```json
+{
+  "refId": "B",
+  "datasourceUid": "__expr__",
+  "model": {
+    "refId": "B",
+    "expression": "A",
+    "instant": true,           // 额外被保留的非核心字段
+    "range": false             // 额外被保留的非核心字段
+    // 注意：`type`，`reducer`，`settings` 等关键字段已丢失！
+  }
+}
+```
+
+`alertingModelSchema` 的定义未能涵盖表达式查询所需的全部字段，导致 Zod 在解析过程中将未声明的字段（如 `type`）剥离，仅保留了 `refId`、`maxDataPoints`、`intervalMs` 等基础字段。
+
+### 建议修复方案
+
+问题的根本修复方案是**更新并完善 Zod Schema 的定义**，确保其能够保留表达式查询的所有必要字段。如下是一个修复后的 Schema 示例：
+
+```typescript
+export const alertingModelSchema = z.looseObject({
+  refId: z.string(),
+  maxDataPoints: z.number().optional(),
+  intervalMs: z.number().optional(),
+  // 显式声明表达式查询相关字段
+  type: z.enum(['reduce', 'threshold', 'math', 'resample', 'classic_conditions', 'sql']).optional(),
+  expression: z.string().optional(),
+  reducer: z.string().optional(),
+  conditions: z.array(z.any()).optional(),
+  settings: z.any().optional(),
+});
+```
+
+通过将 `type` 等关键字段纳入 Schema，Zod 的 `.parse()` 操作就能正确识别并保留它们。另一种思路是确保 `z.looseObject()` 的行为在整条解析链中被正确传递，以保留所有“额外”字段。
+
+## SRE 要点
+
+### 对可靠性与可观测性的直接影响
+此缺陷直接破坏了告警规则的**可配置性**和**持久性**。一个无法被正确复制或重新保存的告警规则，意味着团队无法可靠地管理、维护和扩展其告警策略。这削弱了系统的可观测性基础，可能导致关键告警沉默，进而延迟事件检测与响应（MTTD/MTTR 增加）。SRE 团队应将此类影响监控配置基础的缺陷视为高优先级问题。
+
+### 最佳实践与反模式
+*   **最佳实践 - 配置即代码（GitOps）的验证**：即使 Grafana UI 存在缺陷，通过 API 或 provisioned YAML 管理的告警规则也可能不受影响（如果绕过有缺陷的前端 Schema）。SRE 应推动关键告警规则的配置以代码形式存储和版本控制，并在 CI/CD 流程中加入 schema 校验步骤。
+*   **反模式 - 过度依赖 UI 进行批量或重复操作**：此缺陷凸显了 UI 操作的脆弱性。对于需要批量修改或复制的场景，应优先考虑使用 Grafana HTTP API 或 Terraform Provider。
+*   **最佳实践 - 监控工具链自身的健康**：SRE 不仅要监控业务服务，还应监控监控工具（如 Grafana）自身。应配置检查来验证关键告警规则的配置是否与版本控制中的定义一致，并对警报规则的创建/更新 API 调用设置错误率告警。
+
+### 相关指标与事件关联
+*   **SLI (Service Level Indicator)**：可考虑设置 **告警规则配置成功率** 作为 SLI。计算公式：`成功创建/更新的警报规则数量 / 总的 API 调用数量`。此问题会导致该 SLI 在受影响版本期间下降。
+*   **SLO (Service Level Objective)**：与告警系统可靠性相关的 SLO 可能被此问题影响。例如，“99.9% 的 Grafana 托管警报规则在编辑后能正常工作”这一 SLO 可能无法达成。
+*   **事件响应关联**：当监控平台出现此类大规模、非预期的回归故障时，SRE 应立即启动事件响应流程，优先评估对所有依赖此告警规则的服务的潜在风险，并准备降级方案（如临时通过其他渠道发送告警）。
+
+**Related pages:** [[alerting-basics]], [[slo-error-budget]], [[configuration-management]]

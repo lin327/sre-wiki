@@ -1,0 +1,70 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with L’Atelier Animation"
+category: "Observability与Monitoring"
+confidence: high
+---
+
+# Interview with L’Atelier Animation
+
+## Overview
+
+L’Atelier Animation is a 3D animation studio located in Montreal. Its infrastructure includes about 300 rendering blade servers, 150 workstations and various servers, almost all running on Linux (CentOS). In order to support its high-load, high-reliability animation production process, a powerful and unified monitoring system is crucial. The studio fully migrated its complex hybrid monitoring stack consisting of Nagios, Graphite and InfluxDB to Prometheus. This case vividly demonstrates how SRE practices can improve system observability, simplify operation and maintenance through tool integration, and use monitoring data to create additional business value.
+
+## Core concepts
+
+In this migration, several core Prometheus components and concepts played a key role:
+
+1. **Prometheus Monitoring System**: Adopts an HTTP-based pull model, with a built-in time series database and powerful query language PromQL. It collects metrics through the `exporter` pattern, forming a self-contained, easy-to-deploy monitoring solution.
+2. **Exporter**: It is the key to the Prometheus ecosystem and is used to convert indicators of third-party systems or applications into a format that Prometheus can recognize. This case focuses on the use of `snmp_exporter` (monitoring network devices) and `node_exporter` (monitoring hosts).
+3. **Textfile Collector**: A function of `node_exporter` that allows custom indicators to be exposed through simple text files. This provides great flexibility for monitoring non-standard data sources, such as the rendering progress of animation software.
+4. **Alertmanager**: The alarm component of Prometheus, responsible for deduplication, grouping, routing and notification (such as through email) of alerts triggered by `Prometheus Server`. It replaces the original complex Nagios alarm system.
+
+## Practice
+
+L’Atelier Animation’s migration and implementation process provides a clear roadmap for migrating similar environments.
+
+### Migration strategies and steps
+
+* **Taking advantage of the project gap**: The team chose to migrate during the technical downtime after the completion of the first film project, providing a valuable window of time to completely reconstruct the monitoring system.
+* **Step-by-step implementation**:
+    1. **Network device monitoring**: First configure `snmp_exporter`, start with a single switch, and quickly expand to the core network (13 switches, 10 VLANs) after successful monitoring. In the process, the compatibility issue of NetSNMP calls in CentOS environment was solved.
+    2. **Host monitoring**: Then deploy `node_exporter`, covering all rendering blades, workstations and servers.
+    3. **Alert configuration**: Configure Alertmanager email alerts for key assets to ensure that any downtime events are known as soon as possible.
+    4. **Custom data collection**: Use the text file collector of `node_exporter` to convert data from custom tools such as animation rendering through cron jobs into a format that can be read by Prometheus.
+
+### Key implementation details and extended applications
+
+* **Adjustment of focus**: In the field of animation production, when the CPU does not reach 100% load, it may mean resource waste or process problems, so the team pays more attention to indicators such as hardware temperature to ensure rendering stability.
+* **Data secondary utilization**: They used Prometheus' HTTP API to write Python scripts to capture data and store it in MySQL, and then developed an internal "interactive floor map" web application. This application can intuitively display each artist's seat, hardware model and status used, and can even serve as a navigation tool for new employees. This reflects the innovative value of monitoring data beyond IT operation and maintenance.
+* **Future Expansion**: The team is planning to integrate software license usage into Prometheus to allow visual analysis of resource allocation and utilization.
+
+## SRE Key Points
+
+### Association with reliability
+
+This migration is an example of improving system reliability. Through the **unified monitoring stack**, L’Atelier Animation eliminates the operational complexity and potential failure points caused by multiple independent systems (Nagios, Graphite, InfluxDB). A single monitoring service that “rules them all” significantly reduces the operational burden, allowing the team to focus more on ensuring the high availability of render farms and workstations to meet tight deadlines for animation production.
+
+### Observability and incident response
+
+* **Observability enhancement**: The combination of Grafana and Prometheus provides powerful data visualization capabilities. Teams can create intuitive dashboards for network devices, workstations, and more to gain insights into the health of their infrastructure.
+* **Event response optimization**: Alertmanager replaces Nagios and provides a more modern and scalable alert pipeline. Email notifications based on alarm rules ensure that the IT team can quickly respond to events such as equipment downtime and minimize the impact on artists' work.
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    * **Use the project life cycle to plan migration**: Select business downturns for major infrastructure changes.
+    * **Start from the core and gradually expand**: first solve the key pain point of network monitoring, then cover the host, and finally customize the application.
+    * **Embrace flexible data collection**: Make good use of the text file collector to incorporate any data into the monitoring system.
+    * **Convert monitoring data into business insights**: Go beyond operation and maintenance alarms and explore the value of monitoring data in optimizing resource allocation and improving the working environment.
+* **Anti-Patterns to Avoid**:
+    * **Maintaining an overly complex "technology hodgepodge"**: For example, a mixed stack composed of multiple tools before migration, which increases maintenance costs and cognitive load.
+    * **Ignoring the integration and simplification of monitoring systems**: We should pursue the use of fewer, more integrated tools to cover a wider range of monitoring needs.
+
+### Related Indicators (SLI/SLO)
+
+Although the case does not explicitly mention SLO, its monitoring practices point to several key reliability indicators:
+* **Host Availability (SLI)**: Monitor the online status of workstations and rendering servers through `node_exporter` and Alertmanager.
+* **Network Equipment Availability and Performance (SLI)**: Monitor the port status, traffic and error rate of the switch through `snmp_exporter`.
+* **Resource Utilization (SLI)**: Monitors CPU temperature, load, etc. to ensure that rendering jobs are executed in the optimal hardware environment, which is directly related to the key business indicator of **completion rate and speed** of rendering tasks.

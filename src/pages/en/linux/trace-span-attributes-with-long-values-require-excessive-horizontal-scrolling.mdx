@@ -1,0 +1,53 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Trace span attributes with long values require excessive horizontal scrolling"
+category: "Observability"
+confidence: medium
+---
+
+# Trace span attributes with long values require excessive horizontal scrolling
+
+## Overview
+
+In the daily operation and troubleshooting of Distributed Tracing, SRE engineers rely heavily on observability platforms like Grafana to visualize and analyze Trace data. Span attributes (Attributes) are core metadata that carry key debugging information (such as error messages, query statements, request bodies, etc.). When these attribute values ​​are very long, unfriendly UI rendering in the Grafana Tracing panel (long values ​​force single-line display, resulting in a large amount of horizontal scrolling) will significantly reduce the readability of information, extend troubleshooting time, and affect the efficiency of incident response. Optimizing such user experience issues is crucial to improving the usefulness of the observability platform and the effectiveness of SREs.
+
+## Core concepts
+
+### Span and Attributes
+In standards such as OpenTelemetry, a **Span** represents an operation in a distributed system (such as an HTTP request, a function call). The **Attributes** on a Span are a set of key-value pairs used to record detailed information about the operation. For example, `http.url`, `db.statement`, or `error.message`, etc. These properties are the cornerstone of understanding Trace context and locating performance bottlenecks and error sources.
+
+### The causes and effects of long attribute values
+Some attribute values are naturally very long, for example:
+- Serialized request/response body (JSON/XML)
+- Complex database query statements
+- Error message including stack trace
+- Long string identifier or log entry
+When the UI renders this type of long text as a single line, the user must perform a long horizontal scroll to view the full content. This operation is visually discontinuous, interrupts troubleshooting ideas, and increases cognitive load. It is a typical usability defect.
+
+## Practice
+
+### Steps to reproduce the problem
+1. Open a dashboard in Grafana that contains a Tracing panel (such as the Tempo data source).
+2. Select a Trace that contains a Span that has a very long attribute value (for example, `db.statement` is a complex SQL containing multiple JOINs).
+3. In the Trace view, click the Span to expand its details.
+4. In the attribute list, observe how the long attribute value is displayed. You may find that values ​​are forced to be rendered on the same line, causing the panel to need to be extremely wide or the user to frequently scroll horizontally.
+
+### Potential solutions and SRE strategies
+While the core fix requires the Grafana front-end team to adjust UI components (for example, enable word wrapping for long text values, provide "expand/collapse" buttons, or use a more reasonable layout such as `<pre>` tags), as an SRE, you can adopt the following strategies to mitigate the problem and guarantee workflow:
+
+1. **Data source side optimization (best practice)**: In the Instrumentation phase of the application, truncate or summarize attribute values that are known to be very long. For example, for a database query, you can log only the first 200 characters. This reduces the generation of overly long attribute values ​​from the source.
+2. **Use auxiliary tools**: In Grafana, you can click the "Copy" button of the attribute to copy the value to a text editor or terminal to view the complete content to bypass the display restrictions of the UI.
+3. **Follow platform updates**: The existence of this Issue ([grafana/grafana#124671](https://github.com/grafana/grafana/issues/124671)) indicates that the issue has been identified. The SRE team should pay attention to subsequent Grafana version update logs to confirm whether this UI issue is fixed.
+4. **Custom Dashboard**: If you use Grafana's custom panel or plug-in capabilities, consider creating an auxiliary view specifically for viewing long text attribute values.
+
+## SRE Key Points
+
+- **Relationship with reliability and observability**: The "usability" of an observability platform not only refers to whether its services are stable, but also whether its user interface is easy to use and whether information is easy to obtain. A poor UI experience will directly prevent SRE from using tracking data to diagnose problems, thereby indirectly affecting the system's mean time to recovery (MTTR). A well-designed observability tool should maximize information transfer efficiency.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: During development, follow the principle of "bounded attribute value length" to bury points. Design appropriate recording strategies (such as truncation, sampling, or structuring) for critical, potentially variable-length attributes.
+    - **Anti-Pattern**: Uncontrolled serialization of large objects or raw logs directly into a single Span attribute will not only cause UI display problems, but may also significantly increase the storage and transmission costs of tracking data.
+- **Related Metrics (SLI/SLO/SLA)**: Although this is a UI defect, it can be indirectly related to the following SRE metrics:
+    - **MTTR (Mean Time to Recovery)**: If the SRE spends more time obtaining information because the tool is not easy to use, MTTR will increase.
+    - **On-Call Burnout**: Inefficient and frustrating tool usage experience will increase the fatigue of operation and maintenance personnel, which is related to personnel reliability.
+    - From the perspective of the broader "observability platform reliability" SLO, the "user experience availability of key workflows (such as viewing Span details)" can be considered as a non-functional SLI.

@@ -1,0 +1,70 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Introducing Prometheus Agent Mode, an Efficient and Cloud-Native Way for"
+category: "Observability与Monitoring"
+confidence: medium
+---
+
+# Introducing Prometheus Agent Mode, an Efficient and Cloud-Native Way for
+
+## Overview
+
+In the cloud native monitoring ecosystem, Prometheus has become the de facto standard with its powerful Pull model and stable ecosystem. However, with the evolution of architecture, especially in scenarios such as edge computing, dynamic clusters, and centralized monitoring, forwarding indicator data to remote storage efficiently and reliably has become a new challenge. Prometheus Agent Mode was born to solve this challenge. It is a dedicated running mode built into the Prometheus binary. It greatly optimizes the efficiency of indicator scraping (Scrape) and remote writing (Remote Write) by disabling local query, alarm and storage functions. It is a key component in building a scalable, resource-sensitive monitoring architecture.
+
+## Core concepts
+
+To understand Agent Mode, we first need to clarify several key concepts and their evolution.
+
+- **Pull model and global view (Global View)**: The classic deployment of Prometheus is to deploy the server and the monitored application in the same domain, and obtain indicators by regularly pulling (Pull) the `/metrics` endpoint exposed by the application. This model gives Prometheus the ability to accurately perceive the health status of the target. However, when data needs to be aggregated across multiple clusters or network boundaries to get a "big picture", there are serious drawbacks to either scraping across network boundaries or pushing metrics directly from applications to central storage. The former introduces unreliability, while the latter makes the failure modes of the monitoring pipeline itself opaque.
+- **Remote Write protocol**: In order to achieve data aggregation while maintaining the advantages of the Pull model, Prometheus introduced the Remote Write protocol. It allows the Prometheus server to stream (forward) all or part of the locally collected metric data to remote storage systems that support the protocol (such as Thanos Receive, Cortex, hosting services of various cloud vendors, etc.). This is a mechanism for "pushing" data to a central location, but the key is that the push action is initiated by a local Prometheus that understands the target state, thus minimizing the unknown factors of monitoring.
+- **Prometheus Agent Mode**: This is an experimental running mode introduced by Prometheus starting from `v2.32.0` version (enabled by `--enable-feature=agent` flag). Agent Mode "slims down" Prometheus:
+    - **Disabled Features**: PromQL queries, alert rule evaluation and local long-term storage are disabled.
+    - **Optimization Goal**: Focus on two things - metric capture based on service discovery and efficient Remote Write forwarding.
+    - **Core Component**: Uses a WAL (write-ahead log) customized for streaming writes, discarding data immediately after a successful write, and only retaining limited local buffering when the remote endpoint is unreachable. It essentially microservices the crawling and forwarding functions of Prometheus.
+
+## Practice
+
+### How to use
+
+Enabling Agent Mode is very simple. When starting Prometheus, add the `--enable-feature=agent` flag:
+
+```bash
+prometheus --config.file=agent.yml --enable-feature=agent
+```
+
+Its configuration file is very similar to standard Prometheus, retaining the `scrape_configs` and `remote_write` parts, but you can omit `rule_files` and other configurations related to query alerts. A typical configuration example is as follows:
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+    -role: pod
+    relabel_configs:
+    #...standard service discovery and re-marking configuration
+
+remote_write:
+  - url: "http://thanos-receive:19291/api/v1/receive"
+    # Or any Remote Write API compatible endpoint
+```
+
+### Architecture and Deployment
+
+Architecturally, Agent Mode's Prometheus instance runs as a pure crawl-and-forward agent. Each Agent requires only one writable persistent volume (for staging unsent data) and is very easy to scale horizontally due to its stateless nature (except for staging data). When deploying, a pair of Agents (HA pair) are usually deployed for high availability to jointly capture the same target set and send the data to the central storage. The storage layer is responsible for deduplication. This allows the crawling layer to dynamically scale up and down based on the number of metric targets without having to worry about data state migration.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: Agent Mode improves the reliability of the monitoring pipeline itself through its efficient design. Its resource consumption is lower, enabling stable operation in resource-constrained environments (such as edge clusters). At the same time, it solves the core reliability problem of cross-network monitoring, ensuring that even if part of the network is interrupted, local crawling and local data buffering can still work, ensuring maximum data visibility.
+- **Best Practices**:
+    - **Clear separation of responsibilities**: Use Agent Mode to implement crawling and forwarding responsibilities, while leaving querying, alerting, long-term storage and aggregation to the back-end centralized storage (such as Thanos, Cortex) or another Prometheus Server. This is consistent with the SRE principle of "separation of concerns."
+    - **Horizontal expansion**: In dynamic or large-scale environments, the stateless feature of Agent Mode is used to achieve horizontal automatic expansion of crawling capabilities. The Prometheus Kubernetes Operator community has explored this aspect.
+    - **Configuration consistency**: Because Agent Mode reuses the standard Prometheus fetching configuration, it can achieve smooth migration from server mode to Agent mode, reducing configuration maintenance costs.
+- **Common anti-patterns**:
+    - **Obfuscate Roles**: Avoid trying to run PromQL queries or alert rules on Agent Mode instances, this is not what they are designed to do and will not work properly.
+    - **Over-reliance on local buffering**: Although Agent Mode has local buffering of data (~2 hours by default), this should not be considered long-term storage. Its core is best-effort delivery, and central storage is the cornerstone of data reliability.
+- **Related Indicators (SLI/SLO)**:
+    - **SLI**: Key metrics for monitoring Agent Mode itself include: `prometheus_agent_wal_storage_bytes` (WAL size), `prometheus_agent_samples_total` (number of samples successfully written), `prometheus_agent_sent_samples_total` (number of samples attempted to be sent), and network latency and error rate to the remote endpoint.
+    - **SLO**: SLOs can be defined for data delivery latency and packet loss rate for the target Remote Write endpoint. For example, "99% of indicator samples should be received by central storage within 30 seconds of generation". The efficiency and reliability of Agent Mode directly serve the achievement of this SLO.

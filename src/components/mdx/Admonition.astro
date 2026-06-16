@@ -54,71 +54,49 @@ const displayTitle = title || config.defaultTitle;
 </div>
 
 <style>
-  /* ============================================
-     Admonition — GitHub Design Language
-     ============================================ */
-
   .admonition {
     position: relative;
     margin-block: var(--space-6);
     padding: var(--space-4) var(--space-5);
     border-radius: 6px;
-    border-inline-start: 4px solid #0969da;
-    background-color: #f6f8fa;
+    border-inline-start: 4px solid var(--color-primary);
+    background-color: var(--color-surface-2);
   }
-
-  /* ============================================
-     Type Variants
-     ============================================ */
 
   .admonition--note {
-    border-inline-start-color: #0969da;
-    background-color: #f6f8fa;
+    border-inline-start-color: var(--color-primary);
   }
-
   .admonition--note .admonition-icon {
-    color: #0969da;
+    color: var(--color-primary);
   }
 
   .admonition--tip {
-    border-inline-start-color: #1a7f37;
-    background-color: #f6f8fa;
+    border-inline-start-color: var(--color-success);
   }
-
   .admonition--tip .admonition-icon {
-    color: #1a7f37;
+    color: var(--color-success);
   }
 
   .admonition--important {
     border-inline-start-color: #8250df;
-    background-color: #f6f8fa;
   }
-
   .admonition--important .admonition-icon {
     color: #8250df;
   }
 
   .admonition--warning {
-    border-inline-start-color: #bf8700;
-    background-color: #f6f8fa;
+    border-inline-start-color: var(--color-warning);
   }
-
   .admonition--warning .admonition-icon {
-    color: #bf8700;
+    color: var(--color-warning);
   }
 
   .admonition--caution {
-    border-inline-start-color: #d1242f;
-    background-color: #f6f8fa;
+    border-inline-start-color: var(--color-error);
   }
-
   .admonition--caution .admonition-icon {
-    color: #d1242f;
+    color: var(--color-error);
   }
-
-  /* ============================================
-     Title Bar
-     ============================================ */
 
   .admonition-title {
     display: flex;
@@ -126,7 +104,7 @@ const displayTitle = title || config.defaultTitle;
     gap: var(--space-2);
     font-weight: 600;
     font-size: 0.875rem;
-    color: #24292f;
+    color: var(--color-ink);
   }
 
   .admonition-icon {
@@ -138,13 +116,9 @@ const displayTitle = title || config.defaultTitle;
     height: 1.25rem;
   }
 
-  /* ============================================
-     Body Content
-     ============================================ */
-
   .admonition-body {
     margin-block-start: var(--space-3);
-    color: #656d76;
+    color: var(--color-muted);
     font-size: 0.875rem;
     line-height: 1.65;
   }
@@ -165,8 +139,8 @@ const displayTitle = title || config.defaultTitle;
 
   .admonition-body :global(code) {
     font-size: 0.85em;
-    background-color: #eff1f3;
-    color: #24292f;
+    background-color: var(--color-code-bg);
+    color: var(--color-code-text);
     padding: 0.12em 0.3em;
     border-radius: 6px;
   }

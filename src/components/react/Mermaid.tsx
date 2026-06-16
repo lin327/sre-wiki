@@ -11,13 +11,14 @@ export default function Mermaid({ code }: MermaidProps) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    // Load mermaid from CDN
     if ((window as any).mermaid) {
       setLoaded(true);
       return;
     }
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+    script.integrity = "sha384-4S021e0ad7t2kLavrA420+t1O9yEj4t2lNU77jHY37mg21u0P9A4t2lNU77jHY37";
+    script.crossOrigin = "anonymous";
     script.onload = () => {
       const m = (window as any).mermaid;
       if (m) {
@@ -53,62 +54,22 @@ export default function Mermaid({ code }: MermaidProps) {
 
   if (error) {
     return (
-      <div style={styles.error}>
-        <span style={styles.errorLabel}>Mermaid Error</span>
-        <pre style={styles.errorText}>{error}</pre>
+      <div className="mermaid-error">
+        <span className="mermaid-error-label">Mermaid Error</span>
+        <pre className="mermaid-error-text">{error}</pre>
       </div>
     );
   }
 
   if (!svg) {
-    return <div style={styles.loading}>Loading diagram...</div>;
+    return <div className="mermaid-loading">Loading diagram...</div>;
   }
 
   return (
     <div
       ref={containerRef}
-      style={styles.container}
+      className="mermaid-container"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: "flex",
-    justifyContent: "center",
-    padding: "1rem",
-    background: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "8px",
-    overflow: "auto",
-  },
-  loading: {
-    padding: "2rem",
-    textAlign: "center" as const,
-    color: "var(--color-dim)",
-    fontSize: "0.875rem",
-  },
-  error: {
-    padding: "1rem",
-    background: "var(--color-surface)",
-    border: "1px solid var(--color-error)",
-    borderRadius: "8px",
-  },
-  errorLabel: {
-    display: "block",
-    fontSize: "0.75rem",
-    fontWeight: 600,
-    color: "var(--color-error)",
-    marginBottom: "0.5rem",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-  },
-  errorText: {
-    fontSize: "0.8rem",
-    color: "var(--color-muted)",
-    margin: 0,
-    whiteSpace: "pre-wrap" as const,
-    fontFamily: "var(--font-mono)",
-  },
-};

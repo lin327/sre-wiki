@@ -1,0 +1,55 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with iAdvize | Prometheus"
+category: "SREPracticeCase Study"
+confidence: medium
+---
+
+# Interview with iAdvize | Prometheus
+
+## Overview
+
+iAdvize is an international, full-stack conversational commerce platform that provides unified customer communication channels for brands in global e-commerce, banking, tourism and other industries. As the company's business development and technology stack evolved from a monolithic architecture to a Docker-based microservice architecture, its original Nagios/Centreon monitoring system, managed by external vendors, became rigid and costly, unable to meet the needs of dynamic infrastructure and rapid iteration. To regain control, flexibility, and support the cloud-native transformation, iAdvize’s SRE team led the modernization of the monitoring ecosystem and fully adopted Prometheus. This transformation not only solves technical debt, but also greatly improves the real-time visibility of business indicators, providing a data-driven foundation for capacity planning and performance optimization.
+
+## Core concepts
+
+### Prometheus
+Prometheus is an open source system monitoring and alarm toolkit. Its core is a database based on time series data and the powerful query language PromQL. It uses a "Pull" model and actively pulls metric data from a configured endpoint (usually `/metrics`). This model simplifies the configuration of monitoring targets and is especially suitable for dynamically changing microservice and container environments.
+
+### Exporter
+Exporter is a component that converts indicators from non-Prometheus native systems into Prometheus format. iAdvize leverages a rich community of Exporters to monitor its technology stack, such as MySQL, Redis, Memcached, Nginx, PHP-FPM, and more. They also developed a custom Exporter in the Go language to capture specific business indicators from the database, which demonstrates the powerful scalability of Prometheus.
+
+### Service Discovery (Consul Integration)
+iAdvize uses Consul as its service discovery system. Prometheus can be integrated with Consul to dynamically discover service endpoints that need to be monitored. This is crucial for managing a large number of short-lived microservice instances, avoiding the tedious work of manually maintaining a static monitoring configuration list.
+
+### Observability and Dashboards (Grafana)
+Observability is not just about collecting metrics, but also about their effective use. iAdvize built a unified visual dashboard with Grafana and used Google Auth integration to provide everyone access from the development team to the CEO. This breaks down the “infrastructure team exclusive” barriers in traditional monitoring and makes business metrics, application performance, and system status transparent to everyone.
+
+## Practice
+
+The migration and evolution process of iAdvize is a typical case of SRE-driven technological change. The main steps include:
+
+1. **Internal Demonstration and Promotion**: In order to convince the 40-person development team to adopt the new tool, the system engineering team conducted a live demonstration of RabbitMQ. They installed RabbitMQ Exporter, wrote a Python script to simulate message publishing/consuming, and displayed changes in queue and message numbers in real time in Grafana. This intuitive effect allows developers to immediately understand the value of Prometheus.
+2. **Phaseded integration**: First, they monitored the running status of existing services and containers running on Consul (via cAdvisor). Next, they developed a custom Go Exporter to extract key business metrics from MySQL and Redis, such as number of simultaneous conversations, routing errors, number of connected customer service agents, etc.
+3. **Automated Discovery and Deployment**: As the architecture moved to the cloud and orchestration platform (Nomad), they took full advantage of Prometheus’ service discovery capabilities.
+    * **Consul integration**: Nomad registers health services with Consul and tags them with tags such as `metrics=true`. Prometheus can automatically discover these services and capture indicators, enabling "zero configuration" deployment of monitoring.
+    * **EC2 Service Discovery**: Leveraging EC2 Service Discovery with Prometheus, they can automatically monitor instances in an AWS Auto Scaling group. When an instance is automatically scaled or recycled, monitoring automatically takes effect or disappears, without the need for manual intervention by an external provider.
+4. **Alert Integration**: They use Alertmanager to integrate alert information via SMS or into Flowdock (a team collaboration tool) to ensure that critical issues can be discovered and responded to in a timely manner.
+
+## SRE Key Points
+
+### Relevance to Reliability Engineering
+- **Improved system visibility**: Through a unified Grafana dashboard, teams can gain real-time insight into the full stack health from the infrastructure (container restarts, CPU, memory) to the application layer (API gateway requests, number of queued consumers) to the business layer (number of simultaneous sessions, number of iAdvize tags loaded). This deep level of observability is a prerequisite for quickly locating faults and conducting root cause analysis.
+- **Support for data-driven optimization**: Based on detailed metrics collected by Prometheus, iAdvize conducted a month-long performance analysis of the MySQL database and ultimately reduced the database size by 45% and peak latency by 75% through optimization. This directly improves service reliability and user experience.
+
+### Best Practices
+- **Incremental Migration and Value First**: Start small (such as the RabbitMQ demo) to quickly demonstrate the value of the tool and win the support of stakeholders.
+- **Standardization and Automation**: Use service discovery (Consul, EC2) to automatically synchronize monitoring and infrastructure changes (deployment, scaling), eliminating the risk of manual delays and configuration drift.
+- **Culture Change**: Break down access barriers to monitoring data, promote observability culture to the entire organization, and empower all roles to make decisions based on data.
+
+### Related indicators
+- **Basic of SLI/SLO**: The indicators provided by Prometheus (such as API response time, error rate, queue processing delay) are the data basis for defining service level indicators (SLI) and formulating service level objectives (SLO). The business metrics monitored by iAdvize may themselves be directly related to critical business SLOs.
+- **Quantification of Error Budget**: The Error Budget calculated based on SLO can be tracked and alerted through Prometheus' query and alert rules, making reliability management more refined.
+
+The case of iAdvize fully proves that a well-designed, indicator-oriented monitoring system is the key infrastructure supporting modern cloud-native architecture and SRE practices. Their future prospects—such as triggering automatic scaling based on Prometheus alarms and introducing advanced anomaly detection—also point to the evolution direction of AIOps and autonomous operations.

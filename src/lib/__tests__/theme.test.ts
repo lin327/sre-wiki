@@ -69,7 +69,7 @@ describe('Theme system', () => {
 });
 
 describe('Sidebar state persistence', () => {
-  const STORAGE_KEY = 'atlas-sidebar-state';
+  const STORAGE_KEY = 'atlas-sidebar-groups';
 
   beforeEach(() => {
     localStorage.clear();

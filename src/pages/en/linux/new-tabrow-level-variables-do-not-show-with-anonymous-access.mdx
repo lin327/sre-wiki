@@ -1,0 +1,71 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "New Tab/Row level variables do not show with anonymous access"
+category: "Monitoring与可视化"
+confidence: medium
+---
+
+# New Tab/Row level variables do not show with anonymous access
+
+## Overview
+
+In the Grafana monitoring and visualization platform, Dashboard variables are the core function for data filtering and interaction. This document is based on a known software defect report and analyzes the problem that after enabling the experimental feature (Feature Toggle) `dashboardGrouping`, the newly introduced Tab/Row level variables cannot be displayed properly when the Dashboard is shared through anonymous access. This issue affects the user experience and data filtering capabilities when sharing monitoring dashboards, and has important implications for SRE practices that need to provide customized monitoring views to a wider, non-authenticated audience.
+
+## Core concepts
+
+To understand this issue, you need to first clarify the following core concepts:
+
+- **Tab/Row Level Variables**: A new feature coming to Grafana in April 2026. It allows Dashboard creators to define variables at the Tab or Row (collapsible area) level, so that the scope and influence of the variables are limited to a specific interface area instead of the traditional global scope. This feature is designed to reduce the complexity of variable management.
+- **Anonymous Access**: An access mode provided by Grafana that allows unauthenticated users to view public Dashboards through specific links. This is useful for sharing monitoring status with external teams or the public.
+- **Feature Toggles**: A mechanism used by Grafana to manage and gradually roll out experimental or not yet fully stable features. The `dashboardGrouping` switch mentioned this time is used to enable functions such as Tab/Row level variables.
+
+## Practice
+
+### Problem phenomenon and recurrence
+
+According to the issue report, the steps to reproduce the defect are as follows:
+1. Log in to Grafana using an account with editing permissions.
+2. In a Dashboard, enable the `dashboardGrouping` function switch.
+3. Create a new variable at the Tab or Row level.
+4. Set the access permissions of the Dashboard to allow anonymous access.
+5. Access the Dashboard as an anonymous user.
+6. **Result**: The global variables are displayed normally, but the Tab/Row level variables created in step 3 are completely missing on the anonymous user interface, and filtering operations cannot be performed.
+
+### Root cause analysis
+
+This is a software defect (Bug). There are differences in loading Dashboard configuration and variable data between anonymous access sessions and authenticated sessions. During the process of loading Tab/Row level variables, the code may rely on the context information or permissions of the current user, resulting in anonymous users being unable to obtain the definitions of these variables and thus not rendering them in the front-end interface. This issue is being tracked via [GitHub Issue #123495](https://github.com/grafana/grafana/issues/123495).
+
+### Avoidance plans and precautions
+
+Until an official fix is released, the following workarounds can be taken:
+1. **Avoid use in key shared Dashboards**: For Dashboards that need to be displayed to anonymous users, do not use the new variable function on their Tab or Row for the time being.
+2. **Change to use global variables**: Define relevant variables in the global scope of Dashboard. This is a traditional and stable method that can work normally under anonymous access.
+3. **Monitor official updates**: Pay close attention to the official patch version released by Grafana (such as subsequent versions of 13.0.x) to obtain official fixes.
+4. **Test environment verification**: Before planning to use this new feature, be sure to simulate anonymous access in a test environment for complete verification.
+
+## SRE Key Points
+
+### Relationship with reliability and observability
+
+This issue is directly related to the **reliability** of Grafana Dashboard as a key interaction interface of the observability platform. If a function fails in the scenario of some users (anonymous users), it violates the principle of functional consistency and may lead to incomplete or incorrect information display, thus affecting the efficiency of problem solving and decision-making. SREs need to factor in risk considerations for such known flaws in third-party components, especially when building monitoring portals intended for a broad audience.
+
+### Best practices and common anti-patterns
+
+- **Best Practice**:
+    - **Feature Enablement Strategy**: New features enabled through the Feature Toggle should be fully evaluated for compatibility (especially compatibility with all access modes) in a non-critical, internal test environment, and then gradually promoted to the production environment.
+    - **Shared Dashboard Management**: Establish a clear shared Dashboard management list, label and regularly review the variable types and access modes used.
+    - **Failure Plan**: When relying on a shared Dashboard, there should be a backup plan (such as providing another Dashboard link using stable variables) to prevent known flaws from affecting the user experience.
+
+- **Common anti-patterns**:
+    - **Blindly enable experimental features**: Enable experimental features that have not been fully verified directly on the Dashboard for production or external users.
+    - **Ignore access pattern testing**: Only test access paths for primary roles (such as SRE, developers), ignoring tests for anonymous or specific role users.
+
+### Related indicators (SLI/SLO/SLA)
+
+While this issue itself does not directly result in technical SLI, it affects the availability and functional completeness of the monitoring system itself. Relevant indicators can be formulated from the following perspectives:
+- **Function availability**: For key shared Dashboards, the availability of its core filtering variables under different access roles (for example, all necessary variables can be loaded under anonymous users).
+- **User Feedback**: Number of complaints or feedback from anonymous users about Dashboard not being fully functional.
+- **Fix Timeline**: The mean time from confirmation of defect impact scope to deployment of fixed version (MTTR).
+
+It is recommended to consider "availability of shared Dashboard's core functionality (including anonymous access scenarios)" as a metric when defining the SLO for the monitoring platform itself.

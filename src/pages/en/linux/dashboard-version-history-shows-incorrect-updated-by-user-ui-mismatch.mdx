@@ -1,0 +1,68 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Dashboard Version History shows incorrect 'Updated by' user (UI mismatch"
+category: "前端与Observability"
+confidence: medium
+---
+
+# Dashboard Version History shows incorrect
+
+## Overview
+
+Dashboard version history is a key auditing and backtracking feature in Grafana. It records the person responsible for each change, when and what was changed. An accurate and trusted version history is critical for troubleshooting, change tracking, and accountability. This document analyzes a specific flaw: **The "updated by" information in the dashboard version history interface does not match the `createdBy` field returned by the backend API**. This problem is an error at the front-end rendering level, which will lead to inaccurate audit information and may mislead SRE in change traceability.
+
+## Core concepts
+
+- **Dashboard version control**: Grafana provides version management functions for dashboards. Each save will generate a new version record containing metadata (such as version number, creation time, creator, message).
+- **UI and API data consistency**: The ideal architecture is that the front-end (UI) renders completely based on the real data provided by the back-end (API). When there is a discrepancy between the two, it usually means there is an error in front-end state management, data caching, or rendering logic.
+- **User information parsing**: In the system, users are usually represented by unique identifiers (such as `userId`). This identifier needs to be parsed into user-friendly information (such as a display name or email address) when displayed in the UI. The core of this flaw lies in an error in this parsing process.
+
+## Practice
+
+### Problem recurrence
+
+Based on the reported defect, we can verify it in Grafana by following these steps:
+
+1. **Get API real data**: First use the Grafana API to query the dashboard version list and obtain the accurate value of the `createdBy` field.
+    ```bash
+    curl -s 'https://<grafana-instance>/api/dashboards/uid/<dashboard-uid>/versions?limit=15' \
+      -H "Cookie: grafana_session=<your-session>" \
+      | jq '.[] | {version, created, createdBy, message}'
+    ```
+    In the JSON data returned by this command, the `createdBy` field should correspond to the correct user ID.
+
+2. **Compare UI display**: In the Grafana UI, navigate to **Dashboard → Settings → Version History**. Compare the name displayed in the "Updated By" column of the interface with the `createdBy` returned by the API in the previous step. In the reported defect case, multiple versions of `createdBy` pointed to different users in the API, but were uniformly displayed as the same wrong user in the UI.
+
+### Possible cause analysis
+
+The flaw was confirmed to be a **frontend bug** and the backend API data was consistent and correct. Possible reasons include:
+
+1. **Cache or key-value mapping error**: After requesting the version list, the front end may use the wrong cache key when caching user information or mapping `userId` to `displayName` (for example, using the dashboard UID instead of the user ID for key-value association), resulting in information from different users being incorrectly pointed to the same cache entry.
+2. **Front-end state reuse pollution**: After performing certain operations (such as "reverting" to a certain version), the front-end state is not reset or updated correctly, resulting in the reuse of state data left over from the previous operation and belonging to the wrong user when rendering version history.
+3. **Asynchronous rendering timing issue**: Version list data and user information may be loaded asynchronously. When user information has not been fully loaded or loading errors occur, the UI may be rendered using default values ​​or values ​​from a previous version.
+
+### Solutions and avoidance
+
+As a user, you can obtain accurate information in the following ways before the official fix is released:
+
+- **Rely on API for auditing**: For scenarios that require precise auditing (such as compliance inspections, post-event analysis), you should directly call the API to obtain version history data instead of relying entirely on UI display.
+- **Clear browser cache**: Although it may not work, you can try clearing the Grafana-related browser cache to exclude the impact of local storage.
+- **Follow official updates**: Monitor Grafana's GitHub repository or release notes to wait for the release of a fixed version of this issue.
+
+## SRE Key Points
+
+### Association with reliability
+- **Observability and Trust**: Dashboard version history is an important component of system auditability. When the audit logs themselves appear inaccurate, it can seriously damage the operations team's trust in the feature, which in turn affects the efficiency of investigating change history.
+- **Incident response impact**: In incident investigation (such as "Who modified this dashboard that caused the failure when?"), inaccurate UI information may lead SREs to investigate in the wrong direction, delaying fault location.
+
+### Best Practices and Anti-Patterns
+- **Best Practice**: Use API as the Single Source of Truth for data. Any presentation of key data should be subject to validation API return values. When building automated processes or scripts, always use the API rather than the UI for data collection.
+- **Common anti-pattern**: Making important operational decisions or statements based solely on the information displayed by the UI. This anti-pattern can lead to errors when there is a bug in the data presentation layer.
+
+### Related indicators and improvements
+- **Data Consistency Check**: Consider adding sampling checks on the consistency of key API data and UI rendering results in the monitoring system, although the implementation cost is higher.
+- **Enhanced front-end state management**: For complex front-end applications like Grafana, ensure that state (such as user context, cache) is correctly isolated and cleaned during component lifecycle and route navigation to avoid state leakage.
+- **Improve the robustness of audit logs**: In addition to version history, all user-facing audits and log displays should undergo similar front-end and back-end consistency verification to ensure their reliability.
+
+This flaw once again emphasizes that in SRE practice, it is equally important to maintain the reliability of the tool chain itself. An observability platform that can accurately reflect system status is a solid foundation for ensuring business reliability.

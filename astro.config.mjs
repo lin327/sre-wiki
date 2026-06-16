@@ -12,6 +12,10 @@ import wikilinks from './src/lib/remark-wikilinks.mjs';
 export default defineConfig({
   site: 'https://wiki.tentative.me',
 
+  server: {
+    host: '0.0.0.0',
+  },
+
   i18n: {
     defaultLocale: "zh",
     locales: ["zh", "en"],

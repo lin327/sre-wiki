@@ -1,0 +1,63 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Prometheus 2.0 Alpha.3 with New Rule Format"
+category: "Monitoring与警报"
+confidence: medium
+---
+
+# Prometheus 2.0 Alpha.3 with New Rule Format
+
+## Overview
+Prometheus 2.0 introduces several major changes designed to improve system maintainability, reliability, and functionality. For the Site Reliability Engineering (SRE) team, understanding these changes is critical because they directly impact how monitoring configurations are deployed, how efficiently alerting rules are managed, and the reliability of the monitoring system itself. This article will focus on analyzing two core breaking changes introduced in the 2.0 Alpha.3 version: the unification of the command line flag format and the new YAML-based logging rules and alerting rule formats.
+
+## Core concepts
+### Command line flag standardization
+Prometheus 2.0 abandons its historic single dash (`-`) flag prefix in favor of the more general and standard double dash (`--`) prefix. This change is intended to reduce customary conflicts with other command line tools and improve configuration consistency. At the same time, several deprecated or consolidated configuration items (such as `web.telemetry-path`, all `storage.remote.*` and `storage.local.*` flags) have been completely removed, simplifying the final command line interface.
+
+### Rule system based on grouping and YAML
+This is an architectural rewrite of the Prometheus rules engine to address long-standing design issues.
+- **Issue**: In version 1.x, all rules are evaluated at the same interval and all execute concurrently. This leads to two major flaws: 1) It is impossible to set flexible execution frequencies for rules with different calculation loads; 2) Concurrent execution may lead to out-of-order dependencies between rules (for example, an alarm depends on the latest result of another recording rule, but both are calculated at the same time, and the alarm may use outdated data), as well as resource spikes at the evaluation time point.
+- **Solution**: Introduce the concept of **Rule Groups**. Each rule group can be configured with an independent `interval`, and the rules in the group are executed serially in order. This ensures that rules with dependencies (for example, a logging rule and an alerting rule based on that result) can be properly organized within the same group and reliably evaluated in the order of declaration. The rule definition format has also been moved from the Prometheus proprietary DSL to the common YAML format, making it easier to version, build, and integrate with Infrastructure as Code (IaC) practices.
+
+## Practice
+### Migrate command line flags
+When deploying Prometheus 2.0, all startup scripts and configuration management tools (such as Ansible, Systemd unit files) must be updated. The main change is the addition of double dashes to all logos. For example, update `-config.file` to `--config.file` and `-web.enable-lifecycle` to `--web.enable-lifecycle`. At the same time, the obsolete signs mentioned above should be removed.
+
+### Migration rules file
+Prometheus provides the `promtool` command line tool to automate the migration of old format rules.
+1. **Execute migration command**: Use the following command to convert the old rules file to the new YAML format.
+    ```bash
+    promtool update rules <old-rule-file-1> <old-rule-file-2> ...
+    ```
+2. **Processing output**: The converted files will be automatically saved with `.yml` as the suffix (for example, `rules.yml` becomes `rules.yml.yml`), you need to rename and integrate them.
+3. **Update Prometheus configuration**: In the `rule_files` section of the main configuration file `prometheus.yml`, point to the new `.yml` rule file.
+4. **Validation and Grouping**: Review the generated YAML file, set the `name` and `interval` of `groups` appropriately, and put logically related rules into the same group.
+
+**Example comparison of old and new rule formats**:
+```yaml
+# New format (prometheus.yml)
+rule_files:
+  - 'new-rules.yml'
+
+# Contents of new rules file (new-rules.yml)
+groups:
+- name: network_rules
+  interval: 30s
+  rules:
+  - record: instance:network_bytes:rate1m
+    expr: sum by(instance) (rate(network_bytes_total[1m]))
+  - alert: HighNetworkTraffic
+    expr: instance:network_bytes:rate1m > 10e6
+    for: 5m
+    labels:
+      severity: critical
+```
+In this example, the logging rule `instance:network_bytes:rate1m` and the alarm rule `HighNetworkTraffic` are in the same group, ensuring that the latest logging rule results within the same evaluation cycle are used during alarm evaluation.
+
+## SRE Key Points
+- **Relationship with Reliability**: The new rule grouping mechanism directly improves the reliability of the monitoring system itself. By ensuring that dependency rules are executed sequentially, false alarms or missed alarms caused by data competition are avoided. Group isolation also limits the range of load spikes within a single evaluation cycle, making the performance of Prometheus instances more stable and predictable.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Logically group rules by business function or monitoring domain (e.g. `database_rules`, `http_rules`). Set longer `interval` for computationally intensive rule groups. Always place interdependent rules in the same group and maintain the correct declaration order.
+    - **Common anti-pattern**: Putting all rules into one huge group loses the advantages of group isolation and flexible configuration. Ignoring the order of dependencies between rules leads to inaccurate alarm evaluation results.
+- **Related Metrics (SLI/SLO/SLA)**: Changes to the rules engine do not directly define SLI, but it is a key execution layer that implements SLI calculations (via logging rules) and SLO compliance alerts (via alert rules). Reliable and predictable rule execution is the basis for ensuring that alert strategies (SLO-based alerting) based on these indicators are implemented correctly. A rules engine that is poorly configured or evaluates unreliably directly undermines the reliability of monitoring promises.

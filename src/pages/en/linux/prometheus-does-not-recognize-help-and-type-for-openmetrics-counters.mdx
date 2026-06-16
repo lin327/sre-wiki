@@ -1,0 +1,92 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "“Prometheus does not recognize HELP and TYPE for OpenMetrics counters”"
+category: "Observability"
+confidence: medium
+---
+
+# “Prometheus does not recognize HELP and TYPE for OpenMetrics counters”
+
+## Overview
+
+When building a unified observability system, the compatibility of the Prometheus ecosystem with the OpenMetrics standard is a focus of the SRE team. This page documents and analyzes a specific compatibility issue: when Prometheus scrapes counter type metrics from an endpoint that adheres to the OpenMetrics specification, metadata (`HELP` and `TYPE`) may be incorrectly associated, resulting in incomplete metric information being seen in the Prometheus web UI and queries. Correctly understanding such format parsing issues is crucial to ensuring the integrity and accuracy of monitoring data, which directly affects SLO calculations and alerts based on these data.
+
+## Core concepts
+
+At the heart of this issue lies a key difference in metadata placement rules between OpenMetrics and Prometheus text formats.
+
+1. **OpenMetrics specification**: OpenMetrics is an indicator exposure standard independent of Prometheus, and its specification is more strict. It requires that all metadata (such as `HELP` and `TYPE`) must appear **before** the corresponding **basic indicator line** (such as `my_counter_total`). Furthermore, the indicator name in the `TYPE` line must exactly match the name of the base indicator line (e.g. `# TYPE my_counter counter` for `my_counter_total 1`).
+2. **Prometheus parser assumptions**: Some versions of the Prometheus parser may have a legacy "heuristic" logic when processing OpenMetrics endpoints. It may incorrectly assume that metadata is written for **summed metric names** (such as `direct_notifications_total`), even though the content-type header `Content-Type: application/openmetrics-text` explicitly indicates that OpenMetrics parsing rules should be used.
+3. **Problem Manifestation**: According to the reported issue, when the endpoint returns the following format:
+    ```
+    # HELP direct_notifications Number of direct notifications.
+    # TYPE direct_notifications counter
+    direct_notifications_total 1
+    ```
+    The Prometheus parser failed to correctly associate the metadata of `direct_notifications` to the `direct_notifications_total` metric, causing users to see the bare metric `direct_notifications_total` lacking description and type when querying.
+
+## Practice
+
+This problem can be investigated and solved from two dimensions: the provider (Exporter/Service) and the crawler (Prometheus Server).
+
+### Provide end solutions (recommended)
+
+This is the most thorough solution, designed to ensure that the output data format fully complies with the OpenMetrics specification and eliminates ambiguity.
+
+1. **Check and correct indicator metadata**: Ensure that all `HELP` and `TYPE` declared indicator names are strictly consistent with the following basic indicator row names (including suffixes such as `_total`).
+    ```text
+    # Correct format
+    # HELP my_app_requests_total Total number of processed requests.
+    # TYPE my_app_requests_total counter
+    my_app_requests_total 1234
+
+    # Wrong format in original issue (metadata name is missing _total)
+    # HELP direct_notifications ...
+    # TYPE direct_notifications counter
+    direct_notifications_total 1
+    ```
+2. **Use the official client library and verify**: Use the official Prometheus client library (such as `client_python`, `client_java`, `client_rust`) to generate indicators, which usually ensures that the format is correct. The endpoint can be scraped via `curl` and manually inspected against OpenMetrics specifications.
+
+### Crawl-side solutions (temporary or compatibility measures)
+
+If you cannot modify the provider immediately, you can try adjusting the crawling configuration or upgrading the version on the Prometheus side.
+
+1. **Upgrade Prometheus version**: According to the issue discussion, the relevant parsing logic may have been corrected in subsequent versions. Upgrading to the latest stable version is recommended, e.g. from `2.51.2` to a version that contains fixes.
+2. **Explicitly specify the protocol version (not recommended, but testable)**: In rare cases, you can try to force the use of Prometheus text format parsing in the crawl configuration, but this will lose the exclusive functionality of OpenMetrics and may introduce other compatibility issues. **This is not a long term solution**.
+    ```yaml
+    scrape_configs:
+      - job_name: "notifications"
+        scrape_interval: 30s
+        # Override the default Accept header and force the use of Prometheus format
+        extra_headers:
+          Accept: 'text/plain; version=0.0.4'
+        static_configs:
+          - targets: ['192.168.10.2:9001']
+    ```
+
+## SRE Key Points
+
+### Relevance to Reliability Engineering
+- **Inaccurate SLO calculation**: If the `HELP` metadata of a key counter is missing, engineers may misunderstand the meaning of the indicator; if `TYPE` is missing, Prometheus may incorrectly identify it as a Gauge instead of a Counter, resulting in a completely incorrect calculation result based on rate (`rate()`), directly affecting the Error Budget consumption calculation of SLO.
+- **Change Management Risk**: Automated deployment or rollback processes that rely on monitoring data may cause misjudgments due to inconsistent indicator metadata, introducing reliability risks.
+- **Metadata-driven workflow**: In modern SRE practice, `HELP` text is often used to generate monitoring dashboard documents, alarm descriptions or automatically generate runbooks. Metadata loss disrupts these workflows.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    - **Endpoint verification**: Before deploying a new monitoring endpoint, use `curl` or `promtool` to format its output.
+    - **Protocol Statement**: Always set the `Content-Type` header correctly on the provider side (such as `application/openmetrics-text; version=1.0.0`), which is the key basis for Prometheus to select the correct parser.
+    - **Version Alignment**: Keep the versions of Prometheus Server, Alertmanager and main Exporter relatively new and compatible, and pay attention to and apply patches on parsing logic in a timely manner.
+    - **Monitor yourself**: Set alarms for Prometheus's scrape_sample_discovery_mismatch_total and other internal crawling-related indicators to proactively detect crawling or parsing anomalies.
+- **Common anti-patterns**:
+    - **Manual splicing indicator format**: Avoid manually writing metrics text, which is easy to make mistakes in the correspondence between metadata and indicator names.
+    - **Ignore content type**: Think that Prometheus can always "intelligently" parse all formats, ignoring the importance of the `Content-Type` header.
+    - **Ignore toolchain verification**: Do not use tools such as `promtool check metrics` to verify the output until the problem appears in production monitoring.
+
+### Related indicators (SLI/SLO/SLA)
+This issue directly affects the accuracy of counter-based SLI. Correct metadata helps:
+- **Understanding what SLI means**: `HELP` provides the business context of SLI.
+- **Accurate SLI calculation**: The correct `TYPE` ensures that functions such as `rate()` and `increase()` act on the correct incremental model, which is the basis for calculating the SLO achievement rate.
+- **Associated Error Budget**: Error Budget consumption rate based on incorrect calculations, which may become meaningless due to metric parsing errors.
+
+**Related page links**: [[prometheus-scrape]], [[slo-error-budget]]

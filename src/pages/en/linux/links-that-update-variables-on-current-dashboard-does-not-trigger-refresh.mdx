@@ -1,0 +1,46 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Links that update variables on current dashboard does not trigger refresh"
+category: "ObservabilityTools"
+confidence: medium
+---
+
+# Links that update variables on current dashboard does not trigger refresh
+
+## Overview
+
+In Grafana's observability practice, the dashboard is the core interactive interface. Users often use [[grafana-data-links]] to navigate directly from a chart (Panel) to other dashboards or different views of the same dashboard to achieve context switching and in-depth drill-down of data. A common scenario is to click on a panel to modify the [[grafana-variables]] of the current dashboard (such as time range, server instance) through data links, so that the data of the entire dashboard changes accordingly. However, according to this bug report, there is a critical regression flaw in this feature: after updating a variable through a data link, other panels on the dashboard did not trigger a data refresh and still showed data under the old variable. This disrupts the fluidity of data exploration and forces users to perform additional manual actions (such as clicking the "refresh" button or reloading the page), thereby impacting the efficiency and user experience of the observability workflow.
+
+## Core concepts
+
+- **Data Links**: Configurable hyperlinks on Grafana panels (such as charts, tables). It can not only jump to external URLs, but also use the current panel's data context (such as tag values, time range) to build dynamic URLs, which is often used to pass parameters within the same Grafana instance.
+- **Dashboard Variables**: Defined at the dashboard level, drop-down menus or input boxes that allow users to dynamically filter and aggregate data. The value of the variable affects the data displayed for all or specific panels as part of the data source query.
+- **Observability data flow interruption**: In this context, it means that the user changes the query context (variable value) through interaction (clicking on the data link), but the system's response (panel data update) fails to occur automatically, causing the data the user sees to be inconsistent with his intention, interrupting the analysis process.
+- **Regression Defect (Regression)**: Refers to a feature that once worked normally malfunctioning again in a new version of the software. This report clearly states that the issue is a regression of an earlier issue [#25115](https://github.com/grafana/grafana/issues/25115), indicating that the fix was incomplete or that related code changes introduced new issues.
+
+## Practice
+
+In response to this known issue, the following are temporary measures and follow-up concerns that affected users can take:
+
+1. **Temporary Solution**:
+    - **Manual Refresh**: Immediately after clicking a data link to update a variable, click the Refresh button at the top of the Grafana interface (or use the keyboard shortcut `Ctrl/Cmd + R`, but note this may reset the page state) to force all panels to requery the data source based on the new variables.
+    - **Reload Page**: If a manual refresh does not completely resolve the issue, you can try reloading the entire browser page. Since the variable values ​​have been updated in the URL, after reloading the dashboard will initialize with the new variables and load the correct data.
+    - **Check panel link configuration**: Make sure the data link configuration is correct, specifically that the parameter names in the target URL exactly match the dashboard variable names, and that the `Include` option is set to the correct scope (such as "all variables" or specific variables).
+
+2. **Problem Reproduction and Verification**:
+    - Create a simple test dashboard containing a static values panel and a query panel controlled by variables.
+    - Configure a data link for the static values ​​panel with the target URL set to the current dashboard and add the parameter `var-myVariable=newValue`.
+    - Click the link and watch the query panel controlled by `myVariable` update automatically. If it has not been updated, confirm that this issue exists in the version of Grafana you are using (11.5.2 in the report).
+
+3. **Follow official fix**:
+    - Continue to follow the progress of the original GitHub issue [#101453](https://github.com/grafana/grafana/issues/101453). This issue has been marked as a defect and will be considered by the team along with the original issue [#25115](https://github.com/grafana/grafana/issues/25115).
+    - After the official release of a version containing related fixes, it is recommended to plan an upgrade to completely solve this problem.
+
+## SRE Key Points
+
+- **Relationship with Reliability and Observability**: This issue directly affects **User Experience** and **Analysis Efficiency**, and is a **Usability** issue. From an SRE perspective, a smooth and responsive observability tool interface is critical to quickly locating faults. Failures in data link capabilities can slow down incident response and root cause analysis.
+- **Best Practices and Common Anti-Patterns**:
+    - **Anti-Pattern**: Over-reliance on interactive data links to deliver context in critical troubleshooting dashboards that may be affected by this bug.
+    - **Best Practice**: For critical navigation flows, it is recommended to also provide an explicit "refresh" button prompt, or consider using Grafana's **"dashboard jump"** feature (passing variables through links), which sometimes behaves more predictably. Additionally, document this known limitation in internal team documentation and describe a workaround.
+- **Related Metrics (SLI/SLO/SLA)**: This issue mainly affects **User Satisfaction** or **Operational Efficiency Metrics** of internal tools, rather than directly affecting the SLI of production services (e.g. latency, error rate). However, if the dashboard is a critical part of the failure response process, its interaction delay may indirectly affect the **Mean Time to Recovery (MTTR)** SLO of this type. The impact can be quantified through user feedback or log analysis (if possible).

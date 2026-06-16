@@ -19,45 +19,33 @@ const variantClass: Record<string, string> = {
 </div>
 
 <style>
-  /* ============================================
-     Callout — GitHub Design Language
-     ============================================ */
-
   .callout {
     position: relative;
     margin-block: var(--space-4);
     padding: var(--space-3) var(--space-4);
-    border-inline-start: 3px solid #0969da;
+    border-inline-start: 3px solid var(--color-primary);
     border-radius: 0 6px 6px 0;
-    background-color: #f6f8fa;
+    background-color: var(--color-surface-2);
     font-size: 0.875rem;
     line-height: 1.65;
-    color: #656d76;
+    color: var(--color-muted);
   }
 
-  /* ============================================
-     Variants
-     ============================================ */
-
   .callout--default {
-    border-inline-start-color: #0969da;
+    border-inline-start-color: var(--color-primary);
   }
 
   .callout--success {
-    border-inline-start-color: #1a7f37;
+    border-inline-start-color: var(--color-success);
   }
 
   .callout--warning {
-    border-inline-start-color: #bf8700;
+    border-inline-start-color: var(--color-warning);
   }
 
   .callout--error {
-    border-inline-start-color: #d1242f;
+    border-inline-start-color: var(--color-error);
   }
-
-  /* ============================================
-     Content
-     ============================================ */
 
   .callout :global(p) {
     margin: 0;
@@ -69,8 +57,8 @@ const variantClass: Record<string, string> = {
 
   .callout :global(code) {
     font-size: 0.85em;
-    background-color: #eff1f3;
-    color: #24292f;
+    background-color: var(--color-code-bg);
+    color: var(--color-code-text);
     padding: 0.12em 0.3em;
     border-radius: 6px;
   }

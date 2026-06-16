@@ -1,0 +1,78 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "“Table panel requires unsafe-eval CSP” GitHub Issue"
+category: "CSP与SecurityConfiguration"
+confidence: medium
+---
+
+# “Table panel requires unsafe-eval CSP” GitHub Issue
+
+## 概述
+
+在 Grafana 的运维实践中，升级过程往往伴随着潜在的兼容性风险。一个典型的例子是 Grafana Table 面板在升级到 12.3.1 版本后，因 **Content Security Policy (CSP)** 策略配置不当而导致面板渲染失败，报错 `EvalError: call to Function() blocked by CSP`。此问题直接影响监控看板的可观测性，是 SRE 在维护 Grafana 可靠性时可能遇到的配置冲突案例。它凸显了在加强前端安全（如实施严格的 CSP）与保障应用功能兼容性之间需要进行的细致权衡与测试。
+
+## 核心概念
+
+### Content Security Policy (CSP)
+CSP 是一种通过 HTTP 头部或 HTML `<meta>` 标签定义的安全层，旨在防止跨站脚本 (XSS) 和数据注入攻击。它明确指定了浏览器可以加载和执行各类资源（如脚本、样式、图片）的来源。一个严格的 CSP 策略能大幅提升前端安全性。
+
+### `unsafe-eval` 与动态代码执行
+在 CSP 中，`script-src` 指令控制 JavaScript 的执行来源。`unsafe-eval` 是一个危险的 CSP 关键字，它允许使用 `eval()`、`new Function()` 等方法执行从字符串动态构建的代码。出于安全考虑，最佳实践是 **避免使用 `unsafe-eval`**，并采用更安全的编码模式（如使用 webpack 等工具打包静态代码）。
+
+### 问题根源
+Grafana 12.3.1 版本中的 Table 面板插件（`table`）内部实现可能依赖了 `new Function()` 或类似的动态代码执行方式。当 Grafana 实例配置了严格的 CSP 策略（即未包含 `unsafe-eval`）时，浏览器会阻止此类代码的执行，导致面板抛出 `EvalError` 并渲染失败。这标志着 Grafana 内部代码与当前主流的安全加固配置之间出现了兼容性断裂。
+
+## 实践
+
+### 问题诊断
+当监控看板的 Table 面板出现 `EvalError` 且无法显示数据时，应首先检查 Grafana 的 CSP 配置。典型症状如下：
+- 面板显示错误信息：`An unexpected error happened EvalError: call to Function() blocked by CSP`。
+- 在浏览器开发者工具的控制台(Console)中，可以看到与 CSP 违规相关的错误日志。
+- 降级 Grafana 到之前稳定的版本（如 12.0.x），该问题消失，进一步证实是版本升级引入的兼容性问题。
+
+### 解决方案
+**方案一：调整 CSP 策略（临时缓解）**
+修改 Grafana 的 `grafana.ini` 配置文件，在 `[security]` 部分的 `content_security_policy_template` 值中添加 `'unsafe-eval'`。
+
+示例配置（基于原始问题中的配置进行修改）：
+```ini
+[security]
+content_security_policy_template = """base-uri 'self';connect-src 'self' grafana.com ws://$ROOT_PATH wss://$ROOT_PATH;default-src 'self';form-action 'self';img-src * data:;media-src 'none';object-src 'none';require-trusted-types-for 'script';script-src 'self' 'unsafe-inline' 'unsafe-eval' 'strict-dynamic' $NONCE https:;style-src 'self' 'unsafe-inline' blob:"""
+```
+修改后需重启 Grafana 服务。**注意**：此操作降低了 CSP 的安全强度，允许动态代码执行，应被视为临时解决方案。在修改前，需评估其带来的安全风险。
+
+**方案二：等待或验证官方修复（推荐）**
+1.  **关注上游 Issue**：持续跟踪 [GitHub Issue #117307](https://github.com/grafana/grafana/issues/117307) 的进展，了解 Grafana 官方是否在后续版本中修复了 Table 面板对 CSP 的兼容性问题（例如，重构代码以避免使用 `unsafe-eval`）。
+2.  **在预发环境测试**：在 Grafana 发布新版本后，先在测试或预发环境中部署，并应用你预期的严格 CSP 策略，验证 Table 面板是否正常工作。
+3.  **升级**：确认新版本兼容后，再在生产环境执行升级。
+
+### 验证与测试
+无论是采用方案一还是等待方案二，实施变更后都必须进行全面测试：
+- 创建或使用包含 Table 面板的测试看板。
+- 刷新面板，确认数据正常加载且无 `EvalError` 错误。
+- 检查浏览器控制台，确保没有其他 CSP 违规警告。
+
+## SRE 要点
+
+### 与可靠性、可观测性、事件响应的关联
+- **可靠性**：CSP 配置错误导致关键监控面板失效，直接降低了系统的可观测性，是 **服务功能降级** 的一种形式。SRE 需确保监控工具本身（如 Grafana）的可靠性，其 UI 功能的可用性是整体可靠性的一部分。
+- **可观测性**：Table 面板常用于展示详细的指标表格，其失效使得运维人员无法快速获取关键状态信息，影响故障排查和日常运维效率。
+- **事件响应**：此类问题通常在升级后批量出现，可能触发多个“监控面板不可用”的告警。SRE 需快速定位根本原因（CSP 策略与版本不兼容），并选择正确的修复路径（临时放宽策略或等待升级），以减少对运维工作流的影响。
+
+### 最佳实践与常见反模式
+**最佳实践：**
+1.  **变更前测试**：任何 Grafana 版本升级，都应在预发环境充分测试所有核心看板和面板类型，尤其是涉及自定义或复杂可视化的部分。
+2.  **版本化安全配置**：将 Grafana 的 CSP 策略配置视为关键基础设施配置的一部分，进行版本管理。记录下为保持功能兼容性而做的任何策略放宽。
+3.  **分层安全策略**：理解 CSP 仅是纵深防御的一环。应结合其他安全措施（如网络隔离、输入验证、定期依赖扫描），而不是过度依赖单一策略。
+4.  **监控 Grafana 自身状态**：为 Grafana 服务本身设置 SLI（如 API 可用性、UI 关键功能可用性），以便主动发现此类问题。
+
+**常见反模式：**
+- **“一刀切”的安全策略**：直接套用极度严格的 CSP 模板，而不结合具体应用（如 Grafana）的实际技术栈进行调整和测试。
+- **升级后未验证**：进行 Grafana 大版本升级后，仅测试核心数据流，忽略了前端 UI 清单的功能验证。
+- **长期使用临时缓解措施**：为快速恢复功能，在生产环境长期使用包含 `unsafe-eval` 的 CSP 策略，而忘记了追踪上游修复。
+
+### 相关指标 (SLI/SLO)
+- **监控面板可用率**：可将关键看板（尤其是包含 Table 面板的看板）的加载成功率作为一个 SLI。例如，通过前端监控（如 Grafana Frontend Observability）或定期合成监控，检测特定面板的数据加载是否成功。
+- **Grafana 服务健康度**：监控 Grafana 进程的健康检查端点（`/api/health`）的可用性，作为基础 SLI。
+- **错误预算消耗**：此问题本身可能导致一次服务功能中断事件，应计入 Grafana 服务可靠性所关联的错误预算消耗中。

@@ -1,0 +1,60 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Support periodic DNS re-resolution for FQDN targets discovered via Consul"
+category: "Service Discovery与动态Configuration"
+confidence: medium
+---
+
+# Support periodic DNS re-resolution for FQDN targets discovered via Consul
+
+## Overview
+
+In dynamic and cloud-native environments, the IP addresses of service instances often change due to scheduling, migration, or scaling. When using fully qualified domain names (FQDNs) as unique stable identifiers in service discovery (such as in multi-tenant systems where backend services are accessed via domain names), the monitoring system needs to be able to sense changes to these DNS records. This article discusses a critical reliability issue caused by the lack of a periodic DNS re-resolution mechanism for Prometheus when obtaining FQDN targets through Consul service discovery, and its impact on SRE operations.
+
+## Core concepts
+
+- **FQDN (Fully Qualified Domain Name)**: Fully qualified domain name, often used as a logical and stable identification of services in distributed systems, and its resolved IP address can change dynamically.
+- **Consul Service Discovery (Consul SD)**: A service discovery mechanism of Prometheus that obtains a dynamically changing list of service instances through Consul's health check API. The discovery target can be an IP address or a domain name.
+- **DNS Re-resolution**: means that the monitoring system periodically performs DNS queries on the domain names of discovered targets to obtain their current corresponding IP addresses, instead of only resolving them once upon initial discovery.
+
+## Practice
+
+### Problem performance
+When Prometheus discovers a target FQDN through Consul SD, it performs a DNS resolution upon discovery and uses the resulting IP address for subsequent scraping. **The problem is that if the IP address corresponding to the FQDN changes subsequently (for example, due to Pod rescheduling), Prometheus will not actively re-parse the FQDN**. This causes Prometheus to try to crawl an old IP address that no longer exists, and the target status will permanently change to `DOWN`, even though the service's new IP address is healthy and reachable.
+
+### Root cause
+The current behavior of Prometheus ties DNS resolution to discovery events and process lifecycle, rather than ongoing scraping activity. The specific performance is:
+1. DNS resolution only occurs when the target is first discovered.
+2. DNS resolution only reoccurs when the target is discovered again after being removed due to a Consul health check failure (usually with a delay of ~6 minutes).
+3. DNS resolution only occurs when the Prometheus process is restarted.
+This limitation makes it difficult for Prometheus to run reliably in environments where IP addresses are ephemeral and FQDNs are unique stable identifiers.
+
+### Current circumvention methods
+Currently, in order to restore monitoring of changed IP targets, users are forced to adopt the following temporary solutions, none of which are sustainable:
+- **MANUAL INTERVENTION**: Force Prometheus to rediscover the target after the target `DOWN` (e.g. briefly log out and then register the Consul service).
+- **Restart Service**: Restart the Prometheus process to force it to re-resolve all DNS names. This introduces a disruption in monitoring data.
+- **Use external scripts**: Regularly monitor target IP changes and force Prometheus to reload the configuration or refresh the target list through the management API.
+
+## SRE Key Points
+
+### Impact on reliability
+- **Reduced monitoring reliability**: The core monitoring data has blind spots and cannot reflect the true health status of the service.
+- **Inaccurate alerts**: Failed crawls based on wrong IPs can trigger false alerts (`UP` -&gt; `DOWN`), consuming the SRE's attention and incident response resources.
+- **increased incident response burden**: manual intervention is required to resolve "false faults" caused by defects in the monitoring system itself, which prolongs the discovery and repair time of real faults (MTTD/MTTR).
+
+### Association with observability
+Observability relies on data completeness and accuracy. Failure of DNS resolution will cause the indicator time series (Time Series) to be interrupted or permanently terminated (Stale Series), destroying the continuity of data and making trend analysis, capacity planning, and troubleshooting unreliable. Ensuring that the monitoring system itself is adaptable to the dynamic environment is the basis for building reliable observability.
+
+### SLO/SLI association
+- **SLI**: SLI that can be used to define the reliability of the monitoring system, such as "the proportion of Prometheus successfully crawled targets" or "the proportion of false alarms caused by DNS problems".
+- **SLO**: SLOs can be set for the monitoring system itself, such as "99.9% target to remain `UP` throughout the service lifecycle (excluding planned maintenance windows)". The above issues will directly affect the achievement of this SLO.
+
+### Best Practices and Recommendations
+Until upstream Prometheus provides a native solution, the following strategy is recommended:
+1. **Architectural Considerations**: When designing your monitoring architecture, evaluate whether it is possible to use stable IP addresses (such as Kubernetes Service ClusterIP) instead of FQDNs as crawl targets, although this may be limited in multi-tenant scenarios.
+2. **Enhanced Observability**: Monitor Prometheus itself, specifically tracking target state changes and DNS resolution events to quickly detect this issue.
+3. **Implement Mitigation**: Consider deploying a lightweight sidecar or controller that monitors IP changes for FQDN targets in Consul and forces a refresh by calling Prometheus's `/-/reload` API or updating the file service discovery target.
+4. **Participate in the community**: Follow and participate in relevant community discussions (such as the above GitHub Issue) to promote the native implementation of this feature.
+
+This problem highlights that in dynamic infrastructure, the monitoring system itself must also have the dynamics and elasticity to match the system being monitored, which is a key consideration in SRE engineering practice. Related pages: [[prometheus]], [[consul]], [[service-discovery]].

@@ -1,0 +1,71 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Grafana Loki Issue"
+category: "Observability"
+confidence: medium
+---
+
+# Grafana Loki Issue
+
+## Overview
+
+In the log aggregation system [[Loki]], structured metadata provides important non-indexed contextual information for log lines, while Grafana's adhoc filters are designed to let users filter logs quickly and interactively via drop-down menus. However, the current implementation suffers from a critical flaw: **When the underlying Loki query does not include a parser, the adhoc filter added for the structured metadata field does not work as expected, resulting in empty query results**. This directly affects the efficiency and experience of users' real-time data exploration, and is a potential pitfall that needs to be avoided when building log-based [[SLI]].
+
+## Core concepts
+
+To understand this issue, the following key concepts need to be clarified:
+
+1. **Structured Metadata**: This is a field type in Loki that is different from the log tags and log content itself. It is usually used to store some fields that are useful for debugging and analysis but do not need to be in the index, such as `detected_level`, `trace_id`, etc. These fields cannot be used directly in stream selectors.
+2. **adhoc filter**: This is a convenient feature in Grafana UI that allows users to click the `+` or `-` button next to a field value in the query builder to quickly add the field and its value to the query as filter conditions.
+3. **Query construction mechanism**:
+    * **Correct path (when the query includes a parser)**: The adhoc filter will generate a `|~ "field=value"` or similar [[LogQL]] expression, which will be appended to the end of the pipeline as a **tag filter** to match in the parsed content.
+    * **Problem Path (when the query does not include a parser)**: The structured metadata field `field=value` is incorrectly added to the **stream selector** `{}`. Since the structured metadata is not part of the stream selector, the Loki engine will try to use it to match streams, but no streams have tags that contain this field, so the query must return empty results.
+
+## Practice
+
+### Problem recurrence
+
+1. Create a dashboard in Grafana and add a `Logs` panel.
+2. Configure a simple query with the data source as Loki, for example:
+    ```logql
+    {job=`my-app`}
+    ```
+    **Key Point**: This query **does not** contain any parsers (like `| json`, `| logfmt`, `| pattern`, etc.).
+3. Find a **structured metadata** field in the query results or tag browser, such as `detected_level`, with the value `info`.
+4. Click the `+` button next to the field value to add it as a filter.
+5. Observe the generated query: it becomes `{job=`my-app`, detected_level=`info`}`. This query will almost certainly return no data, since Loki does not have any streams with `detected_level` in their tags.
+
+### Solutions and avoidance methods
+
+Currently, this is a known product defect with no underlying client-side fix. Users and SREs need to adopt the following avoidance strategies:
+
+* **Best Practice**: When building dashboard queries for analysis and filtering, **always include a parser** capable of extracting structured metadata into tags. For example:
+    ```logql
+    {job=`my-app`} | json | detected_level=`info`
+    ```
+    This way, when the user uses the adhoc filter, the generated query will be:
+    ```logql
+    {job=`my-app`} | json | detected_level=`info`
+    ```
+    This will be correct and valid.
+
+* **Manual query building**: If a simple query without a parser is necessary, the user needs to abandon using the adhoc filter and instead manually add the `| detected_level=`info`` filter to the query's pipeline.
+
+* **Field visualization tips**: In the UI, users should pay attention to the type identification of fields. Typically, tag fields can be used in stream selectors, while log content fields and structured metadata fields need to be filtered through the pipeline.
+
+## SRE Key Points
+
+* **Association with reliability**:
+    * **Monitoring Blind Spot**: This problem may cause alert rules or dashboards that rely on adhoc filters to fail silently (returning empty results), masking real system problems, and affecting the correct calculation of **Error Budget**.
+    * **Troubleshooting Barrier**: During incident response (Incident Response), engineers rely on rapid log filtering to locate problems. This defect increases mean time to repair (MTTR) and reduces operational reliability.
+
+* **Best Practices and Anti-Patterns**:
+    * **Anti-Pattern**: Rely on simple Loki queries that are not processed by the parser and expect adhoc filters to work correctly for all fields (including structured metadata).
+    * **Best Practices**: 1) Clearly distinguish between **tags** (for stream selection) and **extractable content** (for pipeline filtering); 2) In user-facing query panels, provide predefined queries that include appropriate parsers; 3) Document this known limitation in internal team documentation.
+
+* **Relevant Metrics and SLO**:
+    * This issue does not directly result in SLI per se, but it may impact the effectiveness of log-based **SLO**, such as `HTTP 5xx error rates`, if engineers cannot effectively filter and analyze these error logs.
+    * When designing SLO monitoring, ensure that the query base is solid (i.e., queries that include the correct parser) to avoid monitoring failure due to tool flaws.
+
+[[Loki]]'s LogQL is a powerful tool, but properly understanding its query structure (stream selectors vs. pipeline operations) is key to avoiding problems like this. SREs should implement clear log query specifications as part of their observability practices.

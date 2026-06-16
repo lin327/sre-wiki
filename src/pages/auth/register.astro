@@ -84,6 +84,26 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     padding: 64px 16px;
   }
 
+  @media (max-width: 480px) {
+    .login-container {
+      padding: 32px 12px;
+    }
+    .login-card {
+      padding: 24px 16px;
+    }
+    .login-title {
+      font-size: 18px;
+    }
+    .login-input {
+      height: 44px;
+      font-size: 16px; /* prevents iOS zoom on focus */
+    }
+    .login-submit {
+      height: 44px;
+      font-size: 14px;
+    }
+  }
+
   .login-card {
     width: 100%;
     max-width: 380px;
@@ -136,9 +156,11 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     transition: border-color 100ms ease;
   }
 
-  .login-input:focus {
+  .login-input:focus-visible {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px oklch(0.480 0.170 250 / 0.12);
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   .login-submit {

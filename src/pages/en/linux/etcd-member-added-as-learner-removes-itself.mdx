@@ -1,0 +1,85 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "etcd member (added as learner) removes itself"
+category: "etcd-集群Management"
+confidence: high
+---
+
+# etcd member (added as learner) removes itself
+
+## Overview
+
+In the operation, maintenance and expansion of etcd cluster, using learner members is a safe practice. It allows new nodes to synchronize data without participating in the write quorum (Quorum), and then be promoted to formal voting members (voter) after synchronization is completed. However, a reported flaw indicates that under certain conditions, a newly added learner member will incorrectly execute the Raft configuration change logic after receiving the leader's snapshot, causing itself to be permanently removed from the cluster member list, thus forcing the etcd process to exit. This problem directly affects the reliable expansion process of the cluster. The SRE team needs to pay close attention to it when planning etcd node operations and adopt correct avoidance measures.
+
+## Core concepts
+
+### etcd Learner Member
+
+Learner members are non-voting members of the etcd cluster. Its main functions are:
+1. **Safe expansion**: Allow new nodes to join and synchronize data without changing the cluster voting weight and write quorum.
+2. **Quick Recovery**: Can be used as a backup node and quickly promoted to a voting member to replace failed nodes.
+Learner members do not participate in the voting process in the Raft protocol, so their failure or removal will not affect the write availability of the cluster.
+
+### Raft Configuration Change (Configuration Change)
+
+etcd uses the `Raft` consensus protocol to ensure the consistency of the cluster state. Changes in cluster membership (such as adding and removing members) are themselves log entries that require consensus. `Raft` configuration change logic ensures that all members agree on the new configuration before it officially takes effect. In this problem, the key point is that when the learner member applies the snapshot synchronized from the leader, the configuration change logic triggered is abnormal.
+
+## Practice
+
+### Problem recurrence and phenomenon
+
+According to the report, the issue can be reproduced in the following steps:
+1. In an existing three-node (`s1`, `s2`, `s3`) etcd cluster, add a learner member:
+    ```bash
+    etcdctl member add john7doe-learner --peer-urls=https://10.0.9.183:12380 --learner
+    ```
+2. Start this new etcd member (`john7doe-learner`) with the correct configuration (specifically `ETCD_INITIAL_CLUSTER_STATE=existing`).
+3. After the new member starts, it will receive snapshots from the leader to synchronize data.
+4. **Abnormality**: Shortly after applying the snapshot to a new member, the following configuration switch will appear in the log, in which the `voters` list does not contain the learner member, and then the process will exit due to the error "The member has been permanently removed":
+    ```
+    msg="57af20a01bb3d0e5 switched to configuration voters=(496505851308960826 11377229960475776118 14543006453357928869)"
+    ...
+    msg="the member has been permanently removed from the cluster"
+    ```
+    Key logs indicate that after the snapshot was applied, the Raft configuration was incorrectly updated and did not consider the current learner node itself as a cluster member.
+
+### Root causes and workarounds
+
+The root cause is that in etcd v3.6.8, there is a flaw in the Raft configuration change logic when processing snapshots synchronized from the leader. This flaw causes the cluster configuration (`conf_state`) carried in the snapshot to be applied incorrectly, thereby removing the learner member itself.
+
+An **effective workaround** is to immediately promote the new member to a voter before the new member is started and fully synchronized. The operator in the report found that executing `etcdctl member promote` before receiving the above critical log line prevented the member from being removed. This changes the sequence of operations so that members are already voters when they encounter the flawed snapshot application logic, thus avoiding the wrong path.
+
+```bash
+# 1. Add learner
+etcdctl member add new-node --peer-urls=... --learner
+
+# 2. Start new etcd node
+
+# 3. Promote to voter immediately without waiting for data synchronization to complete
+etcdctl member promote <member-id>
+```
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+
+* **Reliability**: This bug directly destroys the reliability of etcd cluster expansion. An operation intended to improve availability (adding a learner) may cause the operation to fail or even cause cascading failures in the automated process.
+* **Observability**: SRE needs to monitor the number of members (`etcd_server_has_leader`) and member status of the etcd cluster. When this problem occurs, you will observe that the `etcd_cluster_members_count` indicator increases briefly and then decreases immediately, accompanied by error logs of member exits.
+* **Event Response**: If the automated expansion process fails due to this problem, the incident response should first check the etcd log of the new member to confirm whether there is the above Raft configuration switching error. After confirming that this is a bug, you should use an avoidance method (immediately promote members) and perform the operation again.
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    1. Before upgrading or deploying a new version of etcd (especially the 3.6.x series), you should check its known issues.
+    2. In the script that automatically adds learner members, add a short delay and then immediately execute the `member promote` step as defensive programming to address this problem.
+    3. Upgrade etcd to a subsequent version that fixes this problem (if available).
+* **Common anti-patterns**:
+    1. After adding the learner member, wait for a long time for the data to be completely synchronized before upgrading. This ideal operating mode of "waiting for full synchronization" triggers issues in versions where this bug exists.
+    2. Without fully understanding the internal mechanism of etcd, perform a simple restart operation on the error log (such as "the member has been permanently removed from the cluster") without analyzing the root cause.
+
+### Related indicators (SLI/SLO/SLA)
+
+Although this issue does not directly affect SLI/SLO, it involves the success rate of cluster management operations, which can be used as an operational metric for SRE.
+* **Related SLI**: `cluster_expansion_success_rate` (cluster expansion success rate).
+* **Monitoring suggestions**: Set up monitoring points during the expansion process to check whether new members remain in the `started` status and have not been removed within the expected time window. This can be achieved by periodically querying the `etcdctl member list` and comparing it to the expected member list.

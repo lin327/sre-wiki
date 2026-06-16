@@ -1,0 +1,54 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "'Grafana Issue #73595: Loki Query Builder: Double quotes are replaced with"
+category: "ObservabilityTools"
+confidence: medium
+---
+
+# 
+
+## Overview
+
+When building Loki queries for log queries, developers and SRE engineers often need to use regular expressions to filter complex log lines. Grafana's Query Builder provides a visual way to build these queries and is designed to simplify operations. However, this question reveals a potential pitfall: when using the query builder to write a line filter containing a regular expression, user-entered double quotes are automatically replaced with backticks. This automatic replacement behavior is not expected and may cause the generated query to be inconsistent with the user's intention, thus affecting the accurate retrieval of log data and troubleshooting efficiency.
+
+## Core concepts
+
+1. **Loki Query Builder**: A graphical interface provided by Grafana that allows users to build Loki query statements by combining label selectors, row filters, and parsers through drop-down menus and input boxes without directly writing LogQL code.
+2. **Line Filter**: A core component of Loki LogQL, used to filter the content of log lines. For example `|~ "error"` will match log lines containing the string "error".
+3. **Regular Expression Filter**: A more powerful line filter that uses regular expressions for matching. In LogQL, use the `|~` operator followed by a regular expression pattern. For example, `|~ "connect\\s+from\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)"` is used to extract the connection IP address.
+4. **Double quotes and backticks**:
+    * In LogQL's regular expression filter, **double quotes** are the standard string delimiter. Regular expression patterns should be written within double quotes, such as `|~ "pattern"`.
+    * **Backticks** are often used to represent raw strings in some contexts (e.g. to avoid escaping), but are not required in standard LogQL regular expression syntax, and automatic substitution may introduce unexpected parsing behavior or errors.
+
+## Practice
+
+This issue affects the interactive experience in the **Grafana Query Builder Interface**. Here are specific practices for identifying, circumventing, and verifying this issue:
+
+1. **Identification Problem**:
+    * In the Grafana Explore or Dashboard panel, select the Loki data source.
+    * Switch to Query Builder mode.
+    * Add a "Line Filter".
+    * Set the filter type to "Regex matching (Regex)".
+    * In the "Pattern" input box, enter a regular expression containing double quotes, for example: `"level": "(?i)error|warn"`.
+    * **Observation**: When you finish typing or switch views and then switch back to the query builder, the entered double quotes are likely to have been automatically replaced with backticks, and the query statement may become `|~ \`"level": "(?i)error|warn"\``.
+
+2. **Avoidance and solutions**:
+    * **Method 1: Use a code editor**. This is the most direct and reliable method. On the query line, click the "Switch to Code editor" button. In the code editor, you can edit LogQL queries directly, with precise control over quote types. Switching back to the builder after editing can often avoid replacement problems.
+    * **Method 2: Manual correction after building**. If you must work in the builder, after building the query, switch to the code editor view, manually change the backticks back to double quotes, and then execute the query.
+    * **Method 3: Verify query**. No matter which method is used, immediately after "Run query", check whether the returned log results are as expected. If the result is empty or abnormal, first check the quotes and regular expression syntax in the query.
+
+3. **Example and Verification**:
+    * Target query: Match log lines containing `client_ip="192.168.1.100"` or `client_ip="10.0.0.1"`.
+    * Correct LogQL: `|~ "client_ip=\"(192\\.168\\.1\\.100|10\\.0\\.0\\.1)\""`
+    * After being entered in the query builder, it may be incorrectly converted to: `|~ \`"client_ip=\"(192\\.168\\.1\\.100|10\\.0\\.0\\.1)\"\`\``.
+    * **Correction**: Switch to the code editor, correct the query to the correct form above and execute it.
+
+## SRE Key Points
+
+* **Relevance to Observability and Incident Response**: Accurate log query is the cornerstone of SRE troubleshooting (Troubleshooting) and Root Cause Analysis (RCA). When Grafana's user interface tool accidentally modifies the query syntax, engineers may be unable to locate critical error logs, delaying incident response time. Being aware of this issue can help in quickly troubleshooting variables introduced by the UI during dashboard configuration and debugging.
+* **Best Practices and Common Anti-Patterns**:
+    * **Best Practice**: For any critical or complex Loki queries, especially those used for production monitoring alerts or core dashboards, it is recommended to **prefer using a code editor for writing and review**. This ensures complete control over the query logic.
+    * **Best Practice**: When configuring important LogQL queries, implement "**Double Validation**": first visually build in the query builder, then check and finally confirm the syntax in the code editor.
+    * **Common anti-pattern**: Rely entirely on the query builder to generate complex regular expressions without code-level checks. This can cause implicit errors to accumulate.
+* **Related Metrics and Concepts**: While this issue does not directly affect the calculation of SLIs (Service Level Indicators) or SLOs (Service Level Objectives), it is directly related to the accuracy and effectiveness of log queries, which are critical components of the health of the observability system. Related practices can be found in [[log-querying-best-practices]]. Understanding the toolchain features of Grafana and Loki is part of the [[observability-tooling]] expertise.

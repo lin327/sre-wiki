@@ -1,0 +1,61 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Incorrect links in contributor guidelines"
+category: "文档与知识Management"
+confidence: high
+---
+
+# Incorrect links in contributor guidelines
+
+## Overview
+
+Documentation is the critical "executable architecture" in the software delivery process. Internal links are the skeleton of the document's structural integrity, and their health directly affects the developer's navigation experience and knowledge acquisition efficiency. In a large, active code base (like Grafana), document content and anchor titles continue to evolve, making it easy to create "link drift" that points to incorrect capitalization, non-existent anchors, or obsolete targets. Repairing and preventing such problems is a key SRE practice to ensure the health of the code base and reduce the cognitive load of developers. It is directly related to the reliability and change efficiency of internal services.
+
+## Core concepts
+
+- **Internal Links**: Links within a document to other documents in the same code base, usually in the form of relative paths and anchor points. Its correctness depends on the existence of the target file and the exact match of the anchor name.
+- **Anchor Links**: The link part starting with `#`, used to locate a specific chapter in the target Markdown file. Anchor names are usually automatically generated from the chapter title, with rules including all lowercase, replacing spaces with hyphens, etc. Case mismatch or anchor points not being updated simultaneously after the title is modified are common causes of link failure.
+- **Dead Links**: Links pointing to non-existent targets (files or anchors) will return a 404 error or become unresponsive. This interrupts the flow of information, forces developers to search manually, and hurts the development experience.
+- **Link Drift**: In the process of document evolution, the link becomes invalid due to target renaming, deletion or structural adjustment. In large, collaborative code bases, this is a chronic problem that requires proactive monitoring and management.
+
+## Practice
+
+### Prevention and Regulation
+1. **Writing Guidelines**: Clearly state the rules for anchor generation in the Contributor Guidelines (e.g. "Convert uppercase letters in all titles to lowercase, and convert spaces to hyphens"), and emphasize that after renaming or moving a document section, all links that reference that anchor must be globally searched and updated.
+2. **Pre-commit check**: Use the `pre-commit` framework to integrate link checking tools (such as `markdown-link-check` or `lychee`) to automatically verify the validity of links in modified files when submitting.
+
+### Detection and Monitoring
+1. **Static Analysis**: Add a document link checking step in the CI/CD pipeline. The tool will recursively scan all Markdown files in the specified directory and report broken links. Here is an example configuration using `lychee`:
+    ```yaml
+    # Add in CI configuration (such as .github/workflows/docs-lint.yml)
+    - name: Check documentation links
+      uses: lycheeverse/lychee-action@v1
+      with:
+        args: ./docs/**/*.md --no-progress --exclude-mail
+    ```
+2. **Periodic scan**: Set a scheduled task (such as once a week) to scan the entire code base for links, and track the report as technical debt.
+
+### Repair process
+1. **Confirmation and Classification**: After receiving the link failure report (such as from the CI pipeline or user feedback), confirm the type of problem: incorrect capitalization, anchor name change, target chapter does not exist, or the file has been moved.
+2. **Repair and Verification**:
+    - **Case/Spelling Errors**: Correct the anchor name directly in the link. For example, change `(#Formatting-guidelines)` to `(#formatting-guidelines)`.
+    - **The target chapter has been renamed**: Find the new title, generate new anchor points according to the rules and update the link. For example, change `(#main-stability-of-api)` to `(#main-stability-of-apis)`.
+    - **Target Section Removed**: Assess whether the content has been consolidated or moved elsewhere, update links to the most relevant existing sections, or add explanatory text and remove dead links.
+    - **File Move/Rename**: Update link path to reflect new location.
+3. **Regression Prevention**: In the same Pull Request that is fixed, add test cases for related tools or rules, or update the contribution guide to prevent similar problems from happening again.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: Documentation is the "operating manual" for reliable operation of the system and effective changes. The failure of document links is a kind of "service degradation", which reduces the efficiency of developers in finding information and may indirectly lead to change errors or delayed failure response. Maintaining the health of document links is the basic work to ensure internal developer experience (Developer Experience) and system maintainability.
+- **Best Practices**:
+    - **Automation first**: Embed link checking into CI/CD to achieve "left shift" detection and prevent failed links from being merged into the trunk.
+    - **Documentation as Code**: Treat documentation the same as code, applying the same code review, testing, and quality gating standards.
+    - **Clear Responsibility**: Clarify the responsibility for document maintenance in the team, which can be combined with the "Code Ownership" (CODEOWNERS) mechanism.
+- **Common anti-patterns**:
+    - **Ignore documentation updates**: When refactoring or renaming, only modify the code and forget to update related documentation.
+    - **Manual full inspection**: Relying on manual visual inspection of links in PR, which is unreliable and difficult to expand.
+    - **Ignore warnings**: Turn a blind eye to link check warnings in your CI pipeline and let technical debt accumulate.
+- **Related indicators**:
+    - While this is not a traditional user-facing SLI, it is possible to track the "link survival rate" (healthy links / total links) of internal documentation as a metric of codebase health.
+    - The number of broken document links can be used as a quantitative dimension of **technical debt** and mentioned in SLO-related retrospective meetings to drive improvements.

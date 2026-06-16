@@ -34,16 +34,12 @@ const displayLabel = label || config.label;
 </span>
 
 <style>
-  /* ============================================
-     Badge — GitHub Label Style
-     ============================================ */
-
   .badge {
     display: inline-flex;
     align-items: center;
     padding: 0.125em 0.625em;
     border-radius: 999px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans);
     font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
@@ -51,10 +47,6 @@ const displayLabel = label || config.label;
     user-select: none;
     border: 1px solid transparent;
   }
-
-  /* ============================================
-     Type Colors
-     ============================================ */
 
   .badge--linux {
     background-color: #ddf4ff;
@@ -93,8 +85,45 @@ const displayLabel = label || config.label;
   }
 
   .badge--comparison {
-    background-color: #f0f0f0;
-    color: #57606a;
-    border-color: #d0d7de;
+    background-color: var(--color-surface-2);
+    color: var(--color-muted);
+    border-color: var(--color-border);
+  }
+
+  /* Dark theme overrides */
+  [data-theme="dark"] .badge--linux {
+    background-color: #0c2d6b;
+    color: #58a6ff;
+    border-color: #1f3d7d;
+  }
+
+  [data-theme="dark"] .badge--docker {
+    background-color: #0c2d6b;
+    color: #58a6ff;
+    border-color: #1f3d7d;
+  }
+
+  [data-theme="dark"] .badge--kubernetes {
+    background-color: #2d1654;
+    color: #d2a8ff;
+    border-color: #3d1f6d;
+  }
+
+  [data-theme="dark"] .badge--runbook {
+    background-color: #0b3d1c;
+    color: #56d364;
+    border-color: #1a5c2e;
+  }
+
+  [data-theme="dark"] .badge--architecture {
+    background-color: #3d2800;
+    color: #e3b341;
+    border-color: #5c3d00;
+  }
+
+  [data-theme="dark"] .badge--incident {
+    background-color: #4a0e1a;
+    color: #f85149;
+    border-color: #6d1422;
   }
 </style>

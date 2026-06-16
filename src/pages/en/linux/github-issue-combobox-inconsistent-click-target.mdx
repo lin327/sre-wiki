@@ -1,0 +1,41 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "GitHub Issue: Combobox: Inconsistent click target"
+category: "前端Observability"
+confidence: medium
+---
+
+# GitHub Issue: Combobox: Inconsistent click target
+
+## Overview
+
+When building a reliable observability system, the availability and responsiveness of the monitoring interface is critical. Grafana is a widely used monitoring dashboard tool, and the interactive consistency of its UI components directly affects the efficiency of the SRE team to browse data, configure alerts, and perform troubleshooting. This document describes in detail an interaction flaw in the `Combobox` component in Grafana, that is, under certain circumstances, clicking on the area outside the input box (such as the border, icon) cannot open the drop-down menu as expected. Although this issue does not involve the core data channel, it is a reliability flaw that affects user experience (UX) and operational fluency, and may introduce unnecessary operational delays during tense incident response.
+
+## Core concepts
+
+- **Combobox**: A common user interface control that combines a text input box with a drop-down selection list. Users can manually enter text to filter, or directly select preset items from the drop-down list. In Grafana, such components are commonly used in scenarios such as variable templates, data source selection, filters, etc.
+- **Click Target**: refers to the effective click area for users to interact with interface elements. A well-designed control should ensure that all visible parts of it (including input boxes, borders, icons) can trigger corresponding operations (such as expanding drop-down menus).
+- **Style Interaction**: This problem is suspected to be caused by the interaction or override between the Grafana application-level global CSS style and the `Combobox` component's own style, causing some predefined click event listening areas to fail. This is not replicated in the isolated environment of a component library (such as Storybook), but occurs in the complete application after integration, highlighting the complexity of style management.
+
+## Practice
+
+According to the issue description, the specific symptoms and temporary circumvention methods of this problem are as follows:
+
+1. **Problem Reproduction Path**: In some pages or specific interaction processes of Grafana (such as PR #121298 associated with the issue), when the user tries to click the border or right icon of the `Combobox` component, the expected drop-down menu will not open. The user must click precisely on the inner area of ​​the text input box to trigger it successfully.
+2. **Environment Difference**: The problem cannot be reproduced in Grafana's independent component demonstration environment (Storybook), indicating that it is not a basic logic error in the component, but is specifically related to the context, global style, or JavaScript event bubbling mechanism of the Grafana main application.
+3. **Scope of Impact**: This problem is intermittent and specific. It may occur in specific page layouts, component nesting, or browser environments, making it more difficult to locate and reproduce the problem consistently.
+4. **Temporary Solution**: For end users, the only workaround currently available is to precisely click inside the input box. For developers, an in-depth review of the affected page's CSS style override rules and event listener bindings is required, especially code related to `pointer-events`, `z-index`, or event blocking (`event.stopPropagation()`).
+
+## SRE Key Points
+
+- **Relevance to reliability, observability, incident response**: A seemingly minor UI flaw can become a "roadblock" in the SRE team's operational path during a critical event (such as a large-scale service outage). When engineers need to quickly adjust dashboard views or filter key metrics, repeated clicks can distract attention, add additional steps, and may delay the discovery and interpretation of abnormal data. The interface reliability of an observability tool is an important part of the overall system reliability experience.
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practice**: Conduct rigorous end-to-end integration testing of core UI components to simulate style and event interactions in real application environments. Establish automated regression testing of UI interactions to ensure component updates do not break existing click targeting and accessibility (a11y) functionality.
+    - **Common Anti-Pattern**: Only perform isolated tests in component libraries and ignore their integrated behavior in actual complex applications. Over-reliance on global CSS instead of modular styling solutions can lead to hard-to-track style conflicts.
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI (Service Level Indicator)**: Consider "First click success rate for core UI operations (such as selecting a drop-down item)" or "Average operation time of critical interaction paths" as SLIs to measure front-end reliability.
+    - **SLO (Service Level Objective)**: SLOs can be set for key interactions with the Grafana admin interface, such as "99% of Combobox clicks should respond successfully within a single click."
+    - **SLA (Service Level Agreement)**: In the agreement for internal tool services, you can include a time limit commitment to fix UI defects that affect productivity.
+
+&gt; Related reading: To understand how UI reliability affects the overall system experience, please refer to [[slo-for-user-facing-interfaces]]. In incident response, the fluency of the operation interface is crucial. For details, see [[incident-response-runbooks]].

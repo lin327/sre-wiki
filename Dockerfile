@@ -18,9 +18,10 @@ FROM nginx:alpine AS production
 RUN rm /etc/nginx/conf.d/default.conf && \
     mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \
              /var/cache/nginx/fastcgi_temp /var/cache/nginx/uwsgi_temp \
-             /var/cache/nginx/scgi_temp /tmp/nginx && \
-    chown -R 101:101 /var/cache/nginx /var/run /tmp/nginx && \
-    sed -i 's|/var/run/nginx.pid|/tmp/nginx/nginx.pid|' /etc/nginx/nginx.conf && \
+             /var/cache/nginx/scgi_temp /tmp/nginx /var/run/nginx && \
+    chown -R 101:101 /var/cache/nginx /var/run/nginx /tmp/nginx /var/log/nginx && \
+    chmod -R 755 /var/cache/nginx /var/run/nginx /tmp/nginx /var/log/nginx && \
+    sed -i 's|/run/nginx.pid|/var/run/nginx/nginx.pid|' /etc/nginx/nginx.conf && \
     sed -i 's|user  nginx;|#user  nginx;|' /etc/nginx/nginx.conf
 
 # Copy custom nginx config

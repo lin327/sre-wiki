@@ -13,11 +13,11 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Allow Traefik Ingress controller
+    # Allow ingress controller (verify namespace matches your cluster)
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kube-system
+              kubernetes.io/metadata.name: ingress-nginx
       ports:
         - protocol: TCP
           port: 80
@@ -30,14 +30,3 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Allow HTTPS egress (external resources)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-      ports:
-        - protocol: TCP
-          port: 443

@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "“Cannot update library panels with PanelEditNext” Issue"
+category: "Monitoring与可视化Tools"
+confidence: medium
+---
+
+# “Cannot update library panels with PanelEditNext” Issue
+
+## Overview
+
+Library panels are a powerful feature in Grafana that allow administrators to create panel templates that can be reused across multiple dashboards. This is critical for maintaining consistent monitoring views, simplifying the maintenance of complex dashboards, and making large-scale updates. When a library panel's source template is modified, all dashboards that use it can receive these updates through a synchronization process. This article describes a specific technical issue: After editing a library panel using Grafana's new panel editor `PanelEditNext`, the "Update Modal" intended to synchronize changes to all dashboards that reference the panel does not appear as expected. This issue directly affects the efficiency and reliability of the dashboard maintenance workflow.
+
+## Core concepts
+
+1. **Library Panel**: An independent, reusable panel entity whose configuration (such as query, visualization settings) is stored centrally. Multiple dashboards can reference the same library panel. When a library panel is edited and saved, all dashboards that reference it can obtain the latest configuration through an explicit "update" operation.
+2. **PanelEditNext**: This is a new generation UI editor for editing panels in Grafana. It is designed to provide a smoother and more powerful panel configuration experience and will gradually replace traditional editors in the future.
+3. **Update modal**: When the source configuration of the library panel is modified, Grafana will recognize this change and pop up a dialog box when the user saves the changes. This modal allows the user to choose whether to apply updates to all dashboards that reference this library panel, or just save as a new panel version (or update only the current dashboard).
+4. **Synchronization mechanism**: The core value of the library panel lies in its centralized management and synchronization capabilities. This mechanism is a key SRE practice to ensure dashboard consistency and maintainability, especially in large-scale monitoring environments.
+
+## Practice
+
+This issue has been confirmed as a defect as reported on the official Grafana Issue tracker (#125983).
+
+### Problem phenomenon
+In some versions of Grafana, when the user edits a library panel using **PanelEditNext** and clicks "Save", the system **does not pop up the expected update confirmation modal**. This means that users cannot synchronize modifications through this UI flow to all dashboards that reference this library panel.
+
+### Scope of influence
+- **Direct functional impact**: Modifications made to the library panel through the new editor cannot be synchronized in batches, disrupting the main workflow of the library panel.
+- **SRE operation and maintenance impact**:
+    - **Reduced maintenance efficiency**: Administrators need to manually open each dashboard that references the library panel for individual updates, which is time-consuming and error-prone.
+    - **Configuration Drift Risk**: Failure to ensure that all dashboards use the same version of panel configuration may lead to inconsistent monitoring views and confusion when troubleshooting problems.
+    - **Complicated Change Management**: Centralized monitoring of configuration changes cannot be reliably performed through the library panel.
+
+### Possible temporary solutions
+Since this is a known UI-level bug, temporary solutions that the community and officials may provide include:
+1. **Return to Editor**: In the panel editing view, look for the option to switch back to the traditional editor, use the traditional editor to modify and save, and usually the update process can be triggered normally.
+2. **Manage using API**: For automated processes or scenarios that require large batch updates, bypass the UI and directly use the Grafana API to update the library panel and trigger synchronization. This is a more reliable and codifiable SRE practice.
+3. **Version Control and Export**: Incorporate the JSON model of the library panel into the version control system. Applying modifications through a CI/CD pipeline, although more complex, provides traceability of changes.
+4. **Monitor official fixes**: Follow the progress of this GitHub Issue and upgrade Grafana to a version that includes the fix after the issue is fixed.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+- **Reliability**: The dashboard is the SRE's "window" to monitor the health of the system (SLO achievement, error budget consumption, core business metrics). Failure to update monitoring views efficiently and accurately will delay the team's perception and response to system degradation, directly affecting system reliability.
+- **Observability**: The library panel is the cornerstone of building consistent, comprehensive observability interfaces. This bug cripples the ability to centralize observability configuration, potentially leading to "observability fragmentation."
+- **Incident Response**: During a major incident, it is critical to quickly adjust dashboards to focus on key metrics. If the library panel update process is blocked, situation analysis and decision-making will be seriously delayed.
+
+### Best practices and common anti-patterns
+- **Best Practices**:
+    - Treat library panels as key "programmable" assets, managed on an equal footing with infrastructure code.
+    - Establish naming conventions and review processes for library panels to ensure the reliability of its query and visualization logic.
+    - **Prefer an API or "dashboard-as-code" approach to managing library panels**, which is more robust and automatable than relying on error-prone UI interactions.
+    - Comprehensive testing of key workflows (editing, syncing, permissions) of the repository panel after Grafana environment upgrade.
+- **Common anti-patterns**:
+    - Over-reliance on UI for batch updates and management of library panels.
+    - The library panel was not fully tested and verified before it was widely referenced.
+    - Ignore library panel version control and change history.
+
+### Related indicators (SLI/SLO/SLA)
+Although it does not directly correspond to a certain SLI, this issue will indirectly affect the following operation and maintenance indicators:
+- **Dashboard Update Delay**: The time it takes from a library panel source file change to complete synchronization of all referenced dashboards. This bug causes the metric to go to infinity (unless manual intervention occurs).
+- **Configuration Consistency Audit Pass Rate**: Regularly check whether all dashboards referencing the same library panel use the same configured automated audit. This bug is one of the main causes of inconsistencies.
+- **Dashboard Maintenance Man-Hours**: The human resource cost invested in maintaining the accuracy of monitoring views. This problem can significantly increase that cost.
+
+[[grafana-observability-stack]] [[dashboards-as-code]] [[incident-response-runbooks]]

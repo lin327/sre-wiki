@@ -18,21 +18,6 @@ function applyTheme(theme: Theme) {
   localStorage.setItem(STORAGE_KEY, theme);
 }
 
-const buttonStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 0,
-  border: "none",
-  borderRadius: 6,
-  background: "transparent",
-  cursor: "pointer",
-  color: "var(--atlas-ink, #1a1a1a)",
-  transition: "opacity 150ms ease",
-};
-
 const sunPath =
   "M12 3a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V4a1 1 0 0 1 1-1Zm0 15a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm9-6a1 1 0 0 1-1 1h-1a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1ZM5 12a1 1 0 0 1-1 1H3a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1Zm12.07-5.07a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.41l.71-.71a1 1 0 0 1 1.41 0ZM8.46 15.54a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.41l.71-.71a1 1 0 0 1 1.41 0Zm7.07 1.41a1 1 0 0 1-1.41 0l-.71-.71a1 1 0 1 1 1.41-1.41l.71.71a1 1 0 0 1 0 1.41ZM8.46 8.46a1 1 0 0 1-1.41 0l-.71-.71A1 1 0 1 1 7.75 6.34l.71.71a1 1 0 0 1 0 1.41ZM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z";
 
@@ -61,13 +46,7 @@ export default function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-      style={buttonStyle}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.opacity = "0.7";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.opacity = "1";
-      }}
+      className="theme-toggle"
     >
       <svg
         width="20"

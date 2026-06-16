@@ -1,0 +1,70 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "'Dynamic Dashboards: Editable=off flag is ignored — any user can drag and"
+category: "问题Analysis与排查"
+confidence: high
+---
+
+# 
+
+## Overview
+
+In Grafana 13.0.1, the newly introduced "dynamic dashboard" layout engine as the default option has a serious functional flaw: the "editable" flag at the dashboard level is completely ignored. This results in any user, regardless of their role, being able to drag a panel through mouse or touch gestures, changing the row it is on, thereby disrupting a carefully designed dashboard layout. This problem is particularly prominent in scenarios that require a stable view, such as display, kiosk mode, or shared links, because it directly destroys the reliability and consistency of the monitoring interface and is a typical reliability risk caused by front-end logic flaws. [[grafana-dashboard-management]]
+
+## Core concepts
+
+* **Dynamic Dashboards**: A new layout mode introduced in Grafana 13.x, designed to provide more flexible row and panel management, is now the default option. It allows panels to be dragged freely between different rows.
+* **Dashboard Editable Flag (`Editable` Flag)**: A core permission flag in dashboard settings that controls whether modifications to dashboard layout and panel configuration are allowed. When set to `off`, it is expected that editing operations for all users should be disabled.
+* **Permission Bypass**: This refers to the failure of the front-end UI component to correctly read or execute the permission status set by the back-end, resulting in the user being able to perform operations inconsistent with authorization. This is a purely client-side vulnerability, as modifications are not persisted to the backend.
+* **Layout Consistency**: For monitoring dashboards, ensuring a consistent and stable panel layout across different terminals and different users is the basis for accurate interpretation of monitoring data and effective event response.
+
+## Practice
+
+### Steps to reproduce the problem
+
+The following steps reliably reproduce the vulnerability and work for any user role (including administrators):
+
+1. **Environment preparation**: Run a Grafana 13.0.1 instance (e.g. deployed using Docker).
+2. **Create/Open Dashboard**: Open a multi-row dashboard using the new "Dynamic Dashboard" layout engine.
+3. **Set Permissions**: Go to Dashboard Settings -&gt; General, switch the "Editable" switch to off, and save.
+4. **Reload**: Refresh the page to make sure it loads in read-only mode.
+5. **Execute drag and drop**:
+    * **Desktop**: Use your mouse to click and hold a panel and drag it from one row to another.
+    * **Mobile**: Long press the panel on the touch screen and drag.
+6. **Observation phenomena**:
+    *Panels move and layouts rearrange in real time, even though the dashboard is marked as non-editable.
+    * Visual layout changes will persist until the page is reloaded.
+    * After reloading, the original layout is restored, proving that the changes were not persisted to the dashboard JSON, but client operations were allowed.
+
+### Impact Analysis
+
+The main impact of this vulnerability is not data loss, but **destruction of interface stability**. It makes layouts designed for presentation (such as NOC large screens), kiosk mode, or permalink sharing fragile, and users (either intentionally or unintentionally, especially when scrolling on mobile) can easily disrupt the layout. For the SRE team, this may result in the dashboard being unable to present the expected associated data view when troubleshooting key events, affecting analysis efficiency.
+
+## SRE Key Points
+
+### Association with reliability, observability, incident response
+
+* **Reliability**: As the core user interface of the monitoring system, the dashboard's layout stability is part of the system's "usability" experience. This vulnerability reduces Grafana's reliable user experience as a monitoring tool.
+* **Observability**: A consistent dashboard layout helps quickly locate and understand system status. Unexpected changes in layout can introduce noise that interferes with intuitive judgments of SLO health.
+* **Incident Response**: During emergencies, responders rely on familiar, fixed dashboard layouts to quickly obtain information. This vulnerability could force responders to be distracted from fixing the interface at a critical moment, delaying troubleshooting.
+
+### Best practices and common anti-patterns
+
+* **Best Practice**:
+    1. **Version Control and Release Monitoring**: After upgrading Grafana, there should be a set of UI smoke tests including the core dashboard to catch such regression defects.
+    2. **Least Privileges and Interface Auditing**: Be aware that the "editable" flag may be bypassed on the front end. For critical read-only views, more granular control via Grafana folder/dashboard permissions should be considered and audited regularly.
+    3. **User Communication and Training**: Inform users of this known issue to avoid misoperations when scrolling on mobile devices, and temporarily freeze key shared views until the issue is fixed (such as by exporting to a static snapshot or using an old version of the layout engine).
+* **Common anti-patterns**:
+    * Only rely on a single UI layer permission control to ensure the stability of key views, while ignoring potential flaws in front-end logic.
+    * Such front-end permission vulnerabilities are not included in risk assessments when automating the generation or management of dashboards at scale.
+
+### Related indicators (SLI/SLO/SLA)
+
+While this question does not directly correspond to traditional infrastructure SLI, related metrics can be defined from a user experience perspective:
+
+* **SLI (Service Level Indicator)**: For example, "dashboard layout unsolicited change rate", that is, in read-only mode, the frequency of user attempts to drag and drop operations or visual changes to the layout is detected.
+* **SLO (Service Level Objective)**: It can be set to "The layout stability of the core display dashboard should reach 99.9%", that is, only planned updates caused by back-end configuration changes are allowed.
+* **Mitigation**: An SLA that can be used as a temporary mitigation until the issue is fixed, such as "Promise to provide static HTML exports of critical shared links within 24 hours."
+
+This problem highlights the importance of logical consistency verification of front-end and back-end permissions in rapid iteration of UI components. SRE teams need to take front-end security vulnerabilities and functional flaws into consideration when evaluating the reliability of a monitoring platform. [[ui-component-security]]

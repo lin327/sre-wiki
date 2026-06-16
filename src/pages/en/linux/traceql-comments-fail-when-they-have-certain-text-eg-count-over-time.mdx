@@ -1,0 +1,67 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "TraceQL comments fail when they have certain text e.g., `| count_over_time()`"
+category: "Observability"
+confidence: medium
+---
+
+# TraceQL comments fail when they have certain text e.g., `| count_over_time()`
+
+## Overview
+
+In Grafana's distributed tracing observability practice, TraceQL is the core query language used to query and filter trace data. Writing clear, maintainable TraceQL queries is key to improving team collaboration and problem diagnosis faster. The annotation feature is critical for explaining complex query logic. However, a known bug causes that when the TraceQL annotation text contains specific operators (such as the pipe character `|`), the entire query will fail to parse and return a `400 Bad Request` error, which directly affects the writing experience and maintainability of the query.
+
+## Core concepts
+
+This question touches on the following core concepts:
+
+1. **TraceQL**: The tracing query language used by Grafana Tempo. The syntax is similar to LogQL and is used to filter, aggregate and analyze distributed tracing data.
+2. **Query annotations**: Allow users to add descriptive text in TraceQL queries, starting with `//`, and the content after that should ideally be completely ignored by the query parser.
+3. **Query parsing process**: The query parser usually processes the input query string in steps. The problem is that the current parser may not properly strip the comment content before doing a full syntax analysis (including identifying the pipe operator `|` for metric aggregation), causing the `|` in the comment to be incorrectly recognized as part of the query structure.
+4. **Metrics Query vs Trace Query**: The query error message "not a metrics query" implies that the parser may have recognized the pipe character and tried to interpret it as a metric query (Metrics Query), but the input context (from the TraceQL editor) does not support this query type, causing a contradiction.
+
+## Practice
+
+**Steps to reproduce the problem**:
+
+1. In Grafana's TraceQL query editor, enter the following query that contains the specific annotation:
+
+```traceql
+// this is a comment
+{
+  resource.service.name="hello"
+}
+// | count_over_time()
+```
+
+2. Execute the query.
+3. Observe the returned error: `failed to execute TraceQL query: ... Status: 400 Bad Request Body: not a metrics query`.
+
+**Expected Behavior**:
+The parser should ignore all lines starting with `//` and query `{
+  resource.service.name="hello"
+}` is executed correctly.
+
+**Current Impact**:
+Any comments containing `|`, `()`, etc. that could be mistaken for metric query syntax will cause the entire TraceQL query to fail. This forces SRE engineers and developers to deliberately avoid these characters when writing comments, reducing the usefulness and expressiveness of comments.
+
+**Temporary workaround**:
+Avoid using the pipe character `|` and its surrounding text in comments. You can use equivalent word descriptions, such as changing `// | count_over_time()` to `// for counting by time` or using the English description `// count over time` (without brackets). If you need to document the original example containing these characters, you should put it in a code block or separate document, rather than directly in the query comment.
+
+## SRE Key Points
+
+### Association with reliability
+- **Toolchain Reliability**: This type of bug weakens the reliability of core query tools in the Grafana ecosystem. SRE teams rely on reliable tool chains to quickly diagnose production issues, and flaws in the tools themselves can introduce additional noise and latency.
+- **Operation and Maintenance Efficiency**: When engineers debug complex queries, failures caused by comments will interrupt flow, increase debugging time, and reduce overall operation and maintenance efficiency.
+
+### Best practices and common anti-patterns
+- **Best Practice**: After submitting a bug report, the team should make this restriction clear in internal documentation and code reviews, guiding members to write "safe" comments.
+- **Common anti-pattern**: During quick troubleshooting in the production environment, trying to hastily add comments containing complex syntax to the TraceQL query to assist explanation, which will cause the query execution to fail and delay the fault recovery time.
+
+### Related indicators and observability
+- **SLI (Service Level Indicator)**: Can monitor the `400 Bad Request` error rate using Grafana Tempo Query API. This bug may cause unexpected spikes in this indicator, affecting the judgment of system health.
+- **SLO (Service Level Objective)**: The observability platform should provide accurate and easy-to-use query tools. Such user experience-impacting deficiencies may impact non-technical goals in internal SLOs for "Developer Experience" or "Platform Usability."
+- **Incident Response**: During incident response, engineers may need to quickly construct complex TraceQL queries to locate the problem. A query that fails due to annotation becomes a roadblock in the investigation path, extending the **MTTR (Mean Time To Resolution)**.
+
+**Related pages**: [[observability]], [[query-languages]], [[debugging]]

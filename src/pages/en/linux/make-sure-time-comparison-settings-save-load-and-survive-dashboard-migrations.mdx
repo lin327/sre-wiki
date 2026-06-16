@@ -1,0 +1,62 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Make sure time comparison settings save, load, and survive dashboard migrations."
+category: "Monitoring与告警"
+confidence: medium
+---
+
+# Make sure time comparison settings save, load, and survive dashboard migrations.
+
+## Overview
+
+In modern observability platforms, dashboards are the core interface for SRE teams to understand system status, perform troubleshooting, and perform performance analysis. Time Comparison is a powerful feature that allows users to directly compare data within the current time range (such as metrics, logs, or tracking data) with data at a point in the past (for example, "current 1 hour" vs "1 hour ago"). This is critical for quickly identifying the impact of performance degradation, capacity trends, or configuration changes. This document focuses on the underlying implementation of this feature: the **Schema definition** and **persistence** mechanism of its configuration information. Ensuring that these settings are properly serialized (saved), deserialized (loaded), and persisted across dashboard exports, imports, or version migrations is key to maintaining platform configuration consistency and user experience reliability.
+
+## Core concepts
+
+- **Time Comparison Settings**: This is a set of configuration parameters at the dashboard or panel level that defines the logic for data comparison. Typical settings include the base time offset of the comparison (such as `-1h`, `-24h`, `-7d`), the direction of the comparison (leading or lagging), and the presentation method of the resulting data series (such as overlay, side-by-side display).
+- **Schema**: In software engineering, Schema is the formal definition of a data structure. For a time comparison setting, the Schema describes exactly which fields the configuration object should contain, the data type of each field (string, boolean, enumeration, etc.), whether it is required, and possible default values. A robust Schema is the basis for ensuring that data is correctly transferred and validated between different system components.
+- **Persistence**: refers to the process of saving the configuration state in memory to persistent storage (such as database, file system) and restoring it when needed. For Grafana dashboards, persistence mainly involves saving their JSON models to the database. Good persistence design needs to consider forward and backward compatibility to cope with future software upgrades.
+- **Dashboard Migration**: When the Grafana version is upgraded or a system is migrated, the JSON model of the dashboard may need to be converted to adapt to the changed data structure in the new version. The schema of the time comparison settings must be handled correctly in the migration script or logic to avoid configuration loss or parsing errors.
+
+## Practice
+
+Implementing a reliable time comparison setup persistence process involves the following practical steps:
+
+1. **Clearly defined JSON Schema**: First, a clear JSON Schema needs to be designed for the configuration object of time comparison. This Schema will be integrated into Grafana’s dashboard JSON model. An example structure might be as follows (simplified version):
+    ```json
+    {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["default", "custom"] },
+        "customOffset": { "type": "string", "description": "Custom time offset, e.g., -6h or +1d" }
+      },
+      "required": ["enabled"]
+    }
+    ```
+    This Schema defines whether comparison is enabled, the mode (default or custom), and the time offset string when the mode is custom.
+
+2. **Front-end/back-end serialization and saving**: After the user configures the time comparison parameters in the UI, the front-end code will serialize these states into JSON fragments that conform to the above Schema and embed them into the configuration JSON of the entire dashboard or panel. When the user clicks "Save Dashboard", this complete JSON object is sent to the backend API and eventually persisted to the database (such as Grafana's default SQLite or external MySQL/PostgreSQL).
+
+3. **Loading and Deserialization**: When the dashboard is loaded, the backend reads the JSON string from the database and passes it to the frontend. A front-end framework (such as React) is responsible for parsing this JSON and using the Schema as a blueprint to reconstruct the state of the time comparison component. This process requires data validation to ensure that the data read from the persistence layer conforms to the expected structure, otherwise default values ​​may need to be applied or error handling may be required.
+
+4. **Guarantee migration compatibility**: When Grafana introduces a new version and may modify the schema of the time comparison function (for example, adding a new `aggregationType` field), a migration script must be provided. The migration script should be able to scan the database for all dashboard JSONs that contain time comparison settings, add default values ​​for new fields, or calculate new field values ​​based on old field values. This ensures that old dashboards load and work properly in the new version, avoiding functional disruption. As an SRE, understanding this is critical to planning upgrade windows and preparing for rollback scenarios.
+
+## SRE Key Points
+
+- **Relationship with Reliability**: The persistence of time comparison settings is directly related to the reliability of monitoring alarms. If settings are lost or migration errors occur, intelligent alarm rules based on historical baselines may become ineffective and critical faults may be missed. SREs must verify the integrity of such custom configurations after Grafana upgrades or dashboard bulk operations.
+- **Best Practices**:
+    - **Version Control**: Store important dashboard configurations, including time comparison settings, in a version control system such as Git and manage them alongside your infrastructure code.
+    - **Test Migration Process**: In non-production environments, simulating upgrades to dashboards that contain complex time comparison settings is a necessary step before release.
+    - **Monitor configuration drift**: Scripts can be written to regularly check the JSON of the production dashboard to ensure that critical configurations have not been accidentally modified.
+- **Common anti-patterns**:
+    - When manually editing the dashboard JSON, the official Schema was not adhered to, causing configuration parsing to fail.
+    - Not backing up the dashboard database or exporting key dashboard JSON before upgrading Grafana.
+    - It is assumed that all user-defined configurations will be automatically and perfectly retained after migration, and there is a lack of verification.
+- **Related indicators (SLI/SLO/SLA)**:
+    - **SLI**: Dashboard configuration loading success rate; dashboard function abnormality rate after upgrade.
+    - **SLO**: After a planned Grafana upgrade, 99.9% of dashboards containing custom time comparisons should return to normal functionality within 15 minutes.
+    - **SLA**: Internal agreement that after the core monitoring platform is upgraded, the integrity and availability of user-defined configurations should be guaranteed. The persistence mechanism of this feature is one of the technical foundations for achieving this SLA.
+
+[[slo]] [[change-detection]] [[dashboard-as-code]]

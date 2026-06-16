@@ -1,0 +1,54 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Interview with Canonical (Prometheus Blog)"
+category: "Monitoring & Observability"
+confidence: high
+---
+
+# Interview with Canonical (Prometheus Blog)
+
+## Overview
+
+Canonical is the company behind Ubuntu Linux and a key contributor and supporter of key open source projects such as OpenStack. Its BootStack division provides customers with fully managed private OpenStack cloud services and operates more than half of all OpenStack clouds in production. In order to cope with the growing monitoring and reporting needs of internal and customer cloud environments, Canonical decided to migrate from its traditional Nagios and Graphite monitoring stack to a new generation observability platform with Prometheus at its core. This case records in detail the considerations, practices, and challenges in this transformation process, providing a valuable reference for SREs in building and evolving monitoring systems in large-scale cloud environments.
+
+## Core concepts
+
+Before diving into Canonical’s practices, there are several key concepts that need to be understood:
+
+- **Prometheus Data Model**: Prometheus uses a multi-dimensional time series data model based on **tags**. Each time series is uniquely identified by a metric name and a set of key-value pair tags, making data aggregation and slicing extremely flexible and powerful.
+- **Exporter**: This is an adapter or plug-in that converts metrics from third-party systems (such as OpenStack, Node, etc.) into a format that Prometheus can understand. A well-designed exporter is the cornerstone of the Prometheus ecosystem.
+- **Time Series Database**: Prometheus has a built-in efficient local time series database for storing collected data, but its native design focuses more on real-time monitoring and alarming rather than long-term storage and complex aggregation.
+- **Unified monitoring stack**: An important goal of Canonical is to use Prometheus, a single tool, to replace both Nagios for alarms and Graphite/StatsD for trend charts, thereby simplifying the technology stack.
+
+## Practice
+
+Canonical's migration is a gradual and insightful process. The key steps and challenges are as follows:
+
+1. **Evaluation and Selection**:
+    Before the migration, Canonical used Nagios for alarms and combined Graphite/StatsD and self-developed Django applications for trend analysis. This combination did not meet their flexible reporting needs. After evaluating solutions such as InfluxDB, they finally chose Prometheus because of its “simplicity and power”. Team members’ experience with Borgmon, a similar system within Google, also deepened their recognition of Prometheus.
+
+2. **Migration Challenges and Solutions**:
+    - **Exporter Selection and Development**: The team initially tried to use `collectd` as the exporter, but encountered limitations. Subsequently, they started working on developing their own `prometheus-openstack-exporter`. This process exposed the lack of clear examples of writing exporters from scratch in the community at the time. Once they mastered the method, they found that exporter development was very convenient and produced extremely valuable indicators.
+    - **Storage Limitations**: They encountered the challenge of Prometheus's lack of native long-term storage and data downsampling support at the time (2016). The default 2-week data retention period may be insufficient for cloud operations scenarios that require historical trend analysis.
+    - **Integration with existing toolchains**: As a company using Juju for cloud orchestration, they hope that Prometheus can be seamlessly integrated with Juju and are developing it for this purpose.
+
+3. **Adoption and Effectiveness**:
+    Although the alerting part is not yet fully live, Prometheus has gained rapid adoption among internal DevOps and WebOps teams. Its flexible query and labeling capabilities make data exploration and sharing across teams easy.
+
+## SRE Key Points
+
+Canonical’s case provides the following important implications for SRE practice:
+
+- **Relationship to Reliability and Observability**:
+    The move to Prometheus is designed to provide more comprehensive and flexible observability, thereby increasing the reliability of cloud environments. Through a unified indicator collection, storage and alarm platform, SRE can detect anomalies, understand system behavior, and respond to events faster.
+
+- **Best Practices and Common Anti-Patterns**:
+    - **Best Practices**: Start small and replace gradually; pay attention to the development and maintenance of exporters; use tags to achieve multi-dimensional monitoring.
+    - **Anti-Pattern**: Be wary of oversimplified estimates of time series database storage capabilities. Long-term storage, data retention policies, and costs should be considered during the planning stage, and integration with long-term storage solutions such as [[thanos]] or [[mimir]] should be considered.
+
+- **Related indicators (SLI/SLO/SLA)**:
+    For Canonical/BootStack, which provides managed cloud services, the metrics collected by Prometheus directly serve its SLI (such as API availability, instance startup success rate). These SLIs are used to define SLOs to customers and are ultimately reflected in SLAs. The reliability of the monitoring system itself also needs to be measured by SLO.
+
+- **Technology Stack Evolution Insights**:
+    This case typically demonstrates the shift from the traditional alarm + chart separation model to a unified, Metrics-first monitoring paradigm in the cloud native era. Prometheus' tag model provides a powerful foundation for monitoring such complex distributed systems.

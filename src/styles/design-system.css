@@ -55,33 +55,50 @@
    ============================================ */
 
 :root {
-  /* Background — GitHub-inspired */
+  /* Background — GitHub-inspired (hex fallbacks for oklch) */
+  --color-bg: #fafbfc;
   --color-bg: oklch(0.995 0.001 230);
+  --color-surface: #f6f8fa;
   --color-surface: oklch(0.990 0.001 230);
+  --color-surface-2: #eaeef2;
   --color-surface-2: oklch(0.960 0.002 230);
+  --color-surface-3: #d0d7de;
   --color-surface-3: oklch(0.930 0.003 230);
 
   /* Text — GitHub gray hierarchy */
-  --color-ink: oklch(0.170 0.010 250);       /* #1f2328 */
-  --color-muted: oklch(0.450 0.010 250);     /* secondary text */
-  --color-dim: oklch(0.520 0.010 250);       /* #656d76 tertiary */
+  --color-ink: #1f2328;
+  --color-ink: oklch(0.170 0.010 250);
+  --color-muted: #656d76;
+  --color-muted: oklch(0.450 0.010 250);
+  --color-dim: #8b949e;
+  --color-dim: oklch(0.520 0.010 250);
 
   /* Brand — GitHub blue */
-  --color-primary: oklch(0.480 0.170 250.0);  /* #0969da */
+  --color-primary: #0969da;
+  --color-primary: oklch(0.480 0.170 250.0);
+  --color-primary-l: #0969da;
   --color-primary-l: oklch(0.480 0.170 250.0);
+  --color-accent: #0969da;
   --color-accent: oklch(0.480 0.170 250.0);
 
   /* Semantic */
+  --color-success: #1a7f37;
   --color-success: oklch(0.550 0.160 145.0);
+  --color-warning: #9a6700;
   --color-warning: oklch(0.700 0.150 75.0);
+  --color-error: #cf222e;
   --color-error: oklch(0.550 0.200 25.0);
+  --color-info: #0969da;
   --color-info: oklch(0.550 0.130 250.0);
 
   /* Code */
+  --color-code-bg: #f6f8fa;
   --color-code-bg: oklch(0.965 0.003 230);
+  --color-code-text: #24292f;
   --color-code-text: oklch(0.200 0.005 230);
 
   /* GitHub-style borders */
+  --color-border: #d0d7de;
   --color-border: oklch(0.860 0.005 250);
 
   /* Spacing Scale */
@@ -113,11 +130,15 @@
   --motion-fast: 100ms;
   --motion-normal: 200ms;
   --motion-slow: 400ms;
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 400ms;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
-  /* Typography — System font stack (GitHub-style) */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* Typography — Inter + CJK + System fallback */
+  --font-sans: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --font-display: var(--font-sans);
   --text-base: 0.875rem;
   --line-height: 1.65;
@@ -134,27 +155,40 @@
    ============================================ */
 
 [data-theme="dark"] {
-  /* Background */
+  /* Background (hex fallbacks for oklch) */
+  --color-bg: #161b22;
   --color-bg: oklch(0.145 0.005 250);
+  --color-surface: #1c2128;
   --color-surface: oklch(0.175 0.005 250);
+  --color-surface-2: #272d36;
   --color-surface-2: oklch(0.210 0.006 250);
+  --color-surface-3: #343b45;
   --color-surface-3: oklch(0.250 0.006 250);
 
   /* Text */
+  --color-ink: #e6edf3;
   --color-ink: oklch(0.920 0.005 250);
+  --color-muted: #8b949e;
   --color-muted: oklch(0.620 0.010 250);
+  --color-dim: #6e7681;
   --color-dim: oklch(0.520 0.015 250);
 
   /* Brand */
+  --color-primary: #4d9eeb;
   --color-primary: oklch(0.620 0.150 250.0);
+  --color-primary-l: #6cb6f0;
   --color-primary-l: oklch(0.700 0.130 250.0);
+  --color-accent: #4d9eeb;
   --color-accent: oklch(0.620 0.150 250.0);
 
   /* Borders */
+  --color-border: #3d444d;
   --color-border: oklch(0.300 0.008 250);
 
   /* Code */
+  --color-code-bg: #1c2128;
   --color-code-bg: oklch(0.160 0.005 250);
+  --color-code-text: #d2d8e0;
   --color-code-text: oklch(0.880 0.010 250);
 
   /* Shadows */
@@ -432,10 +466,11 @@ a:hover {
 }
 
 /* ============================================
-   Terminal-Inspired Code Blocks
+   Terminal-Inspired Code Blocks (opt-in variant)
+   Add class .code-block--terminal to activate
    ============================================ */
 
-.code-block {
+.code-block--terminal {
   position: relative;
   background-color: oklch(0.145 0.005 250);
   color: oklch(0.820 0.030 145);
@@ -446,7 +481,7 @@ a:hover {
 }
 
 /* macOS-style window chrome */
-.code-block::before {
+.code-block--terminal::before {
   content: '';
   position: absolute;
   top: 0;
@@ -461,7 +496,7 @@ a:hover {
 }
 
 /* Traffic light dots */
-.code-block::after {
+.code-block--terminal::after {
   content: '';
   position: absolute;
   top: 0.7rem;
@@ -483,8 +518,8 @@ a:hover {
 }
 
 /* CRT scanline overlay */
-.code-block .code-scanlines,
-.code-block.scanlines::before {
+.code-block--terminal .code-scanlines,
+.code-block--terminal.scanlines::before {
   content: '';
   position: absolute;
   inset: 2rem 0 0 0;
@@ -501,26 +536,26 @@ a:hover {
 }
 
 /* Amber terminal text variant */
-.code-block.code-amber,
-.code-amber .code-block {
+.code-block--terminal.code-amber,
+.code-amber .code-block--terminal {
   color: oklch(0.800 0.080 75);
 }
 
 /* Green terminal text variant (default) */
-.code-block code {
+.code-block--terminal code {
   color: inherit;
   position: relative;
   z-index: 2;
 }
 
 /* Subtle CRT glow on the block */
-.code-block {
+.code-block--terminal {
   box-shadow:
     inset 0 0 60px oklch(0 0 0 / 0.02),
     var(--shadow-md);
 }
 
-[data-theme="dark"] .code-block {
+[data-theme="dark"] .code-block--terminal {
   background-color: oklch(0.090 0.005 250);
   color: oklch(0.820 0.030 145);
   border-color: oklch(0.250 0.006 250);
@@ -529,12 +564,12 @@ a:hover {
     0 2px 8px oklch(0 0 0 / 0.3);
 }
 
-[data-theme="dark"] .code-block::before {
+[data-theme="dark"] .code-block--terminal::before {
   background-color: oklch(0.130 0.005 250);
   border-block-end-color: oklch(0.250 0.006 250);
 }
 
-[data-theme="dark"] .code-block.code-amber {
+[data-theme="dark"] .code-block--terminal.code-amber {
   color: oklch(0.800 0.080 75);
 }
 

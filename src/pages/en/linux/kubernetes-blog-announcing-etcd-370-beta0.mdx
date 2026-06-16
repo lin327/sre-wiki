@@ -1,0 +1,65 @@
+---
+
+layout: ../../../layouts/BaseLayout.astro
+title: "Kubernetes Blog - Announcing etcd 3.7.0-beta.0"
+category: "Fundamentals设施与组件"
+confidence: high
+---
+
+# Kubernetes Blog - Announcing etcd 3.7.0-beta.0
+
+## Overview
+
+etcd is the core data storage of the Kubernetes cluster, and its stability and performance directly affect the reliability of the entire cluster. etcd 3.7.0-beta.0 is the first beta version of the upcoming v3.7 stable release, released by the SIG-Etcd team. This update focuses on resolving long-standing performance bottlenecks, cleaning up historical technical debt, and improving security and operational reliability. For the SRE team, understanding the new features and breaking changes in this release is key to planning cluster upgrades and future technology stack evolution.
+
+## Core concepts
+
+### RangeStream Properties
+
+RangeStream is a key RPC (remote procedure call) introduced in etcd v3.7. In older versions, when a client query returned a large result set (such as listing all Pods), it had to wait for etcd to return the full results before processing could begin. This will lead to two problems: first, the client faces uncertain high latency; second, the memory usage of the server and client increases unpredictably due to the need to buffer the entire result set.
+
+RangeStream solves this problem through the streaming mechanism. The caller can receive the result set in chunks to achieve:
+1. **Reduced Latency**: Clients can process the first batch of data faster without waiting for a full response.
+2. **Predictable memory usage**: Memory consumption is no longer linearly related to the result set size and becomes more stable and controllable.
+
+### v2store removal
+
+etcd v3.7.0 is the first 100% v3store-based version, marking a complete farewell to the old v2 storage engine. This version removes all remaining components of v2store, including:
+* Legacy v2 client library.
+* Use v2 API for service discovery and bootstrap mechanisms.
+* All v2 request processing paths.
+* Multiple deprecated experimental flags.
+
+This cleanup is intended to simplify the codebase, reduce maintenance burden, and improve overall reliability. However, this is a breaking change that may impact users or tools that have not yet migrated to the v3 API.
+
+## Practice
+
+### Obtain and test
+
+The SRE team can obtain this beta version from official channels for testing:
+* **Source Code**: Download from a specific tag in the GitHub repository.
+* **Binaries**: Download precompiled binary packages.
+* **Container Image**: Use the officially released container image.
+
+When testing, focus on the usage experience of RangeStream and the compatibility of the upgrade path. You can try to use the `--stream` related flag through the `etcdctl` command line tool, or directly call the corresponding gRPC API in the application for verification.
+
+### Upgrade path and precautions
+
+1. **Direct upgrade risk**: The risk of directly upgrading from etcd v3.4 to v3.7 is extremely high. v3.4 has reached end of life (EOL) on May 15, 2026. Clusters planning to upgrade should first follow the official documentation to smoothly upgrade to v3.5 or v3.6.
+2. **Upgrade from v3.5/v3.6**: Although theoretically supported, given that v3.7 has removed v2store, you must ensure that all dependent clients and toolchains have been fully migrated to the v3 API before upgrading. Thorough testing in a non-production environment is recommended.
+3. **Feedback Collection**: Any blocking issues or compatibility issues encountered during testing should be reported promptly through GitHub Issues, the `#SIG-etcd` channel of Kubernetes Slack, or the etcd-dev mailing list.
+
+## SRE Key Points
+
+* **Reliability and Performance**: RangeStream is an important step to solve etcd's performance problems in large-scale query scenarios, helping to improve the stability and response speed of running key operations (such as controller synchronization, audit log query) in large Kubernetes clusters.
+* **Technical Debt Cleanup and Security**: Removing v2store and other legacy components is an important technical debt cleanup effort that reduces the attack surface and makes the code easier to maintain and audit, thereby enhancing long-term reliability.
+* **Version support strategy and incident response**: The version support strategy of etcd must be strictly followed (usually only the latest two minor versions are maintained). v3.4 has been EOL and should be considered a security risk and operational hazard. The SRE team needs to incorporate etcd upgrades into regular maintenance plans to avoid running unsupported versions, which is especially important in security incident response.
+* **Best Practices and Anti-Patterns**:
+    * **Best Practices**: Fully verify new version features (such as RangeStream) in the test environment; develop and practice cross-version upgrade plans; actively feedback Beta version issues to the community.
+    * **Common anti-patterns**: Jump upgrade directly from ancient versions (such as v3.2, v3.4); ignore version EOL announcements and run unsupported versions in production environments; directly apply major version changes without testing.
+* **Related indicators (SLI/SLO/SLA)**:
+    * **SLI**: You can pay attention to `etcd_disk_wal_fsync_duration_seconds` (WAL synchronization delay) and `etcd_server_proposals_failed_total` (proposal failure rate) before and after the upgrade to measure storage layer performance and stability.
+    * **SLO**: Set goals based on these SLIs, such as ensuring WAL sync P99 latency is less than a certain threshold.
+    * **SLA**: The SLA of the managed etcd service (such as EKS, GKE) provided by the cloud service provider will change based on the etcd version it is running and the support policy. Upgrading to a new version may affect service level agreement coverage.
+
+See [[kubernetes-architecture]] to understand etcd's role in the overall Kubernetes architecture.

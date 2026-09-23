@@ -10,7 +10,7 @@ import wikilinks from './src/lib/remark-wikilinks.mjs';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://wiki.tentative.me',
+  site: 'https://pineapple-user.site',
 
   server: {
     host: '0.0.0.0',

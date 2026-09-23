@@ -1,11 +1,25 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 
+// 尚无统一精选标记，仅统计 README 中的种子页，并尊重 canonical: false。
+const seedPages = import.meta.glob<{ canonical?: boolean }>([
+  "./linux/{process-model,filesystem,network-stack,systemd}.mdx",
+  "./docker/{image-layers,networking,storage,compose}.mdx",
+  "./kubernetes/{pod-lifecycle,container-runtime,service-mesh}.mdx",
+  "./runbooks/{crashloopbackoff,oomkilled,imagepullbackoff}.mdx",
+  "./architectures/{ha-cluster,gitops-pipeline}.mdx",
+  "./incidents/{etcd-data-corruption,dns-resolution-failure}.mdx",
+  "./comparisons/{helm-vs-kustomize,istio-vs-linkerd}.mdx",
+], { eager: true, import: "frontmatter" });
+const curatedPaths = Object.entries(seedPages)
+  .filter(([, frontmatter]) => frontmatter.canonical !== false)
+  .map(([path]) => path);
+const categoryCount = new Set(curatedPaths.map((path) => path.split("/")[1])).size;
+
 interface CategoryCard {
   title: string;
   href: string;
   icon: string;
-  count: number;
   latest: string;
   latestHref: string;
   color: string;
@@ -24,7 +38,6 @@ const categoryCards: CategoryCard[] = [
     title: "Linux",
     href: "/linux/process-model",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2Zm2 .5v11a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5ZM4 5h8v1H4V5Zm0 3h6v1H4V8Z"/></svg>`,
-    count: 4,
     latest: "systemd 服务管理",
     latestHref: "/linux/systemd",
     color: "var(--color-success)",
@@ -33,7 +46,6 @@ const categoryCards: CategoryCard[] = [
     title: "Docker",
     href: "/docker/image-layers",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.02 7.222c-.012-.06-.028-.118-.046-.176l.003.012c-.088-.44-.39-.81-.81-1.047a1.7 1.7 0 0 0-.846-.21H9.13c-.16-.6-.45-1.13-.84-1.55C7.46 3.43 6.34 3 5.14 3c-.8 0-1.58.2-2.12.55A2.16 2.16 0 0 0 2 5.5c0 .4.1.78.32 1.12.2.3.48.54.8.7-.04.06-.07.14-.1.2C2.35 7.87 2 8.48 2 9.22c0 1.26.75 2.28 2.12 2.85.97.4 2.17.58 3.38.58.4 0 .8-.02 1.18-.07.48-.06.93-.18 1.34-.36.65-.29 1.18-.74 1.55-1.3.17-.25.3-.52.38-.8.14-.02.28-.06.4-.1.35-.13.64-.32.86-.57.2-.22.35-.5.44-.8.06-.2.1-.4.1-.62 0-.28-.06-.54-.16-.78a1.7 1.7 0 0 0-.4-.58c.08-.16.14-.34.18-.52.06-.2.08-.58.04-.88ZM3 6.5c0-.46.2-.86.52-1.14.3-.26.68-.36 1.02-.36.46 0 .92.16 1.3.44.3.24.52.56.62.92H3Zm3.38 5.44c-.78 0-1.58-.1-2.3-.34-1.06-.34-1.5-.86-1.5-1.58 0-.44.16-.82.44-1.12.28-.3.64-.48 1.08-.56.2-.04.42-.06.64-.08h5.88c-.12.44-.34.84-.66 1.16-.4.4-.9.66-1.46.78-.34.08-.7.12-1.06.12l-1.6.02ZM14 5.5h-1.5V4h-1v1.5H10v1h1.5V8h1V6.5H14v-1Z"/></svg>`,
-    count: 4,
     latest: "Docker 存储驱动",
     latestHref: "/docker/storage",
     color: "var(--color-info)",
@@ -42,7 +54,6 @@ const categoryCards: CategoryCard[] = [
     title: "Kubernetes",
     href: "/kubernetes/pod-lifecycle",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm3.67 11.36-4.67 2.7a.5.5 0 0 1-.5 0l-4.67-2.7a.5.5 0 0 1-.25-.43V5.07a.5.5 0 0 1 .25-.43l4.67-2.7a.5.5 0 0 1 .5 0l4.67 2.7a.5.5 0 0 1 .25.43v5.86a.5.5 0 0 1-.25.43ZM8 1.4 3.8 3.8v6.4L8 12.6l4.2-2.4V3.8L8 1.4Z"/><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/></svg>`,
-    count: 3,
     latest: "Service Mesh 架构对比",
     latestHref: "/kubernetes/service-mesh",
     color: "var(--color-primary)",
@@ -51,7 +62,6 @@ const categoryCards: CategoryCard[] = [
     title: "Runbooks",
     href: "/runbooks/crashloopbackoff",
     icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 7.793V2a.5.5 0 0 1 .5-.5Z"/><path d="M2 12.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5Z"/></svg>`,
-    count: 3,
     latest: "OOMKilled 排查",
     latestHref: "/runbooks/oomkilled",
     color: "var(--color-error)",
@@ -71,33 +81,33 @@ const recentPages: RecentPage[] = [
 <BaseLayout title="SRE Atlas" description="SRE 运维知识库，覆盖 Linux、Docker、Kubernetes 全链路">
   {/* Welcome Banner */}
   <section class="welcome" aria-labelledby="welcome-title">
-    <h1 id="welcome-title" class="welcome__title">Welcome to SRE Atlas</h1>
+    <h1 id="welcome-title" class="welcome__title">运维知识图谱</h1>
     <p class="welcome__desc">
-      AI 驱动的运维知识库，覆盖 Linux、Docker、Kubernetes 全链路。快速查阅故障排查流程、技术架构对比与最佳实践。
+      精选运维知识库，聚焦 Linux、Docker、Kubernetes 等常用主题。快速查阅故障排查流程、技术架构对比与最佳实践。
     </p>
   </section>
 
   {/* Stats Row — GitHub repo stats style */}
-  <div class="stats-row" aria-label="Site statistics">
+  <div class="stats-row" aria-label="精选内容统计">
     <span class="stats-row__item">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h11A1.5 1.5 0 0 1 15 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11ZM2.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-11Z"/></svg>
-      21 pages
+      {curatedPaths.length} 篇精选
     </span>
     <span class="stats-row__sep" aria-hidden="true">·</span>
     <span class="stats-row__item">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M0 2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2Zm6 0a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H6Z"/></svg>
-      7 categories
+      {categoryCount} 个分类
     </span>
     <span class="stats-row__sep" aria-hidden="true">·</span>
     <span class="stats-row__item">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 3.5a.5.5 0 0 0-1 0V8a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 7.71V3.5Z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16Zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/></svg>
-      Updated today
+      按主题查阅
     </span>
   </div>
 
   {/* Quick Access Grid — category cards */}
   <section class="categories" aria-labelledby="categories-heading">
-    <h2 id="categories-heading" class="section-title">Quick access</h2>
+    <h2 id="categories-heading" class="section-title">快速入口</h2>
     <div class="categories__grid">
       {categoryCards.map((card) => (
         <a href={card.href} class="card-link category-card">
@@ -106,10 +116,10 @@ const recentPages: RecentPage[] = [
               <Fragment set:html={card.icon} />
             </span>
             <h3 class="category-card__title">{card.title}</h3>
-            <span class="category-card__count">{card.count}</span>
+            <span class="category-card__count">精选</span>
           </div>
           <p class="category-card__latest">
-            Latest: <span class="category-card__latest-link">{card.latest}</span>
+            推荐：<span class="category-card__latest-link">{card.latest}</span>
           </p>
         </a>
       ))}
@@ -118,7 +128,7 @@ const recentPages: RecentPage[] = [
 
   {/* Recent Activity Feed — GitHub activity style */}
   <section class="activity" aria-labelledby="activity-heading">
-    <h2 id="activity-heading" class="section-title">Recent activity</h2>
+    <h2 id="activity-heading" class="section-title">精选阅读</h2>
     <ul class="activity__list">
       {recentPages.map((page) => (
         <li class="activity__item">

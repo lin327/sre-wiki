@@ -1,5 +1,7 @@
 # SRE Atlas 项目规划
 
+> **历史方案，非现网任务板。** 下文的完成标记、旧域名和部署计划仅作历史记录；Phase 3 的 k3s 方案已废弃，现网使用云服务器 Docker。当前状态以 [README.md](README.md)、[PROJECT.md](PROJECT.md) 和 [CONTENT_CONTRACT.md](CONTENT_CONTRACT.md) 为准。
+
 ## 执行计划 + 当前进度
 
 ### Phase 1: 骨架搭建 ✅ 已完成

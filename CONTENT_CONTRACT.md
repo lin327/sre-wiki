@@ -12,7 +12,8 @@
 - `canonical: true` 表示已纳入精选，不是 SEO canonical URL；本次仅给明确列出的 20 篇种子正文及 7 个分类索引添加此字段，种子正文保持原样。
 - `canonical: false` 或缺少该字段的内容均视为待整理；置信度、更新时间、标题或 slug 长短不能替代审核。
 - GitHub Issue 复述、flaky test、局部 UI 修复等材料默认不上线。采集成功或模型生成成功不等于可发布。
-- 新 Agent 草稿的目标是仅进入 inbox，并带 `canonical: false`；审核通过后再进入对应发布分类。Wiki 接收目录约定为 `src/inbox/`，不使用 `src/pages/inbox/`，避免 Astro 自动生成公开路由。
+- 新 Agent 草稿默认写入 Agent 仓库的 `output/inbox/<category>/`，并强制写 `canonical: false`。`PUBLISH_CANONICAL=true` 仅跳过 inbox 层、改写到 `output/<category>/`，生成页仍为 `canonical: false`，不能代替人工审核。
+- Wiki 接收未审核稿的目录约定为 `src/inbox/`，由人工通过 PR 放入；不使用 `src/pages/inbox/`，避免 Astro 自动生成公开路由。审核通过后才进入对应发布分类。
 - 人工审核需核对来源、适用版本、技术步骤和主题归属；通过后才可标记为精选。
 
 ## 当前过渡边界
@@ -21,4 +22,5 @@
 - Linux 的实际列表由 `src/pages/linux/index.astro` 和 `src/pages/linux/page/[page].astro` 生成，统一读取 frontmatter：精选优先，再按标题与 slug 排序，排序后分页；所有条目显示“精选”或“待整理”。
 - 其余分类仍保留静态 `index.mdx` 清单，按对应页面的 frontmatter 分为“精选”和“待整理”。变更内容标记或新增页面时须同步维护清单；清单并不代表目录中的全部历史内容。
 - 侧栏现有“查看全部”入口指向这些带警告的分类列表，首页与侧栏种子入口保持不变。
-- Agent 目前仍输出到自身 `output/<category>/`；inbox 输出约束、人工审核发布流程和全站过滤尚待实现。本契约规定目标，不代表这些机制已经生效。
+- Agent 的默认 inbox 输出已实现；采集 CI 暂停 schedule，仅手动触发并上传 inbox artifact。CI 的 SQLite 去重状态尚未跨运行持久化，重复运行可能重复生成。
+- 当前没有自动同步 Wiki 的链路，内容采用人工审核/PR 流程；Wiki CI 仅构建并推送镜像，不自动更新服务器。全站发布过滤仍待实现。

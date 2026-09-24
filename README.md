@@ -43,9 +43,9 @@ sre-wiki/
 
 ## 精选内容与 inbox
 
-内容目标分为两层：审核后的精选页进入 `src/pages/` 对应分类，以 `canonical: true` 标记；Agent 草稿进入 `src/inbox/`，审核前不进入发布路由、搜索索引或 sitemap。GitHub Issue 复述默认作为待整理资料，不直接上线。目录使用复数 `runbooks/`、`architectures/`。
+内容分为两层：审核后的精选页进入 `src/pages/` 对应分类，以 `canonical: true` 标记；Agent 默认在自身 `output/inbox/<category>/` 生成 `canonical: false` 草稿。如需交由 Wiki 管理，由人工通过 PR 放入 `src/inbox/`，审核前不进入发布路由、搜索索引或 sitemap。GitHub Issue 复述默认作为待整理资料，不直接上线。目录使用复数 `runbooks/`、`architectures/`。
 
-**当前状态：**20 篇种子正文和 7 个分类索引已标记 `canonical: true`，首页统计 20 篇精选；分类列表精选置顶，其余标为“待整理”并带警告。历史生成内容仍在 `src/pages/`，仍可访问并被搜索或 sitemap 收录；`src/inbox/` 接入与全站发布过滤尚未实现。完整规则见[内容契约](CONTENT_CONTRACT.md)。
+**当前状态：**20 篇种子正文和 7 个分类索引已标记 `canonical: true`，首页统计 20 篇精选；分类列表精选置顶，其余标为“待整理”并带警告。历史生成内容仍在 `src/pages/`，仍可访问并被搜索或 sitemap 收录；Agent 到 Wiki `src/inbox/` 的自动同步与全站发布过滤尚未实现。完整规则见[内容契约](CONTENT_CONTRACT.md)。
 
 种子主题如下（不含分类索引页）：
 
@@ -86,4 +86,6 @@ curl -fsS http://127.0.0.1:8080/healthz
 
 - [sre-atlas-agent](https://github.com/lin327/sre-atlas-agent) — 内容采集 Agent
 
-Agent 当前使用 SQLite 去重，默认输出 `output/<category>/<slug>.mdx`；尚未接入 Wiki inbox，也没有自动同步或发布 Wiki 的链路。采集、审核、同步和发布是需要分别验证的环节。
+Agent 使用本地 SQLite 去重，默认输出 `output/inbox/<category>/<slug>.mdx`。只有精确设置 `PUBLISH_CANONICAL=true` 才跳过 inbox 层、输出到 `output/<category>/`，但生成页仍写 `canonical: false`，不代表审核通过。
+
+Agent 采集 CI 的 SQLite 去重状态尚未跨运行持久化，重复运行可能重复生成；schedule 已暂停，仅手动触发并上传 inbox artifact。当前没有自动同步 Wiki 的链路，内容仍需人工审核/PR；Wiki CI 只发布镜像，不自动更新服务器。

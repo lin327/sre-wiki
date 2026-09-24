@@ -12,8 +12,10 @@ export async function getStaticPaths() {
       slug: path.split("/").pop()?.replace(".mdx", "") || "",
       title: mod.frontmatter?.title || "",
       description: mod.frontmatter?.description || "",
+      canonical: mod.frontmatter?.canonical === true,
     }))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => Number(b.canonical) - Number(a.canonical)
+      || a.title.localeCompare(b.title) || a.slug.localeCompare(b.slug));
 
   const totalPages = Math.ceil(articles.length / PAGE_SIZE);
   const paths = [];
@@ -51,6 +53,7 @@ const basePath = "/linux";
     <p class="category-desc">
       {isEnglish ? "Process model, filesystem, network stack, systemd, observability and other core Linux knowledge." : "进程模型、文件系统、网络栈、systemd、可观测性等 Linux 核心知识。"}
     </p>
+    <p class="category-desc" role="note">本列表保留历史采集资料；“待整理”内容尚未纳入精选，可能包含 Issue 复述，使用前请核对来源和适用版本。</p>
     <div class="category-stats">
       <span class="category-stats__item">
         {isEnglish ? `${total} articles` : `共 ${total} 篇内容`}
@@ -68,6 +71,7 @@ const basePath = "/linux";
         <li class="article-item">
           <a href={`/linux/${article.slug}`} class="article-link">
             <span class="article-title">{article.title}</span>
+            <span class="article-desc">{article.canonical ? "精选" : "待整理"}</span>
             {article.description && (
               <span class="article-desc">{article.description}</span>
             )}

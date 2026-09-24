@@ -1,0 +1,53 @@
+---
+interface Props {
+  placement: "sidebar" | "after-article" | "home-mid";
+}
+
+const { placement } = Astro.props;
+const enabled = import.meta.env.PUBLIC_ADS_ENABLED === "true";
+const provider = import.meta.env.PUBLIC_ADS_PROVIDER || "sponsor";
+const image = import.meta.env.PUBLIC_SPONSOR_IMAGE || "";
+const url = import.meta.env.PUBLIC_SPONSOR_URL || "";
+const name = import.meta.env.PUBLIC_SPONSOR_NAME || "赞助方";
+const localImage = image.startsWith("/") && !image.startsWith("//")
+  && URL.canParse(image, Astro.url) && new URL(image, Astro.url).origin === Astro.url.origin;
+const validLink = URL.canParse(url) && ["https:", "http:"].includes(new URL(url).protocol);
+const showSponsor = enabled && provider === "sponsor" && localImage && validLink;
+---
+
+{showSponsor && (
+  <aside class:list={["ad-slot", `ad-slot--${placement}`]} data-ad-slot={placement} aria-label="赞助" data-pagefind-ignore>
+    <span class="ad-slot__label">赞助</span>
+    <a href={url} target="_blank" rel="sponsored noopener noreferrer">
+      <img src={image} alt={name} loading="lazy" decoding="async" />
+    </a>
+  </aside>
+)}
+
+<style>
+  .ad-slot {
+    box-sizing: border-box;
+    width: min(100%, 48rem);
+    margin: 1rem auto;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+  .ad-slot__label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .ad-slot a {
+    display: block;
+  }
+  .ad-slot img {
+    display: block;
+    width: 100%;
+    max-height: 10rem;
+    object-fit: contain;
+  }
+</style>

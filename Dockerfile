@@ -9,6 +9,11 @@ RUN npm ci --ignore-scripts
 
 # Copy source and build
 COPY . .
+ARG PUBLIC_ADS_ENABLED=false
+ARG PUBLIC_ADS_PROVIDER=sponsor
+ARG PUBLIC_SPONSOR_IMAGE
+ARG PUBLIC_SPONSOR_URL
+ARG PUBLIC_SPONSOR_NAME
 RUN npm run build
 
 # ---- Production stage ----

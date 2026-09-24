@@ -7,6 +7,7 @@ import AuthButton from "../components/react/AuthButton.tsx";
 import LanguageSwitcher from "../components/react/LanguageSwitcher.tsx";
 import TOC from "../components/astro/TOC.astro";
 import LastModified from "../components/astro/LastModified.astro";
+import AdSlot from "../components/ads/AdSlot.astro";
 
 interface Heading {
   depth: number;
@@ -267,11 +268,13 @@ function isPageActive(href: string): boolean {
           <div class="atlas-toc__inner">
             <p class="atlas-toc__title">{isEnglish ? "On this page" : "本页目录"}</p>
             <TOC headings={headings} />
-            <!-- ad:sidebar -->
+            <AdSlot placement="sidebar" />
           </div>
         </aside>
       )}
     </div>
+
+    <AdSlot placement="after-article" />
 
     <!-- Footer -->
     <footer class="site-footer">

@@ -18,9 +18,10 @@
 
 ## 当前过渡边界
 
-- 本次采用索引分层，不批量删除、搬迁或重写已有 MDX，也没有实现全站构建过滤。历史待整理页面仍可直接访问，并仍可能被 sitemap、Pagefind 收录。
+- **发现通道过滤已生效，文件尚未搬迁**：sitemap 与 Pagefind 共用 `src/lib/discovery-policy.mjs` 的路由集合，只收录严格的 `canonical: true` 及明确保留的首页、about/privacy。`false`、缺字段或字符串 `"true"` 不算精选；历史 MDX 仍构建为可访问页面，不批量删除、搬迁或重写。
+- Pagefind 只索引上述页面的主内容，分类列表中指向非精选页面的链接不参与索引。分类列表和历史地址仍可浏览；这不是页面访问限制，也不等于站外搜索引擎已删除历史收录。
 - Linux 的实际列表由 `src/pages/linux/index.astro` 和 `src/pages/linux/page/[page].astro` 生成，统一读取 frontmatter：精选优先，再按标题与 slug 排序，排序后分页；所有条目显示“精选”或“待整理”。
 - 其余分类仍保留静态 `index.mdx` 清单，按对应页面的 frontmatter 分为“精选”和“待整理”。变更内容标记或新增页面时须同步维护清单；清单并不代表目录中的全部历史内容。
 - 侧栏现有“查看全部”入口指向这些带警告的分类列表，首页与侧栏种子入口保持不变。
-- Agent 的默认 inbox 输出已实现；采集 CI 暂停 schedule，仅手动触发并上传 inbox artifact。CI 的 SQLite 去重状态尚未跨运行持久化，重复运行可能重复生成。
-- 当前没有自动同步 Wiki 的链路，内容采用人工审核/PR 流程；Wiki CI 仅构建并推送镜像，不自动更新服务器。全站发布过滤仍待实现。
+- Agent 的默认 inbox 输出已实现；采集 CI 暂停 schedule，仅手动触发并上传 inbox artifact。SQLite 已通过 cache/artifact 持久化，重复运行依赖最新 DB 成功恢复。
+- 当前没有自动同步 Wiki 的链路，内容采用人工审核/PR 流程；Wiki CI 仅构建并推送镜像，不自动更新服务器。本次不阻止历史页直接访问。

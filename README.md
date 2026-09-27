@@ -32,6 +32,7 @@ sre-wiki/
 ├── src/
 │   ├── components/ # React、Astro、MDX 组件及 ads/AdSlot.astro
 │   ├── layouts/    # BaseLayout（顶栏、侧栏、目录与槽位）
+│   ├── inbox/      # 未审核草稿，不生成公开路由
 │   ├── lib/        # 认证客户端、remark-wikilinks 插件
 │   ├── pages/      # 中文分类 MDX、页面路由与 en/ 英文内容
 │   └── styles/     # 设计系统
@@ -45,7 +46,7 @@ sre-wiki/
 
 内容分为两层：审核后的精选页进入 `src/pages/` 对应分类，以 `canonical: true` 标记；Agent 默认在自身 `output/inbox/<category>/` 生成 `canonical: false` 草稿。如需交由 Wiki 管理，由人工通过 PR 放入 `src/inbox/`，审核前不进入发布路由、搜索索引或 sitemap。GitHub Issue 复述默认作为待整理资料，不直接上线。目录使用复数 `runbooks/`、`architectures/`。
 
-**当前状态：**20 篇种子正文和 7 个分类索引已标记 `canonical: true`，首页统计 20 篇精选；分类列表精选置顶，其余标为“待整理”并带警告。历史生成内容仍在 `src/pages/`，仍可访问并被搜索或 sitemap 收录；Agent 到 Wiki `src/inbox/` 的自动同步与全站发布过滤尚未实现。完整规则见[内容契约](CONTENT_CONTRACT.md)。
+**当前状态：**20 篇种子正文和 7 个分类索引已标记 `canonical: true`，首页统计 20 篇精选；分类列表精选置顶，其余标为“待整理”并带警告。**搜索与 sitemap 的精选过滤已生效，历史文件尚未搬迁**：只收录 `canonical: true` 页面及明确保留的首页、about/privacy，目前共 30 个地址。分类列表中的待整理链接也不参与搜索索引；历史页仍可直接访问。Agent 到 Wiki `src/inbox/` 仍由人工/PR 交接，没有自动同步。完整规则见[内容契约](CONTENT_CONTRACT.md)。
 
 种子主题如下（不含分类索引页）：
 
@@ -88,4 +89,4 @@ curl -fsS http://127.0.0.1:8080/healthz
 
 Agent 使用本地 SQLite 去重，默认输出 `output/inbox/<category>/<slug>.mdx`。只有精确设置 `PUBLISH_CANONICAL=true` 才跳过 inbox 层、输出到 `output/<category>/`，但生成页仍写 `canonical: false`，不代表审核通过。
 
-Agent 采集 CI 的 SQLite 去重状态尚未跨运行持久化，重复运行可能重复生成；schedule 已暂停，仅手动触发并上传 inbox artifact。当前没有自动同步 Wiki 的链路，内容仍需人工审核/PR；Wiki CI 只发布镜像，不自动更新服务器。
+Agent 采集 CI 已通过 cache/artifact 持久化 SQLite，重复运行依赖最新 DB 成功恢复；schedule 已暂停，仅手动触发并上传 inbox artifact。当前没有自动同步 Wiki 的链路，内容仍需人工审核/PR；Wiki CI 只发布镜像，不自动更新服务器。

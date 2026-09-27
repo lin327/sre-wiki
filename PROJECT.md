@@ -26,7 +26,7 @@ graph TB
     Output -.->|人工审核与 PR，无自动同步| Repo
 ```
 
-当前采集器仅实现 RSS 和 GitHub，官方文档采集仍属规划。Wiki CI 只推送镜像，不自动更新云服务器；Agent 没有自动同步 Wiki 的链路。Agent 采集 CI 仅手动触发并上传 inbox artifact，SQLite 去重状态尚未跨运行持久化，重复运行可能重复生成。
+当前采集器仅实现 RSS 和 GitHub，官方文档采集仍属规划。Wiki CI 只推送镜像，不自动更新云服务器；Agent 没有自动同步 Wiki 的链路。Agent 采集 CI 仅手动触发并上传 inbox artifact，SQLite 已通过 cache/artifact 持久化，重复运行依赖最新 DB 成功恢复。
 
 ## 技术栈
 
@@ -59,7 +59,7 @@ graph TB
 | 故障案例 | `src/pages/incidents/` | etcd 数据损坏、DNS 解析失败 |
 | 对比分析 | `src/pages/comparisons/` | Helm vs Kustomize、Istio vs Linkerd |
 
-目标边界：`src/pages/` 发布审核后的精选内容；Agent 草稿默认留在自身 `output/inbox/<category>/`，如需交由 Wiki 管理，通过人工/PR 放入 `src/inbox/`，Issue 默认不上线。当前 20 篇种子正文和 7 个分类索引已标记 `canonical: true`，分类列表区分精选与待整理，首页统计 20 篇精选。Agent 到 Wiki 的自动同步与全站发布过滤尚未实现，历史生成页仍可访问并被搜索或 sitemap 收录。详见[内容契约](CONTENT_CONTRACT.md)。
+目标边界：`src/pages/` 发布审核后的精选内容；Agent 草稿默认留在自身 `output/inbox/<category>/`，如需交由 Wiki 管理，通过人工/PR 放入 `src/inbox/`，Issue 默认不上线。当前 20 篇种子正文和 7 个分类索引已标记 `canonical: true`，分类列表区分精选与待整理，首页统计 20 篇精选。搜索与 sitemap 的过滤已生效，只收录精选及首页、about/privacy；历史文件尚未搬迁，原地址仍可访问。Agent 到 Wiki 尚无自动同步。详见[内容契约](CONTENT_CONTRACT.md)。
 
 ## 标签体系
 
@@ -247,8 +247,8 @@ sre-atlas-agent/
 - 已具备：Astro + React + MDX 结构、首页种子页入口、Pagefind、Docker 静态镜像、默认关闭的 sponsor 槽位与说明页。
 - 已具备：Agent RSS/GitHub 采集、Claude 生成 MDX、本地 SQLite 去重；默认产物为 `output/inbox/<category>/<slug>.mdx`。`PUBLISH_CANONICAL=true` 仅跳过 inbox 层，生成页仍写 `canonical: false`，不等于精选发布。
 - 已具备：Wiki CI 测试与 GHCR 镜像推送；这不等于服务器自动部署。
-- 已具备：种子与分类索引的 `canonical` 标注、分类精选置顶和待整理提示；全站发布过滤仍待实现。
-- 待完成：Agent 到 Wiki 的自动同步、采集去重状态跨 CI 运行持久化；当前采用人工审核/PR 流程。
+- 已具备：种子与分类索引的 `canonical` 标注、分类精选置顶和待整理提示；sitemap/Pagefind 精选过滤已生效，历史文件尚未搬迁、地址仍保留。
+- 待完成：Agent 到 Wiki 的自动同步；当前采用人工审核/PR 流程。
 - 待完成：镜像发布后的服务器自动部署与上线验证。
 
 ### 后续优化

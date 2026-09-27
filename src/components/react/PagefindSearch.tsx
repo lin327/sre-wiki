@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
-    PagefindUI: new (opts: { element: string | HTMLElement; showImages?: boolean; showSubResults?: boolean }) => void;
+    PagefindUI: new (opts: { element: string | HTMLElement; showImages?: boolean; showSubResults?: boolean }) => {
+      destroy: () => void;
+    };
   }
 }
 
@@ -14,7 +16,7 @@ function useIsEnglish() {
 export default function PagefindSearch() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const initialized = useRef(false);
+  const pagefindUI = useRef<{ destroy: () => void } | null>(null);
   const isEnglish = useIsEnglish();
 
   useEffect(() => {
@@ -23,6 +25,7 @@ export default function PagefindSearch() {
         e.preventDefault();
         setOpen(true);
       }
+      if (e.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -43,19 +46,22 @@ export default function PagefindSearch() {
   }, []);
 
   useEffect(() => {
-    if (!open || !containerRef.current || initialized.current) return;
+    if (!open || !containerRef.current) return;
+    let check: number | undefined;
+    let stopChecking: number | undefined;
+    let focusSearch: number | undefined;
 
     const initUI = () => {
-      if (window.PagefindUI && containerRef.current && !initialized.current) {
-        containerRef.current.innerHTML = "";
-        new window.PagefindUI({
-          element: containerRef.current,
+      const container = containerRef.current;
+      if (window.PagefindUI && container && !pagefindUI.current) {
+        container.innerHTML = "";
+        pagefindUI.current = new window.PagefindUI({
+          element: container,
           showImages: false,
           showSubResults: true,
         });
-        initialized.current = true;
-        setTimeout(() => {
-          containerRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+        focusSearch = window.setTimeout(() => {
+          container.querySelector<HTMLInputElement>("input")?.focus();
         }, 100);
       }
     };
@@ -63,20 +69,24 @@ export default function PagefindSearch() {
     if (window.PagefindUI) {
       initUI();
     } else {
-      const check = setInterval(() => {
+      check = window.setInterval(() => {
         if (window.PagefindUI) {
-          clearInterval(check);
+          if (check !== undefined) window.clearInterval(check);
           initUI();
         }
       }, 100);
-      setTimeout(() => clearInterval(check), 5000);
+      stopChecking = window.setTimeout(() => {
+        if (check !== undefined) window.clearInterval(check);
+      }, 5000);
     }
 
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+    return () => {
+      if (check !== undefined) window.clearInterval(check);
+      if (stopChecking !== undefined) window.clearTimeout(stopChecking);
+      if (focusSearch !== undefined) window.clearTimeout(focusSearch);
+      pagefindUI.current?.destroy();
+      pagefindUI.current = null;
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
   }, [open]);
 
   const close = useCallback(() => setOpen(false), []);

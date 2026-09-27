@@ -1,85 +1,66 @@
-import { describe, it, expect } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it } from 'vitest';
+import PagefindSearch from '../PagefindSearch';
 
-describe('PagefindSearch logic', () => {
-  function isSearchReady(): boolean {
-    return typeof window !== 'undefined';
-  }
+describe('PagefindSearch lifecycle', () => {
+  let container: HTMLDivElement | undefined;
+  let root: ReturnType<typeof createRoot> | undefined;
+  const instances: Array<{ element: HTMLElement; destroyed: boolean }> = [];
 
-  function getKeyboardShortcut(e: { ctrlKey: boolean; metaKey: boolean; key: string }): string | null {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      return 'open-search';
-    }
-    if (e.key === 'Escape') {
-      return 'close-search';
-    }
-    return null;
-  }
-
-  it('search is ready in browser environment', () => {
-    expect(isSearchReady()).toBe(true);
+  afterEach(async () => {
+    if (root) await act(async () => root?.unmount());
+    container?.remove();
+    document.querySelectorAll('script[data-pagefind-ui], link[href="/pagefind/pagefind-ui.css"]').forEach((node) => node.remove());
+    Object.defineProperty(window, 'PagefindUI', { configurable: true, value: undefined });
+    container = undefined;
+    root = undefined;
+    instances.length = 0;
   });
 
-  it('Ctrl+K triggers open-search', () => {
-    const result = getKeyboardShortcut({ ctrlKey: true, metaKey: false, key: 'k' });
-    expect(result).toBe('open-search');
-  });
+  it('creates a fresh search UI after closing and reopening, and destroys both instances', async () => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    window.PagefindUI = class {
+      private element: HTMLElement;
 
-  it('Cmd+K triggers open-search', () => {
-    const result = getKeyboardShortcut({ ctrlKey: false, metaKey: true, key: 'k' });
-    expect(result).toBe('open-search');
-  });
+      constructor({ element }: { element: string | HTMLElement }) {
+        this.element = typeof element === 'string' ? document.querySelector<HTMLElement>(element)! : element;
+        this.element.innerHTML = '<input type="search" />';
+        instances.push({ element: this.element, destroyed: false });
+      }
 
-  it('Escape triggers close-search', () => {
-    const result = getKeyboardShortcut({ ctrlKey: false, metaKey: false, key: 'Escape' });
-    expect(result).toBe('close-search');
-  });
+      destroy() {
+        const instance = instances.find((entry) => entry.element === this.element);
+        if (instance) instance.destroyed = true;
+        this.element.replaceChildren();
+      }
+    };
 
-  it('other keys return null', () => {
-    const result = getKeyboardShortcut({ ctrlKey: false, metaKey: false, key: 'a' });
-    expect(result).toBeNull();
-  });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    const scriptMarker = document.createElement('script');
+    scriptMarker.dataset.pagefindUi = 'true';
+    document.head.appendChild(scriptMarker);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(PagefindSearch)));
 
-  it('Ctrl+other key returns null', () => {
-    const result = getKeyboardShortcut({ ctrlKey: true, metaKey: false, key: 'j' });
-    expect(result).toBeNull();
-  });
-});
+    const press = async (key: string, ctrlKey = false) => act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey }));
+    });
 
-describe('Search result formatting', () => {
-  interface SearchResult {
-    title: string;
-    url: string;
-    excerpt: string;
-  }
+    await press('k', true);
+    expect(instances).toHaveLength(1);
+    expect(instances[0].element.querySelector('input')).not.toBeNull();
 
-  function formatResult(result: SearchResult): string {
-    return `${result.title} - ${result.url}`;
-  }
+    await press('Escape');
+    expect(instances[0].destroyed).toBe(true);
 
-  function truncateExcerpt(excerpt: string, maxLength: number): string {
-    if (excerpt.length <= maxLength) return excerpt;
-    return excerpt.slice(0, maxLength - 3) + '...';
-  }
+    await press('k', true);
+    expect(instances).toHaveLength(2);
+    expect(instances[1].element.querySelector('input')).not.toBeNull();
 
-  it('formats result correctly', () => {
-    const result = { title: 'Docker Guide', url: '/docker/', excerpt: 'Learn Docker' };
-    expect(formatResult(result)).toBe('Docker Guide - /docker/');
-  });
-
-  it('truncates long excerpt', () => {
-    const longText = 'A'.repeat(200);
-    const truncated = truncateExcerpt(longText, 100);
-    expect(truncated).toHaveLength(100);
-    expect(truncated.endsWith('...')).toBe(true);
-  });
-
-  it('preserves short excerpt', () => {
-    const shortText = 'Short text';
-    expect(truncateExcerpt(shortText, 100)).toBe('Short text');
-  });
-
-  it('handles exact length excerpt', () => {
-    const exactText = 'A'.repeat(100);
-    expect(truncateExcerpt(exactText, 100)).toBe(exactText);
+    await act(async () => root?.unmount());
+    root = undefined;
+    expect(instances[1].destroyed).toBe(true);
   });
 });

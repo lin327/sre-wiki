@@ -36,11 +36,15 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-      - name: Reject executable MDX in changed publish pages
+      - name: Validate changed MDX publish pages
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: node scripts/check-safe-mdx.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - name: Build Astro site for pull requests
+        if: github.event_name == 'pull_request'
+        run: npm run build
 
   build-and-deploy:
     needs: test

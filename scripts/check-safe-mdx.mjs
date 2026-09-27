@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile } from '@mdx-js/mdx';
 import { parseFrontmatter } from '@astrojs/markdown-remark';
+import { loadWikiRouteIndex } from '../src/lib/route-index.mjs';
+import { validatePublishPage } from '../src/lib/publish-contract.mjs';
 
 const EXECUTABLE_NODES = new Set([
   'mdxjsEsm',
@@ -60,10 +62,15 @@ export async function findExecutableMdxNodes(filePath, rawSource) {
 }
 
 function listChangedPages(base, head) {
-  const output = base && !/^0+$/.test(base)
+  const hasBase = base && !/^0+$/.test(base);
+  const output = hasBase
     ? execFileSync('git', ['diff', '--name-only', '-z', base, head, '--', 'src/pages'], { encoding: 'utf8' })
     : execFileSync('git', ['ls-files', '-z', '--', 'src/pages'], { encoding: 'utf8' });
-  return output.split('\0').filter((file) => file.endsWith('.mdx') && existsSync(file));
+  const files = output.split('\0').filter((file) => file.endsWith('.mdx') && existsSync(file));
+  const addedOutput = hasBase
+    ? execFileSync('git', ['diff', '--diff-filter=AR', '--name-only', '-z', base, head, '--', 'src/pages'], { encoding: 'utf8' })
+    : '';
+  return { files, added: new Set(addedOutput.split('\0').filter(Boolean)) };
 }
 
 async function main() {
@@ -77,14 +84,26 @@ async function main() {
     throw new Error('Usage: node scripts/check-safe-mdx.mjs --base <sha> --head <sha>');
   }
 
-  const files = listChangedPages(values.base, values.head);
+  const { files, added } = listChangedPages(values.base, values.head);
+  const routeIndex = loadWikiRouteIndex(resolve('src/pages'));
   let failures = 0;
+  let warnings = 0;
   for (const file of files) {
     try {
-      const nodes = await findExecutableMdxNodes(file, readFileSync(file, 'utf8'));
+      const source = readFileSync(file, 'utf8');
+      const nodes = await findExecutableMdxNodes(file, source);
       for (const node of nodes) {
         failures += 1;
         console.error(`${file}:${node.line}: rejected executable MDX node ${node.type}`);
+      }
+      const contract = await validatePublishPage(file, source, { isNew: added.has(file), routeIndex });
+      for (const message of contract.errors) {
+        failures += 1;
+        console.error(message);
+      }
+      for (const message of contract.warnings) {
+        warnings += 1;
+        console.warn(`warning: ${message}`);
       }
     } catch (error) {
       failures += 1;
@@ -94,11 +113,11 @@ async function main() {
 
   const allowlisted = files.filter(isSafeMdxAllowlisted).length;
   if (failures) {
-    console.error(`Rejected ${failures} unsafe MDX node(s) across ${files.length} changed page(s).`);
+    console.error(`Rejected ${failures} content contract or executable MDX issue(s) across ${files.length} changed page(s).`);
     process.exitCode = 1;
     return;
   }
-  console.log(`Validated ${files.length} changed MDX page(s); ${allowlisted} trusted component page(s) used the explicit allowlist.`);
+  console.log(`Validated ${files.length} changed MDX page(s); ${allowlisted} trusted component page(s) used the explicit allowlist; ${warnings} legacy wikilink warning(s).`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

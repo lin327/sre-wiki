@@ -24,6 +24,13 @@
 - Wiki 接收未审核稿的目录约定为 `src/inbox/`，由人工通过 PR 放入；不使用 `src/pages/inbox/`，避免 Astro 自动生成公开路由。审核通过后才进入对应发布分类。
 - 人工审核需核对来源、适用版本、技术步骤和主题归属；通过后才可标记为精选。
 
+## Wiki PR 发布门禁
+
+- 新增到 `src/pages/<category>/<slug>.mdx` 的文章按严格 frontmatter schema 校验；目录分类必须与 `category` 一致，slug 为 4–60 位小写 ASCII 字母、数字或连字符。
+- 新文章须经人工审核后写入 `canonical: true`，并固定使用相对路径指向 `src/layouts/BaseLayout.astro`；任意模型提供的 `layout` 都会被 CI 拒绝。Agent 生成物留在 inbox，不得直接复制为已精选页面。
+- 新文章中的 `[[category/slug]]` 必须解析到 Wiki 实际静态路由；旧式 `[[slug]]` 仅在全站唯一时可用。新稿中的缺失或歧义链接会使 PR 失败；已存在的历史坏链暂记 warning，分批修复。
+- PR 门禁检查变更 MDX 的 frontmatter、slug、布局、wikilink 和可执行 MDX 节点，并运行 Astro build。未修改的历史内容保留迁移基线，不因此触发批量改写。
+
 ## 当前过渡边界
 
 - **发现通道过滤已生效，文件尚未搬迁**：sitemap 与 Pagefind 共用 `src/lib/discovery-policy.mjs` 的路由集合，只收录严格的 `canonical: true` 及明确保留的首页、about/privacy。`false`、缺字段或字符串 `"true"` 不算精选；历史 MDX 仍构建为可访问页面，不批量删除、搬迁或重写。

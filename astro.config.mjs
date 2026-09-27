@@ -8,8 +8,10 @@ import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import { unified } from '@astrojs/markdown-remark';
 import wikilinks from './src/lib/remark-wikilinks.mjs';
+import { loadWikiRouteIndex } from './src/lib/route-index.mjs';
 import { loadDiscoveryRoutes, isDiscoverable, prepareSearchHtml } from './src/lib/discovery-policy.mjs';
 
+const wikiRouteIndex = loadWikiRouteIndex(new URL('./src/pages/', import.meta.url));
 const discoveryRoutes = loadDiscoveryRoutes(new URL('./src/pages/', import.meta.url));
 
 // https://astro.build/config
@@ -54,7 +56,7 @@ export default defineConfig({
 
   markdown: {
     processor: unified({
-      remarkPlugins: [wikilinks],
+      remarkPlugins: [[wikilinks, { routeIndex: wikiRouteIndex }]],
     }),
   },
 

@@ -1,0 +1,49 @@
+---
+import { getCategoryArticles } from "../../lib/content-metadata.mjs";
+
+interface Props {
+  category: string;
+}
+
+const { category } = Astro.props;
+const rawPages = import.meta.glob<string>(
+  ["../../pages/*/*.mdx", "!../../pages/**/index.mdx"],
+  { eager: true, query: "?raw", import: "default" },
+);
+const articles = getCategoryArticles(rawPages, category);
+const curated = articles.filter((article) => article.canonical);
+const pending = articles.filter((article) => !article.canonical);
+const groups = [
+  { title: "精选", articles: curated },
+  { title: "待整理", articles: pending },
+];
+---
+
+<p>本页列出 {articles.length} 篇内容：{curated.length} 篇精选，{pending.length} 篇待整理。</p>
+
+<blockquote role="note">
+  本列表根据页面 frontmatter 自动生成。“待整理”资料尚未纳入精选，可能包含 Issue 复述，使用前请核对来源和适用版本。
+</blockquote>
+
+{groups.map((group) => (
+  <section>
+    <h2>{group.title}</h2>
+    {group.articles.length > 0 ? (
+      <table>
+        <thead><tr><th>页面与说明</th></tr></thead>
+        <tbody>
+          {group.articles.map((article) => (
+            <tr>
+              <td>
+                <a href={`/${category}/${encodeURIComponent(article.slug)}`}>
+                  <span>{article.title}</span>
+                  {article.description && <><br /><small>{article.description}</small></>}
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : <p>暂无{group.title}内容。</p>}
+  </section>
+))}

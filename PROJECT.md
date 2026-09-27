@@ -137,19 +137,24 @@ graph TB
 ```yaml
 ---
 title: "页面标题（中文描述 + 英文术语）"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-type: concept | runbook | architecture | incident | comparison | fundamental
-tags: [from taxonomy above]
-sources: [url1, url2]
-confidence: high | medium | low
+created: "2026-09-28"
+updated: "2026-09-28"
+canonical: false
+category: runbooks
+type: concept
+tags: [sre]
+sources:
+  - url: https://example.com/source
+    title: "来源标题"
+confidence: medium
 ---
 ```
 
 ### 命名规范
 
+- 新草稿由 Agent 按统一 schema 规范化和校验，具体必填字段与历史兼容规则见 [CONTENT_CONTRACT.md](CONTENT_CONTRACT.md)。
 - 文件名：小写，连字符分隔（`pod-lifecycle.mdx`）
-- Slug 全局唯一，不同目录下不能同名
+- Slug 在同一分类目录内唯一；Agent 遇到重名追加 `-2` 等后缀，保留全部草稿。
 - 使用 `[[slug]]` 或 `[[slug|中文名]]` 链接页面
 - 每个页面至少 2 个出站 wikilinks
 

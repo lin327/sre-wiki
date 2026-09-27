@@ -1,5 +1,62 @@
 import { useState, useEffect, useRef } from "react";
 
+export interface MermaidApi {
+  initialize: (options: { startOnLoad: boolean; theme: string; fontFamily: string }) => void;
+  render: (id: string, code: string) => Promise<{ svg: string }>;
+}
+
+declare global {
+  interface Window {
+    mermaid?: MermaidApi;
+  }
+}
+
+export const MERMAID_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js";
+// SHA-384 computed from the pinned jsDelivr artifact; changing the release requires re-verifying it.
+export const MERMAID_SCRIPT_INTEGRITY = "sha384-EOXBFmc3gx5mb+vn0vPvvGqACToJD24hhacX5Yx+8NUUQrHIle/Qi5Bg9o3zKwW2";
+
+let mermaidLoadPromise: Promise<MermaidApi> | null = null;
+let initializedTheme = "";
+
+export function loadMermaid(): Promise<MermaidApi> {
+  if (window.mermaid) return Promise.resolve(window.mermaid);
+  if (mermaidLoadPromise) return mermaidLoadPromise;
+
+  mermaidLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = MERMAID_SCRIPT_URL;
+    script.integrity = MERMAID_SCRIPT_INTEGRITY;
+    script.crossOrigin = "anonymous";
+    script.dataset.mermaidRuntime = "true";
+    script.onload = () => {
+      if (window.mermaid) resolve(window.mermaid);
+      else {
+        mermaidLoadPromise = null;
+        script.remove();
+        reject(new Error("Mermaid library loaded without exposing its API"));
+      }
+    };
+    script.onerror = () => {
+      mermaidLoadPromise = null;
+      script.remove();
+      reject(new Error("Mermaid library failed to load or did not pass integrity verification"));
+    };
+    document.head.appendChild(script);
+  });
+  return mermaidLoadPromise;
+}
+
+function initializeMermaid(mermaid: MermaidApi) {
+  const theme = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "default";
+  if (initializedTheme === theme) return;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme,
+    fontFamily: "var(--font-mono)",
+  });
+  initializedTheme = theme;
+}
+
 interface MermaidProps {
   code: string;
 }
@@ -11,45 +68,36 @@ export default function Mermaid({ code }: MermaidProps) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if ((window as any).mermaid) {
+    let cancelled = false;
+    void loadMermaid().then((mermaid) => {
+      if (cancelled) return;
+      initializeMermaid(mermaid);
       setLoaded(true);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
-    script.integrity = "sha384-4S021e0ad7t2kLavrA420+t1O9yEj4t2lNU77jHY37mg21u0P9A4t2lNU77jHY37";
-    script.crossOrigin = "anonymous";
-    script.onload = () => {
-      const m = (window as any).mermaid;
-      if (m) {
-        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-        m.initialize({
-          startOnLoad: false,
-          theme: isDark ? "dark" : "default",
-          fontFamily: "var(--font-mono)",
-        });
-        setLoaded(true);
-      }
+    }).catch((cause: Error) => {
+      if (!cancelled) setError(cause.message || "Mermaid library failed to load");
+    });
+    return () => {
+      cancelled = true;
     };
-    document.head.appendChild(script);
   }, []);
 
   useEffect(() => {
     if (!loaded || !code.trim()) return;
-    const m = (window as any).mermaid;
-    if (!m) return;
+    const mermaid = window.mermaid;
+    if (!mermaid) return;
 
+    let cancelled = false;
     const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
-    try {
-      m.render(id, code).then((result: { svg: string }) => {
-        setSvg(result.svg);
-        setError("");
-      }).catch((err: Error) => {
-        setError(err.message || "Failed to render diagram");
-      });
-    } catch (err: any) {
-      setError(err.message || "Failed to render diagram");
-    }
+    void mermaid.render(id, code).then((result) => {
+      if (cancelled) return;
+      setSvg(result.svg);
+      setError("");
+    }).catch((cause: Error) => {
+      if (!cancelled) setError(cause.message || "Failed to render diagram");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loaded, code]);
 
   if (error) {

@@ -23,6 +23,9 @@ export function loadDiscoveryRoutes(pagesDir) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) {
         scan(path, [...segments, entry.name]);
+      } else if (entry.isFile() && entry.name === 'index.astro') {
+        // Hand-authored category indexes are real routes even without MDX frontmatter.
+        routes.add(normalizeRoute('/' + segments.map(encodeURIComponent).join('/')));
       } else if (entry.isFile() && /\.mdx?$/.test(entry.name)) {
         const { frontmatter } = parseFrontmatter(readFileSync(path, 'utf8'));
         if (frontmatter.canonical !== true) continue;

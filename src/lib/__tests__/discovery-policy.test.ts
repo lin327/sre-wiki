@@ -24,7 +24,7 @@ function fixture(files: Record<string, string>) {
 describe('discovery routes', () => {
   it('requires boolean true and maps directory indexes without scanning inbox', () => {
     const pages = fixture({
-      'src/pages/linux/index.mdx': '---\ncanonical: true\n---\nLinux',
+      'src/pages/linux/index.astro': '<BaseLayout><main>Linux</main></BaseLayout>',
       'src/pages/linux/process-model.mdx': '---\ncanonical: true\n---\nProcess',
       'src/pages/docker/index.md': '---\ncanonical: true\n---\nDocker',
       'src/pages/linux/index-guide.mdx': '---\ncanonical: true\n---\nGuide',

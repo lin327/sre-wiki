@@ -1,5 +1,10 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { getCategoryArticles, readContentMetadata, validateFrontmatter } from '../content-metadata.mjs';
+import {
+  getCategoryArticles, getCategoryArticlesFromDisk, readContentMetadata, validateFrontmatter,
+} from '../content-metadata.mjs';
 
 const draft = {
   title: 'Docker 网络排障', description: '容器网络排障流程',
@@ -48,6 +53,21 @@ describe('new draft contract', () => {
 });
 
 describe('category lists', () => {
+  it('reads only the requested category from disk', () => {
+    const pagesRoot = mkdtempSync(join(tmpdir(), 'sre-category-pages-'));
+    try {
+      mkdirSync(join(pagesRoot, 'docker'));
+      mkdirSync(join(pagesRoot, 'linux'));
+      writeFileSync(join(pagesRoot, 'docker', 'docker-networking.mdx'), mdx(draft));
+      writeFileSync(join(pagesRoot, 'linux', 'invalid.mdx'), '---\ninvalid: [\n---\n');
+
+      expect(getCategoryArticlesFromDisk('docker', pagesRoot).map((page) => page.slug))
+        .toEqual(['docker-networking']);
+    } finally {
+      rmSync(pagesRoot, { recursive: true });
+    }
+  });
+
   it('uses changed frontmatter immediately, sorts curated first then title/slug, and skips other categories/index', () => {
     const pages = {
       './docker/zulu.mdx': mdx({ title: '相同标题', canonical: true }),

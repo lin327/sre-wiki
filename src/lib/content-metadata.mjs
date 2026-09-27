@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { parseFrontmatter } from '@astrojs/markdown-remark';
 import schema from './frontmatter.schema.json' with { type: 'json' };
 
@@ -86,4 +88,24 @@ export function getCategoryArticles(rawPages, category) {
     return [{ ...readContentMetadata(raw, category), slug: filename.slice(0, -4) }];
   }).sort((a, b) => Number(b.canonical) - Number(a.canonical)
     || a.title.localeCompare(b.title) || a.slug.localeCompare(b.slug));
+}
+
+/** Read only one category from disk instead of bundling every MDX body into each index. */
+export function getCategoryArticlesFromDisk(category, pagesRoot = resolve('src/pages')) {
+  if (!categories.includes(category)) throw new Error(`Unknown category: ${category}`);
+  const categoryDirectory = join(pagesRoot, category);
+  let entries;
+  try {
+    entries = readdirSync(categoryDirectory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+  const rawPages = Object.fromEntries(entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.mdx'))
+    .map((entry) => [
+      `./${category}/${entry.name}`,
+      readFileSync(join(categoryDirectory, entry.name), 'utf8'),
+    ]));
+  return getCategoryArticles(rawPages, category);
 }

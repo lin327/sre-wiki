@@ -1,16 +1,12 @@
 ---
-import { getCategoryArticles } from "../../lib/content-metadata.mjs";
+import { getCategoryArticlesFromDisk } from "../../lib/content-metadata.mjs";
 
 interface Props {
   category: string;
 }
 
 const { category } = Astro.props;
-const rawPages = import.meta.glob<string>(
-  ["../../pages/*/*.mdx", "!../../pages/**/index.mdx"],
-  { eager: true, query: "?raw", import: "default" },
-);
-const articles = getCategoryArticles(rawPages, category);
+const articles = getCategoryArticlesFromDisk(category);
 const curated = articles.filter((article) => article.canonical);
 const pending = articles.filter((article) => !article.canonical);
 const groups = [

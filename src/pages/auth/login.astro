@@ -8,18 +8,21 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       <h1 class="login-title">登录 SRE Atlas</h1>
       <p class="login-desc">使用邮箱密码登录，或联系管理员开通账号。</p>
 
-      <form id="login-form" class="login-form">
-        <div class="login-field">
-          <label for="email" class="login-label">邮箱</label>
-          <input type="email" id="email" name="email" class="login-input" placeholder="your@email.com" required />
-        </div>
-        <div class="login-field">
-          <label for="password" class="login-label">密码</label>
-          <input type="password" id="password" name="password" class="login-input" placeholder="••••••••" required />
-        </div>
-        <button type="submit" class="login-submit" id="login-btn">登录</button>
-        <div id="login-error" class="login-error" hidden></div>
+      <form id="login-form" class="login-form" method="post">
+        <fieldset id="login-fields" disabled>
+          <div class="login-field">
+            <label for="email" class="login-label">邮箱</label>
+            <input type="email" id="email" name="email" class="login-input" placeholder="your@email.com" required />
+          </div>
+          <div class="login-field">
+            <label for="password" class="login-label">密码</label>
+            <input type="password" id="password" name="password" class="login-input" placeholder="••••••••" required />
+          </div>
+          <button type="submit" class="login-submit" id="login-btn">登录</button>
+          <div id="login-error" class="login-error" hidden></div>
+        </fieldset>
       </form>
+      <noscript><p class="login-error" role="alert">登录需要启用 JavaScript；脚本就绪前表单保持禁用，不会把密码放入 URL。</p></noscript>
 
       <div class="login-divider">
         <span class="login-divider-text">或</span>
@@ -45,6 +48,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   import { authClient } from "../../lib/auth-client";
 
   const form = document.getElementById("login-form") as HTMLFormElement;
+  const fields = document.getElementById("login-fields") as HTMLFieldSetElement | null;
   const errorEl = document.getElementById("login-error") as HTMLDivElement;
   const btn = document.getElementById("login-btn") as HTMLButtonElement;
 
@@ -86,6 +90,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       btn.disabled = false;
     }
   });
+
+  if (fields) fields.disabled = false;
 </script>
 
 <style>
@@ -144,6 +150,13 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  fieldset {
+    border: 0;
+    margin: 0;
+    min-width: 0;
+    padding: 0;
   }
 
   .login-field {

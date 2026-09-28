@@ -66,4 +66,4 @@ This fix is directly related to the **reliability** of the Kubernetes control pl
     * How uniformly webhook requests are distributed across backend Pods (e.g., measured using standard deviation or Gini coefficient).
     * P90/P99 latency for API Server requests to webhooks.
 * **SLO**: The SLO can be specified as "the difference in request volume received by all active Webhook backend Pods does not exceed 20%", or "the P99 of Webhook request latency is consistently less than 200ms".
-* **Associated concepts**: This issue is closely related to connection management, load balancing algorithms, and traffic management principles in [[service-mesh]]. Understanding it helps SREs better design and debug the network paths for cloud-native applications.
+* **Associated concepts**: This issue is closely related to connection management, load balancing algorithms, and traffic management principles in [[kubernetes/service-mesh]]. Understanding it helps SREs better design and debug the network paths for cloud-native applications.

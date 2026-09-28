@@ -4,13 +4,13 @@
 
 ## 扫描摘要
 
-- 扫描 MDX 页面：1443
+- 扫描 MDX 页面：1498
 - Wikilink 引用：1597
-- 由路由表直接解析：1349
+- 由路由表直接解析：1467
 - 由 Nginx 大小写别名处理：34
-- 未解析引用：214
-- 缺失 URL：148 个（206 次引用）
-- 歧义或格式问题：3 个 URL（8 次引用）
+- 未解析引用：96
+- 缺失 URL：93 个（96 次引用）
+- 歧义或格式问题：0 个 URL（0 次引用）
 
 ## 待补充占位页面
 
@@ -387,25 +387,80 @@
 - `/secure-coding` — 2 次引用，2 个引用页面
 - `/security-context` — 2 次引用，2 个引用页面
 - `/security-in-sre` — 2 次引用，2 个引用页面
+- `/selinux` — 2 次引用，2 个引用页面
 - `/service-discovery` — 6 次引用，6 个引用页面
+- `/service-level-agreement` — 2 次引用，2 个引用页面
+- `/service-level-objectives` — 2 次引用，2 个引用页面
+- `/serviceaccount` — 2 次引用，2 个引用页面
 - `/site-reliability-engineering` — 3 次引用，3 个引用页面
 - `/sli` — 18 次引用，12 个引用页面
+- `/sli-for-monitoring-systems` — 2 次引用，2 个引用页面
+- `/sli-slo-for-configuration-management` — 2 次引用，2 个引用页面
 - `/sli-slo-sla` — 27 次引用，23 个引用页面
+- `/slis-and-slos` — 2 次引用，2 个引用页面
 - `/slo` — 45 次引用，37 个引用页面
 - `/slo-best-practices` — 4 次引用，4 个引用页面
 - `/slo-error-budget` — 12 次引用，12 个引用页面
+- `/slo-error-budgets` — 2 次引用，2 个引用页面
+- `/slo-for-deployment-pipelines` — 2 次引用，2 个引用页面
+- `/slo-for-user-facing-interfaces` — 2 次引用，2 个引用页面
 - `/slo-management` — 5 次引用，5 个引用页面
+- `/slo-reliability-budget` — 2 次引用，2 个引用页面
 - `/slo-sli-error-budget` — 4 次引用，4 个引用页面
+- `/slo-sli-error-budgets` — 2 次引用，2 个引用页面
+- `/slo-sli-sla` — 2 次引用，2 个引用页面
+- `/slsa` — 2 次引用，2 个引用页面
+- `/software-supply-chain-security` — 2 次引用，2 个引用页面
+- `/spire-overview` — 2 次引用，2 个引用页面
+- `/sqlite` — 2 次引用，2 个引用页面
+- `/sre-culture-and-principles` — 2 次引用，2 个引用页面
+- `/sre-error-budget` — 2 次引用，2 个引用页面
+- `/sre-fundamentals` — 2 次引用，2 个引用页面
+- `/sre-incident-response` — 2 次引用，2 个引用页面
+- `/sre-monitoring-standards` — 2 次引用，2 个引用页面
+- `/sre-observability` — 2 次引用，2 个引用页面
 - `/sre-practices` — 8 次引用，7 个引用页面
 - `/sre-principles` — 4 次引用，4 个引用页面
+- `/sre-reliability-engineering` — 2 次引用，2 个引用页面
 - `/static-analysis` — 4 次引用，4 个引用页面
 - `/step-functions` — 4 次引用，2 个引用页面
+- `/storage-version-migration` — 2 次引用，2 个引用页面
+- `/supplier-integration` — 2 次引用，2 个引用页面
+- `/supply-chain-attack` — 2 次引用，2 个引用页面
+- `/supply-chain-security` — 2 次引用，2 个引用页面
+- `/synctest` — 2 次引用，2 个引用页面
+- `/synthetic-monitoring` — 2 次引用，2 个引用页面
+- `/system-maintenance-and-updates` — 2 次引用，2 个引用页面
+- `/system-management` — 2 次引用，2 个引用页面
 - `/tempo` — 4 次引用，4 个引用页面
+- `/tempo-traceql-query-optimization` — 2 次引用，2 个引用页面
 - `/terraform` — 4 次引用，4 个引用页面
+- `/terraform-run-tasks` — 2 次引用，2 个引用页面
+- `/test-stability` — 2 次引用，2 个引用页面
+- `/thanos` — 2 次引用，2 个引用页面
+- `/time-series-visualization` — 2 次引用，2 个引用页面
+- `/tls-configuration` — 2 次引用，2 个引用页面
+- `/tool-access-gateway` — 2 次引用，2 个引用页面
+- `/topic-sre` — 2 次引用，2 个引用页面
 - `/topology-manager` — 4 次引用，2 个引用页面
+- `/traceql-metrics` — 2 次引用，2 个引用页面
+- `/troubleshooting` — 2 次引用，2 个引用页面
 - `/tsdb` — 4 次引用，4 个引用页面
+- `/ui-component-security` — 2 次引用，2 个引用页面
+- `/ui-reliability-engineering` — 2 次引用，2 个引用页面
+- `/union-filesystem` — 2 次引用，2 个引用页面
+- `/upgrade-management` — 2 次引用，2 个引用页面
+- `/variable-dependency-graph` — 2 次引用，2 个引用页面
+- `/variable-management` — 2 次引用，2 个引用页面
 - `/vault` — 12 次引用，4 个引用页面
+- `/vault-dynamic-secrets` — 2 次引用，2 个引用页面
+- `/vault-identity` — 2 次引用，2 个引用页面
+- `/version-management` — 2 次引用，2 个引用页面
+- `/virtualized-list-perf` — 2 次引用，2 个引用页面
 - `/vulcan` — 2 次引用，2 个引用页面
+- `/vulnerability-management` — 2 次引用，2 个引用页面
+- `/vulnerability-management-process` — 2 次引用，2 个引用页面
+- `/websocket-watch` — 2 次引用，2 个引用页面
 
 ## Nginx 大小写兼容别名
 
@@ -414,303 +469,28 @@
 
 ## 当前优先处理的 20 个缺失 URL
 
-- `/selinux` — 2 次
-- `/service-level-agreement` — 2 次
-- `/service-level-objectives` — 2 次
-- `/serviceaccount` — 2 次
-- `/sli-for-monitoring-systems` — 2 次
-- `/sli-slo-for-configuration-management` — 2 次
-- `/slis-and-slos` — 2 次
-- `/slo-error-budgets` — 2 次
-- `/slo-for-deployment-pipelines` — 2 次
-- `/slo-for-user-facing-interfaces` — 2 次
-- `/slo-reliability-budget` — 2 次
-- `/slo-sli-error-budgets` — 2 次
-- `/slo-sli-sla` — 2 次
-- `/slsa` — 2 次
-- `/software-supply-chain-security` — 2 次
-- `/spire-overview` — 2 次
-- `/sqlite` — 2 次
-- `/sre` — 2 次
-- `/sre-culture-and-principles` — 2 次
-- `/sre-error-budget` — 2 次
+- `/zero-trust` — 2 次
+- `/zero-trust-access` — 2 次
+- `/zero-trust-security` — 2 次
+- `/%E4%BB%AA%E8%A1%A8%E6%9D%BF%E4%B8%8E%E5%8F%AF%E8%A7%86%E5%8C%96` — 1 次
+- `/%E5%85%83%E6%95%B0%E6%8D%AE` — 1 次
+- `/%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E7%89%88%E6%9C%AC%E5%8D%87%E7%BA%A7%E7%AD%96%E7%95%A5` — 1 次
+- `/%E5%89%8D%E7%AB%AF%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97` — 1 次
+- `/%E5%8F%98%E6%9B%B4%E7%AE%A1%E7%90%86` — 1 次
+- `/%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E5%9F%BA%E7%A1%80` — 1 次
+- `/%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F` — 1 次
+- `/%E5%AE%B9%E5%99%A8%E7%BC%96%E6%8E%92` — 1 次
+- `/%E5%AE%B9%E9%94%99%E8%AE%BE%E8%AE%A1` — 1 次
+- `/%E5%B9%B6%E8%A1%8C%E8%A7%A3%E5%8C%85` — 1 次
+- `/%E5%BF%AB%E7%85%A7%E5%99%A8` — 1 次
+- `/%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%E4%B8%8E%E6%B5%8B%E8%AF%95` — 1 次
+- `/%E6%9C%8D%E5%8A%A1%E7%BD%91%E6%A0%BC` — 1 次
+- `/%E6%B7%B7%E6%B2%8C%E5%B7%A5%E7%A8%8B` — 1 次
+- `/%E7%9B%91%E6%8E%A7%E6%A0%88` — 1 次
+- `/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7` — 1 次
+- `/%E7%AB%99%E7%82%B9%E5%8F%AF%E9%9D%A0%E6%80%A7%E5%B7%A5%E7%A8%8B` — 1 次
 
 ## 缺失 URL 明细（按引用次数降序）
-
-### `/selinux` — 2 次
-
-- Wikilink target：`selinux`
-- 引用页面（2）：`/docker/kubernetes-v136-%E7%89%88%E6%9C%AC%E5%85%B3%E9%94%AE%E5%8F%98%E6%9B%B4%E4%B8%8E%E7%89%B9%E6%80%A7%E5%89%8D%E7%9E%BB`, `/en/docker/kubernetes-v136-sneak-peek`
-
-### `/service-level-agreement` — 2 次
-
-- Wikilink target：`service-level-agreement`
-- 引用页面（2）：`/en/incidents/security-updates-for-thursday`, `/incidents/linux%E5%8F%91%E8%A1%8C%E7%89%88%E5%AE%89%E5%85%A8%E6%9B%B4%E6%96%B0%E8%B7%9F%E8%B8%AA2026-06-11`
-
-### `/service-level-objectives` — 2 次
-
-- Wikilink target：`service-level-objectives`
-- 引用页面（2）：`/en/linux/fill-screen-doesnt-work-with-row-layout`, `/linux/grafana-%E8%A1%8C%E5%B8%83%E5%B1%80%E5%A1%AB%E5%85%85%E5%B1%8F%E5%B9%95%E5%8A%9F%E8%83%BD%E5%A4%B1%E6%95%88%E9%97%AE%E9%A2%98`
-
-### `/serviceaccount` — 2 次
-
-- Wikilink target：`serviceaccount`
-- 引用页面（2）：`/docker/kubernetes-v136-%E7%89%88%E6%9C%AC%E5%85%B3%E9%94%AE%E5%8F%98%E6%9B%B4%E4%B8%8E%E7%89%B9%E6%80%A7%E5%89%8D%E7%9E%BB`, `/en/docker/kubernetes-v136-sneak-peek`
-
-### `/sli-for-monitoring-systems` — 2 次
-
-- Wikilink target：`sli-for-monitoring-systems`
-- 引用页面（2）：`/en/linux/grafana-issue-114846-reports-do-not-support-dynamic-dashboard-features`, `/linux/grafana-%E6%8A%A5%E8%A1%A8%E5%8A%9F%E8%83%BD%E4%B8%8E%E5%8A%A8%E6%80%81%E4%BB%AA%E8%A1%A8%E6%9D%BF%E7%9A%84%E5%85%BC%E5%AE%B9%E6%80%A7%E9%97%AE%E9%A2%98`
-
-### `/sli-slo-for-configuration-management` — 2 次
-
-- Wikilink target：`sli-slo-for-configuration-management`
-- 引用页面（2）：`/en/linux/git-sync-pure-git-with-gerrit-reports-successful-save-but-remote-branch`, `/linux/git-sync-pure-git-%E4%B8%8E-gerrit-%E9%9B%86%E6%88%90%E4%B8%AD%E7%9A%84%E8%AF%AF%E6%8A%A5%E6%88%90%E5%8A%9F%E9%97%AE%E9%A2%98`
-
-### `/slis-and-slos` — 2 次
-
-- Wikilink target：`slis-and-slos`
-- 引用页面（2）：`/en/linux/prometheus-conformance-program-first-round-of-compatibility-test-results`, `/linux/prometheus-conformance-program-%E5%85%BC%E5%AE%B9%E6%80%A7%E6%B5%8B%E8%AF%95%E9%A6%96%E8%BD%AE%E7%BB%93%E6%9E%9C`
-
-### `/slo-error-budgets` — 2 次
-
-- Wikilink target：`slo-error-budgets`
-- 引用页面（2）：`/en/linux/grafana-pr-126152-alerting-fix-rule-matching-when-expressions-contain`, `/linux/promql%E6%B3%A8%E9%87%8A%E5%A4%84%E7%90%86%E5%AF%B9%E5%91%8A%E8%AD%A6%E8%A7%84%E5%88%99%E5%8C%B9%E9%85%8D%E7%9A%84%E5%BD%B1%E5%93%8D`
-
-### `/slo-for-deployment-pipelines` — 2 次
-
-- Wikilink target：`slo-for-deployment-pipelines`
-- 引用页面（2）：`/en/linux/grafana-dashboard-api-update-repo-managed-dashboard-fails-due-to-empty-commit-message`, `/linux/grafana-dashboard-api-%E6%9B%B4%E6%96%B0-repo-managed-dashboard-%E5%9B%A0%E7%A9%BA%E6%8F%90%E4%BA%A4%E6%B6%88%E6%81%AF%E5%A4%B1%E8%B4%A5`
-
-### `/slo-for-user-facing-interfaces` — 2 次
-
-- Wikilink target：`slo-for-user-facing-interfaces`
-- 引用页面（2）：`/en/linux/github-issue-combobox-inconsistent-click-target`, `/linux/combobox-%E7%BB%84%E4%BB%B6%E7%82%B9%E5%87%BB%E7%9B%AE%E6%A0%87%E4%B8%8D%E4%B8%80%E8%87%B4%E9%97%AE%E9%A2%98`
-
-### `/slo-reliability-budget` — 2 次
-
-- Wikilink target：`slo-reliability-budget`
-- 引用页面（2）：`/en/linux/terraform-mcp-server-is-now-generally-available`, `/linux/terraform-mcp-serverai%E8%B5%8B%E8%83%BD%E7%9A%84%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E5%8D%B3%E4%BB%A3%E7%A0%81%E5%8A%A9%E6%89%8B`
-
-### `/slo-sli-error-budgets` — 2 次
-
-- Wikilink target：`slo-sli-error-budgets`
-- 引用页面（2）：`/en/linux/automate-safety-monitoring-with-computer-vision-and-generative-ai`, `/linux/%E8%AE%A1%E7%AE%97%E6%9C%BA%E8%A7%86%E8%A7%89%E4%B8%8E%E7%94%9F%E6%88%90%E5%BC%8Fai%E8%B5%8B%E8%83%BD%E7%9A%84%E5%B7%A5%E4%BD%9C%E5%9C%BA%E6%89%80%E5%AE%89%E5%85%A8%E8%87%AA%E5%8A%A8%E5%8C%96%E7%9B%91%E6%8E%A7`
-
-### `/slo-sli-sla` — 2 次
-
-- Wikilink target：`slo-sli-sla`
-- 引用页面（2）：`/en/linux/interview-with-scalefastr`, `/linux/scalefastr%E7%9A%84prometheus%E5%AE%9E%E8%B7%B5%E4%B8%8E%E4%BA%91%E5%8E%9F%E7%94%9F%E7%9B%91%E6%8E%A7%E6%BC%94%E8%BF%9B`
-
-### `/slsa` — 2 次
-
-- Wikilink target：`slsa`
-- 引用页面（2）：`/en/incidents/what-is-software-supply-chain-security-docker-blog`, `/incidents/%E8%BD%AF%E4%BB%B6%E4%BE%9B%E5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8`
-
-### `/software-supply-chain-security` — 2 次
-
-- Wikilink target：`software-supply-chain-security`
-- 引用页面（2）：`/en/incidents/on-ransomware-naming-prometheus-blog`, `/incidents/%E5%8B%92%E7%B4%A2%E8%BD%AF%E4%BB%B6%E5%91%BD%E5%90%8D%E4%B8%8E%E4%BE%9B%E5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8`
-
-### `/spire-overview` — 2 次
-
-- Wikilink target：`spire-overview`
-- 引用页面（2）：`/en/incidents/spiffe-and-non-human-identity-security`, `/incidents/spiffe-%E4%B8%8E%E9%9D%9E%E4%BA%BA%E7%B1%BB%E8%BA%AB%E4%BB%BD%E5%AE%89%E5%85%A8`
-
-### `/sqlite` — 2 次
-
-- Wikilink target：`sqlite`
-- 引用页面（2）：`/en/linux/grafana-issues`, `/linux/%E8%A7%A3%E5%86%B3-grafana-database-is-locked-%E9%94%99%E8%AF%AF`
-
-### `/sre` — 2 次
-
-- Wikilink target：`sre`
-- 引用页面（2）：`/en/linux/pull-doesnt-scale-or-does-it-prometheus-blog`, `/linux/pull-%E6%A8%A1%E5%BC%8F%E7%9B%91%E6%8E%A7%E7%9A%84%E5%8F%AF%E6%89%A9%E5%B1%95%E6%80%A7%E6%8E%A2%E8%AE%A8`
-
-### `/sre-culture-and-principles` — 2 次
-
-- Wikilink target：`sre-culture-and-principles`
-- 引用页面（2）：`/architectures/%E4%BF%AE%E5%A4%8D%E4%B8%8D%E7%A8%B3%E5%AE%9A%E7%9A%84%E6%B5%8B%E8%AF%95testbroadcastandhandlemessages%E6%A1%88%E4%BE%8B%E5%88%86%E6%9E%90`, `/en/architectures/fixing-flaky-tests-testbroadcastandhandlemessages-case-study`
-
-### `/sre-error-budget` — 2 次
-
-- Wikilink target：`sre-error-budget`
-- 引用页面（2）：`/architectures/ai-%E4%BB%A3%E7%90%86%E5%AE%89%E5%85%A8%E9%9D%A2%E5%90%91%E5%BC%80%E5%8F%91%E4%B8%8E%E8%BF%90%E7%BB%B4%E5%9B%A2%E9%98%9F%E7%9A%84%E5%AE%9E%E8%B7%B5%E6%8C%87%E5%8D%97`, `/en/architectures/ai-agent-security-a-practical-guide-for-development-and-operations-teams`
-
-### `/sre-fundamentals` — 2 次
-
-- Wikilink target：`sre-fundamentals`
-- 引用页面（2）：`/en/linux/grafanagrafana-105210`, `/linux/sre%E7%9F%A5%E8%AF%86%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9F%E6%96%87%E4%BB%B6%E5%8F%A5%E6%9F%84%E8%80%97%E5%B0%BD%E9%97%AE%E9%A2%98%E4%B8%8E%E5%A4%84%E7%90%86`
-
-### `/sre-incident-response` — 2 次
-
-- Wikilink target：`sre-incident-response`
-- 引用页面（2）：`/en/runbooks/grafana-dynamic-dashboard-variable-id-lowercasing-in-tab-links`, `/runbooks/grafana%E5%8A%A8%E6%80%81%E4%BB%AA%E8%A1%A8%E6%9D%BFtab%E9%93%BE%E6%8E%A5%E4%B8%AD%E5%8F%98%E9%87%8Fid%E5%B0%8F%E5%86%99%E5%8C%96%E9%97%AE%E9%A2%98`
-
-### `/sre-monitoring-standards` — 2 次
-
-- Wikilink target：`sre-monitoring-standards`
-- 引用页面（2）：`/en/runbooks/grafana-annotation-tag-filtering-error-with-matchanyfalse`, `/runbooks/grafana-%E6%B3%A8%E9%87%8A%E6%9F%A5%E8%AF%A2%E4%B8%AD-matchanyfalse-%E7%9A%84%E6%A0%87%E7%AD%BE%E8%BF%87%E6%BB%A4%E9%94%99%E8%AF%AF`
-
-### `/sre-observability` — 2 次
-
-- Wikilink target：`sre-observability`
-- 引用页面（2）：`/architectures/sagemaker-hyperpod-%E6%8E%A8%E7%90%86%E6%93%8D%E4%BD%9C%E7%AC%A6%E7%AE%80%E5%8C%96%E5%AE%89%E8%A3%85%E6%8C%87%E5%8D%97`, `/en/architectures/sagemaker-hyperpod-inference-operator-simplified-setup-guide`
-
-### `/sre-reliability-engineering` — 2 次
-
-- Wikilink target：`sre-reliability-engineering`
-- 引用页面（2）：`/en/runbooks/modernizing-the-kubernetes-image-promoter`, `/runbooks/kubernetes-%E9%95%9C%E5%83%8F%E6%8E%A8%E5%B9%BF%E5%99%A8%E7%9A%84%E7%8E%B0%E4%BB%A3%E5%8C%96%E9%87%8D%E5%86%99`
-
-### `/storage-version-migration` — 2 次
-
-- Wikilink target：`storage-version-migration`
-- 引用页面（2）：`/en/linux/dashboards-api-response-always-reports-storedversion-v0alpha1-regardless`, `/linux/grafana-dashboard-api-%E4%B8%AD-storedversion-%E5%AD%97%E6%AE%B5%E7%9A%84%E9%94%99%E8%AF%AF%E6%8A%A5%E5%91%8A`
-
-### `/supplier-integration` — 2 次
-
-- Wikilink target：`supplier-integration`
-- 引用页面（2）：`/docker/pacific-%E5%B9%B3%E5%8F%B0%E5%9C%A8-catena-x-%E6%95%B0%E6%8D%AE%E7%A9%BA%E9%97%B4%E4%B8%8A%E6%9E%84%E5%BB%BA%E5%A4%9A%E7%A7%9F%E6%88%B7%E4%B8%BB%E6%9D%83%E7%9A%84-pcf-%E4%BA%A4%E6%8D%A2`, `/en/docker/pacific-platform-building-multi-tenant-sovereign-pcf-exchange-on-the-catena-x-data-space`
-
-### `/supply-chain-attack` — 2 次
-
-- Wikilink target：`supply-chain-attack`
-- 引用页面（2）：`/en/incidents/hundreds-of-aur-packages-compromised`, `/incidents/arch%E7%94%A8%E6%88%B7%E4%BB%93%E5%BA%93aur%E4%BE%9B%E5%BA%94%E9%93%BE%E6%94%BB%E5%87%BB%E4%BA%8B%E4%BB%B6%E5%88%86%E6%9E%90%E4%B8%8E%E5%93%8D%E5%BA%94`
-
-### `/supply-chain-security` — 2 次
-
-- Wikilink target：`supply-chain-security`
-- 引用页面（2）：`/docker/homebrew-600-%E5%8F%91%E5%B8%83%E4%B8%8E%E5%85%B3%E9%94%AE%E6%9B%B4%E6%96%B0`, `/en/docker/homebrew-600-release-and-key-updates`
-
-### `/synctest` — 2 次
-
-- Wikilink target：`synctest`
-- 引用页面（2）：`/en/linux/flaky-tests-testreshardpartialbatch`, `/linux/flaky-tests-testreshardpartialbatch-prometheus-%E8%BF%9C%E7%A8%8B%E5%86%99%E5%88%86%E7%89%87%E9%87%8D%E5%B9%B3%E8%A1%A1%E6%AD%BB%E9%94%81%E5%88%86%E6%9E%90`
-
-### `/synthetic-monitoring` — 2 次
-
-- Wikilink target：`synthetic-monitoring`
-- 引用页面（2）：`/en/runbooks/grafana-testdata-plugin-navigation-to-configuration-page-shows-404blank-page`, `/runbooks/grafana-testdata-%E6%8F%92%E4%BB%B6%E5%AF%BC%E8%88%AA%E8%87%B3%E9%85%8D%E7%BD%AE%E9%A1%B5%E9%9D%A2%E6%97%B6%E5%87%BA%E7%8E%B0-404-%E7%A9%BA%E7%99%BD%E9%A1%B5`
-
-### `/system-maintenance-and-updates` — 2 次
-
-- Wikilink target：`system-maintenance-and-updates`
-- 引用页面（2）：`/en/linux/security-updates-for-friday`, `/linux/%E5%A4%9A%E5%8F%91%E8%A1%8C%E7%89%88%E5%AE%89%E5%85%A8%E6%9B%B4%E6%96%B0%E7%AE%A1%E7%90%86`
-
-### `/system-management` — 2 次
-
-- Wikilink target：`system-management`
-- 引用页面（2）：`/en/linux/almalinux-ci-kernel-modules-extra`, `/linux/almalinux-ci-%E4%B8%AD-kernel-modules-extra-%E5%AE%89%E8%A3%85%E5%A4%B1%E8%B4%A5%E7%9A%84%E5%88%86%E6%9E%90%E4%B8%8E%E8%A7%A3%E5%86%B3`
-
-### `/tempo-traceql-query-optimization` — 2 次
-
-- Wikilink target：`tempo-traceql-query-optimization`
-- 引用页面（2）：`/en/linux/graceful-handling-of-invalid-trace-ids-in-grafana-tempo-traceql-editor`, `/linux/grafana-tempo-%E4%B8%AD-traceql-%E7%BC%96%E8%BE%91%E5%99%A8%E5%A4%84%E7%90%86%E6%97%A0%E6%95%88-trace-id-%E7%9A%84%E4%BC%98%E9%9B%85%E5%93%8D%E5%BA%94`
-
-### `/terraform-run-tasks` — 2 次
-
-- Wikilink target：`terraform-run-tasks`
-- 引用页面（2）：`/en/linux/hcp-terraform-adds-project-level-run-tasks`, `/linux/hcp-terraform-%E9%A1%B9%E7%9B%AE%E7%BA%A7-run-tasks%E6%89%A9%E5%B1%95%E6%B2%BB%E7%90%86%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7`
-
-### `/test-stability` — 2 次
-
-- Wikilink target：`test-stability`
-- 引用页面（2）：`/architectures/%E5%88%86%E6%9E%90%E4%B8%8E%E8%A7%A3%E5%86%B3prometheus-testremotewrite-reshardingwithoutdeadlock-%E4%B8%8D%E7%A8%B3%E5%AE%9A%E6%B5%8B%E8%AF%95`, `/en/architectures/analyzing-and-resolving-prometheus-testremotewrite-reshardingwithoutdeadlock-flaky-test`
-
-### `/thanos` — 2 次
-
-- Wikilink target：`thanos`
-- 引用页面（2）：`/en/linux/interview-with-canonical-prometheus-blog`, `/linux/canonical-%E5%9F%BA%E4%BA%8E-prometheus-%E7%9A%84%E7%9B%91%E6%8E%A7%E6%A0%88%E8%BF%81%E7%A7%BB%E5%AE%9E%E8%B7%B5`
-
-### `/time-series-visualization` — 2 次
-
-- Wikilink target：`time-series-visualization`
-- 引用页面（2）：`/en/linux/github-issue`, `/linux/grafana-%E9%9D%A2%E6%9D%BF%E6%97%B6%E9%97%B4%E5%81%8F%E7%A7%BB%E5%AF%BC%E8%87%B4%E6%97%B6%E9%97%B4%E8%8C%83%E5%9B%B4%E5%A4%B1%E6%95%88%E9%97%AE%E9%A2%98`
-
-### `/tls-configuration` — 2 次
-
-- Wikilink target：`tls-configuration`
-- 引用页面（2）：`/en/linux/sigsegv-in-tlsroundtripperroundtrip-during-scrape`, `/linux/prometheus-340-tls-%E6%8A%93%E5%8F%96%E5%AF%BC%E8%87%B4%E7%9A%84%E7%A9%BA%E6%8C%87%E9%92%88%E5%B4%A9%E6%BA%83-sigsegv`
-
-### `/tool-access-gateway` — 2 次
-
-- Wikilink target：`tool-access-gateway`
-- 引用页面（2）：`/architectures/ai-%E4%BB%A3%E7%90%86%E5%AE%89%E5%85%A8%E9%9D%A2%E5%90%91%E5%BC%80%E5%8F%91%E4%B8%8E%E8%BF%90%E7%BB%B4%E5%9B%A2%E9%98%9F%E7%9A%84%E5%AE%9E%E8%B7%B5%E6%8C%87%E5%8D%97`, `/en/architectures/ai-agent-security-a-practical-guide-for-development-and-operations-teams`
-
-### `/traceql-metrics` — 2 次
-
-- Wikilink target：`traceql-metrics`
-- 引用页面（2）：`/en/runbooks/grafana-traceql-metric-queries-do-not-support-dashboard-variable-substitution-for-step`, `/runbooks/grafana-traceql-metric-%E6%9F%A5%E8%AF%A2%E4%B8%8D%E6%94%AF%E6%8C%81-dashboard-%E5%8F%98%E9%87%8F%E6%9B%BF%E6%8D%A2-step-%E5%8F%82%E6%95%B0`
-
-### `/troubleshooting` — 2 次
-
-- Wikilink target：`troubleshooting`
-- 引用页面（2）：`/en/linux/grafana-issues`, `/linux/%E8%A7%A3%E5%86%B3-grafana-database-is-locked-%E9%94%99%E8%AF%AF`
-
-### `/ui-component-security` — 2 次
-
-- Wikilink target：`ui-component-security`
-- 引用页面（2）：`/en/linux/dynamic-dashboards-editableoff-flag-is-ignored-any-user-can-drag-and`, `/linux/grafana-%E5%8A%A8%E6%80%81%E4%BB%AA%E8%A1%A8%E6%9D%BF%E6%9D%83%E9%99%90%E7%BB%95%E8%BF%87%E6%BC%8F%E6%B4%9Eeditable-%E6%A0%87%E5%BF%97%E5%A4%B1%E6%95%88`
-
-### `/ui-reliability-engineering` — 2 次
-
-- Wikilink target：`ui-reliability-engineering`
-- 引用页面（2）：`/en/linux/plugin-catalog-name-sorting-fix`, `/linux/%E6%8F%92%E4%BB%B6%E7%9B%AE%E5%BD%95%E5%90%8D%E7%A7%B0%E6%8E%92%E5%BA%8F%E4%BF%AE%E5%A4%8D`
-
-### `/union-filesystem` — 2 次
-
-- Wikilink target：`union-filesystem`
-- 引用页面（2）：`/en/kubernetes/overlayfs-updates-and-sre-applications`, `/kubernetes/overlayfs-%E6%9B%B4%E6%96%B0%E4%B8%8E-sre-%E5%BA%94%E7%94%A8`
-
-### `/upgrade-management` — 2 次
-
-- Wikilink target：`upgrade-management`
-- 引用页面（2）：`/en/kubernetes/go-124-v220-fails-to-create-containers-from-images-having-etcpasswdgroup`, `/kubernetes/containerd-220-%E5%88%9B%E5%BB%BA%E5%AE%B9%E5%99%A8%E5%A4%B1%E8%B4%A5%E7%BB%9D%E5%AF%B9%E7%AC%A6%E5%8F%B7%E9%93%BE%E6%8E%A5%E8%B7%AF%E5%BE%84%E5%AE%89%E5%85%A8%E6%A3%80%E6%9F%A5`
-
-### `/variable-dependency-graph` — 2 次
-
-- Wikilink target：`variable-dependency-graph`
-- 引用页面（2）：`/en/incidents/grafana-variable-dependency-resolution-false-positive-containsvariable-bug`, `/incidents/grafana-%E5%8F%98%E9%87%8F%E4%BE%9D%E8%B5%96%E8%A7%A3%E6%9E%90%E5%81%87%E9%98%B3%E6%80%A7containsvariable-bug`
-
-### `/variable-management` — 2 次
-
-- Wikilink target：`variable-management`
-- 引用页面（2）：`/en/linux/release-1301-section-level-vars-fix-event-propagation-in-section-level`, `/linux/grafana-%E7%BC%96%E8%BE%91%E6%A8%A1%E5%BC%8F%E4%BF%AE%E5%A4%8D%E5%8C%BA%E5%9F%9F%E7%BA%A7%E5%8F%98%E9%87%8F%E4%BA%8B%E4%BB%B6%E4%BC%A0%E6%92%AD`
-
-### `/vault-dynamic-secrets` — 2 次
-
-- Wikilink target：`vault-dynamic-secrets`
-- 引用页面（2）：`/en/linux/mitigate-credential-exposure-in-windows-environments-with-boundary-and-vault`, `/linux/%E7%BC%93%E8%A7%A3windows%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E5%87%AD%E8%AF%81%E6%9A%B4%E9%9C%B2`
-
-### `/vault-identity` — 2 次
-
-- Wikilink target：`vault-identity`
-- 引用页面（2）：`/en/incidents/spiffe-and-non-human-identity-security`, `/incidents/spiffe-%E4%B8%8E%E9%9D%9E%E4%BA%BA%E7%B1%BB%E8%BA%AB%E4%BB%BD%E5%AE%89%E5%85%A8`
-
-### `/version-management` — 2 次
-
-- Wikilink target：`version-management`
-- 引用页面（2）：`/en/linux/github-issue`, `/linux/grafana-%E9%9D%A2%E6%9D%BF%E6%97%B6%E9%97%B4%E5%81%8F%E7%A7%BB%E5%AF%BC%E8%87%B4%E6%97%B6%E9%97%B4%E8%8C%83%E5%9B%B4%E5%A4%B1%E6%95%88%E9%97%AE%E9%A2%98`
-
-### `/virtualized-list-perf` — 2 次
-
-- Wikilink target：`virtualized-list-perf`
-- 引用页面（2）：`/en/linux/virtualized-list-item-height-estimation-error-causing-content-truncation`, `/linux/%E8%99%9A%E6%8B%9F%E5%8C%96%E5%88%97%E8%A1%A8%E9%A1%B9%E9%AB%98%E5%BA%A6%E4%BC%B0%E7%AE%97%E9%94%99%E8%AF%AF%E5%AF%BC%E8%87%B4%E5%86%85%E5%AE%B9%E6%88%AA%E6%96%AD`
-
-### `/vulnerability-management` — 2 次
-
-- Wikilink target：`vulnerability-management`
-- 引用页面（2）：`/en/incidents/5-software-supply-chain-security-best-practices-for-development-teams`, `/incidents/%E8%BD%AF%E4%BB%B6%E4%BE%9B%E5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5`
-
-### `/vulnerability-management-process` — 2 次
-
-- Wikilink target：`vulnerability-management-process`
-- 引用页面（2）：`/en/linux/grafana-ssrf`, `/linux/grafana-%E8%AE%A4%E8%AF%81%E5%90%8E-ssrf-%E6%BC%8F%E6%B4%9E%E5%91%8A%E8%AD%A6%E6%8E%A5%E6%94%B6%E8%80%85%E6%B5%8B%E8%AF%95%E7%AB%AF%E7%82%B9%E5%AE%89%E5%85%A8%E4%BA%8B%E4%BB%B6%E5%88%86%E6%9E%90`
-
-### `/websocket-watch` — 2 次
-
-- Wikilink target：`websocket-watch`
-- 引用页面（2）：`/en/linux/etcd-github-issue`, `/linux/etcd-websocket-%E8%AE%A4%E8%AF%81%E4%BB%A4%E7%89%8C%E5%A4%B1%E6%95%88`
 
 ### `/zero-trust` — 2 次
 
@@ -1176,20 +956,3 @@
 
 - Wikilink target：`webhook-notification-best-practices`
 - 引用页面（1）：`/linux/grafana-%E5%91%8A%E8%AD%A6%E9%80%9A%E7%9F%A5%E9%85%8D%E7%BD%AE%E6%95%85%E9%9A%9C%E6%B5%8B%E8%AF%95%E6%88%90%E5%8A%9F%E4%BD%86%E5%AE%9E%E9%99%85%E5%A4%B1%E8%B4%A5%E4%B8%94%E6%97%A5%E5%BF%97%E4%B8%8D%E8%B6%B3`
-
-## 需要人工消歧或修正的引用
-
-### `/container-runtime` — 4 次（ambiguous slug）
-
-- Wikilink target：`container-runtime`
-- 引用页面（4）：`/en/kubernetes/go-124-v220-fails-to-create-containers-from-images-having-etcpasswdgroup`, `/en/linux/containerd-can-not-be-used-with-githubcomu-rootu-root-due-to-genproto`, `/kubernetes/containerd-220-%E5%88%9B%E5%BB%BA%E5%AE%B9%E5%99%A8%E5%A4%B1%E8%B4%A5%E7%BB%9D%E5%AF%B9%E7%AC%A6%E5%8F%B7%E9%93%BE%E6%8E%A5%E8%B7%AF%E5%BE%84%E5%AE%89%E5%85%A8%E6%A3%80%E6%9F%A5`, `/linux/go%E5%B7%A5%E4%BD%9C%E5%8C%BAgo-work%E4%B8%8Econtainerd%E7%9A%84genproto%E4%BE%9D%E8%B5%96%E5%86%B2%E7%AA%81`
-
-### `/pod-lifecycle` — 2 次（ambiguous slug）
-
-- Wikilink target：`pod-lifecycle`
-- 引用页面（2）：`/en/linux/bug-a-container-cannot-restart-when-there-is-any-terminating-container`, `/linux/kubernetes-pod-%E5%86%85%E5%A4%9A%E5%AE%B9%E5%99%A8%E9%87%8D%E5%90%AF%E9%98%BB%E5%A1%9E%E9%97%AE%E9%A2%98`
-
-### `/service-mesh` — 2 次（ambiguous slug）
-
-- Wikilink target：`service-mesh`
-- 引用页面（2）：`/en/linux/webhook-use-resolved-endpoint-ip-instead-of-cached`, `/linux/kubernetes-webhook-%E8%BF%9E%E6%8E%A5%E7%BC%93%E5%AD%98%E4%B8%8E%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1%E4%BC%98%E5%8C%96`

@@ -54,7 +54,7 @@ A common anti-pattern is configuring independent monitoring server addresses for
 
 ### Reliability and Observability
 
-Pull mode inherently improves monitoring data reliability. TCP-based HTTP requests guarantee successful data transmission or fast failure (connection timeout, rejection), unlike UDP-based Push mode which may silently lose data packets without detection. This aligns with [[sre]]'s core requirement that **observability data must be reliable**.
+Pull mode inherently improves monitoring data reliability. TCP-based HTTP requests guarantee successful data transmission or fast failure (connection timeout, rejection), unlike UDP-based Push mode which may silently lose data packets without detection. This aligns with [[topic-sre]]'s core requirement that **observability data must be reliable**.
 
 ### Configuration Management and Change Risk
 

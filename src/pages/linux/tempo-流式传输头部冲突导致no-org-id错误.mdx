@@ -66,4 +66,4 @@ Tempo 是 Grafana 生态系统中的一个高性能、分布式追踪后端，�
     - 此问题直接影响 **追踪数据查询成功率** 这一 SLI。当错误发生时，用户查询 Tempo 将会失败。
     - 团队应确保此类多租户数据隔离的可靠性，其 SLO 可以设定为“成功返回指定租户数据的查询比例 ≥ 99.9%”。该 bug 的出现可能导致 SLO 被侵蚀，并消耗 Error Budget。修复后，应通过集成测试强化对此类边界条件的覆盖，防止回归。
 
-*关联页面：[[tempo]], [[gRPC]], [[multi-tenancy]], [[header]], [[data-source-configuration]], [[error-budget]]*
+*关联页面：[[tempo]], [[grpc]], [[multi-tenancy]], [[header]], [[data-source-configuration]], [[error-budget]]*

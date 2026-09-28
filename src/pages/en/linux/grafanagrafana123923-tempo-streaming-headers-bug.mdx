@@ -59,4 +59,4 @@ Even if the incoming gRPC metadata contains keys with different case forms such 
     - This issue directly affects the **Tracking data query success rate** of this SLI. When an error occurs, user queries to Tempo will fail.
     - Teams should ensure the reliability of such multi-tenant data isolation, with an SLO that can be set to "proportion of queries successfully returning specified tenant data ≥ 99.9%". The occurrence of this bug may cause the SLO to be eroded and the Error Budget to be consumed. After repair, the coverage of such boundary conditions should be strengthened through integration testing to prevent regressions.
 
-*Associated pages: [[tempo]], [[gRPC]], [[multi-tenancy]], [[header]], [[data-source-configuration]], [[error-budget]]*
+*Associated pages: [[tempo]], [[grpc]], [[multi-tenancy]], [[header]], [[data-source-configuration]], [[error-budget]]*

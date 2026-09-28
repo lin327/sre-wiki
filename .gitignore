@@ -33,3 +33,6 @@ public/pagefind/
 
 # local env
 .env.local
+
+# Playwright output
+test-results/

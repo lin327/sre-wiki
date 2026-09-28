@@ -8,7 +8,7 @@
 - 待整理数量：Linux 351、Docker 16、Kubernetes 62、Runbooks 47、Architectures 13、Incidents 27、Comparisons 0。
 - 另有 447 篇根目录占位页，正文为“内容待补充”；它们不是本清单中的实质文章，不应当作精选内容。英文目录另有 506 篇页面，本轮没有逐篇改动。
 - 当前内容边界主要由 `canonical: true` 控制 sitemap、搜索与精选列表；非精选页的直达 URL 仍可能存在。生成内容多数保留原目录和 URL，不能仅凭本清单批量搬迁或改名。
-- 现有 7 类混合了技术领域（Linux、Docker、Kubernetes）与文档类型（Runbooks、Architectures、Incidents、Comparisons）。高置信度命中 observability 的文章约占总数一半（254/516），建议正式新增 Observability 为独立领域；最终以 schema 冻结结论为准。
+- 现有 7 类混合了技术领域（Linux、Docker、Kubernetes）与文档类型（Runbooks、Architectures、Incidents、Comparisons）。高置信度命中 observability 的文章约占总数一半（255/516），建议正式新增 Observability 为独立领域；最终以 schema 冻结结论为准。
 
 ## 整理建议
 
@@ -16,7 +16,7 @@
 2. 若标题、正文和来源显示文章只是 GitHub Issue/PR、flaky test 或单点 UI 修复复述，保持 `canonical: false`，优先放入 inbox 或后续合并进可复用知识页。
 3. 对跨类或放错目录的页面，先确认现有反向链接和稳定 URL，再单独制定迁移/重定向方案；本清单不建议直接批量改名。
 4. 只有通过准确性、可复用性、来源质量、结构完整性审校的页面才考虑晋升为精选；保留中文正文，技术术语可用英文。
-5. containerd 等容器运行时内容当前暂归 kubernetes（高），最终领域可能独立为 container-runtime，待 schema 冻结时再定。
+5. container-runtime 为独立域（含 containerd 等 23 篇），docker 为独立域（3 篇），etcd 内容并入 kubernetes 域；tbd 为人工复核中的过渡值，不可用于 canonical
 
 ## 逐页清单
 

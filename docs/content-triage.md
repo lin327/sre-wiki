@@ -20,7 +20,7 @@
 
 ## 逐页清单
 
-说明：建议领域按标题关键词优先判定；标题命中多领域时归为“存疑”。observability 高：Grafana、Prometheus、Alertmanager、Loki、Tempo、Mimir、OpenTelemetry、PromQL、告警、链路追踪，以及 alerting、TraceQL、o11y、可观测性；Monitor 为中。containerd、crictl、runc、snapshotter、overlayfs、shim 暂映射 kubernetes（高）；cgroup、bpf/ebpf、AppArmor、SELinux、内核、syscall 映射 linux（高）；docker/Docker引擎/docker engine 映射 docker（高）。
+说明：建议领域按标题关键词优先判定；标题命中多领域时归为“存疑”。observability 高：Grafana、Prometheus、Alertmanager、Loki、Tempo、Mimir、OpenTelemetry、PromQL、告警、链路追踪，以及 alerting、TraceQL、o11y、可观测性；Monitor 为中。containerd、crictl、runc、snapshotter、overlayfs、shim 暂映射 kubernetes（高）；cgroup、bpf/ebpf、AppArmor、SELinux、内核、syscall 映射 linux（高）；docker/Docker引擎/docker engine 映射 docker（高）。标题同时命中 observability 与 docker 关键词时，observability 优先。
 
 标题无领域或细分类命中时，tags 含 prometheus、tsdb、wal、consul-sd、service-discovery 可辅助映射 observability（中）。存疑细分仅存疑行填写，候选值：etcd / terraform-iac / chaos-mesh / kubernetes-platform / security / ai / docker-engine / linux-distro / other；etcd、terraform/packer、chaos-mesh 为中，其余默认低，标题强命中可为中。
 
@@ -289,6 +289,7 @@
 | `src/pages/linux/计算机视觉与生成式ai赋能的工作场所安全自动化监控.mdx` | 计算机视觉与生成式AI赋能的工作场所安全自动化监控 | 监控与告警 | [sre, computer-vision, generative-ai, aws, monitoring, incident-response] | observability |  | 中 | 关键词误伤嫌疑，需人工确认 |
 | `src/pages/linux/诊断与处理-opentelemetry-http-中间件中的-superfluous-responsewriteheader-call-错误.mdx` | 诊断与处理 OpenTelemetry HTTP 中间件中的 'superfluous response.WriteHeader call' 错误 | 可观测性 | [prometheus, opentelemetry, http, go, middleware, logging, error, debugging] | observability |  | 高 |  |
 | `src/pages/linux/身份管理平台的可观测性实践forgerock的prometheus之旅.mdx` | 身份管理平台的可观测性实践：ForgeRock的Prometheus之旅 | 监控与可观测性 | [prometheus, grafana, kubernetes, 可观测性, 身份管理, 可靠性工程] | observability |  | 高 |  |
+| `src/pages/docker/配置文件中的尾随空格问题-grafana-docker.mdx` | 配置文件中的尾随空格问题 (Grafana Docker) | 配置管理 | [grafana, docker, configuration, ci-cd, devops] | observability |  | 高 |  |
 | `src/pages/linux/采用-prometheus-operator-实现开发者驱动的监控.mdx` | 采用 Prometheus Operator 实现开发者驱动的监控 | Prometheus 与监控 | [Prometheus, Prometheus-Operator, Kubernetes, 可观测性, SLI/SLO, 开发者体验] | observability |  | 高 |  |
 | `src/pages/linux/非开发人员如何参与-prometheus-贡献.mdx` | 非开发人员如何参与 Prometheus 贡献 | 社区参与与生态 | [社区贡献， Prometheus， 开源， 可观测性， UX] | observability |  | 高 |  |
 
@@ -385,11 +386,15 @@
 | 文件 | 标题 | 当前 category | tags | 建议领域 | 存疑细分 | 置信度 | 备注 |
 |---|---|---|---|---|---|---|---|
 | `src/pages/linux/chaos-mesh-20迈向混沌工程生态.mdx` | Chaos Mesh 2.0：迈向混沌工程生态 | Chaos Engineering | [chaos-engineering, chaos-mesh, fault-injection, resilience-testing, workflow] | 存疑 | chaos-mesh | 中 |  |
+| `src/pages/linux/chaos-mesh-与混沌即服务caas演进.mdx` | Chaos Mesh 与混沌即服务（CaaS）演进 | 混沌工程 | [混沌工程, chaos-mesh, SRE, 可观测性, Kubernetes, 故障注入] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/chaos-mesh-助力-apache-apisix-提升系统稳定性.mdx` | Chaos Mesh 助力 Apache APISIX 提升系统稳定性 | 混沌工程 | [Chaos Mesh, Apache APISIX, 混沌工程, API网关, 系统稳定性, 故障注入] | 存疑 | chaos-mesh | 中 |  |
+| `src/pages/runbooks/chaos-mesh-实践问答.mdx` | Chaos Mesh 实践问答 | SRE实践 | [混沌工程, Kubernetes, 可靠性工程, SRE实践, 故障注入] | 存疑 | chaos-mesh | 中 |  |
+| `src/pages/linux/chaos-mesh-简介与-hacktoberfest-参与指南.mdx` | Chaos Mesh 简介与 Hacktoberfest 参与指南 | Chaos Engineering | [chaos-engineering, kubernetes, open-source, sre, resilience-testing] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/chaos-mesh与混沌工程实践.mdx` | Chaos Mesh与混沌工程实践 | 混沌工程 | [ChaosMesh, 混沌工程, 故障注入, CNCF] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/chaos-meshkubernetes上的混沌工程平台.mdx` | Chaos Mesh：Kubernetes上的混沌工程平台 | 混沌工程 | [chaos-engineering, kubernetes, cncf, site-reliability-engineering, chaos-mesh] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/chaos-mesh云原生混沌工程实践与常见问题解答.mdx` | Chaos Mesh：云原生混沌工程实践与常见问题解答 | 混沌工程 | [混沌工程, Chaos Mesh, Kubernetes, 故障注入, 可靠性工程] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/kubernetes混沌工程实践chaos-mesh原理与控制平面开发.mdx` | Kubernetes混沌工程实践：Chaos Mesh原理与控制平面开发 | 混沌工程 | [chaos-engineering, kubernetes, chaos-mesh, sre, reliability, resilience-testing] | 存疑 | chaos-mesh | 中 |  |
+| `src/pages/linux/在-kubesphere-上部署与使用-chaos-mesh.mdx` | 在 KubeSphere 上部署与使用 Chaos Mesh | 混沌工程 | [chaos-engineering, kubesphere, kubernetes, resilience-testing] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/在物理机器上运行混沌实验chaosd实践指南.mdx` | 在物理机器上运行混沌实验：chaosd实践指南 | 混沌工程 | [chaosd, chaos-mesh, 混沌工程, 物理机, 故障注入, 可靠性测试] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/在运行时模拟-i-o-故障.mdx` | 在运行时模拟 I/O 故障 | 混沌工程与故障注入 | [混沌工程, ChaosFS, ptrace, I/O故障, 故障注入, Chaos Mesh] | 存疑 | chaos-mesh | 中 |  |
 | `src/pages/linux/庆祝-chaos-mesh-一周年回顾与展望.mdx` | 庆祝 Chaos Mesh 一周年：回顾与展望 | 混沌工程 | [混沌工程, 故障注入, CNCF, 可观测性, SRE实践] | 存疑 | chaos-mesh | 中 |  |
@@ -507,12 +512,6 @@
 | `src/pages/runbooks/使用-doczyai-在-aws-上自动化合同智能分析.mdx` | 使用 Doczy.ai™ 在 AWS 上自动化合同智能分析 | SRE架构与设计 | [AWS, AI, 文档处理, SRE, 可靠性, 自动化, 医疗健康] | 存疑 | ai | 中 |  |
 | `src/pages/architectures/利用-k0smos-平台实现地理分布式-ai-运营.mdx` | 利用 k0smos 平台实现地理分布式 AI 运营 | AI Infrastructure | [geo-distributed, ai-infra, multi-cluster, kubernetes, gpu, edge, site-reliability] | 存疑 | ai | 中 |  |
 
-#### docker-engine
-
-| 文件 | 标题 | 当前 category | tags | 建议领域 | 存疑细分 | 置信度 | 备注 |
-|---|---|---|---|---|---|---|---|
-| `src/pages/docker/配置文件中的尾随空格问题-grafana-docker.mdx` | 配置文件中的尾随空格问题 (Grafana Docker) | 配置管理 | [grafana, docker, configuration, ci-cd, devops] | 存疑 | docker-engine | 中 |  |
-
 #### linux-distro
 
 | 文件 | 标题 | 当前 category | tags | 建议领域 | 存疑细分 | 置信度 | 备注 |
@@ -532,9 +531,6 @@
 | `src/pages/linux/bugfixadd-lock-to-protect-task-delete-and-task-kill.mdx` | bugfix:add lock to protect task delete and task kill | 可靠性与容错 | [并发, 竞态条件, 锁, 任务生命周期, 容器运行时] | 存疑 | other | 低 |  |
 | `src/pages/docker/buildroot-202605-版本发布更新.mdx` | Buildroot 2026.05 版本发布更新 | 构建与部署工具 | [buildroot, embedded-linux, cross-compilation, xfs, arm-neoverse] | 存疑 | other | 低 |  |
 | `src/pages/linux/canvas背景图片显示不全问题.mdx` | Canvas背景图片显示不全问题 | issue跟踪 | [grafana, canvas, visualization, bug, frontend, usability] | 存疑 | other | 低 |  |
-| `src/pages/linux/chaos-mesh-与混沌即服务caas演进.mdx` | Chaos Mesh 与混沌即服务（CaaS）演进 | 混沌工程 | [混沌工程, chaos-mesh, SRE, 可观测性, Kubernetes, 故障注入] | 存疑 | other | 低 |  |
-| `src/pages/runbooks/chaos-mesh-实践问答.mdx` | Chaos Mesh 实践问答 | SRE实践 | [混沌工程, Kubernetes, 可靠性工程, SRE实践, 故障注入] | 存疑 | other | 低 |  |
-| `src/pages/linux/chaos-mesh-简介与-hacktoberfest-参与指南.mdx` | Chaos Mesh 简介与 Hacktoberfest 参与指南 | Chaos Engineering | [chaos-engineering, kubernetes, open-source, sre, resilience-testing] | 存疑 | other | 低 |  |
 | `src/pages/linux/combobox-组件点击目标不一致问题.mdx` | Combobox 组件点击目标不一致问题 | 前端可观测性 | [grafana, ui-component, ux-bug, frontend-reliability, incident-response] | 存疑 | other | 低 |  |
 | `src/pages/runbooks/dapr-118-可验证执行能力介绍.mdx` | Dapr 1.18 可验证执行能力介绍 | SRE实践与治理 | [dapr, verifiable-execution, workflow, attestation, sre] | 存疑 | other | 低 |  |
 | `src/pages/linux/dashboard-annotations-加载期间无法切换开关的问题.mdx` | Dashboard Annotations: 加载期间无法切换开关的问题 | 仪表板与可视化 | [Grafana, Dashboard, Annotation, UX, Bug, Performance] | 存疑 | other | 低 |  |
@@ -589,7 +585,6 @@
 | `src/pages/linux/前端下拉搜索功能缺失的故障分析与sre实践.mdx` | 前端下拉搜索功能缺失的故障分析与SRE实践 | 前端工程实践 | [前端, UI, 故障排查, Grafana, 可靠性, 用户体验] | 存疑 | other | 低 |  |
 | `src/pages/kubernetes/在-kubernetes-上运行-ai-agentagent-sandbox.mdx` | 在 Kubernetes 上运行 AI Agent：Agent Sandbox | Kubernetes & 容器编排 | [kubernetes, ai, agent, sandbox, sig-apps, stateful-workloads] | 存疑 | other | 低 |  |
 | `src/pages/incidents/在-kubernetes-中安全进行生产调试.mdx` | 在 Kubernetes 中安全进行生产调试 | 安全与合规 | [kubernetes, rbac, security, debugging, access-control, credentials] | 存疑 | other | 低 |  |
-| `src/pages/linux/在-kubesphere-上部署与使用-chaos-mesh.mdx` | 在 KubeSphere 上部署与使用 Chaos Mesh | 混沌工程 | [chaos-engineering, kubesphere, kubernetes, resilience-testing] | 存疑 | other | 低 |  |
 | `src/pages/incidents/在amazon-cognito之上构建可扩展的用户搜索层.mdx` | 在Amazon Cognito之上构建可扩展的用户搜索层 | 认证与访问管理 | [cognito, opensearch, dynamodb, lambda, serverless, architecture, search] | 存疑 | other | 低 |  |
 | `src/pages/linux/在aws上构建有状态服务的混合多租户架构.mdx` | 在AWS上构建有状态服务的混合多租户架构 | multi-tenant-architecture | [multi-tenant, architecture, isolation, scalability, aws, ecs, alb, route53, privatelink] | 存疑 | other | 低 |  |
 | `src/pages/incidents/处理未修复的kubernetes-cve记录修正与管理.mdx` | 处理未修复的Kubernetes CVE：记录修正与管理 | 安全与合规 | [kubernetes, security, CVE, vulnerability-management, rbac, networking] | 存疑 | other | 低 |  |
@@ -611,12 +606,12 @@
 
 | 建议领域 | 篇数 | 高置信度 |
 |---|---:|---:|
-| observability | 263 | 254 |
+| observability | 264 | 255 |
 | kubernetes | 23 | 23 |
 | linux | 7 | 7 |
 | docker | 3 | 3 |
-| 存疑 | 220 | 0 |
-| **合计** | **516** | **287** |
+| 存疑 | 219 | 0 |
+| **合计** | **516** | **288** |
 
 ### 存疑细分分布
 
@@ -624,11 +619,10 @@
 |---|---:|
 | etcd | 21 |
 | terraform-iac | 7 |
-| chaos-mesh | 11 |
+| chaos-mesh | 15 |
 | kubernetes-platform | 62 |
 | security | 25 |
 | ai | 9 |
-| docker-engine | 1 |
 | linux-distro | 2 |
-| other | 82 |
-| **合计** | **220** |
+| other | 78 |
+| **合计** | **219** |

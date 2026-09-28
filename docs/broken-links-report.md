@@ -4,12 +4,12 @@
 
 ## 扫描摘要
 
-- 扫描 MDX 页面：1393
+- 扫描 MDX 页面：1443
 - Wikilink 引用：1597
-- 由路由表直接解析：1249
+- 由路由表直接解析：1349
 - 由 Nginx 大小写别名处理：34
-- 未解析引用：314
-- 缺失 URL：198 个（306 次引用）
+- 未解析引用：214
+- 缺失 URL：148 个（206 次引用）
 - 歧义或格式问题：3 个 URL（8 次引用）
 
 ## 待补充占位页面
@@ -331,12 +331,62 @@
 - `/panic-recovery` — 2 次引用，2 个引用页面
 - `/patch-management` — 2 次引用，2 个引用页面
 - `/performance-engineering` — 2 次引用，2 个引用页面
+- `/performance-tuning` — 2 次引用，2 个引用页面
+- `/pod-disruption-budget` — 2 次引用，2 个引用页面
+- `/pod-qos` — 2 次引用，2 个引用页面
+- `/pod-sandbox` — 2 次引用，2 个引用页面
+- `/pod-security-standards` — 2 次引用，2 个引用页面
+- `/policy-as-code` — 2 次引用，2 个引用页面
+- `/postgresql` — 2 次引用，2 个引用页面
+- `/postgresql-jdbc` — 2 次引用，2 个引用页面
+- `/postmortem` — 2 次引用，2 个引用页面
+- `/postmortem-template` — 2 次引用，2 个引用页面
+- `/process-resource-leak` — 2 次引用，2 个引用页面
 - `/prometheus` — 18 次引用，18 个引用页面
+- `/prometheus-alerting-best-practices` — 2 次引用，2 个引用页面
 - `/prometheus-architecture` — 6 次引用，6 个引用页面
+- `/prometheus-best-practices` — 2 次引用，2 个引用页面
+- `/prometheus-configuration` — 2 次引用，2 个引用页面
+- `/prometheus-configuration-management` — 2 次引用，2 个引用页面
+- `/prometheus-core-concepts` — 2 次引用，2 个引用页面
+- `/prometheus-overview` — 2 次引用，2 个引用页面
+- `/prometheus-pushgateway` — 2 次引用，2 个引用页面
+- `/prometheus-recording-rules` — 2 次引用，2 个引用页面
+- `/prometheus-scrape` — 2 次引用，2 个引用页面
+- `/prometheus-sli` — 2 次引用，2 个引用页面
+- `/prometheus-upgrade-guide` — 2 次引用，2 个引用页面
+- `/pull-model` — 2 次引用，1 个引用页面
+- `/push-vs-pull-monitoring` — 2 次引用，2 个引用页面
 - `/pushgateway` — 4 次引用，2 个引用页面
+- `/query-languages` — 2 次引用，2 个引用页面
+- `/query-performance-optimization` — 2 次引用，2 个引用页面
+- `/queue-manager` — 2 次引用，2 个引用页面
+- `/race-conditions` — 2 次引用，2 个引用页面
+- `/raft-consensus` — 2 次引用，2 个引用页面
+- `/rbac` — 2 次引用，2 个引用页面
+- `/rbac-authorization` — 2 次引用，2 个引用页面
 - `/recording-rules` — 2 次引用，2 个引用页面
+- `/release-cadence` — 2 次引用，2 个引用页面
+- `/release-management` — 2 次引用，2 个引用页面
 - `/reliability-engineering` — 18 次引用，16 个引用页面
+- `/remote-write` — 2 次引用，2 个引用页面
+- `/resource-management` — 2 次引用，2 个引用页面
+- `/resource-quotas` — 2 次引用，2 个引用页面
+- `/reverse-proxy-config` — 2 次引用，2 个引用页面
+- `/rollback` — 2 次引用，2 个引用页面
+- `/rolling-upgrades` — 2 次引用，2 个引用页面
+- `/rxjs` — 2 次引用，2 个引用页面
+- `/samba` — 2 次引用，2 个引用页面
+- `/sandbox-management` — 2 次引用，2 个引用页面
+- `/sandboxing` — 2 次引用，2 个引用页面
+- `/sandboxing-for-ai-agents` — 2 次引用，2 个引用页面
+- `/sbom` — 2 次引用，2 个引用页面
+- `/scheduler-performance-tuning` — 2 次引用，2 个引用页面
 - `/secrets-management` — 4 次引用，4 个引用页面
+- `/secrets-management-for-agents` — 2 次引用，2 个引用页面
+- `/secure-coding` — 2 次引用，2 个引用页面
+- `/security-context` — 2 次引用，2 个引用页面
+- `/security-in-sre` — 2 次引用，2 个引用页面
 - `/service-discovery` — 6 次引用，6 个引用页面
 - `/site-reliability-engineering` — 3 次引用，3 个引用页面
 - `/sli` — 18 次引用，12 个引用页面
@@ -364,278 +414,28 @@
 
 ## 当前优先处理的 20 个缺失 URL
 
-- `/performance-tuning` — 2 次
-- `/pod-disruption-budget` — 2 次
-- `/pod-qos` — 2 次
-- `/pod-sandbox` — 2 次
-- `/pod-security-standards` — 2 次
-- `/policy-as-code` — 2 次
-- `/postgresql` — 2 次
-- `/postgresql-jdbc` — 2 次
-- `/postmortem` — 2 次
-- `/postmortem-template` — 2 次
-- `/process-resource-leak` — 2 次
-- `/prometheus-alerting-best-practices` — 2 次
-- `/prometheus-best-practices` — 2 次
-- `/prometheus-configuration` — 2 次
-- `/prometheus-configuration-management` — 2 次
-- `/prometheus-core-concepts` — 2 次
-- `/prometheus-overview` — 2 次
-- `/prometheus-pushgateway` — 2 次
-- `/prometheus-recording-rules` — 2 次
-- `/prometheus-scrape` — 2 次
+- `/selinux` — 2 次
+- `/service-level-agreement` — 2 次
+- `/service-level-objectives` — 2 次
+- `/serviceaccount` — 2 次
+- `/sli-for-monitoring-systems` — 2 次
+- `/sli-slo-for-configuration-management` — 2 次
+- `/slis-and-slos` — 2 次
+- `/slo-error-budgets` — 2 次
+- `/slo-for-deployment-pipelines` — 2 次
+- `/slo-for-user-facing-interfaces` — 2 次
+- `/slo-reliability-budget` — 2 次
+- `/slo-sli-error-budgets` — 2 次
+- `/slo-sli-sla` — 2 次
+- `/slsa` — 2 次
+- `/software-supply-chain-security` — 2 次
+- `/spire-overview` — 2 次
+- `/sqlite` — 2 次
+- `/sre` — 2 次
+- `/sre-culture-and-principles` — 2 次
+- `/sre-error-budget` — 2 次
 
 ## 缺失 URL 明细（按引用次数降序）
-
-### `/performance-tuning` — 2 次
-
-- Wikilink target：`performance-tuning`
-- 引用页面（2）：`/en/linux/automatic-multi-size-transparent-huge-page-creation-in-the-linux-kernel`, `/linux/linux%E5%86%85%E6%A0%B8%E4%B8%AD%E7%9A%84%E5%A4%9A%E5%B0%BA%E5%AF%B8%E9%80%8F%E6%98%8E%E5%A4%A7%E9%A1%B5%E8%87%AA%E5%8A%A8%E5%88%9B%E5%BB%BA`
-
-### `/pod-disruption-budget` — 2 次
-
-- Wikilink target：`pod-disruption-budget`
-- 引用页面（2）：`/en/kubernetes/kubernetes-blog-cluster-api-v112-introducing-in-place-updates-and-chained`, `/kubernetes/cluster-api-v112-%E5%8E%9F%E5%9C%B0%E6%9B%B4%E6%96%B0%E4%B8%8E%E9%93%BE%E5%BC%8F%E5%8D%87%E7%BA%A7`
-
-### `/pod-qos` — 2 次
-
-- Wikilink target：`pod-qos`
-- 引用页面（2）：`/en/kubernetes/kubernetes-v136-tiered-memory-protection-with-memory-qos`, `/kubernetes/kubernetes-v136%E5%9F%BA%E4%BA%8E-qos-%E7%B1%BB%E5%88%AB%E7%9A%84%E5%88%86%E5%B1%82%E5%86%85%E5%AD%98%E4%BF%9D%E6%8A%A4`
-
-### `/pod-sandbox` — 2 次
-
-- Wikilink target：`pod-sandbox`
-- 引用页面（2）：`/en/kubernetes/podsandbox-nil-check-sbcontainer-in-handlesandboxtaskexit`, `/kubernetes/podsandbox-taskexit-%E4%BA%8B%E4%BB%B6%E7%9A%84%E7%A9%BA%E5%80%BC%E6%A3%80%E6%9F%A5`
-
-### `/pod-security-standards` — 2 次
-
-- Wikilink target：`pod-security-standards`
-- 引用页面（2）：`/en/kubernetes/kubernetes-fine-grained-supplemental-groups-control-ga`, `/kubernetes/kubernetes%E7%BB%86%E7%B2%92%E5%BA%A6supplementalgroups%E6%8E%A7%E5%88%B6ga`
-
-### `/policy-as-code` — 2 次
-
-- Wikilink target：`policy-as-code`
-- 引用页面（2）：`/en/linux/terraform-mcp-server-is-now-generally-available`, `/linux/terraform-mcp-serverai%E8%B5%8B%E8%83%BD%E7%9A%84%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E5%8D%B3%E4%BB%A3%E7%A0%81%E5%8A%A9%E6%89%8B`
-
-### `/postgresql` — 2 次
-
-- Wikilink target：`postgresql`
-- 引用页面（2）：`/en/linux/grafana-issue-115875-failed-to-upgrade-1230-to-1231-due-to-database`, `/linux/grafana%E5%8D%87%E7%BA%A7%E8%BF%87%E7%A8%8B%E4%B8%AD%E7%9A%84sqlite%E6%95%B0%E6%8D%AE%E5%BA%93%E9%94%81%E5%AE%9A%E6%95%85%E9%9A%9C`
-
-### `/postgresql-jdbc` — 2 次
-
-- Wikilink target：`postgresql-jdbc`
-- 引用页面（2）：`/en/incidents/security-updates-for-thursday`, `/incidents/linux%E5%8F%91%E8%A1%8C%E7%89%88%E5%AE%89%E5%85%A8%E6%9B%B4%E6%96%B0%E8%B7%9F%E8%B8%AA2026-06-11`
-
-### `/postmortem` — 2 次
-
-- Wikilink target：`postmortem`
-- 引用页面（2）：`/en/linux/how-to-run-chaos-experiments-on-your-physical-machine`, `/linux/%E5%9C%A8%E7%89%A9%E7%90%86%E6%9C%BA%E5%99%A8%E4%B8%8A%E8%BF%90%E8%A1%8C%E6%B7%B7%E6%B2%8C%E5%AE%9E%E9%AA%8Cchaosd%E5%AE%9E%E8%B7%B5%E6%8C%87%E5%8D%97`
-
-### `/postmortem-template` — 2 次
-
-- Wikilink target：`postmortem-template`
-- 引用页面（2）：`/en/linux/possible-dereference-in-code`, `/linux/go-%E8%AF%AD%E8%A8%80%E7%A9%BA%E6%8C%87%E9%92%88%E8%A7%A3%E5%BC%95%E7%94%A8%E9%9D%99%E6%80%81%E5%88%86%E6%9E%90%E5%8F%91%E7%8E%B0%E7%9A%84%E5%B8%B8%E8%A7%81%E6%A8%A1%E5%BC%8F%E4%B8%8E%E4%BF%AE%E5%A4%8D`
-
-### `/process-resource-leak` — 2 次
-
-- Wikilink target：`process-resource-leak`
-- 引用页面（2）：`/en/kubernetes/containerd-shim-runc-v2-accelerating-cpu-time-growth-on-long-running-nodes`, `/kubernetes/%E5%AE%B9%E5%99%A8%E8%BF%90%E8%A1%8C%E6%97%B6%E6%80%A7%E8%83%BD%E9%80%80%E5%8C%96containerd-shim-cpu%E6%97%B6%E9%97%B4%E5%8A%A0%E9%80%9F%E5%A2%9E%E9%95%BF%E9%97%AE%E9%A2%98`
-
-### `/prometheus-alerting-best-practices` — 2 次
-
-- Wikilink target：`prometheus-alerting-best-practices`
-- 引用页面（2）：`/en/linux/practical-anomaly-detection-prometheus-blog`, `/linux/prometheus-%E5%AE%9E%E8%B7%B5%E5%BC%82%E5%B8%B8%E6%A3%80%E6%B5%8B`
-
-### `/prometheus-best-practices` — 2 次
-
-- Wikilink target：`prometheus-best-practices`
-- 引用页面（2）：`/en/linux/interview-with-showmax-prometheus-blog`, `/linux/showmax%E5%9F%BA%E4%BA%8E-prometheus-%E7%9A%84%E7%9B%91%E6%8E%A7%E8%BD%AC%E5%9E%8B%E5%AE%9E%E8%B7%B5`
-
-### `/prometheus-configuration` — 2 次
-
-- Wikilink target：`prometheus-configuration`
-- 引用页面（2）：`/en/linux/influxdb-data-source-explorer-to-influxdb3-sql-parsererror-expected-end`, `/linux/grafana-influxdb3-sql-%E6%95%B0%E6%8D%AE%E6%BA%90%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86%E5%99%A8%E6%97%A0%E6%B3%95%E5%A4%84%E7%90%86%E5%8C%85%E5%90%AB%E7%82%B9%E7%9A%84%E6%A0%87%E8%AF%86%E7%AC%A6`
-
-### `/prometheus-configuration-management` — 2 次
-
-- Wikilink target：`prometheus-configuration-management`
-- 引用页面（2）：`/en/linux/grafana-pr-126152-alerting-fix-rule-matching-when-expressions-contain`, `/linux/promql%E6%B3%A8%E9%87%8A%E5%A4%84%E7%90%86%E5%AF%B9%E5%91%8A%E8%AD%A6%E8%A7%84%E5%88%99%E5%8C%B9%E9%85%8D%E7%9A%84%E5%BD%B1%E5%93%8D`
-
-### `/prometheus-core-concepts` — 2 次
-
-- Wikilink target：`prometheus-core-concepts`
-- 引用页面（2）：`/en/linux/prometheus-conformance-program-first-round-of-compatibility-test-results`, `/linux/prometheus-conformance-program-%E5%85%BC%E5%AE%B9%E6%80%A7%E6%B5%8B%E8%AF%95%E9%A6%96%E8%BD%AE%E7%BB%93%E6%9E%9C`
-
-### `/prometheus-overview` — 2 次
-
-- Wikilink target：`prometheus-overview`
-- 引用页面（2）：`/en/linux/implementing-custom-service-discovery`, `/linux/%E5%AE%9E%E7%8E%B0%E8%87%AA%E5%AE%9A%E4%B9%89%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0`
-
-### `/prometheus-pushgateway` — 2 次
-
-- Wikilink target：`prometheus-pushgateway`
-- 引用页面（2）：`/en/linux/interview-with-showmax-prometheus-blog`, `/linux/showmax%E5%9F%BA%E4%BA%8E-prometheus-%E7%9A%84%E7%9B%91%E6%8E%A7%E8%BD%AC%E5%9E%8B%E5%AE%9E%E8%B7%B5`
-
-### `/prometheus-recording-rules` — 2 次
-
-- Wikilink target：`prometheus-recording-rules`
-- 引用页面（2）：`/en/linux/when-not-to-use-varbit-chunks-prometheus-blog`, `/linux/%E4%BD%95%E6%97%B6%E4%BD%BF%E7%94%A8-varbit-%E7%BC%96%E7%A0%81`
-
-### `/prometheus-scrape` — 2 次
-
-- Wikilink target：`prometheus-scrape`
-- 引用页面（2）：`/en/linux/prometheus-does-not-recognize-help-and-type-for-openmetrics-counters`, `/linux/prometheus-%E5%AF%B9-openmetrics-%E8%AE%A1%E6%95%B0%E5%99%A8%E5%85%83%E6%95%B0%E6%8D%AE%E8%AF%86%E5%88%AB%E9%97%AE%E9%A2%98%E7%9A%84%E5%A4%84%E7%90%86`
-
-### `/prometheus-sli` — 2 次
-
-- Wikilink target：`prometheus-sli`
-- 引用页面（2）：`/en/linux/prometheus-reaches-10`, `/linux/prometheus-10-%E7%89%88%E6%9C%AC%E5%8F%91%E5%B8%83%E5%8F%8A%E5%85%B6-api-%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%89%BF%E8%AF%BA`
-
-### `/prometheus-upgrade-guide` — 2 次
-
-- Wikilink target：`prometheus-upgrade-guide`
-- 引用页面（2）：`/en/linux/sigsegv-in-tlsroundtripperroundtrip-during-scrape`, `/linux/prometheus-340-tls-%E6%8A%93%E5%8F%96%E5%AF%BC%E8%87%B4%E7%9A%84%E7%A9%BA%E6%8C%87%E9%92%88%E5%B4%A9%E6%BA%83-sigsegv`
-
-### `/pull%20model` — 2 次
-
-- Wikilink target：`pull model`
-- 引用页面（1）：`/en/linux/prometheus-blog-interview-with-digitalocean`
-
-### `/push-vs-pull-monitoring` — 2 次
-
-- Wikilink target：`push-vs-pull-monitoring`
-- 引用页面（2）：`/en/linux/prometheus-monitoring-spreads-through-the-internet`, `/linux/prometheus-%E7%94%9F%E6%80%81%E7%B3%BB%E7%BB%9F%E6%97%A9%E6%9C%9F%E9%87%87%E7%94%A8%E4%B8%8E%E6%BC%94%E8%BF%9B`
-
-### `/query-languages` — 2 次
-
-- Wikilink target：`query-languages`
-- 引用页面（2）：`/en/linux/traceql-comments-fail-when-they-have-certain-text-eg-count-over-time`, `/linux/traceql-%E6%B3%A8%E9%87%8A%E8%A7%A3%E6%9E%90%E5%A4%B1%E8%B4%A5%E9%97%AE%E9%A2%98`
-
-### `/query-performance-optimization` — 2 次
-
-- Wikilink target：`query-performance-optimization`
-- 引用页面（2）：`/en/linux/postgresql-data-source-restore-explain-query-result-return`, `/linux/postgresql-%E6%95%B0%E6%8D%AE%E6%BA%90%E6%81%A2%E5%A4%8D-explain-%E6%9F%A5%E8%AF%A2%E7%BB%93%E6%9E%9C%E8%BF%94%E5%9B%9E`
-
-### `/queue-manager` — 2 次
-
-- Wikilink target：`queue-manager`
-- 引用页面（2）：`/en/linux/flaky-tests-testreshardpartialbatch`, `/linux/flaky-tests-testreshardpartialbatch-prometheus-%E8%BF%9C%E7%A8%8B%E5%86%99%E5%88%86%E7%89%87%E9%87%8D%E5%B9%B3%E8%A1%A1%E6%AD%BB%E9%94%81%E5%88%86%E6%9E%90`
-
-### `/race-conditions` — 2 次
-
-- Wikilink target：`race-conditions`
-- 引用页面（2）：`/en/kubernetes/release20-fix-toctou-race-bug-in-tar-extraction`, `/kubernetes/containerd-tar-%E6%8F%90%E5%8F%96%E4%B8%AD%E7%9A%84-toctou-%E7%AB%9E%E6%80%81%E6%9D%A1%E4%BB%B6%E4%BF%AE%E5%A4%8D`
-
-### `/raft-consensus` — 2 次
-
-- Wikilink target：`raft-consensus`
-- 引用页面（2）：`/en/linux/bug-panic-tocommit-out-of-range-lastindex0-on-fresh-learner`, `/linux/etcd-learner-%E8%8A%82%E7%82%B9%E5%8A%A0%E5%85%A5%E6%97%B6%E7%9A%84-raft-%E6%97%A5%E5%BF%97%E7%B4%A2%E5%BC%95%E4%B8%8D%E5%8C%B9%E9%85%8D-panic`
-
-### `/rbac` — 2 次
-
-- Wikilink target：`rbac`
-- 引用页面（2）：`/en/linux/git-sync-permissions-editor-role-cannot-save-provisioned-dashboards`, `/linux/git-sync-%E6%9D%83%E9%99%90%E7%BC%96%E8%BE%91%E8%A7%92%E8%89%B2%E6%97%A0%E6%B3%95%E4%BF%9D%E5%AD%98%E5%B7%B2%E9%85%8D%E7%BD%AE%E4%BB%AA%E8%A1%A8%E6%9D%BF`
-
-### `/rbac-authorization` — 2 次
-
-- Wikilink target：`rbac-authorization`
-- 引用页面（2）：`/en/incidents/kubernetes-securing-production-debugging-in-kubernetes`, `/incidents/%E5%9C%A8-kubernetes-%E4%B8%AD%E5%AE%89%E5%85%A8%E8%BF%9B%E8%A1%8C%E7%94%9F%E4%BA%A7%E8%B0%83%E8%AF%95`
-
-### `/release-cadence` — 2 次
-
-- Wikilink target：`release-cadence`
-- 引用页面（2）：`/en/linux/github-issue`, `/linux/grafana-%E9%9D%A2%E6%9D%BF%E6%97%B6%E9%97%B4%E5%81%8F%E7%A7%BB%E5%AF%BC%E8%87%B4%E6%97%B6%E9%97%B4%E8%8C%83%E5%9B%B4%E5%A4%B1%E6%95%88%E9%97%AE%E9%A2%98`
-
-### `/release-management` — 2 次
-
-- Wikilink target：`release-management`
-- 引用页面（2）：`/en/linux/grafanagrafana-issue`, `/linux/grafana-jira-v2-%E9%9B%86%E6%88%90-cannot-coerce-empty-string-%E9%97%AE%E9%A2%98%E4%B8%8E%E4%BF%AE%E5%A4%8D`
-
-### `/remote-write` — 2 次
-
-- Wikilink target：`remote-write`
-- 引用页面（2）：`/architectures/%E5%88%86%E6%9E%90%E4%B8%8E%E8%A7%A3%E5%86%B3prometheus-testremotewrite-reshardingwithoutdeadlock-%E4%B8%8D%E7%A8%B3%E5%AE%9A%E6%B5%8B%E8%AF%95`, `/en/architectures/analyzing-and-resolving-prometheus-testremotewrite-reshardingwithoutdeadlock-flaky-test`
-
-### `/resource-management` — 2 次
-
-- Wikilink target：`resource-management`
-- 引用页面（2）：`/en/kubernetes/kubernetes-v136-tiered-memory-protection-with-memory-qos`, `/kubernetes/kubernetes-v136%E5%9F%BA%E4%BA%8E-qos-%E7%B1%BB%E5%88%AB%E7%9A%84%E5%88%86%E5%B1%82%E5%86%85%E5%AD%98%E4%BF%9D%E6%8A%A4`
-
-### `/resource-quotas` — 2 次
-
-- Wikilink target：`resource-quotas`
-- 引用页面（2）：`/en/linux/kubernetes-blog-new-conversion-from-cgroup-v1-cpu-shares-to-v2-cpu-weight`, `/linux/cgroup-v1-cpu-shares-%E5%88%B0-v2-cpu-weight-%E7%9A%84%E6%96%B0%E8%BD%AC%E6%8D%A2%E5%85%AC%E5%BC%8F`
-
-### `/reverse-proxy-config` — 2 次
-
-- Wikilink target：`reverse-proxy-config`
-- 引用页面（2）：`/en/runbooks/grafana-organization-switcher-url-redirection-issue`, `/runbooks/grafana-%E7%BB%84%E7%BB%87%E5%88%87%E6%8D%A2%E5%99%A8-url-%E9%87%8D%E5%AE%9A%E5%90%91%E9%97%AE%E9%A2%98`
-
-### `/rollback` — 2 次
-
-- Wikilink target：`rollback`
-- 引用页面（2）：`/en/linux/grafana-issue-115875-failed-to-upgrade-1230-to-1231-due-to-database`, `/linux/grafana%E5%8D%87%E7%BA%A7%E8%BF%87%E7%A8%8B%E4%B8%AD%E7%9A%84sqlite%E6%95%B0%E6%8D%AE%E5%BA%93%E9%94%81%E5%AE%9A%E6%95%85%E9%9A%9C`
-
-### `/rolling-upgrades` — 2 次
-
-- Wikilink target：`rolling-upgrades`
-- 引用页面（2）：`/en/kubernetes/kubernetes-mixed-version-proxy-mvp-beta-enhancing-cluster-upgrade-reliability`, `/kubernetes/kubernetes-mixed-version-proxy-mvp-beta-%E5%A2%9E%E5%BC%BA%E9%9B%86%E7%BE%A4%E5%8D%87%E7%BA%A7%E5%8F%AF%E9%9D%A0%E6%80%A7`
-
-### `/rxjs` — 2 次
-
-- Wikilink target：`rxjs`
-- 引用页面（2）：`/en/linux/release-11615-dashboardds-fix-mixed-panels-not-updating-on-time-range`, `/linux/grafana-mixed%E6%95%B0%E6%8D%AE%E6%BA%90%E9%9D%A2%E6%9D%BF%E6%97%B6%E9%97%B4%E8%8C%83%E5%9B%B4%E6%9B%B4%E6%96%B0%E9%97%AE%E9%A2%98%E4%BF%AE%E5%A4%8D`
-
-### `/samba` — 2 次
-
-- Wikilink target：`samba`
-- 引用页面（2）：`/en/incidents/security-updates-for-thursday`, `/incidents/linux%E5%8F%91%E8%A1%8C%E7%89%88%E5%AE%89%E5%85%A8%E6%9B%B4%E6%96%B0%E8%B7%9F%E8%B8%AA2026-06-11`
-
-### `/sandbox-management` — 2 次
-
-- Wikilink target：`sandbox-management`
-- 引用页面（2）：`/en/kubernetes/bug-when-nri-plugin-fails-on-runpodsandbox-containerd-leaks-resources`, `/kubernetes/nri-%E6%8F%92%E4%BB%B6%E5%9C%A8-runpodsandbox-%E9%92%A9%E5%AD%90%E5%A4%B1%E8%B4%A5%E6%97%B6%E5%AF%BC%E8%87%B4%E7%9A%84%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F`
-
-### `/sandboxing` — 2 次
-
-- Wikilink target：`sandboxing`
-- 引用页面（2）：`/docker/homebrew-600-%E5%8F%91%E5%B8%83%E4%B8%8E%E5%85%B3%E9%94%AE%E6%9B%B4%E6%96%B0`, `/en/docker/homebrew-600-release-and-key-updates`
-
-### `/sandboxing-for-ai-agents` — 2 次
-
-- Wikilink target：`sandboxing-for-ai-agents`
-- 引用页面（2）：`/architectures/ai-%E4%BB%A3%E7%90%86%E5%AE%89%E5%85%A8%E9%9D%A2%E5%90%91%E5%BC%80%E5%8F%91%E4%B8%8E%E8%BF%90%E7%BB%B4%E5%9B%A2%E9%98%9F%E7%9A%84%E5%AE%9E%E8%B7%B5%E6%8C%87%E5%8D%97`, `/en/architectures/ai-agent-security-a-practical-guide-for-development-and-operations-teams`
-
-### `/sbom` — 2 次
-
-- Wikilink target：`sbom`
-- 引用页面（2）：`/en/incidents/what-is-software-supply-chain-security-docker-blog`, `/incidents/%E8%BD%AF%E4%BB%B6%E4%BE%9B%E5%BA%94%E9%93%BE%E5%AE%89%E5%85%A8`
-
-### `/scheduler-performance-tuning` — 2 次
-
-- Wikilink target：`scheduler-performance-tuning`
-- 引用页面（2）：`/en/kubernetes/kubernetes-v135-workload-aware-scheduling`, `/kubernetes/kubernetes-v135-%E5%B7%A5%E4%BD%9C%E8%B4%9F%E8%BD%BD%E6%84%9F%E7%9F%A5%E8%B0%83%E5%BA%A6`
-
-### `/secrets-management-for-agents` — 2 次
-
-- Wikilink target：`secrets-management-for-agents`
-- 引用页面（2）：`/architectures/ai-%E4%BB%A3%E7%90%86%E5%AE%89%E5%85%A8%E9%9D%A2%E5%90%91%E5%BC%80%E5%8F%91%E4%B8%8E%E8%BF%90%E7%BB%B4%E5%9B%A2%E9%98%9F%E7%9A%84%E5%AE%9E%E8%B7%B5%E6%8C%87%E5%8D%97`, `/en/architectures/ai-agent-security-a-practical-guide-for-development-and-operations-teams`
-
-### `/secure-coding` — 2 次
-
-- Wikilink target：`secure-coding`
-- 引用页面（2）：`/en/kubernetes/release20-fix-toctou-race-bug-in-tar-extraction`, `/kubernetes/containerd-tar-%E6%8F%90%E5%8F%96%E4%B8%AD%E7%9A%84-toctou-%E7%AB%9E%E6%80%81%E6%9D%A1%E4%BB%B6%E4%BF%AE%E5%A4%8D`
-
-### `/security-context` — 2 次
-
-- Wikilink target：`security-context`
-- 引用页面（2）：`/en/kubernetes/kubernetes-selinux-volume-label-changes-and-upgrade-guide`, `/kubernetes/kubernetes-selinux-%E5%8D%B7%E6%A0%87%E7%AD%BE%E5%8F%98%E6%9B%B4%E4%B8%8E%E5%8D%87%E7%BA%A7%E6%8C%87%E5%8D%97`
-
-### `/security-in-sre` — 2 次
-
-- Wikilink target：`security-in-sre`
-- 引用页面（2）：`/en/runbooks/terraform-enterprise-20-core-features-and-evolution`, `/runbooks/terraform-enterprise-20-%E6%A0%B8%E5%BF%83%E7%89%B9%E6%80%A7%E4%B8%8E%E6%BC%94%E8%BF%9B`
 
 ### `/selinux` — 2 次
 

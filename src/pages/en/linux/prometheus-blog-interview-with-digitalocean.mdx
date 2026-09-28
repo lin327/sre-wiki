@@ -10,14 +10,14 @@ confidence: high
 
 ## Overview
 
-DigitalOcean is a company providing simplified cloud computing services, with a large-scale infrastructure. Before adopting Prometheus, they faced operational burden and scalability challenges from their traditional monitoring stack (OpenTSDB and Graphite based on the push model). Based on an interview from the official Prometheus blog, this article summarizes the motivations, process, benefits, and future thinking behind DigitalOcean's migration of their core monitoring system from OpenTSDB to Prometheus. This case profoundly illustrates the differences between the [[pull model]] and push model in terms of reliability, controllability, and team self-service capabilities, serving as a classic example of observability tool selection and evolution in SRE practice.
+DigitalOcean is a company providing simplified cloud computing services, with a large-scale infrastructure. Before adopting Prometheus, they faced operational burden and scalability challenges from their traditional monitoring stack (OpenTSDB and Graphite based on the push model). Based on an interview from the official Prometheus blog, this article summarizes the motivations, process, benefits, and future thinking behind DigitalOcean's migration of their core monitoring system from OpenTSDB to Prometheus. This case profoundly illustrates the differences between the [[pull-model]] and push model in terms of reliability, controllability, and team self-service capabilities, serving as a classic example of observability tool selection and evolution in SRE practice.
 
 ## Core Concepts
 
 The core driving force behind this migration lies in a re-examination of **control** and **reliability**.
 
 1.  **Metric Storms**: In the push model, applications actively send metric data to a central monitoring system (such as OpenTSDB). A poorly designed or anomalous application may send excessive data ("chatty"), instantly exhausting the monitoring system's capacity, causing all monitoring data collection to stall, thereby affecting SRE's perception of overall site reliability and SLA assurance.
-2.  **Pull Model Advantages**: The [[pull model]] adopted by Prometheus shifts control from the application side to the monitoring system side. The SRE team can precisely control:
+2.  **Pull Model Advantages**: The [[pull-model]] adopted by Prometheus shifts control from the application side to the monitoring system side. The SRE team can precisely control:
     *   **Collection Targets**: Decide which services' metrics to pull (through service discovery or static configuration).
     *   **Collection Frequency**: Set different scrape intervals based on the service's reliability and importance.
     This model fundamentally eliminates the threat of metric storms, enabling SRE to better fulfill their SLA assurance responsibilities.

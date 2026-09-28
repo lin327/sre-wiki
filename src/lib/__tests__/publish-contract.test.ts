@@ -20,6 +20,7 @@ const validMetadata = {
   sources: [{ url: 'https://example.com/docker', title: 'Docker 网络' }],
   canonical: true,
   category: 'docker',
+  domain: 'docker',
   type: 'concept',
   confidence: 'high',
   tags: ['docker', 'network'],

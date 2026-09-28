@@ -73,6 +73,7 @@ export function readContentMetadata(raw, category) {
     updated,
     sources,
     type: schema.properties.type.enum.includes(data.type) ? data.type : defaultType(category),
+    domain: schema.properties.domain.enum.includes(data.domain) ? data.domain : 'tbd',
     confidence: schema.properties.confidence.enum.includes(data.confidence) ? data.confidence : 'low',
     tags: [...new Set((Array.isArray(data.tags) ? data.tags : [])
       .filter((tag) => typeof tag === 'string' && tag.trim()).map((tag) => tag.trim()))],

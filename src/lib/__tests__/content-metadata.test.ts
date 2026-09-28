@@ -10,7 +10,7 @@ const draft = {
   title: 'Docker 网络排障', description: '容器网络排障流程',
   created: '2026-09-27', updated: '2026-09-27',
   sources: [{ url: 'https://example.com/docker', title: 'Docker 指南' }],
-  canonical: false, category: 'docker', type: 'runbook', confidence: 'medium', tags: ['docker'],
+  canonical: false, category: 'docker', domain: 'docker', type: 'runbook', confidence: 'medium', tags: ['docker'],
 };
 const mdx = (metadata: object) => `---\n${JSON.stringify(metadata)}\n---\n正文保持原样。`;
 
@@ -49,6 +49,28 @@ describe('new draft contract', () => {
   it('accepts case-insensitive HTTP(S) schemes in source URLs', () => {
     expect(validateFrontmatter({ ...draft, sources: [{ url: 'HTTPS://example.com', title: '来源' }] }, 'docker-networking'))
       .toMatchObject({ sources: [{ url: 'HTTPS://example.com' }] });
+  });
+});
+
+describe('domain and type metadata', () => {
+  it.each(['observability', 'kubernetes', 'container-runtime', 'docker', 'linux', 'iac', 'security',
+    'chaos-engineering', 'ai', 'tbd'])('passes through the frozen domain %s', (domain) => {
+    expect(readContentMetadata(mdx({ ...draft, domain }), 'docker').domain).toBe(domain);
+  });
+
+  it('uses tbd when domain is missing or invalid', () => {
+    const withoutDomain = Object.fromEntries(Object.entries(draft).filter(([key]) => key !== 'domain'));
+    expect(readContentMetadata(mdx(withoutDomain), 'docker').domain).toBe('tbd');
+    expect(readContentMetadata(mdx({ ...draft, domain: 'not-a-domain' }), 'docker').domain).toBe('tbd');
+  });
+
+  it.each(['guide', 'news'])('passes through frozen type %s', (type) => {
+    expect(readContentMetadata(mdx({ ...draft, type }), 'docker').type).toBe(type);
+  });
+
+  it('falls back to the category default for an invalid type', () => {
+    expect(readContentMetadata(mdx({ ...draft, category: 'runbooks', type: 'fundamental' }), 'runbooks').type)
+      .toBe('runbook');
   });
 });
 

@@ -47,7 +47,7 @@ Integrating chaos engineering and Chaos Mesh into SRE practices can have a profo
   - **Incorporating Observability**: The value of chaos experiments depends largely on what we can observe. You must rely on a powerful [[observability]] stack (such as Prometheus, Grafana, distributed tracing) to collect and analyze data before and after experiments.
 - **Common anti-patterns**:
   - "Bringing havoc" to the production environment without adequate preparation and monitoring.
-    [[incident response]]
+    [[incident-response]]
   - There is no review and improvement after the experiment, making the experiment a mere formality.
   - Focus only on the injection and ignore the recovery and learning process after the experiment.
 - **Metric correlation**: Successful chaos engineering practice itself should also have metrics, such as "chaos experiment coverage" (the degree of coverage of key service failure modes), "mean time to repair (MTTR)" improvement, etc. This directly serves the reliability measurement system at the core of SRE.

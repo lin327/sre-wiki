@@ -47,7 +47,7 @@ The specific manifestations and impacts of this problem are as follows:
 
 This issue profoundly reflects the importance of "**monitoring system reliability**" itself in SRE practice. A flawed monitoring tool can become a blind spot.
 
-* **Relevance to Reliability**: Dashboard variable truncation directly destroys the accurate presentation of **[[SLI]]** (Service Level Indicators). When engineers cannot accurately filter traffic or error logs through preset variables (such as service pool names), the efficiency and accuracy of fault location (**[[incident response]]**) will be greatly reduced, and **MTTR** (mean time to recovery) may be extended.
+* **Relevance to Reliability**: Dashboard variable truncation directly destroys the accurate presentation of **[[SLI]]** (Service Level Indicators). When engineers cannot accurately filter traffic or error logs through preset variables (such as service pool names), the efficiency and accuracy of fault location (**[[incident-response]]**) will be greatly reduced, and **MTTR** (mean time to recovery) may be extended.
 * **Best Practices and Anti-Patterns**:
     * **Anti-Pattern**: Directly use natural tag values from the source system (such as Kubernetes, service discovery) that may contain long paths and unique IDs as the main filter for Grafana dashboard variables.
     * **Best Practice**:

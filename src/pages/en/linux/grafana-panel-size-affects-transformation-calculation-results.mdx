@@ -17,7 +17,7 @@ tags: [Grafana, Dashboard, Panel, Transformation, Bug, Reliability, Opensearch]
 
 ## Overview
 
-In SRE practice, Grafana-based dashboards are the critical interface for monitoring and presenting system health, service [[service-level-objective|SLO]] progress, and incident trends. The accuracy and consistency of data on dashboards is a cornerstone of reliability. This document records a specific bug found in Grafana v13.0.1: **panel dimensions (height/width) affect data values calculated through Transformations**. This issue directly threatens the credibility of monitoring data and may lead SRE teams to make decisions based on incorrect data during incident response or capacity planning.
+In SRE practice, Grafana-based dashboards are the critical interface for monitoring and presenting system health, service [[slo|SLO]] progress, and incident trends. The accuracy and consistency of data on dashboards is a cornerstone of reliability. This document records a specific bug found in Grafana v13.0.1: **panel dimensions (height/width) affect data values calculated through Transformations**. This issue directly threatens the credibility of monitoring data and may lead SRE teams to make decisions based on incorrect data during incident response or capacity planning.
 
 ## Core Concepts
 
@@ -53,7 +53,7 @@ For SRE teams encountering this issue, the following troubleshooting and tempora
 2. **Isolate Variables**: Within Grafana, try removing all transformations and displaying only the raw query results to observe whether they change with panel size. If the raw data is stable, the issue is isolated to the transformation processing layer.
 3. **Check Version and Updates**: Clearly document the current Grafana version (v13.0.1 in this case). The issue report indicates it appeared after updating to v13. Monitor Grafana's official fix status for this issue and plan to upgrade promptly once a fix is available.
 4. **Temporary Workaround**: Before an official fix is released, consider the following temporary measures:
-    *   Avoid using complex transformations involving multi-step aggregation and secondary calculations in panels on critical dashboards, especially when these values are the primary basis for monitoring [[service-level-objective|SLO]] or critical Error Budgets.
+    *   Avoid using complex transformations involving multi-step aggregation and secondary calculations in panels on critical dashboards, especially when these values are the primary basis for monitoring [[slo|SLO]] or critical Error Budgets.
     *   Consider moving complex calculation logic to the data source query (e.g., OpenSearch Painless scripts) or a separate preprocessing layer, letting Grafana panels only display pre-calculated final values.
 
 ## SRE Key Points

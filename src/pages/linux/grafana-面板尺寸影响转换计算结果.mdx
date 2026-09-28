@@ -17,7 +17,7 @@ tags: [Grafana, Dashboard, Panel, Transformation, Bug, Reliability, Opensearch]
 
 ## 概述
 
-在 SRE 实践中，基于 Grafana 的仪表板是监控和呈现系统健康状况、服务 [[service-level-objective|SLO]] 进度及事件趋势的关键界面。仪表板上数据的准确性与一致性是可靠性的基石。本文档记录了 Grafana v13.0.1 中发现的一个特定 Bug：**面板的尺寸（高度/宽度）会影响经过转换（Transformations）计算后的数据值**。这一问题直接威胁到监控数据的可信度，可能导致 SRE 在事件响应或容量规划中做出基于错误数据的决策。
+在 SRE 实践中，基于 Grafana 的仪表板是监控和呈现系统健康状况、服务 [[slo|SLO]] 进度及事件趋势的关键界面。仪表板上数据的准确性与一致性是可靠性的基石。本文档记录了 Grafana v13.0.1 中发现的一个特定 Bug：**面板的尺寸（高度/宽度）会影响经过转换（Transformations）计算后的数据值**。这一问题直接威胁到监控数据的可信度，可能导致 SRE 在事件响应或容量规划中做出基于错误数据的决策。
 
 ## 核心概念
 
@@ -53,7 +53,7 @@ tags: [Grafana, Dashboard, Panel, Transformation, Bug, Reliability, Opensearch]
 2.  **隔离变量**：在 Grafana 内，尝试移除所有转换，仅显示原始查询结果，观察其是否随面板尺寸变化。如果原始数据稳定，则问题锁定在转换处理环节。
 3.  **检查版本与更新**：明确记录当前 Grafana 版本（本例为 v13.0.1）。问题报告指出在更新到 v13 后出现，建议关注 Grafana 官方对该 issue 的修复状态，并计划在有修复版本后及时升级。
 4.  **临时规避**：在官方修复发布前，可考虑以下临时措施：
-    *   避免在关键仪表板的面板中使用涉及多步聚合和二次计算的复杂转换，尤其是这些值是监控 [[service-level-objective|SLO]] 或关键错误预算（Error Budget）的主要依据时。
+    *   避免在关键仪表板的面板中使用涉及多步聚合和二次计算的复杂转换，尤其是这些值是监控 [[slo|SLO]] 或关键错误预算（Error Budget）的主要依据时。
     *   尝试将复杂的计算逻辑移至数据源查询（如 OpenSearch 的 Painless 脚本）或独立的预处理层中完成，仅让 Grafana 面板负责展示已计算好的最终值。
 
 ## SRE 要点

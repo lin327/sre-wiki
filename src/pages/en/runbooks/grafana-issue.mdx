@@ -10,7 +10,7 @@ confidence: high
 
 ## Overview
 
-When building an observability platform, Grafana dashboards are the core tool for SRE teams to monitor system health in real-time, verify [[slis-slos-slas|SLO]] achievement, and respond quickly to incidents. The accuracy and robustness of dashboards directly affect the team's judgment of system reliability. A known issue (#102039) indicates that when a panel is configured with multiple query data sources and uses the `merge` transformation, if one of the queries returns an empty data frame (e.g., a query with no matching results), the entire panel visualization fails, displaying "No data." This violates the basic requirements of SRE practices for observability data integrity and accurate system state representation, potentially masking changes in critical metrics and misleading incident investigation direction.
+When building an observability platform, Grafana dashboards are the core tool for SRE teams to monitor system health in real-time, verify [[sli-slo-sla|SLO]] achievement, and respond quickly to incidents. The accuracy and robustness of dashboards directly affect the team's judgment of system reliability. A known issue (#102039) indicates that when a panel is configured with multiple query data sources and uses the `merge` transformation, if one of the queries returns an empty data frame (e.g., a query with no matching results), the entire panel visualization fails, displaying "No data." This violates the basic requirements of SRE practices for observability data integrity and accurate system state representation, potentially masking changes in critical metrics and misleading incident investigation direction.
 
 ## Core Concepts
 
@@ -53,7 +53,7 @@ Before an official fix for this issue, SRE teams can consider the following temp
 
 This issue directly affects the reliability of the monitoring system. Dashboards serve as the primary information source during [[incident-response|incident response]] and [[on-call|On-Call]] processes. Incomplete or misleading data can:
 -   **Mislead incident investigation**: Mask some system metrics, preventing the SRE team from obtaining a comprehensive view of system state, extending [[mttd|MTTD]] (Mean Time to Detect) and [[mttr|MTTR]] (Mean Time to Recover).
--   **Impact SLO calculation and decision-making**: If panels used to calculate critical [[slis-slos-slas|SLIs]] fail due to partial data loss, it may incorrectly trigger Error Budget consumption alerts, or conversely, fail to trigger necessary reliability actions in time.
+-   **Impact SLO calculation and decision-making**: If panels used to calculate critical [[sli-slo-sla|SLIs]] fail due to partial data loss, it may incorrectly trigger Error Budget consumption alerts, or conversely, fail to trigger necessary reliability actions in time.
 -   **Reduce observability trust**: Repeated occurrences of "No data" or data loss will reduce the team's trust in the monitoring system, potentially causing important alerts to be ignored.
 
 ### Best Practices and Anti-Patterns

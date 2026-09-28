@@ -44,7 +44,7 @@ The core principle is: **You should not use software unless you can reasonably t
 
 ### Association with reliability, observability, incident response
 * **Reliability**: Supply chain security is directly related to the stability of the production environment. Introducing tampered or malicious software components can lead to data leakage, service disruption, or extortion.
-* **Observability**: Monitoring the pipeline itself (such as using [[Prometheus]] to monitor the build system) and runtime software behavior (such as abnormal network connections, high resource usage) are important means of detecting potential supply chain attacks.
+* **Observability**: Monitoring the pipeline itself (such as using [[prometheus]] to monitor the build system) and runtime software behavior (such as abnormal network connections, high resource usage) are important means of detecting potential supply chain attacks.
 * **Incident response**: When a security incident occurs (such as the use of software components marked as malicious), a clear software bill of materials (SBOM) and deployment records can greatly speed up the [[incident-response]] process and help quickly locate the affected scope and components.
 
 ### Best practices and common anti-patterns

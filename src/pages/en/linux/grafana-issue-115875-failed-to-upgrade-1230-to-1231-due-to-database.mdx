@@ -10,7 +10,7 @@ confidence: medium
 
 ## Overview
 
-In SRE operation and maintenance practice, the smooth upgrade of the monitoring system is a key link to ensure the continuity of observability services. This case records in detail how when Grafana was upgraded from version 12.3.0 to 12.3.1, the underlying SQLite database was locked, causing migration failure and eventual service crash. This issue is particularly typical in environments based on Kubernetes (EKS) and using Amazon EFS as persistence storage, and it reveals that you must carefully consider its concurrent access and file locking characteristics when selecting a database storage backend in a containerized deployment. Such failures directly affect the stability of the [[observability]] platform and may interrupt dashboard viewing and alarm notifications, thereby affecting the [[reliability]] of the entire system.
+In SRE operation and maintenance practice, the smooth upgrade of the monitoring system is a key link to ensure the continuity of observability services. This case records in detail how when Grafana was upgraded from version 12.3.0 to 12.3.1, the underlying SQLite database was locked, causing migration failure and eventual service crash. This issue is particularly typical in environments based on Kubernetes (EKS) and using Amazon EFS as persistence storage, and it reveals that you must carefully consider its concurrent access and file locking characteristics when selecting a database storage backend in a containerized deployment. Such failures directly affect the stability of the [[observability]] platform and may interrupt dashboard viewing and alarm notifications, thereby affecting the [[reliability-engineering]] of the entire system.
 
 ## Core concepts
 

@@ -10,7 +10,7 @@ confidence: medium
 
 ## Overview
 
-When building a monitoring dashboard based on Prometheus or Mimir, [[Grafana]]'s dashboard variables are the core functionality for dynamic filtering. However, a known flaw or design limitation is that when the **content** of a variable (i.e. the tag value queried from the data source) is longer than 50 characters, Grafana truncates it and appends a hash suffix before inserting it into the PromQL query. This behavior will destroy queries that rely on accurate and complete tag values ​​for matching, directly affecting the accuracy and reliability of monitoring data. It is a "[[observability]] trap" that SREs need to be wary of and avoid in the tool chain.
+When building a monitoring dashboard based on Prometheus or Mimir, [[grafana]]'s dashboard variables are the core functionality for dynamic filtering. However, a known flaw or design limitation is that when the **content** of a variable (i.e. the tag value queried from the data source) is longer than 50 characters, Grafana truncates it and appends a hash suffix before inserting it into the PromQL query. This behavior will destroy queries that rely on accurate and complete tag values ​​for matching, directly affecting the accuracy and reliability of monitoring data. It is a "[[observability]] trap" that SREs need to be wary of and avoid in the tool chain.
 
 ## Core concepts
 
@@ -54,6 +54,6 @@ This issue profoundly reflects the importance of "**monitoring system reliabilit
         1. **Standardized Tags**: Establish team norms that require business-critical tag values (used for main dashboard filtering) to be limited to 50 characters in length.
         2. **Abstraction layer design**: Create labels with clear semantics and controllable length (such as `service_group: “pool-alpha”`) in the indicator generation or aggregation layer (such as Prometheus’ relabeling or recording rules) for use in dashboards.
         3. **Tool Validation**: When building key dashboards, verify that the variables used behave as expected at extreme values ​​(such as long labels) and include this in the **[[observability]]** quality checklist.
-* **Related Metrics**: This issue mainly affects label-based filtering capabilities and is indirectly related to the observability clause defined in **[[SLA]]** (Service Level Agreement), because without reliable observation, compliance cannot be reliably proven.
+* **Related Metrics**: This issue mainly affects label-based filtering capabilities and is indirectly related to the observability clause defined in **[[sli-slo-sla]]** (Service Level Agreement), because without reliable observation, compliance cannot be reliably proven.
 
-&gt; **Related pages**: [[Grafana]], [[Prometheus]], [[Observability]]
+&gt; **Related pages**: [[grafana]], [[prometheus]], [[Observability]]

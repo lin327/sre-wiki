@@ -17,7 +17,7 @@ tags: [KubeVirt, SRE, 基准测试, 性能分析, 云原生虚拟化, 可靠性]
 
 ## 概述
 
-将传统虚拟机（VM）负载迁移到基于 Kubernetes 的 KubeVirt 平台是云原生现代化的重要一步。然而，现有的 Kubernetes 可观测性工具大多围绕容器工作负载设计，无法充分衡量虚拟机特有的性能变量。例如，标准的 `kubectl` 和 Pod 级监控难以精确反映从 API 调用到虚拟机 guest 操作系统网络完全就绪所需的时间。为了解决这一关键差距，[virtbench](https://github.com/portworx/kubevirt-benchmark) 作为一款开源的 KubeVirt 性能基准测试工具包被开发出来，它能够执行可重复的、针对 VM 场景的压力测试，为平台工程团队提供量化、可靠的性能数据，从而支撑容量规划、变更验证和 [[sla]] 保障。
+将传统虚拟机（VM）负载迁移到基于 Kubernetes 的 KubeVirt 平台是云原生现代化的重要一步。然而，现有的 Kubernetes 可观测性工具大多围绕容器工作负载设计，无法充分衡量虚拟机特有的性能变量。例如，标准的 `kubectl` 和 Pod 级监控难以精确反映从 API 调用到虚拟机 guest 操作系统网络完全就绪所需的时间。为了解决这一关键差距，[virtbench](https://github.com/portworx/kubevirt-benchmark) 作为一款开源的 KubeVirt 性能基准测试工具包被开发出来，它能够执行可重复的、针对 VM 场景的压力测试，为平台工程团队提供量化、可靠的性能数据，从而支撑容量规划、变更验证和 [[sli-slo-sla]] 保障。
 
 ## 核心概念
 
@@ -70,7 +70,7 @@ virtbench 提供了六个开箱即用的测试场景，全面覆盖关键运维�
 *   **容量规划与变更管理**：virtbench 的结果为 SRE 提供了量化依据，用于评估 KubeVirt 集群的 **Burst Capacity**（如启动风暴处理能力）。在进行基础设施变更（如存储阵列升级、CNI 更换、Kubernetes 版本升级）前后运行测试，可以提前捕获性能回溯，避免其影响生产环境。
 *   **可观测性增强**：它填补了标准 [[sli]] 监控在虚拟机场景下的空白。例如，通过监控 `clone_duration` 和 `ping_time`，SRE 可以将问题精准归因于存储性能或 guest OS 启动慢，而不是笼统的“VM 启动慢”。
 *   **事件响应与演练**：`Failure and Recovery` 和 `Chaos Benchmark` 场景直接服务于混沌工程和故障演练。测量故障恢复时间（Time-to-Recovery）是验证和改进系统韧性的关键 [[sli]]。
-*   **实时迁移 SLA**：精确测量的 Stun Time 是定义和保证 VM 在线迁移操作窗口 [[sla]] 的核心指标，有助于制定合理的维护计划。
+*   **实时迁移 SLA**：精确测量的 Stun Time 是定义和保证 VM 在线迁移操作窗口 [[sli-slo-sla]] 的核心指标，有助于制定合理的维护计划。
 
 ### 最佳实践与常见反模式
 

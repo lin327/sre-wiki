@@ -17,7 +17,7 @@ tags: [cluster-api, kubernetes, lifecycle-management, upgrade, reliability]
 
 ## 概述
 
-Cluster API 通过声明式管理方式，为 Kubernetes 集群的完整生命周期提供支持，允许平台团队定义集群的期望状态，并依靠控制器持续进行调和，确保实际状态与期望状态一致。类似于 Kubernetes 中使用 `Deployment` 或 `StatefulSet` 管理 Pod，Cluster API 使用 `KubeadmControlPlane` 管理控制面节点，使用 `MachineDeployment` 管理工作节点。在 SRE 实践中，安全、可控地管理大量集群的生命周期（如创建、更新、升级）是保障服务[[reliability|可靠性]]和[[operational-efficiency|运营效率]]的核心挑战。
+Cluster API 通过声明式管理方式，为 Kubernetes 集群的完整生命周期提供支持，允许平台团队定义集群的期望状态，并依靠控制器持续进行调和，确保实际状态与期望状态一致。类似于 Kubernetes 中使用 `Deployment` 或 `StatefulSet` 管理 Pod，Cluster API 使用 `KubeadmControlPlane` 管理控制面节点，使用 `MachineDeployment` 管理工作节点。在 SRE 实践中，安全、可控地管理大量集群的生命周期（如创建、更新、升级）是保障服务[[reliability-engineering|可靠性]]和[[operational-efficiency|运营效率]]的核心挑战。
 
 Cluster API v1.12.0 的发布，引入了**原地更新**和**链式升级**两大特性，旨在减少常见生命周期操作中的摩擦，让用户和 SRE 团队能更轻松、更安全地管理 Kubernetes 集群。这些改进体现了项目在保持[[immutable-infrastructure|不可变基础设施]]原则优势的同时，持续降低工作负载中断的演进方向。
 

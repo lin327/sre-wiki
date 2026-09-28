@@ -33,21 +33,21 @@ Here are the specific areas that the SRE team needs to focus on and take action 
 1. **Handling Service `.spec.externalIPs` deprecation**: This field is deprecated due to the security risk of man-in-the-middle attack (CVE-2020-8554) and is planned to be removed in v1.43. Starting with v1.36, using this field will generate a warning. Existing Services using `externalIPs` should be evaluated and migrated:
     * **Cloud environment**: Prioritize using `type: LoadBalancer`.
     * **Simple port exposure**: Consider using `type: NodePort`.
-    * **Complex Routing Requirements**: Evaluate and adopt a more secure and flexible Gateway API. [[KEP-5707]]
+    * **Complex Routing Requirements**: Evaluate and adopt a more secure and flexible Gateway API. [[kep-5707]]
 
 2. **Removed `gitRepo` volume driver**: `gitRepo` volumes have been deprecated since v1.11 and were permanently removed and cannot be enabled in v1.36 due to a serious security vulnerability (allowing node root code execution). Workloads that depend on this volume must be migrated to a supported alternative, such as:
     * Use Init Container to pull code from Git repository.
-    * Use sidecar tools such as `git-sync`. [[KEP-5040]]
+    * Use sidecar tools such as `git-sync`. [[kep-5040]]
 
 ### Optimize using new features
 
-3. **Leverage Fast SELinux Volume Labels (GA)**: This feature is enabled by default in v1.36 for all volumes. Pod authors can enable it explicitly via `spec.SELinuxMount: true`. SRE teams should test compatibility with existing security policies, especially scenarios involving shared volumes for privileged and unprivileged Pods. Compatibility can be managed by setting the `securityContext.seLinuxChangePolicy` field. [[KEP-1710]]
+3. **Leverage Fast SELinux Volume Labels (GA)**: This feature is enabled by default in v1.36 for all volumes. Pod authors can enable it explicitly via `spec.SELinuxMount: true`. SRE teams should test compatibility with existing security policies, especially scenarios involving shared volumes for privileged and unprivileged Pods. Compatibility can be managed by setting the `securityContext.seLinuxChangePolicy` field. [[kep-1710]]
 
-4. **Enable ServiceAccount token external signature (GA)**: If you need to integrate cloud KMS or HSM, after this feature is upgraded to the stable version, you can specify the external signature service in the `kube-apiserver` configuration to improve token security. [[KEP-740]]
+4. **Enable ServiceAccount token external signature (GA)**: If you need to integrate cloud KMS or HSM, after this feature is upgraded to the stable version, you can specify the external signature service in the `kube-apiserver` configuration to improve token security. [[kep-740]]
 
 5. **Planning new DRA functions**:
-    * **Device Taint (Beta)**: SREs can work with platform teams to leverage `DeviceTaintRule` to flag devices that require maintenance or are not suitable for specific workloads to prevent them from being allocated by the scheduler. [[KEP-5055]]
-    * **Partitionable Devices (new feature)**: Allows a single hardware accelerator (such as a GPU) to be partitioned into multiple logical units for allocation. Platform teams can leverage this feature to improve utilization of expensive resources such as GPUs, optimizing cost and efficiency by allocating precise partitions of devices to different workloads. [[KEP-4815]]
+    * **Device Taint (Beta)**: SREs can work with platform teams to leverage `DeviceTaintRule` to flag devices that require maintenance or are not suitable for specific workloads to prevent them from being allocated by the scheduler. [[kep-5055]]
+    * **Partitionable Devices (new feature)**: Allows a single hardware accelerator (such as a GPU) to be partitioned into multiple logical units for allocation. Platform teams can leverage this feature to improve utilization of expensive resources such as GPUs, optimizing cost and efficiency by allocating precise partitions of devices to different workloads. [[kep-4815]]
 
 ## SRE Key Points
 

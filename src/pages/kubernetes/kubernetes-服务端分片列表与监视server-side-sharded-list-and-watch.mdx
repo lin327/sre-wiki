@@ -110,4 +110,4 @@ factory := informers.NewSharedInformerFactoryWithOptions(client, resyncPeriod,
 - **控制器内存与 CPU 使用率**：每个控制器副本的资源消耗应与其负责的分片大小成正比，而非与集群总资源量成正比。
 - **控制器错误率**：因资源过载（OOM、CPU throttling）导致的处理失败率应下降。
 
-实施服务端分片后，SRE 团队需要更新其容量模型和监控面板，将“分片效率”和“控制器扩展性”作为新的关键可靠性维度进行观测。更多细节可参考 [[kubernetes-api-concepts]] 和 [[KEP-5866]]。
+实施服务端分片后，SRE 团队需要更新其容量模型和监控面板，将“分片效率”和“控制器扩展性”作为新的关键可靠性维度进行观测。更多细节可参考 [[kubernetes-api-concepts]] 和 [[kep-5866]]。

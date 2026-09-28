@@ -40,21 +40,21 @@ Kubernetes v1.36 计划于 2026 年 4 月发布，对于 SRE 团队而言，及�
 1.  **处理 Service `.spec.externalIPs` 弃用**：该字段因存在中间人攻击安全风险（CVE-2020-8554）而被弃用，计划在 v1.43 移除。从 v1.36 开始，使用该字段将产生警告。应评估并迁移现有使用 `externalIPs` 的 Service：
     *   **云环境**：优先使用 `type: LoadBalancer`。
     *   **简单端口暴露**：考虑使用 `type: NodePort`。
-    *   **复杂路由需求**：评估并采用更安全灵活的 Gateway API。[[KEP-5707]]
+    *   **复杂路由需求**：评估并采用更安全灵活的 Gateway API。[[kep-5707]]
 
 2.  **移除 `gitRepo` 卷驱动**：`gitRepo` 卷自 v1.11 起已弃用，并因严重的安全漏洞（允许节点 root 代码执行）在 v1.36 中被永久移除且无法启用。**必须**将依赖此卷的 Workload 迁移至支持的替代方案，例如：
     *   使用 Init Container 从 Git 仓库拉取代码。
-    *   采用 `git-sync` 等侧边车（Sidecar）工具。[[KEP-5040]]
+    *   采用 `git-sync` 等侧边车（Sidecar）工具。[[kep-5040]]
 
 ### 利用新特性优化
 
-3.  **利用快速 SELinux 卷标签（GA）**：此特性在 v1.36 默认对所有卷启用。Pod 作者可通过 `spec.SELinuxMount: true` 显式启用。SRE 团队应测试其与现有安全策略的兼容性，特别是涉及特权和非特权 Pod 共享卷的场景。可以通过设置 `securityContext.seLinuxChangePolicy` 字段来管理兼容性。[[KEP-1710]]
+3.  **利用快速 SELinux 卷标签（GA）**：此特性在 v1.36 默认对所有卷启用。Pod 作者可通过 `spec.SELinuxMount: true` 显式启用。SRE 团队应测试其与现有安全策略的兼容性，特别是涉及特权和非特权 Pod 共享卷的场景。可以通过设置 `securityContext.seLinuxChangePolicy` 字段来管理兼容性。[[kep-1710]]
 
-4.  **启用 ServiceAccount 令牌外部签名（GA）**：如需集成云端 KMS 或 HSM，此特性升级至稳定版后，可以在 `kube-apiserver` 配置中指定外部签名服务，提升令牌安全性。[[KEP-740]]
+4.  **启用 ServiceAccount 令牌外部签名（GA）**：如需集成云端 KMS 或 HSM，此特性升级至稳定版后，可以在 `kube-apiserver` 配置中指定外部签名服务，提升令牌安全性。[[kep-740]]
 
 5.  **规划 DRA 新功能**：
-    *   **设备污染（Beta）**：SRE 可与平台团队协作，利用 `DeviceTaintRule` 标记需要维护或不适合特定工作负载的设备，防止被调度器分配。[[KEP-5055]]
-    *   **可分区设备（新特性）**：允许将单个硬件加速器（如 GPU）分割为多个逻辑单元进行分配。平台团队可利用此特性提高 GPU 等昂贵资源的利用率，通过为不同工作负载分配精确的设备分区来优化成本与效率。[[KEP-4815]]
+    *   **设备污染（Beta）**：SRE 可与平台团队协作，利用 `DeviceTaintRule` 标记需要维护或不适合特定工作负载的设备，防止被调度器分配。[[kep-5055]]
+    *   **可分区设备（新特性）**：允许将单个硬件加速器（如 GPU）分割为多个逻辑单元进行分配。平台团队可利用此特性提高 GPU 等昂贵资源的利用率，通过为不同工作负载分配精确的设备分区来优化成本与效率。[[kep-4815]]
 
 ## SRE 要点
 

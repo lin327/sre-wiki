@@ -90,7 +90,7 @@ This solution is a demonstration processing synthetic data. For production envir
 - **Common anti-patterns (to avoid)**:
     - **Hardcoded credentials or configuration**: Hardcoding access keys or endpoints in Lambda functions or configuration.
     - **Overly permissive IAM roles**: Assigning Lambda overly broad permissions (such as `*:*`), breaking security boundaries.
-    - **Ignoring costs and rate limits**: Not considering BDA and HealthLake's concurrency limits and cost models, which can cause failures under high traffic or unexpected large bills. SREs should consider using [[sqs]] as a buffer to manage burst uploads.
+    - **Ignoring costs and rate limits**: Not considering BDA and HealthLake's concurrency limits and cost models, which can cause failures under high traffic or unexpected large bills. SREs should consider using [[amazon-sqs]] as a buffer to manage burst uploads.
     - **Lack of error handling and retries**: While Lambda has built-in retries, complex business errors (such as low-confidence extractions requiring human review) should use [[step-functions]] for orchestration, enabling more granular error handling and workflow routing.
 
 **Relevant metrics (SLI/SLO/SLA)**
@@ -108,7 +108,7 @@ SRE teams can define reliability metrics for this pipeline:
 
 For SRE, this architecture is a good starting point but may need further extension in production:
 
-- **Enhanced fault tolerance and retries**: Introduce [[sqs]] as a buffer between S3 events and the BDA trigger Lambda to handle burst uploads and manage BDA's concurrency limits.
+- **Enhanced fault tolerance and retries**: Introduce [[amazon-sqs]] as a buffer between S3 events and the BDA trigger Lambda to handle burst uploads and manage BDA's concurrency limits.
 - **Complex workflow orchestration**: Use [[step-functions]] to orchestrate the entire pipeline, enabling more complex error handling, retry logic, parallel processing, and routing low-confidence extractions to human review queues.
 - **Batch processing**: For very large-scale imports, consider using [[kinesis-data-streams]] for continuous bulk data ingestion.
 - **Data enrichment and analytics**: Leverage processed FHIR data to build analytics dashboards through [[amazon-quicksight]], or integrate [[amazon-kendra]] for natural language search.

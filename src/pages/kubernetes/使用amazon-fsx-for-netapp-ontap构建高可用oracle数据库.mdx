@@ -19,7 +19,7 @@ tags: [oracle, aws-fsx, high-availability, iscsi, auto-scaling, aws-backup, lamb
 
 Oracle数据库作为关键业务应用的核心，其持续可用性至关重要。传统的Oracle高可用解决方案依赖于复杂的集群软件、昂贵的共享存储阵列以及专业的运维团队，这不仅引入了单点故障风险，还带来了巨大的运维开销。
 
-本文介绍的现代云架构，通过整合Amazon FSx for NetApp ONTAP (FSxN)共享存储、EC2 Auto Scaling组、基于AWS Backup的自动AMI创建、AWS Lambda编排以及AWS Systems Manager Parameter Store，提供了一种全新的解决方案。该方案显著降低了传统Oracle高可用架构的复杂性，同时提供了企业级的可用性、自动化的故障恢复能力，并确保新实例始终能以最新的配置启动并连接到现有数据库。这是 [[SRE-实践]] 中通过自动化和架构设计提升系统可靠性的典型范例。
+本文介绍的现代云架构，通过整合Amazon FSx for NetApp ONTAP (FSxN)共享存储、EC2 Auto Scaling组、基于AWS Backup的自动AMI创建、AWS Lambda编排以及AWS Systems Manager Parameter Store，提供了一种全新的解决方案。该方案显著降低了传统Oracle高可用架构的复杂性，同时提供了企业级的可用性、自动化的故障恢复能力，并确保新实例始终能以最新的配置启动并连接到现有数据库。这是 [[sre-practices]] 中通过自动化和架构设计提升系统可靠性的典型范例。
 
 ## 核心概念
 
@@ -71,7 +71,7 @@ Oracle数据库作为关键业务应用的核心，其持续可用性至关重�
 ## SRE要点
 
 ### 与可靠性实践的关联
-此架构是 [[SRE-实践]] 中**消除共模故障**和**通过自动化实现自愈**的优秀案例。它通过将状态（数据存储在FSxN）与计算实例解耦，使实例可以安全地被替换，从而提升了系统的整体可靠性。
+此架构是 [[sre-practices]] 中**消除共模故障**和**通过自动化实现自愈**的优秀案例。它通过将状态（数据存储在FSxN）与计算实例解耦，使实例可以安全地被替换，从而提升了系统的整体可靠性。
 
 ### 最佳实践与常见反模式
 *   **最佳实践**：

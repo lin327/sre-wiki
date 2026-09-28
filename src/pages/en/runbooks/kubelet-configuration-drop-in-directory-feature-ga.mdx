@@ -79,7 +79,7 @@ curl -X GET http://127.0.0.1:8001/api/v1/nodes/<node-name>/proxy/configz | jq .
 ## SRE 要点
 
 - **与可靠性、可观测性的关联**：
-    - **配置一致性**：Drop-in 目录是实现 [[config-management]] 一致性的关键工具，直接减少了因配置漂移（Configuration Drift）导致的服务行为不一致问题，是提升集群整体可靠性的基础设施。
+    - **配置一致性**：Drop-in 目录是实现 [[configuration-management]] 一致性的关键工具，直接减少了因配置漂移（Configuration Drift）导致的服务行为不一致问题，是提升集群整体可靠性的基础设施。
     - **变更管理**：它支持标准化的、可审计的配置变更流程。通过版本控制 Drop-in 文件，所有配置变更历史清晰可追溯，便于故障回滚和问题分析，这与 [[change-management]] 的最佳实践高度契合。
     - **可观测性**：`/configz` 端点提供了对节点最终运行配置的即时可视化，是 [[kubernetes-observability]] 的重要组成部分。SRE 可以利用此端点进行快速配置审计或故障排查。
 

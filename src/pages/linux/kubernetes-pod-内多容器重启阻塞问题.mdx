@@ -59,4 +59,4 @@ tags: [kubernetes, pod, container-restart, liveness-probe, bug, lifecycle]
 - **相关指标 (SLI/SLO)**：
     - **SLI (Service Level Indicator)**：可以考虑“容器重启延迟”，即从容器退出到其替代容器成功启动并进入 `Running` 状态的时间。
     - **SLO (Service Level Objective)**：对于关键服务，可以设定 SLO，如“99%的容器重启应在退出后10秒内完成”。此 bug 可能会直接影响该 SLO 的达成。
-- **关联页面**：了解此问题需要关联 [[pod-lifecycle]] 和 [[liveness-probe]] 的具体机制。对于探针失败的处理，参考 [[container-probes]] 的最佳实践。
+- **关联页面**：了解此问题需要关联 [[pod-lifecycle]] 和 [[liveness-probe]] 的具体机制。对于探针失败的处理，参考 [[kubernetes-health-checks]] 的最佳实践。

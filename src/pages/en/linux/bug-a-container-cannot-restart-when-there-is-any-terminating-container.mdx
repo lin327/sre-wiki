@@ -52,4 +52,4 @@ For applications that rely on rapid restarts of multiple containers to ensure av
 - **Relevant Indicators (SLI/SLO)**:
     - **SLI (Service Level Indicator)**: You can consider the "container restart delay", which is the time from the container exit to its replacement container successfully starting and entering the `Running` state.
     - **SLO (Service Level Objective)**: For critical services, you can set SLO, such as "99% of container restarts should be completed within 10 seconds after exiting." This bug may directly affect the achievement of this SLO.
-- **Correlation Page**: Understanding this issue requires the specific mechanism of correlating [[pod-lifecycle]] and [[liveness-probe]]. For handling probe failures, refer to [[container-probes]] for best practices.
+- **Correlation Page**: Understanding this issue requires the specific mechanism of correlating [[pod-lifecycle]] and [[liveness-probe]]. For handling probe failures, refer to [[kubernetes-health-checks]] for best practices.

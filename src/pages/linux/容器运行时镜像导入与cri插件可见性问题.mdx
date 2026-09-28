@@ -56,4 +56,4 @@ ctr -n k8s.io i import --local=true python.tar
 *   **相关指标（SLI/SLO/SLA）**：虽然此问题本身不直接产生监控指标，但它是确保“镜像可用性”这一隐含 SLI（服务水平指标）的前提。一个不一致的导入流程可能导致“成功部署的 Pod 百分比”这一关键 SLO（服务水平目标）出现波动。
 *   **可观测性与事件响应**：当出现 `ImagePullBackOff` 事件时，SRE 不仅要检查镜像仓库的可达性，还应考虑节点本地镜像缓存的可见性问题。检查 `crictl images` 与 `ctr -n k8s.io images list` 的输出差异，可以成为事件根因分析的一个有效步骤。
 
-相关页面：[[containerd]], [[cri]], [[kubernetes-node-management]]
+相关页面：[[containerd]], [[container-runtime-interface]], [[kubernetes-node-management]]

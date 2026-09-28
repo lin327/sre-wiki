@@ -54,4 +54,4 @@ tags: [Grafana, TraceQL, Tempo, Dashboard, 变量, 监控, SRE]
     *   **常见反模式**：接受这种不一致性，导致仪表板中不同面板的数据时间粒度混乱，增加了故障排查时的认知负荷和出错概率。
 *   **相关指标（SLI/SLO/SLA）**：虽然此问题本身是一个 UI/查询功能缺陷，但它间接影响了 **基于 Traces 的 SLI 的准确性**。如果用于计算 SLI 的 TraceQL Metric 查询无法与其它指标面板使用相同的 `Step`，那么计算出的 SLI 数值在时间轴上可能无法与错误预算（Error Budget）的消耗正确对齐，影响 SLO 审查的准确性。SRE 在使用 Trace 数据作为 SLI 来源时，需要特别验证其查询配置的正确性和一致性。
 
-相关页面：[[traceql-metrics]]， [[dashboard-variables]]， [[sli-slo-sla]]
+相关页面：[[traceql-metrics]]， [[grafana-variables]]， [[sli-slo-sla]]

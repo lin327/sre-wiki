@@ -4,12 +4,12 @@
 
 ## 扫描摘要
 
-- 扫描 MDX 页面：1200
+- 扫描 MDX 页面：1245
 - Wikilink 引用：1597
-- 由路由表直接解析：849
+- 由路由表直接解析：949
 - 由 Nginx 大小写别名处理：34
-- 未解析引用：714
-- 缺失 URL：398 个（706 次引用）
+- 未解析引用：614
+- 缺失 URL：348 个（606 次引用）
 - 歧义或格式问题：3 个 URL（8 次引用）
 
 ## 待补充占位页面
@@ -90,7 +90,7 @@
 - `/container-image-management` — 2 次引用，2 个引用页面
 - `/container-resource-limits` — 2 次引用，2 个引用页面
 - `/container-runtime-error-handling` — 2 次引用，2 个引用页面
-- `/container-runtime-interface` — 4 次引用，4 个引用页面
+- `/container-runtime-interface` — 8 次引用，8 个引用页面
 - `/container-runtime-lifecycle` — 2 次引用，2 个引用页面
 - `/container-runtime-reliability` — 2 次引用，2 个引用页面
 - `/container-security` — 4 次引用，4 个引用页面
@@ -99,19 +99,64 @@
 - `/container-storage-options` — 2 次引用，2 个引用页面
 - `/containerd` — 8 次引用，6 个引用页面
 - `/containerd-architecture` — 4 次引用，4 个引用页面
+- `/containerd-configuration` — 2 次引用，2 个引用页面
+- `/containerd-lifecycle` — 4 次引用，4 个引用页面
+- `/containerd-nri-plugin` — 2 次引用，2 个引用页面
+- `/containerd-rollback-strategy` — 2 次引用，2 个引用页面
+- `/containerd-snapshotter-integration` — 2 次引用，2 个引用页面
+- `/containerd-task-lifecycle` — 2 次引用，2 个引用页面
+- `/continuous-integration` — 2 次引用，2 个引用页面
+- `/copy-on-write` — 2 次引用，2 个引用页面
+- `/cpu-manager-policies` — 2 次引用，2 个引用页面
+- `/crash-recovery` — 2 次引用，2 个引用页面
+- `/cri-error-handling` — 2 次引用，2 个引用页面
 - `/dashboard` — 3 次引用，2 个引用页面
-- `/dashboard-as-code` — 4 次引用，4 个引用页面
+- `/dashboard-as-code` — 6 次引用，6 个引用页面
+- `/dashboard-design-best-practices` — 2 次引用，2 个引用页面
+- `/dashboard-engineering` — 2 次引用，2 个引用页面
+- `/dashboard-reliability` — 2 次引用，2 个引用页面
 - `/dashboards` — 3 次引用，3 个引用页面
+- `/data-consistency` — 2 次引用，2 个引用页面
+- `/data-plane` — 2 次引用，2 个引用页面
+- `/data-source-configuration` — 2 次引用，2 个引用页面
+- `/database-atomic-operations` — 2 次引用，2 个引用页面
+- `/database-configuration` — 2 次引用，2 个引用页面
+- `/database-migration` — 2 次引用，2 个引用页面
+- `/database-orm-mapping` — 2 次引用，2 个引用页面
+- `/database-reliability` — 2 次引用，2 个引用页面
+- `/database-schema-migration-checklist` — 2 次引用，2 个引用页面
+- `/deadlock-handling` — 2 次引用，2 个引用页面
+- `/debugging` — 2 次引用，2 个引用页面
+- `/defense-in-depth` — 2 次引用，2 个引用页面
+- `/defensive-programming-in-sre` — 2 次引用，2 个引用页面
+- `/dependency-management` — 2 次引用，2 个引用页面
 - `/disaster-recovery` — 4 次引用，4 个引用页面
+- `/discovery` — 2 次引用，2 个引用页面
+- `/distributed-systems-failure-modes` — 2 次引用，2 个引用页面
+- `/distributed-tracing` — 2 次引用，2 个引用页面
+- `/dynamic-environments` — 2 次引用，2 个引用页面
 - `/dynamic-resource-allocation` — 4 次引用，4 个引用页面
+- `/dynamic-secrets` — 2 次引用，2 个引用页面
+- `/edc-authorization-tokens` — 2 次引用，2 个引用页面
+- `/effective-incident-response` — 2 次引用，2 个引用页面
+- `/elasticsearch` — 2 次引用，2 个引用页面
+- `/encoding-basics` — 2 次引用，2 个引用页面
+- `/entity-graph` — 2 次引用，2 个引用页面
 - `/error-budget` — 43 次引用，41 个引用页面
+- `/error-budget-and-reliability` — 2 次引用，2 个引用页面
+- `/error-handling-best-practices` — 2 次引用，2 个引用页面
+- `/etcd-authentication` — 2 次引用，2 个引用页面
+- `/etcd-cluster-health` — 2 次引用，2 个引用页面
 - `/etcd-cluster-management` — 6 次引用，6 个引用页面
+- `/etcd-incident-response` — 2 次引用，2 个引用页面
+- `/etcd-monitoring` — 2 次引用，2 个引用页面
+- `/etcd-robustness-testing` — 2 次引用，2 个引用页面
 - `/fault-injection` — 6 次引用，6 个引用页面
 - `/gateway-api` — 6 次引用，6 个引用页面
 - `/grafana` — 18 次引用，16 个引用页面
 - `/grafana-alerting` — 6 次引用，6 个引用页面
 - `/grafana-data-source-management` — 4 次引用，4 个引用页面
-- `/grafana-variables` — 4 次引用，4 个引用页面
+- `/grafana-variables` — 6 次引用，6 个引用页面
 - `/immutable-infrastructure` — 4 次引用，4 个引用页面
 - `/incident-response` — 53 次引用，50 个引用页面
 - `/incident-response-runbook` — 9 次引用，9 个引用页面
@@ -171,278 +216,28 @@
 
 ## 当前优先处理的 20 个缺失 URL
 
-- `/containerd-configuration` — 2 次
-- `/containerd-cri` — 2 次
-- `/containerd-lifecycle` — 2 次
-- `/containerd-lifecycle-management` — 2 次
-- `/containerd-nri-plugin` — 2 次
-- `/containerd-rollback-strategy` — 2 次
-- `/containerd-snapshotter-integration` — 2 次
-- `/containerd-task-lifecycle` — 2 次
-- `/continuous-integration` — 2 次
-- `/copy-on-write` — 2 次
-- `/cpu-manager-policies` — 2 次
-- `/crash-recovery` — 2 次
-- `/cri` — 2 次
-- `/cri-error-handling` — 2 次
-- `/dashboard-design-best-practices` — 2 次
-- `/dashboard-engineering` — 2 次
-- `/dashboard-reliability` — 2 次
-- `/dashboard-variables` — 2 次
-- `/dashboards-as-code` — 2 次
-- `/data-consistency` — 2 次
+- `/event-driven-observability` — 2 次
+- `/exemplars` — 2 次
+- `/external-secrets-operator` — 2 次
+- `/false-positive-detection` — 2 次
+- `/feature-gates-best-practices` — 2 次
+- `/file-based-service-discovery` — 2 次
+- `/frontend-error-monitoring` — 2 次
+- `/frontend-monitoring` — 2 次
+- `/g11y-and-observability` — 2 次
+- `/gRPC` — 2 次
+- `/git-sync` — 2 次
+- `/git-sync-with-gerrit-configuration` — 2 次
+- `/gitops-for-infrastructure` — 2 次
+- `/go-gc-internals` — 2 次
+- `/go-programming-panics-and-crashes` — 2 次
+- `/graceful-degradation` — 2 次
+- `/grafana-accessibility-checklist` — 2 次
+- `/grafana-administration` — 2 次
+- `/grafana-alerting-rules-provisioning` — 2 次
+- `/grafana-api-gateway` — 2 次
 
 ## 缺失 URL 明细（按引用次数降序）
-
-### `/containerd-configuration` — 2 次
-
-- Wikilink target：`containerd-configuration`
-- 引用页面（2）：`/en/kubernetes/fix-pinned-label-not-applied-when-pinned-images-config-has-no-tag-13336`, `/kubernetes/%E4%BF%AE%E5%A4%8D-containerd-%E5%9B%BA%E5%AE%9A%E9%95%9C%E5%83%8F%E6%A0%87%E7%AD%BE%E6%9C%AA%E5%BA%94%E7%94%A8%E7%9A%84%E9%97%AE%E9%A2%98`
-
-### `/containerd-cri` — 2 次
-
-- Wikilink target：`containerd-cri`
-- 引用页面（2）：`/en/kubernetes/cri-tagdigest-sandbox-image-breaks-runpodsandbox`, `/kubernetes/%E5%AE%B9%E5%99%A8%E6%B2%99%E7%9B%92%E9%95%9C%E5%83%8F%E5%BC%95%E7%94%A8%E6%A0%BC%E5%BC%8F%E9%94%99%E8%AF%AF%E5%AF%BC%E8%87%B4-pod-%E6%97%A0%E6%B3%95%E5%90%AF%E5%8A%A8`
-
-### `/containerd-lifecycle` — 2 次
-
-- Wikilink target：`containerd-lifecycle`
-- 引用页面（2）：`/en/linux/criimages-avoid-false-pull-timeout-on-transfer-progress-events`, `/linux/%E9%95%9C%E5%83%8F%E6%8B%89%E5%8F%96%E8%B6%85%E6%97%B6%E8%AF%AF%E6%8A%A5%E7%9A%84%E8%A7%84%E9%81%BF`
-
-### `/containerd-lifecycle-management` — 2 次
-
-- Wikilink target：`containerd-lifecycle-management`
-- 引用页面（2）：`/en/linux/release20-crifix-lost-container-exit-events-if-they-arrive-before-info`, `/linux/%E4%BF%AE%E5%A4%8D%E5%AE%B9%E5%99%A8%E9%80%80%E5%87%BA%E4%BA%8B%E4%BB%B6%E4%B8%A2%E5%A4%B1%E9%97%AE%E9%A2%98-container-exit-event-loss`
-
-### `/containerd-nri-plugin` — 2 次
-
-- Wikilink target：`containerd-nri-plugin`
-- 引用页面（2）：`/en/linux/nri-plugin-addenvremoveenv-silently-ignored-for-env-vars-that-already-exist`, `/linux/nri%E6%8F%92%E4%BB%B6%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E6%93%8D%E4%BD%9C%E8%A2%AB%E9%9D%99%E9%BB%98%E5%BF%BD%E7%95%A5%E7%9A%84%E9%97%AE%E9%A2%98-containerd-230-nri-v0120`
-
-### `/containerd-rollback-strategy` — 2 次
-
-- Wikilink target：`containerd-rollback-strategy`
-- 引用页面（2）：`/en/linux/containerdcontainerd6123-containerd-unable-to-launch-images-created-with`, `/linux/containerd-%E9%95%9C%E5%83%8F%E6%A0%87%E7%AD%BE%E5%A4%A7%E5%B0%8F%E9%99%90%E5%88%B6%E5%AF%BC%E8%87%B4-buildpacks-%E9%95%9C%E5%83%8F%E6%97%A0%E6%B3%95%E5%90%AF%E5%8A%A8`
-
-### `/containerd-snapshotter-integration` — 2 次
-
-- Wikilink target：`containerd-snapshotter-integration`
-- 引用页面（2）：`/en/kubernetes/fix-optional-erofs-differ-setup-in-transfer-plugin`, `/kubernetes/%E4%BF%AE%E5%A4%8D-containerd-%E4%BC%A0%E8%BE%93%E6%8F%92%E4%BB%B6%E4%B8%AD%E5%8F%AF%E9%80%89%E7%9A%84-erofs-%E5%B7%AE%E5%BC%82%E8%AE%BE%E7%BD%AE`
-
-### `/containerd-task-lifecycle` — 2 次
-
-- Wikilink target：`containerd-task-lifecycle`
-- 引用页面（2）：`/en/kubernetes/container-runtime-task-state-query-robustness-fix`, `/kubernetes/%E5%AE%B9%E5%99%A8%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BB%BB%E5%8A%A1%E7%8A%B6%E6%80%81%E6%9F%A5%E8%AF%A2%E7%9A%84%E5%81%A5%E5%A3%AE%E6%80%A7%E4%BF%AE%E5%A4%8D`
-
-### `/continuous-integration` — 2 次
-
-- Wikilink target：`continuous-integration`
-- 引用页面（2）：`/en/linux/containerd-can-not-be-used-with-githubcomu-rootu-root-due-to-genproto`, `/linux/go%E5%B7%A5%E4%BD%9C%E5%8C%BAgo-work%E4%B8%8Econtainerd%E7%9A%84genproto%E4%BE%9D%E8%B5%96%E5%86%B2%E7%AA%81`
-
-### `/copy-on-write` — 2 次
-
-- Wikilink target：`copy-on-write`
-- 引用页面（2）：`/en/kubernetes/overlayfs-updates-and-sre-applications`, `/kubernetes/overlayfs-%E6%9B%B4%E6%96%B0%E4%B8%8E-sre-%E5%BA%94%E7%94%A8`
-
-### `/cpu-manager-policies` — 2 次
-
-- Wikilink target：`cpu-manager-policies`
-- 引用页面（2）：`/en/kubernetes/kubernetes-v136-pod-level-resource-managers-alpha`, `/kubernetes/kubernetes-v136-pod-level-resource-managers-alpha`
-
-### `/crash-recovery` — 2 次
-
-- Wikilink target：`crash-recovery`
-- 引用页面（2）：`/en/linux/antitheiss-found-consistent-index-isnt-equal-to-snapshot-index`, `/linux/etcd%E5%90%AF%E5%8A%A8%E6%A0%A1%E9%AA%8C%E9%94%99%E8%AF%AFconsistent-index-%E4%B8%8E-snapshot-index-%E4%B8%8D%E4%B8%80%E8%87%B4`
-
-### `/cri` — 2 次
-
-- Wikilink target：`cri`
-- 引用页面（2）：`/en/linux/containerdcontainerd-issue`, `/linux/%E5%AE%B9%E5%99%A8%E8%BF%90%E8%A1%8C%E6%97%B6%E9%95%9C%E5%83%8F%E5%AF%BC%E5%85%A5%E4%B8%8Ecri%E6%8F%92%E4%BB%B6%E5%8F%AF%E8%A7%81%E6%80%A7%E9%97%AE%E9%A2%98`
-
-### `/cri-error-handling` — 2 次
-
-- Wikilink target：`cri-error-handling`
-- 引用页面（2）：`/en/kubernetes/bug-when-nri-plugin-fails-on-runpodsandbox-containerd-leaks-resources`, `/kubernetes/nri-%E6%8F%92%E4%BB%B6%E5%9C%A8-runpodsandbox-%E9%92%A9%E5%AD%90%E5%A4%B1%E8%B4%A5%E6%97%B6%E5%AF%BC%E8%87%B4%E7%9A%84%E8%B5%84%E6%BA%90%E6%B3%84%E6%BC%8F`
-
-### `/dashboard-design-best-practices` — 2 次
-
-- Wikilink target：`dashboard-design-best-practices`
-- 引用页面（2）：`/en/linux/grafanagrafana113579`, `/linux/grafana-%E6%B7%B7%E5%90%88%E6%95%B0%E6%8D%AE%E6%BA%90%E4%B8%8E%E4%BB%AA%E8%A1%A8%E6%9D%BF%E6%95%B0%E6%8D%AE%E6%BA%90%E5%8F%98%E9%87%8F%E5%8F%98%E6%9B%B4%E5%90%8C%E6%AD%A5%E9%97%AE%E9%A2%98`
-
-### `/dashboard-engineering` — 2 次
-
-- Wikilink target：`dashboard-engineering`
-- 引用页面（2）：`/en/linux/grafana-template-variable-parsing-consistency-issue`, `/linux/grafana%E6%A8%A1%E6%9D%BF%E5%8F%98%E9%87%8F%E8%A7%A3%E6%9E%90%E4%B8%80%E8%87%B4%E6%80%A7%E9%97%AE%E9%A2%98`
-
-### `/dashboard-reliability` — 2 次
-
-- Wikilink target：`dashboard-reliability`
-- 引用页面（2）：`/en/linux/grafana-issue-109206-dashboard-save-button-state-bug-with-url-parameters`, `/linux/%E4%BB%AA%E8%A1%A8%E6%9D%BF%E4%BF%9D%E5%AD%98%E7%8A%B6%E6%80%81%E4%B8%8Eurl%E5%8F%82%E6%95%B0%E4%B8%8D%E4%B8%80%E8%87%B4%E9%97%AE%E9%A2%98`
-
-### `/dashboard-variables` — 2 次
-
-- Wikilink target：`dashboard-variables`
-- 引用页面（2）：`/en/runbooks/grafana-traceql-metric-queries-do-not-support-dashboard-variable-substitution-for-step`, `/runbooks/grafana-traceql-metric-%E6%9F%A5%E8%AF%A2%E4%B8%8D%E6%94%AF%E6%8C%81-dashboard-%E5%8F%98%E9%87%8F%E6%9B%BF%E6%8D%A2-step-%E5%8F%82%E6%95%B0`
-
-### `/dashboards-as-code` — 2 次
-
-- Wikilink target：`dashboards-as-code`
-- 引用页面（2）：`/en/linux/cannot-update-library-panels-with-paneleditnext-issue`, `/linux/%E6%97%A0%E6%B3%95%E4%BD%BF%E7%94%A8-paneleditnext-%E6%9B%B4%E6%96%B0%E5%BA%93%E9%9D%A2%E6%9D%BF-library-panels`
-
-### `/data-consistency` — 2 次
-
-- Wikilink target：`data-consistency`
-- 引用页面（2）：`/en/linux/antitheiss-found-consistent-index-isnt-equal-to-snapshot-index`, `/linux/etcd%E5%90%AF%E5%8A%A8%E6%A0%A1%E9%AA%8C%E9%94%99%E8%AF%AFconsistent-index-%E4%B8%8E-snapshot-index-%E4%B8%8D%E4%B8%80%E8%87%B4`
-
-### `/data-plane` — 2 次
-
-- Wikilink target：`data-plane`
-- 引用页面（2）：`/en/linux/grafanagrafana-issue-103284-sql-expressions-alerting-editor-cant`, `/linux/grafana-sql%E8%A1%A8%E8%BE%BE%E5%BC%8F%E4%B8%AD%E7%9A%84%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F%E8%BD%AC%E6%8D%A2%E9%97%AE%E9%A2%98`
-
-### `/data-source-configuration` — 2 次
-
-- Wikilink target：`data-source-configuration`
-- 引用页面（2）：`/en/linux/grafanagrafana123923-tempo-streaming-headers-bug`, `/linux/tempo-%E6%B5%81%E5%BC%8F%E4%BC%A0%E8%BE%93%E5%A4%B4%E9%83%A8%E5%86%B2%E7%AA%81%E5%AF%BC%E8%87%B4no-org-id%E9%94%99%E8%AF%AF`
-
-### `/database-atomic-operations` — 2 次
-
-- Wikilink target：`database-atomic-operations`
-- 引用页面（2）：`/en/linux/fixannotations-ignore-duplicate-annotation-tag-rows-on-concurrent-writes`, `/linux/%E4%BF%AE%E5%A4%8Dgrafana%E6%B3%A8%E8%A7%A3%E6%A0%87%E7%AD%BE%E5%B9%B6%E5%8F%91%E5%86%99%E5%85%A5%E7%9A%84%E5%94%AF%E4%B8%80%E7%BA%A6%E6%9D%9F%E5%86%B2%E7%AA%81`
-
-### `/database-configuration` — 2 次
-
-- Wikilink target：`database-configuration`
-- 引用页面（2）：`/en/runbooks/grafana-1161-database-migration-failure-on-mariadb-10116`, `/runbooks/grafana-1161-%E5%9C%A8-mariadb-10116-%E4%B8%8A%E6%95%B0%E6%8D%AE%E5%BA%93%E8%BF%81%E7%A7%BB%E5%A4%B1%E8%B4%A5`
-
-### `/database-migration` — 2 次
-
-- Wikilink target：`database-migration`
-- 引用页面（2）：`/en/runbooks/grafana-1161-database-migration-failure-on-mariadb-10116`, `/runbooks/grafana-1161-%E5%9C%A8-mariadb-10116-%E4%B8%8A%E6%95%B0%E6%8D%AE%E5%BA%93%E8%BF%81%E7%A7%BB%E5%A4%B1%E8%B4%A5`
-
-### `/database-orm-mapping` — 2 次
-
-- Wikilink target：`database-orm-mapping`
-- 引用页面（2）：`/en/linux/grafana-v1301-alert-rules-via-kubernetes-configmap-provisioning-fail-on-postgresql`, `/linux/grafana-v1301-%E5%91%8A%E8%AD%A6%E8%A7%84%E5%88%99%E9%80%9A%E8%BF%87-kubernetes-configmap-%E9%85%8D%E7%BD%AE%E5%9C%A8-postgresql-%E4%B8%8A%E5%A4%B1%E8%B4%A5`
-
-### `/database-reliability` — 2 次
-
-- Wikilink target：`database-reliability`
-- 引用页面（2）：`/en/linux/grafana-issues`, `/linux/%E8%A7%A3%E5%86%B3-grafana-database-is-locked-%E9%94%99%E8%AF%AF`
-
-### `/database-schema-migration-checklist` — 2 次
-
-- Wikilink target：`database-schema-migration-checklist`
-- 引用页面（2）：`/en/linux/grafana-pull-request`, `/linux/grafana-%E5%91%8A%E8%AD%A6%E8%A7%84%E5%88%99-orm-%E6%98%A0%E5%B0%84%E9%94%99%E8%AF%AF%E5%AF%BC%E8%87%B4%E7%9A%84-postgresql-%E6%9F%A5%E8%AF%A2%E5%BC%82%E5%B8%B8`
-
-### `/deadlock-handling` — 2 次
-
-- Wikilink target：`deadlock-handling`
-- 引用页面（2）：`/en/linux/bug-potential-deadlock-in-testwritetxnpanicwithoutapply-because-batchtx`, `/linux/%E4%BA%8B%E5%8A%A1%E5%A4%84%E7%90%86%E4%B8%AD%E7%9A%84%E6%AD%BB%E9%94%81%E9%98%B2%E6%8A%A4%E4%B8%8E%E8%B5%84%E6%BA%90%E9%87%8A%E6%94%BE`
-
-### `/debugging` — 2 次
-
-- Wikilink target：`debugging`
-- 引用页面（2）：`/en/linux/traceql-comments-fail-when-they-have-certain-text-eg-count-over-time`, `/linux/traceql-%E6%B3%A8%E9%87%8A%E8%A7%A3%E6%9E%90%E5%A4%B1%E8%B4%A5%E9%97%AE%E9%A2%98`
-
-### `/defense-in-depth` — 2 次
-
-- Wikilink target：`defense-in-depth`
-- 引用页面（2）：`/en/incidents/github-issue`, `/incidents/grafana-enforce-domain-%E9%85%8D%E7%BD%AE%E4%B8%8E%E4%BA%91%E5%8E%9F%E7%94%9F%E7%8E%AF%E5%A2%83%E5%86%B2%E7%AA%81%E5%88%86%E6%9E%90`
-
-### `/defensive-programming-in-sre` — 2 次
-
-- Wikilink target：`defensive-programming-in-sre`
-- 引用页面（2）：`/en/linux/release-11615-datasources-return-400-when-payload-uid-does-not-match`, `/linux/grafana-%E6%95%B0%E6%8D%AE%E6%BA%90-api-%E7%9A%84-uid-%E4%B8%80%E8%87%B4%E6%80%A7%E6%A0%A1%E9%AA%8C`
-
-### `/dependency-management` — 2 次
-
-- Wikilink target：`dependency-management`
-- 引用页面（2）：`/en/linux/containerd-can-not-be-used-with-githubcomu-rootu-root-due-to-genproto`, `/linux/go%E5%B7%A5%E4%BD%9C%E5%8C%BAgo-work%E4%B8%8Econtainerd%E7%9A%84genproto%E4%BE%9D%E8%B5%96%E5%86%B2%E7%AA%81`
-
-### `/discovery` — 2 次
-
-- Wikilink target：`discovery`
-- 引用页面（2）：`/en/kubernetes/kubernetes-mixed-version-proxy-mvp-beta-enhancing-cluster-upgrade-reliability`, `/kubernetes/kubernetes-mixed-version-proxy-mvp-beta-%E5%A2%9E%E5%BC%BA%E9%9B%86%E7%BE%A4%E5%8D%87%E7%BA%A7%E5%8F%AF%E9%9D%A0%E6%80%A7`
-
-### `/distributed-systems-failure-modes` — 2 次
-
-- Wikilink target：`distributed-systems-failure-modes`
-- 引用页面（2）：`/en/kubernetes/etcd-member-promote-request-forwarding-failure-with-auth-enabled`, `/kubernetes/etcd-%E8%AE%A4%E8%AF%81%E6%A8%A1%E5%BC%8F%E4%B8%8B%E7%9A%84%E6%88%90%E5%91%98%E6%8F%90%E5%8D%87%E8%AF%B7%E6%B1%82%E8%BD%AC%E5%8F%91%E5%A4%B1%E8%B4%A5`
-
-### `/distributed-tracing` — 2 次
-
-- Wikilink target：`distributed-tracing`
-- 引用页面（2）：`/en/linux/grafana-jaeger-exemplar-trace-link-failure-analysis`, `/linux/grafana-%E4%B8%AD-jaeger-exemplar-%E8%BF%BD%E8%B8%AA%E9%93%BE%E6%8E%A5%E5%A4%B1%E6%95%88%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90`
-
-### `/dynamic-environments` — 2 次
-
-- Wikilink target：`dynamic-environments`
-- 引用页面（2）：`/en/linux/sneak-peak-of-prometheus-20`, `/linux/prometheus-20-%E5%AD%98%E5%82%A8%E5%B1%82%E9%9D%A9%E6%96%B0%E4%B8%8E%E6%97%A9%E6%9C%9F%E5%AE%9E%E8%B7%B5`
-
-### `/dynamic-secrets` — 2 次
-
-- Wikilink target：`dynamic-secrets`
-- 引用页面（2）：`/en/incidents/infrastructure-access-control-in-the-age-of-agentic-ai`, `/incidents/agentic-ai%E6%97%B6%E4%BB%A3%E7%9A%84%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6`
-
-### `/edc-authorization-tokens` — 2 次
-
-- Wikilink target：`edc-authorization-tokens`
-- 引用页面（2）：`/docker/pacific-%E5%B9%B3%E5%8F%B0%E5%9C%A8-catena-x-%E6%95%B0%E6%8D%AE%E7%A9%BA%E9%97%B4%E4%B8%8A%E6%9E%84%E5%BB%BA%E5%A4%9A%E7%A7%9F%E6%88%B7%E4%B8%BB%E6%9D%83%E7%9A%84-pcf-%E4%BA%A4%E6%8D%A2`, `/en/docker/pacific-platform-building-multi-tenant-sovereign-pcf-exchange-on-the-catena-x-data-space`
-
-### `/effective-incident-response` — 2 次
-
-- Wikilink target：`effective-incident-response`
-- 引用页面（2）：`/en/linux/grafana-issue-111616-legend-option-renders-as-x2f-when-collapsed`, `/linux/grafana-%E5%9B%BE%E4%BE%8B%E9%80%89%E9%A1%B9%E6%8A%98%E5%8F%A0%E6%97%B6%E6%96%9C%E6%9D%A0%E7%AC%A6%E5%8F%B7%E6%98%BE%E7%A4%BA%E9%94%99%E8%AF%AF`
-
-### `/elasticsearch` — 2 次
-
-- Wikilink target：`elasticsearch`
-- 引用页面（2）：`/en/linux/grafana-github-issue`, `/linux/grafana%E6%95%B0%E6%8D%AE%E6%BA%90%E6%97%B6%E9%97%B4%E6%88%B3%E6%97%B6%E5%8C%BA%E6%98%BE%E7%A4%BA%E5%81%8F%E7%A7%BB%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90%E4%B8%8E%E8%A7%A3%E5%86%B3`
-
-### `/encoding-basics` — 2 次
-
-- Wikilink target：`encoding-basics`
-- 引用页面（2）：`/en/runbooks/grafana-csv-export-garbled-characters-issue`, `/runbooks/grafana-csv%E5%AF%BC%E5%87%BA%E4%B9%B1%E7%A0%81%E9%97%AE%E9%A2%98`
-
-### `/entity-graph` — 2 次
-
-- Wikilink target：`entity-graph`
-- 引用页面（2）：`/en/linux/customize-preconfigured-views-for-aws-azure-and-google-cloud-with-cloud`, `/linux/%E5%AE%9A%E5%88%B6grafana-cloud%E4%B8%ADawsazure%E5%92%8Cgoogle-cloud%E7%9A%84%E9%A2%84%E9%85%8D%E7%BD%AE%E8%A7%86%E5%9B%BE`
-
-### `/error-budget-and-reliability` — 2 次
-
-- Wikilink target：`error-budget-and-reliability`
-- 引用页面（2）：`/en/runbooks/grafana-datasource-uid-mismatch-api-early-error-detection`, `/runbooks/grafana-datasource-uid-%E4%B8%8D%E5%8C%B9%E9%85%8D%E7%9A%84-api-%E6%97%A9%E6%9C%9F%E9%94%99%E8%AF%AF%E6%A3%80%E6%B5%8B`
-
-### `/error-handling-best-practices` — 2 次
-
-- Wikilink target：`error-handling-best-practices`
-- 引用页面（2）：`/en/linux/datasources-return-400-when-payload-uid-does-not-match-url-uid-in-put-api-datasources-uid-uid`, `/linux/datasources-return-400-when-payload-uid-does-not-match-url-uid-in-put-api-datasources-uid-uid`
-
-### `/etcd-authentication` — 2 次
-
-- Wikilink target：`etcd-authentication`
-- 引用页面（2）：`/en/kubernetes/etcd-member-promote-request-forwarding-failure-with-auth-enabled`, `/kubernetes/etcd-%E8%AE%A4%E8%AF%81%E6%A8%A1%E5%BC%8F%E4%B8%8B%E7%9A%84%E6%88%90%E5%91%98%E6%8F%90%E5%8D%87%E8%AF%B7%E6%B1%82%E8%BD%AC%E5%8F%91%E5%A4%B1%E8%B4%A5`
-
-### `/etcd-cluster-health` — 2 次
-
-- Wikilink target：`etcd-cluster-health`
-- 引用页面（2）：`/en/linux/etcd-github-issue`, `/linux/etcd-websocket-%E8%AE%A4%E8%AF%81%E4%BB%A4%E7%89%8C%E5%A4%B1%E6%95%88`
-
-### `/etcd-incident-response` — 2 次
-
-- Wikilink target：`etcd-incident-response`
-- 引用页面（2）：`/en/runbooks/etcd-panic-page-xxx-already-freed-data-inconsistency`, `/runbooks/etcd-panic-page-xxx-already-freed-%E6%95%B0%E6%8D%AE%E4%B8%8D%E4%B8%80%E8%87%B4%E9%97%AE%E9%A2%98`
-
-### `/etcd-monitoring` — 2 次
-
-- Wikilink target：`etcd-monitoring`
-- 引用页面（2）：`/en/runbooks/etcd-panic-page-xxx-already-freed-data-inconsistency`, `/runbooks/etcd-panic-page-xxx-already-freed-%E6%95%B0%E6%8D%AE%E4%B8%8D%E4%B8%80%E8%87%B4%E9%97%AE%E9%A2%98`
-
-### `/etcd-robustness-testing` — 2 次
-
-- Wikilink target：`etcd-robustness-testing`
-- 引用页面（2）：`/en/kubernetes/etcd-robustness-test-linearization-validation-oom-issue`, `/kubernetes/etcd-%E5%81%A5%E5%A3%AE%E6%80%A7%E6%B5%8B%E8%AF%95%E4%B8%AD%E7%9A%84%E7%BA%BF%E6%80%A7%E5%8C%96%E9%AA%8C%E8%AF%81%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA%E9%97%AE%E9%A2%98`
 
 ### `/event-driven-observability` — 2 次
 

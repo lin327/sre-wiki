@@ -47,4 +47,4 @@ tags: [containerd, container, reliability, event-handling, restart]
 - **相关指标**：
     - **SLI**：`container_exit_events_received_total` 与 `container_exit_events_expected_total`（通过 `container_start` 事件推导）之间的差异率。
     - **告警**：设置告警，当检测到 `containerd` 重启后，短期内（如5分钟）的退出事件计数异常偏低时触发。这可以间接指示本修复所针对的问题是否发生。
-- **关联页面**：此修复与容器运行时的**事件处理管道**、**Kubernetes 节点稳定性**以及 **containerd 的生命周期管理**紧密相关。可参考 [[containerd-lifecycle-management]]、[[kubernetes-pod-status-reconciliation]] 等页面获取更宏观的上下文。
+- **关联页面**：此修复与容器运行时的**事件处理管道**、**Kubernetes 节点稳定性**以及 **containerd 的生命周期管理**紧密相关。可参考 [[containerd-lifecycle]]、[[kubernetes-pod-status-reconciliation]] 等页面获取更宏观的上下文。

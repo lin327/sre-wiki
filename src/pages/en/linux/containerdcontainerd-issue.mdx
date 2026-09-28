@@ -49,4 +49,4 @@ After executing this command, and then running `crictl images`, you can correctl
 * **Related indicators (SLI/SLO/SLA)**: Although this issue itself does not directly generate monitoring indicators, it is a prerequisite for ensuring the implicit SLI (service level indicator) of "mirror availability". An inconsistent import process can cause fluctuations in the critical SLO (service level objective) of "percentage of successfully deployed pods."
 * **Observability and event response**: When an `ImagePullBackOff` event occurs, the SRE should not only check the reachability of the image warehouse, but also consider the visibility of the node's local image cache. Examining differences in the output of `crictl images` and `ctr -n k8s.io images list` can be an effective step in root cause analysis of an incident.
 
-Related pages: [[containerd]], [[cri]], [[kubernetes-node-management]]
+Related pages: [[containerd]], [[container-runtime-interface]], [[kubernetes-node-management]]

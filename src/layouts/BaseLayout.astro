@@ -170,7 +170,7 @@ function isPageActive(href: string): boolean {
     <meta property="og:title" content={`${pageTitle} · ${siteName}`} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={canonicalUrl.href} />
+    {emitCanonical && <meta property="og:url" content={canonicalUrl.href} />}
     <meta property="og:locale" content={isEnglish ? "en_US" : "zh_CN"} />
     <meta name="view-transition" content="same-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

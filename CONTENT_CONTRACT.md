@@ -1,4 +1,4 @@
-# SRE Atlas 内容契约
+# Continued 内容契约
 
 ## 目录与命名
 

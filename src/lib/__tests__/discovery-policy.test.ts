@@ -49,7 +49,7 @@ describe('discovery routes', () => {
       'src/pages/linux/index.mdx': '---\ncanonical: true\n---\nLinux',
     });
     const routes = loadDiscoveryRoutes(pages);
-    for (const url of ['/linux/', '/%6Cinux?source=nav#top', 'https://pineapple-user.site/linux/', '/linux/网络/', '/linux/%E7%BD%91%E7%BB%9C?x=1']) {
+    for (const url of ['/linux/', '/%6Cinux?source=nav#top', 'https://continued.page/linux/', '/linux/网络/', '/linux/%E7%BD%91%E7%BB%9C?x=1']) {
       expect(isDiscoverable(url, routes), url).toBe(true);
     }
     for (const url of ['/linux/pending', '/linux-extra', '/linux%2F网络', '/inbox/linux', '/linux/%ZZ']) {

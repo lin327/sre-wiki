@@ -1,8 +1,8 @@
-# SRE Atlas
+# Continued
 
-AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路。默认中文，技术术语保留英文。
+Continued · 计算机入行指南。面向计算机相关专业的学生和刚入行的新人。默认中文，技术术语保留英文。
 
-线上站点：[https://pineapple-user.site/](https://pineapple-user.site/)。本仓库负责静态站与 Docker 部署，`sre-atlas-agent` 负责采集和生成草稿。
+线上站点：[https://continued.page/](https://continued.page/)（海外，当前 canonical）。国内域名 `continued.cn` 在 ICP 备案完成前不上线。本仓库负责静态站与 Docker 部署，`sre-atlas-agent` 负责采集和生成草稿。
 
 ## 技术栈
 
@@ -65,13 +65,13 @@ sre-wiki/
 根目录 `Dockerfile` 使用 Node 22 构建 Astro 和 Pagefind，再由 nginx 提供 `dist/` 静态文件。首次启动示例：
 
 ```bash
-docker build --build-arg PUBLIC_ADS_ENABLED=false -t sre-wiki:local .
-docker run -d --name sre-wiki --restart unless-stopped \
-  -p 8080:80 sre-wiki:local
+docker build --build-arg PUBLIC_ADS_ENABLED=false -t continued:local .
+docker run -d --name continued --restart unless-stopped \
+  -p 8080:80 continued:local
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-将服务器现有 HTTPS 入口的上游指向容器端口，使用 `pineapple-user.site` 域名。`infra/k8s/` 是历史部署资料，不是当前云服务器 Docker 的部署步骤。
+将服务器现有 HTTPS 入口的上游指向容器端口，使用 `continued.page` 域名。`infra/k8s/` 是历史部署资料，不是当前云服务器 Docker 的部署步骤。
 
 现有 GitHub Actions 在 `main` 推送后执行测试、构建并推送 GHCR 镜像（`latest` 与 commit SHA 标签），**没有更新云服务器容器的步骤**；镜像发布不等于现网已更新。
 

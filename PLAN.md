@@ -1,4 +1,4 @@
-# SRE Atlas 项目规划
+# Continued 项目规划
 
 > **历史方案，非现网任务板。** 下文的完成标记、旧域名和部署计划仅作历史记录；Phase 3 的 k3s 方案已废弃，现网使用云服务器 Docker。当前状态以 [README.md](README.md)、[PROJECT.md](PROJECT.md) 和 [CONTENT_CONTRACT.md](CONTENT_CONTRACT.md) 为准。
 
@@ -82,7 +82,7 @@
 ### Phase 3: 上云部署（之后）
 
 ```
-⬜ Cloudflare DNS → wiki.tentative.me
+⬜ Cloudflare DNS → continued.page
 ⬜ k3s 集群部署
 ⬜ cert-manager + HTTPS
 ⬜ 监控集成
@@ -93,7 +93,7 @@
 ## 文件树
 
 ```
-wiki-react/
+continued/
 ├── astro.config.mjs
 ├── package.json
 ├── Dockerfile + nginx.conf + .dockerignore
@@ -241,9 +241,8 @@ graph TB
 
 | 服务 | 域名 | 用途 |
 |------|------|------|
-| SRE Atlas | `wiki.tentative.me` | 知识库主站 |
-| 备用 | `*.tentativr.tech` | 实验性服务 |
-| 国内 | `pineapple-user.site` | 备案域名，未来国内服务 |
+| Continued | `continued.page` | 海外站点，当前 canonical |
+| 国内 | `continued.cn` | 国内站点，ICP 备案完成前不上线 |
 
 ## 成本
 
@@ -253,5 +252,5 @@ graph TB
 | Neon PostgreSQL | $0 | 512MB 免费额度 |
 | Cloudflare | $0 | Free plan |
 | AI Agent | ~$21 | Claude API |
-| 域名 | ~$2.5 | tentative.me + tentativr.tech |
+| 域名 | ~$2.5 | 历史估算；现域名为 continued.page 与 continued.cn |
 | **总计** | **~$119.5/月** | 国内节点一次性付费不计入 |

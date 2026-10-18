@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - wiki.tentative.me
+        - continued.page
       secretName: sre-atlas-tls
   rules:
-    - host: wiki.tentative.me
+    - host: continued.page
       http:
         paths:
           - path: /

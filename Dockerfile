@@ -19,6 +19,10 @@ RUN npm run build
 # ---- Production stage ----
 FROM nginx:alpine AS production
 
+LABEL org.opencontainers.image.source="https://github.com/lin327/sre-wiki"
+LABEL org.opencontainers.image.description="Continued · 计算机入行指南"
+LABEL org.opencontainers.image.url="https://continued.page"
+
 # Fix permissions for non-root execution
 RUN rm /etc/nginx/conf.d/default.conf && \
     mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \

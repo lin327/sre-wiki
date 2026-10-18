@@ -1,4 +1,4 @@
-# Design System — SRE Atlas
+# Design System — Continued
 
 ## Color Palette (OKLCH)
 

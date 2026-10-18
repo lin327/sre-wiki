@@ -6,7 +6,7 @@ test.describe('Homepage', () => {
   });
 
   test('loads successfully', async ({ page }) => {
-    await expect(page).toHaveTitle(/SRE Atlas/);
+    await expect(page).toHaveTitle(/Continued/);
   });
 
   test('has navigation bar', async ({ page }) => {
@@ -126,7 +126,7 @@ test.describe('Article page', () => {
 test.describe('English locale', () => {
   test('English homepage loads', async ({ page }) => {
     await page.goto('/en/');
-    await expect(page).toHaveTitle(/SRE Atlas/);
+    await expect(page).toHaveTitle(/Continued/);
   });
 
   test('language switcher present', async ({ page }) => {

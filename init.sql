@@ -1,4 +1,4 @@
--- SRE Atlas PostgreSQL Schema
+-- Continued PostgreSQL Schema
 -- Neon SaaS (ap-southeast-1)
 
 -- 采集去重 + 状态追踪

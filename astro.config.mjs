@@ -16,7 +16,7 @@ const discoveryRoutes = loadDiscoveryRoutes(new URL('./src/pages/', import.meta.
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://pineapple-user.site',
+  site: 'https://continued.page',
 
   server: {
     host: '0.0.0.0',

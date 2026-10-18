@@ -1,7 +1,8 @@
 FROM nginx:alpine
 
 LABEL org.opencontainers.image.source="https://github.com/lin327/sre-wiki"
-LABEL org.opencontainers.image.description="SRE Atlas - AI-driven operations knowledge base"
+LABEL org.opencontainers.image.description="Continued · 计算机入行指南"
+LABEL org.opencontainers.image.url="https://continued.page"
 LABEL org.opencontainers.image.version="1.5"
 
 # http-context map of archived URLs (exact 410). Included via conf.d/*.conf.

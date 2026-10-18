@@ -128,7 +128,7 @@ test.describe('Footer', () => {
     await expect(footer).toBeVisible();
 
     const footerText = await footer.textContent();
-    expect(footerText).toContain('SRE Atlas');
+    expect(footerText).toContain('Continued');
   });
 
   test('footer has links', async ({ page }) => {

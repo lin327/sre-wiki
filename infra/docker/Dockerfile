@@ -1,7 +1,8 @@
 FROM nginx:1.27-alpine
 
 LABEL org.opencontainers.image.source="https://github.com/lin327/sre-wiki"
-LABEL org.opencontainers.image.description="SRE Atlas - AI-driven operations knowledge base"
+LABEL org.opencontainers.image.description="Continued · 计算机入行指南"
+LABEL org.opencontainers.image.url="https://continued.page"
 
 COPY infra/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY site/ /usr/share/nginx/html/

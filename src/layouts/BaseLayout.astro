@@ -21,20 +21,26 @@ interface Props {
   description?: string;
   headings?: Heading[];
   updated?: string;
+  emitCanonical?: boolean;
 }
 
+const siteName = "Continued";
+const tagline = "Continued · 计算机入行指南";
+
 const {
-  title = Astro.props.frontmatter?.title ?? "SRE Atlas",
-  description = "SRE 知识图谱与运维手册",
+  title = Astro.props.frontmatter?.title ?? siteName,
+  description = tagline,
   headings = [],
   updated,
+  emitCanonical = true,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
 const isHome = currentPath === "/";
 const isEnglish = currentPath.startsWith("/en/");
 const lang = isEnglish ? "en" : "zh";
-const pageTitle = title === "SRE Atlas" ? (isEnglish ? "Home" : "首页") : title;
+const pageTitle = title === siteName ? (isEnglish ? "Home" : "首页") : title;
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site ?? "https://continued.page");
 
 const topNavLinks = [
   { href: "/linux/process-model", label: "Linux",
@@ -158,12 +164,20 @@ function isPageActive(href: string): boolean {
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    <meta name="application-name" content={siteName} />
+    {emitCanonical && <link rel="canonical" href={canonicalUrl.href} />}
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={`${pageTitle} · ${siteName}`} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    {emitCanonical && <meta property="og:url" content={canonicalUrl.href} />}
+    <meta property="og:locale" content={isEnglish ? "en_US" : "zh_CN"} />
     <meta name="view-transition" content="same-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     {/* Preload critical fonts */}
     <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
-    <title>{pageTitle} · SRE Atlas</title>
+    <title>{pageTitle} · {siteName}</title>
   </head>
   <body>
     <!-- Skip to content link for keyboard/screen reader users -->
@@ -185,7 +199,7 @@ function isPageActive(href: string): boolean {
         </button>
         <a href="/" class="topnav__brand">
           <span class="topnav__dot" aria-hidden="true"></span>
-          SRE Atlas
+          {siteName}
         </a>
       </div>
 
@@ -281,7 +295,7 @@ function isPageActive(href: string): boolean {
       <div class="site-footer__inner">
         <div class="site-footer__row">
           <span class="site-footer__left">
-            SRE Atlas
+            {tagline}
             <span class="site-footer__sep" aria-hidden="true">·</span>
             <a href="https://github.com/lin327/sre-wiki" class="site-footer__link" target="_blank" rel="noopener noreferrer">GitHub</a>
             <span class="site-footer__sep" aria-hidden="true">·</span>

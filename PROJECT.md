@@ -1,12 +1,12 @@
-# SRE Atlas
+# Continued
 
-AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路。
+Continued · 计算机入行指南。面向计算机相关专业的学生和刚入行的新人，覆盖 Linux → Docker → Kubernetes。
 
 ## 定位
 
-**SRE Atlas** 是一个结构化的运维知识图库，目标是：
+**Continued** 是一个结构化的计算机入行指南，目标是：
 
-- **学习路径**：从 Linux 基础到容器化再到编排，覆盖运维工程师成长全链路
+- **学习路径**：从 Linux 基础到容器化再到编排，覆盖计算机相关专业学生和行业新人的入门路径
 - **实战沉淀**：真实故障案例、排障手册、架构设计，而非理论堆砌
 - **AI 增强**：Agent 自动从 RSS/GitHub/官方文档采集内容，持续更新
 - **知识图谱**：wikilinks 连接相关概念，形成可导航的知识网络
@@ -15,7 +15,7 @@ AI 驱动的运维知识库，覆盖 Linux → Docker → Kubernetes 全链路�
 
 ```mermaid
 graph TB
-    User[用户浏览器] -->|HTTPS pineapple-user.site| Server[云服务器 HTTPS 入口]
+    User[用户浏览器] -->|HTTPS continued.page| Server[云服务器 HTTPS 入口]
     Server --> Wiki[Docker 容器<br/>nginx 静态站]
     Repo[sre-wiki 仓库] -->|main 推送| GH[GitHub Actions<br/>测试与镜像构建]
     GH --> GHCR[GHCR 镜像仓库]
@@ -168,7 +168,7 @@ confidence: medium
 
 ## 仓库结构
 
-### sre-wiki（知识库 + 部署）
+### sre-wiki（Continued 站点 + 部署）
 
 ```
 sre-wiki/
@@ -232,7 +232,8 @@ sre-atlas-agent/
 
 | 服务 | 域名 | 用途 |
 |------|------|------|
-| SRE Atlas | [pineapple-user.site](https://pineapple-user.site/) | 已上线知识库主站 |
+| Continued | [continued.page](https://continued.page/) | 海外站点，当前 canonical |
+| 国内 | continued.cn | 国内站点，ICP 备案完成前不上线 |
 
 ## 历史预算（非现网账单）
 
@@ -244,7 +245,7 @@ sre-atlas-agent/
 | Neon PostgreSQL | $0 | 512MB 免费额度 |
 | Cloudflare | $0 | Free plan |
 | AI Agent | ~$21 | Claude API |
-| 域名 | ~$2.5 | tentative.me + tentativr.tech |
+| 域名 | ~$2.5 | 历史估算；现域名为 continued.page 与 continued.cn |
 | **总计** | **~$119.5/月** | 国内节点一次性付费不计入 |
 
 ## 当前实现与待完成链路

@@ -7,6 +7,7 @@
 # Root placeholders are from 7a278f0 (447 pages). Legacy English pages are from
 # d247101 (486 pages, /en/<category>/<slug>). Seed English URLs are not listed.
 map_hash_max_size 4096;
+# 256 is required: the longest /en/... key is 112 bytes, and nginx cannot build this map at 128.
 map_hash_bucket_size 256;
 map $uri $legacy_placeholder_gone {
     default 0;

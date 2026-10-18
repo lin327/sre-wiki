@@ -21,6 +21,7 @@ interface Props {
   description?: string;
   headings?: Heading[];
   updated?: string;
+  emitCanonical?: boolean;
 }
 
 const siteName = "Continued";
@@ -31,6 +32,7 @@ const {
   description = tagline,
   headings = [],
   updated,
+  emitCanonical = true,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
@@ -163,7 +165,7 @@ function isPageActive(href: string): boolean {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="application-name" content={siteName} />
-    <link rel="canonical" href={canonicalUrl.href} />
+    {emitCanonical && <link rel="canonical" href={canonicalUrl.href} />}
     <meta property="og:site_name" content={siteName} />
     <meta property="og:title" content={`${pageTitle} · ${siteName}`} />
     <meta property="og:description" content={description} />

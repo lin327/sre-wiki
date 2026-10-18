@@ -1,4 +1,6 @@
 node_modules
+# Archived MDX is not part of the site image.
+archive/
 # dist  # Commented out for local builds
 .git
 .github

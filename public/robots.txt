@@ -1,6 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /auth
-Disallow: /inbox
 
 Sitemap: https://pineapple-user.site/sitemap-index.xml

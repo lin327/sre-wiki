@@ -29,6 +29,8 @@ RUN rm /etc/nginx/conf.d/default.conf && \
     sed -i 's|/run/nginx.pid|/var/run/nginx/nginx.pid|' /etc/nginx/nginx.conf && \
     sed -i 's|user  nginx;|#user  nginx;|' /etc/nginx/nginx.conf
 
+# http-context map of archived placeholder URLs (exact 410). Included via conf.d/*.conf.
+COPY nginx/legacy-redirects.map /etc/nginx/conf.d/00-legacy-redirects.conf
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

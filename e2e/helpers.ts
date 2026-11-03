@@ -10,5 +10,5 @@ export async function openSidebar(page: Page) {
 
 export async function expectHeaderControls(page: Page) {
   await expect(page.getByRole('button', { name: 'Switch language', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Switch to (dark|light) mode/ })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: /主题模式|Theme mode/ })).toBeVisible();
 }

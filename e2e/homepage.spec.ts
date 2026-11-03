@@ -79,13 +79,13 @@ test.describe('Sidebar navigation', () => {
   });
 });
 
-test.describe('Theme toggle', () => {
-  test('toggles between light and dark', async ({ page }) => {
+test.describe('Theme preference', () => {
+  test('selects an explicit light or dark theme', async ({ page }) => {
     await page.goto('/');
-    const themeBtn = page.getByRole('button', { name: /Switch to (dark|light) mode/ });
-    await expect(themeBtn).toBeEnabled();
+    const themeControl = page.getByRole('combobox', { name: '主题模式' });
+    await expect(themeControl).toBeEnabled();
     const initialTheme = await page.locator('html').getAttribute('data-theme');
-    await themeBtn.click();
+    await themeControl.selectOption(initialTheme === 'light' ? 'dark' : 'light');
     await expect(page.locator('html')).toHaveAttribute('data-theme', initialTheme === 'light' ? 'dark' : 'light');
   });
 });

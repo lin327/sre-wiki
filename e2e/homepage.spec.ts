@@ -82,20 +82,11 @@ test.describe('Sidebar navigation', () => {
 test.describe('Theme toggle', () => {
   test('toggles between light and dark', async ({ page }) => {
     await page.goto('/');
-    const initialTheme = await page.evaluate(() =>
-      document.documentElement.getAttribute('data-theme')
-    );
-
-    // Find the theme toggle button by aria-label
-    const themeBtn = page.locator('button[aria-label*="mode"], button[aria-label*="dark"], button[aria-label*="light"]').first();
-    await expect(themeBtn).toBeVisible({ timeout: 5000 });
+    const themeBtn = page.getByRole('button', { name: /Switch to (dark|light) mode/ });
+    await expect(themeBtn).toBeEnabled();
+    const initialTheme = await page.locator('html').getAttribute('data-theme');
     await themeBtn.click();
-    await page.waitForTimeout(500);
-
-    const newTheme = await page.evaluate(() =>
-      document.documentElement.getAttribute('data-theme')
-    );
-    expect(newTheme).not.toBe(initialTheme);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', initialTheme === 'light' ? 'dark' : 'light');
   });
 });
 

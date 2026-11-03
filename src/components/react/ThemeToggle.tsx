@@ -26,11 +26,13 @@ const moonPath =
 
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("light");
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const initial = getStoredTheme();
     setTheme(initial);
     applyTheme(initial);
+    setReady(true);
   }, []);
 
   const toggle = useCallback(() => {
@@ -44,6 +46,7 @@ export default function ThemeToggle() {
   return (
     <button
       type="button"
+      disabled={!ready}
       onClick={toggle}
       aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
       className="theme-toggle"

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectHeaderControls, openSidebar } from './helpers';
 
 test.describe('Homepage', () => {
   test.beforeEach(async ({ page }) => {
@@ -25,9 +26,7 @@ test.describe('Homepage', () => {
   });
 
   test('has icon buttons', async ({ page }) => {
-    const iconBtns = page.locator('.topnav__icon-btn');
-    const count = await iconBtns.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expectHeaderControls(page);
   });
 
   test('has footer', async ({ page }) => {
@@ -51,23 +50,23 @@ test.describe('Homepage', () => {
 test.describe('Sidebar navigation', () => {
   test('clicking group header toggles collapse', async ({ page }) => {
     await page.goto('/');
+    await openSidebar(page);
     const firstGroup = page.locator('.sidebar__group-header').first();
     const initialState = await firstGroup.getAttribute('aria-expanded');
     await firstGroup.click();
-    await page.waitForTimeout(200);
-    const newState = await firstGroup.getAttribute('aria-expanded');
-    expect(newState).not.toBe(initialState);
+    await expect(firstGroup).toHaveAttribute('aria-expanded', initialState === 'true' ? 'false' : 'true');
   });
 
   test('sidebar link navigates to article', async ({ page }) => {
     await page.goto('/');
+    await openSidebar(page);
 
     // Expand the first group if collapsed
     const firstGroup = page.locator('.sidebar__group-header').first();
     const isExpanded = await firstGroup.getAttribute('aria-expanded');
     if (isExpanded !== 'true') {
       await firstGroup.click();
-      await page.waitForTimeout(300);
+      await expect(firstGroup).toHaveAttribute('aria-expanded', 'true');
     }
 
     const visibleLink = page.locator('.sidebar__link:visible').first();
@@ -117,7 +116,7 @@ test.describe('Article page', () => {
 
   test('highlights active sidebar link', async ({ page }) => {
     await page.goto('/linux/process-model');
-    await page.waitForTimeout(500);
+    await openSidebar(page);
     const activeLink = page.locator('.sidebar__link--active');
     await expect(activeLink).toBeVisible({ timeout: 10000 });
   });

@@ -1,76 +1,55 @@
 # SRE Atlas 内容契约
 
-本契约冻结 Wiki 与 Agent 之间的内容分类、精选门禁及迁移兼容规则。枚举值区分大小写；机器校验必须使用下列拼写。
+本文件是 Wiki 内容契约的唯一规范；根目录 CONTENT_CONTRACT.md 只提供入口。字段定义以 `src/lib/frontmatter.schema.json` 为准，正文与路由校验由 `src/lib/publish-contract.mjs` 执行。
 
-## 1. domain：封闭枚举
+## 1. 分类、字段与命名
 
-frontmatter 的 domain 只能使用以下 10 个值：
+- domain 封闭枚举：`observability / kubernetes / container-runtime / docker / linux / iac / security / chaos-engineering / ai / tbd`。etcd 归 kubernetes；container-runtime 与 docker 独立。tbd 仅供未定草稿，不能精选。
+- type 封闭枚举：`concept / guide / runbook / incident / architecture / comparison / news`。不得继续输出旧 fundamental。
+- 必填：非空 title、带引号的 YYYY-MM-DD created/updated、sources（HTTP(S) 的 {url,title} 列表）、布尔 canonical、domain、type、confidence（high/medium/low）、字符串列表 tags。description 可选。
+- reviewed（布尔）、reviewed_by（非空字符串）、reviewed_at（有效 YYYY-MM-DD 字符串）是合法字段；canonical 为 true 时必填且 reviewed 必须为 true。不根据采集成功或模型置信度伪造审校字段。
+- category 已 deprecated，作为可选兼容字段保留；新稿可以省略。提供时须为七个路径分类之一，且发布时必须与目录一致。列表的路径分类来自目录，不信任历史脏 category；本轮不重构栏目或 URL。domain/type 是内容语义字段。
+- 发布目录固定为 `src/pages/{linux,docker,kubernetes,runbooks,architectures,incidents,comparisons}/`，英文文章位于 `src/pages/en/<category>/`。runbooks、architectures 使用复数。
+- 新文章文件名为 .mdx，slug 为 4–60 位小写 ASCII 字母/数字/连字符，首尾须为字母或数字，以 schema 的 $defs.slug 为准。不批量改历史 URL。
 
-| domain | 含义与盘点基线 |
-|---|---|
-| observability | 可观测性（指标、日志、追踪、告警；Grafana、Prometheus 等），264 篇 |
-| kubernetes | Kubernetes 平台（调度、网络、存储、版本特性），并包含 etcd 相关内容 21 篇，共 83 篇 |
-| container-runtime | 容器运行时（containerd、crictl、runc、snapshotter、overlayfs、shim），23 篇 |
-| docker | Docker 引擎与生态（独立领域），3 篇 |
-| linux | Linux 内核与发行版（cgroup、BPF、AppArmor、SELinux、syscall），9 篇 |
-| iac | 基础设施即代码（Terraform、Packer、HCP），7 篇 |
-| security | 安全（供应链安全、CVE、Vault、IAM、零信任），25 篇 |
-| chaos-engineering | 混沌工程（Chaos Mesh），15 篇 |
-| ai | AI 与 SRE 交叉（AI 代理、AI 基础设施、AI 运营），9 篇 |
-| tbd | 过渡值，仅用于人工复核中的未定稿；不可用于 canonical |
+## 2. 精选发布门禁
 
-本次盘点的 516 篇按 domain 汇总：observability 264、kubernetes 83、container-runtime 23、docker 3、linux 9、iac 7、security 25、chaos-engineering 15、ai 9、tbd 78。kubernetes 的 83 篇由 Kubernetes 平台 62 篇和 etcd 相关内容 21 篇组成；container-runtime 单独计数。
+canonical: true 表示人工纳入精选，不是 SEO canonical URL 或访问权限。新增发布文章、已有草稿晋升，以及修改后的精选文章都必须通过：
 
-## 2. type：封闭枚举
+1. 完整 frontmatter schema；domain 不能为 tbd，type 在封闭枚举内。
+2. reviewed: true、非空 reviewed_by、有效日期 reviewed_at。
+3. frontmatter 之后的正文有效字符不少于 800，按去除空白后的 Unicode 码点计数；不得包含“内容待补充”。规则取自 schema 的 $defs.canonicalBody。
+4. layout 固定为相对路径指向 src/layouts/BaseLayout.astro，不能使用模型指定的任意布局。
+5. wikilink 必须可解析，缺失、歧义、路径穿越均拒绝；新稿推荐 [[category/slug]]，无分类 slug 仅在全站唯一时可用。
+6. 可执行 MDX 节点被 CLI 拒绝；仅保留脚本中明确列出的已有组件页。审核不免除 MDX 安全门禁。
 
-frontmatter 的 type 只能使用以下 7 个值：
+### 冻结种子迁移例外
 
-| type | 含义 |
-|---|---|
-| concept | 概念讲解 |
-| guide | 实践指南或案例 |
-| runbook | 操作手册或排障步骤 |
-| incident | 事故复盘或事件分析 |
-| architecture | 架构说明或设计 |
-| comparison | 对比选型 |
-| news | 版本发布、会议回顾或 CVE 通告 |
+验收基线 commit 为 598d32f04edd276a6501046275eb0c512a03afaa。其 20 篇中文种子的路径与原文件 SHA256 固定在 src/lib/legacy-canonical-baseline.json。它们缺少新元数据/审校信息，不能伪造人工审核。**仅非新增且文件字节完全不变时告警兼容**；CI 全量扫描会逐篇告警。任何改动、复制为新稿或新增文件都必须通过完整门禁，不得仅凭路径或 isNew=false 绕过。不得自动刷新该清单来使校验变绿；迁移须单独人工审校。另在同一基线冻结了 src/inbox/linux/index.mdx 的哈希：它是历史索引资料，非合规新草稿，只在字节不变且 canonical: false 时告警保留；任何修改需补齐草稿 schema。
 
-现有目录的类型迁移映射：
+分类 index.mdx、手写 Astro 路由及 about/privacy 等说明页不按“文章 800 字”判定，但仍遵守其适用的布局/MDX 安全检查。其余未修改的历史非精选内容保留迁移兼容；原 wikilink 问题仅告警。
 
-| 当前路径 | type |
-|---|---|
-| src/pages/runbooks/ | runbook |
-| src/pages/incidents/ | incident |
-| src/pages/architectures/ | architecture |
-| src/pages/comparisons/ | comparison |
+## 3. 草稿与 Agent 边界
 
-src/pages/linux/、src/pages/docker/、src/pages/kubernetes/ 下文章的 type 按正文内容判定，多为 concept、guide 或 news；domain 按本契约第 1 节判定。
+- Agent 默认输出 output/inbox/<category>/<slug>.mdx，强制 canonical: false；PUBLISH_CANONICAL=true 仅改变输出目录，不代表通过人工审核。
+- Wiki 通过人工/PR 接收至 src/inbox/，不能用 src/pages/inbox/。Wiki CI 校验 src/inbox/**/*.mdx 的同一 schema，拒绝缺 domain/type 或 canonical 不为 false；tbd 只允许留在草稿。
+- Agent 的 output/inbox/ 在姊妹仓，不谎称 Wiki CI 会读取仓外目录。Agent 的 schema 副本需在该仓独立同步，不在运行时跨仓读取。
+- 审校通过才移动到公开分类并设 canonical: true，补齐真实审校证据。GitHub Issue/PR 复述默认只作资料。
 
-## 3. 精选门禁
+## 4. 发现策略与交付
 
-当 frontmatter 设置 canonical: true 时，CI 必须执行以下校验：
+- Pagefind 与 sitemap 共用 src/lib/discovery-policy.mjs：只发现严格 canonical: true 的 MDX 及明确保留的手写索引、首页、about/privacy。
+- src/pages 是公开路由，非精选仍可能直达；src/inbox 与 archive 不参与构建/索引。归档旧 URL 由 nginx 精确返回 410，不能用 preview 冒充 nginx 验收。
+- npm run build 包含 Astro 构建和 Pagefind。静态 nginx 交付；赞助配置在构建时生效。推 GHCR 不等于更新服务器。
 
-1. domain 必须属于第 1 节枚举且不能为 tbd；type 必须属于第 2 节枚举。
-2. 正文不得包含“内容待补充”，且 frontmatter 之后的正文有效字符数不少于 800（不计空白字符）。
-3. 内链检查通过，不能有坏链。
-4. 必须包含人工审校标记：reviewed: true、非空 reviewed_by、YYYY-MM-DD 格式的 reviewed_at。
+## 5. CI 与复核命令
 
-现有 20 篇 canonical: true 种子页需限期补齐第 4 项。迁移期限内暂不因缺少审校字段阻断这些种子页，但 CI 必须告警；超过期限仍未补齐时继续告警。新晋升的精选页必须满足全部门禁。
-
-## 4. URL 与旧字段
-
-- 不搬迁、不改名；domain 和 type 只写入 frontmatter，公开 URL 保持不变。
-- category 字段标记为 deprecated：新内容不得写入 category；索引不再读取 category；已有历史脏值保持原样。
-- 分类页与索引优先读取 frontmatter 的 domain 和 type；字段缺失时回退到路径映射。路径映射是迁移兼容逻辑，不得覆盖已填写的 domain 或 type。
-
-## 5. Agent 协同
-
-- Agent 仓库的新稿分类逻辑必须输出符合第 1、2 节封闭枚举的 domain 和 type。
-- Agent 新稿仍进入 output/inbox/，不因此自动晋升或发布。
-- Wiki CI 对 output/inbox/ 中缺少 domain 或 type 的新稿必须报错并拒绝通过；domain 为 tbd 的稿件只能保留为人工复核草稿，不能设为 canonical: true。
+- npm test：包含原验收五探针、元数据/正文边界、已有稿晋升与冻结例外回归。
+- node scripts/check-safe-mdx.mjs --all：全量当前 pages 与 inbox，避免未修改文件或已有文件晋升绕过。
+- node scripts/check-safe-mdx.mjs --base <sha> --head <sha>：另查新增/变更页面；新增文章必须精选。两个门禁均由 CI 执行，不能互相替代。
+- npm run build：构建与索引；Playwright 的仓内命令 npm run test:e2e 独立复核，未声称本 CI 已执行 E2E。
 
 ## 6. 版本
 
-- 本契约依据 docs/content-triage.md（516 篇盘点）冻结。
-- 冻结日期：2026-09-28。
-- 后续修改 domain、type、门禁或映射规则，必须重新评审并更新本契约版本记录。
+- 2026-09-28：domain/type 枚举冻结；当时的 516 篇盘点见 docs/content-triage.md，是历史记录，不是当前发布量。
+- 2026-11-04：统一契约入口、schema 与 CI，落实审校、正文、晋升门禁；category 改为显式可选兼容字段；把历史例外缩为 20 篇字节冻结种子。原有内容、URL 与发现策略不变。

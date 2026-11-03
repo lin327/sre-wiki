@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compile } from '@mdx-js/mdx';
 import { parseFrontmatter } from '@astrojs/markdown-remark';
 import { loadWikiRouteIndex } from '../src/lib/route-index.mjs';
-import { validatePublishPage } from '../src/lib/publish-contract.mjs';
+import { validatePublishPage, validateDraftPage } from '../src/lib/publish-contract.mjs';
 
 const EXECUTABLE_NODES = new Set([
   'mdxjsEsm',
@@ -64,13 +64,21 @@ export async function findExecutableMdxNodes(filePath, rawSource) {
 function listChangedPages(base, head) {
   const hasBase = base && !/^0+$/.test(base);
   const output = hasBase
-    ? execFileSync('git', ['diff', '--name-only', '-z', base, head, '--', 'src/pages'], { encoding: 'utf8' })
-    : execFileSync('git', ['ls-files', '-z', '--', 'src/pages'], { encoding: 'utf8' });
+    ? execFileSync('git', ['diff', '--name-only', '-z', base, head, '--', 'src/pages', 'src/inbox'], { encoding: 'utf8' })
+    : execFileSync('git', ['ls-files', '-z', '--', 'src/pages', 'src/inbox'], { encoding: 'utf8' });
   const files = output.split('\0').filter((file) => file.endsWith('.mdx') && existsSync(file));
   const addedOutput = hasBase
-    ? execFileSync('git', ['diff', '--diff-filter=AR', '--name-only', '-z', base, head, '--', 'src/pages'], { encoding: 'utf8' })
+    ? execFileSync('git', ['diff', '--diff-filter=AR', '--name-only', '-z', base, head, '--', 'src/pages', 'src/inbox'], { encoding: 'utf8' })
     : '';
   return { files, added: new Set(addedOutput.split('\0').filter(Boolean)) };
+}
+
+function listAllPages(directory) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`;
+    return entry.isDirectory() ? listAllPages(path) : path.endsWith('.mdx') ? [path] : [];
+  });
 }
 
 async function main() {
@@ -78,13 +86,16 @@ async function main() {
     options: {
       base: { type: 'string' },
       head: { type: 'string' },
+      all: { type: 'boolean', default: false },
     },
   });
-  if (!values.base || !values.head) {
-    throw new Error('Usage: node scripts/check-safe-mdx.mjs --base <sha> --head <sha>');
+  if (!values.all && (!values.base || !values.head)) {
+    throw new Error('Usage: node scripts/check-safe-mdx.mjs --all OR --base <sha> --head <sha>');
   }
 
-  const { files, added } = listChangedPages(values.base, values.head);
+  const { files, added } = values.all
+    ? { files: [...listAllPages('src/pages'), ...listAllPages('src/inbox')], added: new Set() }
+    : listChangedPages(values.base, values.head);
   const routeIndex = loadWikiRouteIndex(resolve('src/pages'));
   let failures = 0;
   let warnings = 0;
@@ -96,10 +107,12 @@ async function main() {
         failures += 1;
         console.error(`${file}:${node.line}: rejected executable MDX node ${node.type}`);
       }
-      const contract = await validatePublishPage(file, source, { isNew: added.has(file), routeIndex });
+      const contract = file.startsWith('src/inbox/')
+        ? validateDraftPage(file, source)
+        : await validatePublishPage(file, source, { isNew: added.has(file), routeIndex });
       for (const message of contract.errors) {
         failures += 1;
-        console.error(message);
+        console.error(`${file}: ${message}`);
       }
       for (const message of contract.warnings) {
         warnings += 1;
@@ -117,7 +130,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`Validated ${files.length} changed MDX page(s); ${allowlisted} trusted component page(s) used the explicit allowlist; ${warnings} legacy wikilink warning(s).`);
+  console.log(`Validated ${files.length} ${values.all ? 'total' : 'changed'} MDX page(s); ${allowlisted} trusted component page(s) used the explicit allowlist; ${warnings} legacy warning(s).`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

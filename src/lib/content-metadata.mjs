@@ -30,6 +30,8 @@ export function validateFrontmatter(metadata, slug) {
   function check(value, rule, path) {
     const type = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
     if (type !== rule.type) throw new Error(`${path}: expected ${rule.type}`);
+    if ('const' in rule && value !== rule.const) throw new Error(`${path}: expected ${rule.const}`);
+    if (rule.not && value === rule.not.const) throw new Error(`${path}: forbidden value ${value}`);
     if (rule.enum && !rule.enum.includes(value)) throw new Error(`${path}: invalid value`);
     if (type === 'object') {
       for (const field of rule.required ?? []) {
@@ -49,6 +51,16 @@ export function validateFrontmatter(metadata, slug) {
     }
   }
   check(metadata, schema, 'frontmatter');
+  // The schema's canonical conditional applies to metadata, including drafts
+  // promoted in place; callers cannot bypass it by setting isNew to false.
+  if (metadata.canonical === schema.if.properties.canonical.const) {
+    for (const field of schema.then.required) {
+      if (!(field in metadata)) throw new Error(`frontmatter.${field}: required for canonical`);
+    }
+    for (const [field, rule] of Object.entries(schema.then.properties)) {
+      check(metadata[field], { ...schema.properties[field], ...rule }, `frontmatter.${field}`);
+    }
+  }
   check(slug, schema.$defs.slug, 'slug');
   return metadata;
 }

@@ -9,7 +9,7 @@ const routeIndex = createRouteIndex([
   { route: '/kubernetes/networking', slug: 'networking' },
 ]);
 
-const page = (metadata: Record<string, unknown>, body = '正文 [[linux/process-model]]。') =>
+const page = (metadata: Record<string, unknown>, body = '运维'.repeat(400) + ' [[linux/process-model]]。') =>
   `---\n${Object.entries(metadata).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n')}\n---\n${body}`;
 
 const validMetadata = {
@@ -24,6 +24,9 @@ const validMetadata = {
   type: 'concept',
   confidence: 'high',
   tags: ['docker', 'network'],
+  reviewed: true,
+  reviewed_by: 'maintainer',
+  reviewed_at: '2026-11-04',
 };
 
 describe('Wiki publishing contract', () => {

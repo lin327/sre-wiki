@@ -1,0 +1,28 @@
+{
+  "commit": "598d32f04edd276a6501046275eb0c512a03afaa",
+  "files": {
+    "src/pages/architectures/gitops-pipeline.mdx": "2bdcd955d8824f222d2f9fa78bf77322f5b4dc508d5040b467bb2440e4f18873",
+    "src/pages/architectures/ha-cluster.mdx": "43fc6b404dc05ec1a98edbb2c971d802506fb4836114f5aa120af0ed2e7c7b44",
+    "src/pages/comparisons/helm-vs-kustomize.mdx": "471d81ff8a1fc18cf7c9a0de2d5caad500c672e57246a228c9bbe39be7295ae7",
+    "src/pages/comparisons/istio-vs-linkerd.mdx": "406dcf54164f680ee15723acca2f47fc277f8ebae8fdc8c3b502f2c51e276a1c",
+    "src/pages/docker/compose.mdx": "586db71400d826022b388272112e9e03f3d21955c59874d42d9eb881b3f0368e",
+    "src/pages/docker/image-layers.mdx": "500ca8d41fa2b75ccad23fd8211a2e7b2ab283f20ded563a2d7fd35819c869ae",
+    "src/pages/docker/networking.mdx": "0f31a5345b99f570cd769425652738e122b2a8738478353400e7de71ca3d5942",
+    "src/pages/docker/storage.mdx": "c0379475cdf355d2b7b724d32fcba56dda226ad079c94258ddf8c1fb8d6a748a",
+    "src/pages/incidents/dns-resolution-failure.mdx": "817a2c743655ce7b8d025d5ee319ba1489378b9b2d9603af8050452197eadb3d",
+    "src/pages/incidents/etcd-data-corruption.mdx": "97fdfaacb11ac96a1bc9630cd5afe386c355c300cf3c606a2f178977413bcd27",
+    "src/pages/kubernetes/container-runtime.mdx": "e4887eaf03b18f6a0f0ff192df4eab4bd00ea1e2048a9d302349ff1d630f5ce2",
+    "src/pages/kubernetes/pod-lifecycle.mdx": "f0a48b78f24b20634181726639a297d29b365f4d3eb75b8abd3f3815628bc4ff",
+    "src/pages/kubernetes/service-mesh.mdx": "ac1633b1618541ee9cfde7901164b1f87900ab317856673e52d30b7108dae51a",
+    "src/pages/linux/filesystem.mdx": "c9e85b07f7f7530b0a0903b475698968582a177ec9bc461c62f072c24d61f6be",
+    "src/pages/linux/network-stack.mdx": "6981276920ffe14022389796e5711f36e4d20da7a8be3e23dd2a4a163ead5596",
+    "src/pages/linux/process-model.mdx": "a479f5d918621d9d8762635a5b88b5b35bc9585b3e74698baf2201fee6d769e1",
+    "src/pages/linux/systemd.mdx": "e4531055017f70796d65c986c0e045a3b61e2ae881c9c44cb99057c4ead55bd6",
+    "src/pages/runbooks/crashloopbackoff.mdx": "e05819c75fb55aa4a703bc30bfa77c79664934737def59439400c2b410a89470",
+    "src/pages/runbooks/imagepullbackoff.mdx": "3056569e05a0f6a83c3fc217c72f34d13ee734545274fc15ee1beb0f4018a6e6",
+    "src/pages/runbooks/oomkilled.mdx": "f1ac6724601c22d4272647dfb2e10b46d87fc76fcf2ed155828c549f903e70a6"
+  },
+  "inboxIndexes": {
+    "src/inbox/linux/index.mdx": "302d92467ff4c1dc597aaff87d67cc95ee6b57878aa7230f9fcb4161f0316c0c"
+  }
+}

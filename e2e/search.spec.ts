@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectHeaderControls, openSidebar } from './helpers';
 
 test.describe('Search functionality', () => {
   test('search input is visible on desktop', async ({ page }) => {
@@ -53,20 +54,21 @@ test.describe('Sidebar behavior', () => {
 
   test('sidebar persists state after navigation', async ({ page }) => {
     await page.goto('/');
+    await openSidebar(page);
 
     // Collapse first group
     const firstGroup = page.locator('.sidebar__group-header').first();
     const initialState = await firstGroup.getAttribute('aria-expanded');
+    const expectedState = initialState === 'true' ? 'false' : 'true';
     await firstGroup.click();
-    await page.waitForTimeout(200);
+    await expect(firstGroup).toHaveAttribute('aria-expanded', expectedState);
 
     // Navigate to another page
     await page.goto('/linux/');
-    await page.waitForTimeout(500);
+    await openSidebar(page);
 
     // Check that the group state changed
-    const newState = await page.locator('.sidebar__group-header').first().getAttribute('aria-expanded');
-    expect(newState).not.toBe(initialState);
+    await expect(page.locator('.sidebar__group-header').first()).toHaveAttribute('aria-expanded', expectedState);
   });
 });
 
@@ -149,9 +151,7 @@ test.describe('Navigation', () => {
 
   test('nav bar has icon buttons', async ({ page }) => {
     await page.goto('/');
-    const iconBtns = page.locator('.topnav__icon-btn');
-    const count = await iconBtns.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expectHeaderControls(page);
   });
 
   test('nav bar is sticky', async ({ page }) => {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
-    PagefindUI: new (opts: { element: string | HTMLElement; showImages?: boolean; showSubResults?: boolean; pagefindOptions?: { noWorker: boolean } }) => {
+    PagefindUI: new (opts: { element: string | HTMLElement; showImages?: boolean; showSubResults?: boolean; noWorker?: boolean }) => {
       destroy: () => void;
     };
   }
@@ -130,7 +130,7 @@ export default function PagefindSearch() {
       if (!active || controller.signal.aborted || !containerRef.current) return;
       const container = containerRef.current;
       container.replaceChildren();
-      pagefindUI.current = new window.PagefindUI({ element: container, showImages: false, showSubResults: true, pagefindOptions: { noWorker: true } });
+      pagefindUI.current = new window.PagefindUI({ element: container, showImages: false, showSubResults: true, noWorker: true });
       window.clearTimeout(timeout);
       setStatus("ready");
       focusSearch = window.requestAnimationFrame(() => container.querySelector<HTMLInputElement>("input")?.focus());

@@ -4,6 +4,17 @@
 
 Astro 只编译 `src/pages/`。本目录放在仓库根下，Pagefind 与 sitemap 都基于构建产物，因此这里的文件不会被发布。
 
+## frozen-20261104
+
+本批从 `27d6c257e4d8c1f230a2c87663ca3c9994e9d090` 移出 5 个文件，原始字节不变：
+
+- 两篇中文事故种子（DNS、etcd）及其两篇英文镜像移入 `frozen-20261104/{zh,en}/incidents/`。未见真实事件来源、时间线或恢复演练证据；etcd 文中包含删除数据目录等高风险操作，不继续作为复盘/恢复指引发布。
+- 历史 `src/inbox/linux/index.mdx` 移入 `frozen-20261104/inbox/linux/`，其“88 篇”列表已经过时，也不是符合当前 schema 的新草稿。
+
+中英事故页原 URL 在 nginx 中逐条精确返回 410；inbox 文件原本没有公开路由，不新增归档 URL。`/incidents` 栏目保留。冻结基线 JSON 未刷新，归档文件与原 SHA256 一致。逐项证据和剩余 18 篇复审缺口见 [冻结处置台账](../docs/frozen-content-2026-11-04.md)。
+
+本批作为历史证据保留，不自动删除，不原样回迁。重新发布须独立完成版本核对、隔离演练、真实审校与完整契约。
+
 ## legacy-pages/placeholders
 
 这一批从 `7a278f00f28eb2c0f5b0e7c9c0e8fa7df414db9f`（`feat(wiki): 写入 linux 文章 domain/type（第 4 批）`）移出。

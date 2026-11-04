@@ -1,7 +1,7 @@
 ---
 layout: ../../layouts/BaseLayout.astro
 title: "Incidents"
-description: "etcd 数据损坏、DNS 解析失败、安全事件等故障复盘。"
+description: "收录有事件证据与复核记录的故障复盘。"
 canonical: true
 ---
 
@@ -9,6 +9,8 @@ import CategoryArticles from '../../components/astro/CategoryArticles.astro';
 
 # Incidents
 
-etcd 数据损坏、DNS 解析失败、安全事件等故障复盘。
+本栏目保留给有事件证据与复核记录的故障复盘。
+
+历史 DNS、etcd 两篇缺少事件来源和恢复演练记录，已移入仓库归档，不再作为恢复操作指引。后续内容须先补齐适用版本、影响范围、时间线、核验结果与回滚证据。
 
 <CategoryArticles category="incidents" />

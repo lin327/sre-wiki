@@ -7,7 +7,7 @@
 # Root placeholders are from 7a278f0 (447 pages). Legacy English pages are from
 # d247101 (486 pages, /en/<category>/<slug>). Pending Chinese pages are from
 # 7316d49 (516 pages: 193 material + 323 dropped, /<category>/<slug>).
-# Seed, category index, about, privacy, and English seed URLs are not listed.
+# Retained seed, category index, about and privacy URLs are not listed.
 # Batch 3 stores decoded Chinese paths because $uri is already decoded.
 # 8192: 4096 could not build an optimal hash after this batch (2898 keys).
 map_hash_max_size 8192;
@@ -16,6 +16,15 @@ map_hash_max_size 8192;
 # nginx cannot build this map at 128 (the previous longest /en/ key was 112 bytes).
 map_hash_bucket_size 256;
 map $uri $legacy_placeholder_gone {
+    # 2026-11-04: unsubstantiated incident seeds and their English mirrors.
+    /incidents/dns-resolution-failure 1;
+    /incidents/dns-resolution-failure/ 1;
+    /incidents/etcd-data-corruption 1;
+    /incidents/etcd-data-corruption/ 1;
+    /en/incidents/dns-resolution-failure 1;
+    /en/incidents/dns-resolution-failure/ 1;
+    /en/incidents/etcd-data-corruption 1;
+    /en/incidents/etcd-data-corruption/ 1;
     default 0;
 
     /alert-fatigue 1;

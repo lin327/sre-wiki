@@ -29,6 +29,8 @@ canonical: true 表示人工纳入精选，不是 SEO canonical URL 或访问权
 
 分类 index.mdx、手写 Astro 路由及 about/privacy 等说明页不按“文章 800 字”判定，但仍遵守其适用的布局/MDX 安全检查。其余未修改的历史非精选内容保留迁移兼容；原 wikilink 问题仅告警。
 
+2026-11-04 处置：两篇事故种子与英文镜像、旧 inbox 索引已移至 archive/frozen-20261104/，原字节与基线哈希保留；当前发布树剩 18 篇冻结精选告警。基线 JSON 不因归档而刷新。复审决定和未验证边界见 [冻结处置台账](./frozen-content-2026-11-04.md)；台账不等于人工审校通过。
+
 ## 3. 草稿与 Agent 边界
 
 - Agent 默认输出 output/inbox/<category>/<slug>.mdx，强制 canonical: false；PUBLISH_CANONICAL=true 仅改变输出目录，不代表通过人工审核。

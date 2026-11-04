@@ -32,7 +32,7 @@
 | 18 | `runbooks/crashloopbackoff.mdx` | 复审 | L31：正文“非零退出码”与自身退出码 0/Always 表格矛盾；PDB 不能用来承诺防崩溃。 | 官方 Always 允许成功退出后重启；仍需隔离 Pod 复现、前置备份与恢复。 | `e05819c75fb5` |
 | 19 | `runbooks/imagepullbackoff.mdx` | 复审 | L75：需避免把解码凭据写入日志；Registry 限额与运行时配置需标版本，并补失败/恢复夹具。 | 未访问私有 Registry/解码真实 Secret；本轮站点构建不等同此 runbook 验证。 | `3056569e05a0` |
 | 20 | `runbooks/oomkilled.mdx` | 复审 | L164：示例 CPU request 250m、limit 500m，却称 Guaranteed；需纠正 QoS 断言与 OOM 归因条件。 | 官方要求每个容器 CPU/内存 request=limit；未注入节点/业务内存故障。 | `f1ac6724601c` |
-| 21 | `src/inbox/linux/index.mdx` | 归档 | L13：旧索引固定声称 88 篇，与当前发布树不符；并非合规草稿，自动栏目列表已替代其用途。 | 原文件从未是公开路由，移至 archive，不新增公开 URL/410。 | `302d92467ff4` |
+| 21 | `src/inbox/linux/index.mdx` | 归档 | L12：旧索引固定声称 88 篇，与当前发布树不符；并非合规草稿，自动栏目列表已替代其用途。 | 原文件从未是公开路由，移至 archive，不新增公开 URL/410。 | `302d92467ff4` |
 
 ## 已核对的一手资料
 

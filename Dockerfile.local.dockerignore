@@ -1,0 +1,7 @@
+# Package prebuilt Astro output using the repository root as build context.
+**
+!dist/
+!dist/**
+!nginx/
+!nginx/legacy-redirects.map
+!nginx.conf

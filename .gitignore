@@ -6,8 +6,8 @@ dist/
 node_modules/
 
 # environment
-.env
-.env.production
+.env*
+!.env.example
 
 # logs
 npm-debug.log*
@@ -31,8 +31,13 @@ site/
 # pagefind (generated at build time)
 public/pagefind/
 
-# local env
-.env.local
-
-# Playwright output
+# test output
 test-results/
+/playwright-report/
+/blob-report/
+/coverage/
+
+# local tooling output
+/.playwright-cli/
+/.oil-ui/
+*.tsbuildinfo

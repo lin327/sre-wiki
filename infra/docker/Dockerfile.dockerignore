@@ -1,0 +1,7 @@
+# Legacy site/ image, using the repository root as build context.
+**
+!site/
+!site/**
+!infra/
+!infra/docker/
+!infra/docker/nginx.conf

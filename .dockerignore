@@ -1,25 +1,47 @@
-node_modules
-# Archived MDX is not part of the site image.
+# Dependencies and generated output (the root Dockerfile builds the site).
+node_modules/
+dist/
+site/
+.astro/
+public/pagefind/
+
+# Archives and documentation are not inputs to the Astro build.
 archive/
-# dist  # Commented out for local builds
+docs/
+README.md
+DESIGN.md
+PLAN.md
+PRODUCT.md
+PROJECT.md
+CONTENT_CONTRACT.md
+
+# Git, editors, and local tooling.
 .git
 .github
-*.md
-.env
-.env.*
-.env.local
+.vscode/
+.claude/
+.playwright-cli/
+.oil-ui/
 .DS_Store
+
+# Local environment files never enter the image build context.
+.env*
+
+# Tests and reports. Keep tsconfig.json for the Astro/React build.
 playwright.config.*
 vitest.config.*
-tsconfig.json
+vitest.setup.*
+**/__tests__/
 *.test.*
 *.spec.*
+e2e/
 coverage/
 test-results/
-.astro/
-.claude/
-.vscode/
+playwright-report/
+blob-report/
+*.tsbuildinfo
+
+# Separate deployment and authoring tools.
+# Other Dockerfiles have their own complete ignore rules.
 infra/
 scripts/
-e2e/
-public/pagefind/

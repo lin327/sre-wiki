@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 declare global {
   interface Window {
-    PagefindUI: new (opts: { element: string | HTMLElement; showImages?: boolean; showSubResults?: boolean }) => {
+    PagefindUI: new (opts: { element: string | HTMLElement; showImages?: boolean; showSubResults?: boolean; pagefindOptions?: { noWorker: boolean } }) => {
       destroy: () => void;
     };
   }
@@ -53,6 +53,22 @@ export default function PagefindSearch() {
       controller.abort();
     };
     const isPagefind = (value: string) => value.includes("/pagefind/");
+    const originalFetch = globalThis.fetch;
+    const guardedFetch: typeof fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+      const tracked = url.origin === window.location.origin && url.pathname.startsWith("/pagefind/");
+      try {
+        const response = await originalFetch.call(globalThis, input, init);
+        if (tracked && !response.ok) unavailable();
+        return response;
+      } catch (error) {
+        if (tracked && !controller.signal.aborted) unavailable();
+        throw error;
+      }
+    };
+    // Pagefind can turn a failed index chunk into zero results. Keep its fetches
+    // observable on this thread; unrelated requests retain their original behavior.
+    globalThis.fetch = guardedFetch;
     const resourceError = (event: Event) => {
       const target = event.target;
       if ((target instanceof HTMLScriptElement && isPagefind(target.src))
@@ -114,7 +130,7 @@ export default function PagefindSearch() {
       if (!active || controller.signal.aborted || !containerRef.current) return;
       const container = containerRef.current;
       container.replaceChildren();
-      pagefindUI.current = new window.PagefindUI({ element: container, showImages: false, showSubResults: true });
+      pagefindUI.current = new window.PagefindUI({ element: container, showImages: false, showSubResults: true, pagefindOptions: { noWorker: true } });
       window.clearTimeout(timeout);
       setStatus("ready");
       focusSearch = window.requestAnimationFrame(() => container.querySelector<HTMLInputElement>("input")?.focus());
@@ -130,6 +146,7 @@ export default function PagefindSearch() {
       window.removeEventListener("unhandledrejection", searchError);
       pagefindUI.current?.destroy();
       pagefindUI.current = null;
+      if (globalThis.fetch === guardedFetch) globalThis.fetch = originalFetch;
     };
   }, [open, attempt]);
 

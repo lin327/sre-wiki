@@ -298,6 +298,39 @@
   overflow: auto;
   padding: 8px;
 }
+.search-status {
+  margin: 0;
+  padding: 16px;
+  font-size: 14px;
+  color: var(--color-ink);
+}
+.search-status p {
+  margin: 0 0 12px;
+}
+.search-status__hint {
+  color: var(--color-muted);
+}
+.search-retry {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.search-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 12px;
+}
+.search-categories a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--color-primary-l);
+}
 
 /* === Mermaid === */
 .mermaid-container {

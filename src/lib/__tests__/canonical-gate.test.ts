@@ -84,7 +84,8 @@ describe('canonical acceptance regressions', () => {
 
   it('keeps only the unchanged historical inbox index as reference material', () => {
     const file = 'src/inbox/linux/index.mdx';
-    const raw = readFileSync(file, 'utf8');
+    // The byte-frozen fixture now lives outside the publish/inbox trees.
+    const raw = readFileSync('archive/frozen-20261104/inbox/linux/index.mdx', 'utf8');
     expect(validateDraftPage(file, raw).errors).toEqual([]);
     expect(validateDraftPage(file, raw).warnings.join('\n')).toContain('frozen');
     expect(validateDraftPage(file, raw + '\n').errors.length).toBeGreaterThan(0);
